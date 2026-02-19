@@ -48,7 +48,7 @@ RUN pip install --no-cache-dir -U pip \
 COPY scripts /repo/scripts
 COPY tests /repo/tests
 COPY README.md /repo/README.md
-COPY LICENSE /repo/LICENSE.md
+COPY LICENSE.md /repo/LICENSE.md
 COPY .github /repo/.github
 
 ENV OSMCP_RUN_ROOT=/runs
