@@ -5,6 +5,7 @@ the currently loaded OpenStudio model.
 """
 from __future__ import annotations
 
+import atexit
 from pathlib import Path
 from typing import Optional
 
@@ -70,3 +71,8 @@ def clear_model() -> None:
     global _current_model, _current_model_path
     _current_model = None
     _current_model_path = None
+
+
+# Release SWIG Model* before interpreter shutdown to avoid
+# "swig/python detected a memory leak" warning (openstudio#5421)
+atexit.register(lambda: clear_model())
