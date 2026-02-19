@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<measure xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <schema_version>3.1</schema_version>
+  <name>set_building_name</name>
+  <uid>00000000-0000-0000-0000-000000000001</uid>
+  <version_id>00000000-0000-0000-0000-000000000002</version_id>
+  <version_modified>2024-01-01T00:00:00Z</version_modified>
+  <xml_checksum>00000000</xml_checksum>
+  <class_name>SetBuildingName</class_name>
+  <display_name>Set Building Name</display_name>
+  <description>Sets the building name to a user-specified value.</description>
+  <modeler_description>Uses model.getBuilding.setName().</modeler_description>
+  <arguments>
+    <argument>
+      <name>building_name</name>
+      <display_name>Building Name</display_name>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>Test Building</default_value>
+    </argument>
+  </arguments>
+  <outputs/>
+  <tags>
+    <tag>Whole Building.Space Types</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>00000000</checksum>
+    </file>
+  </files>
+</measure>

@@ -1,0 +1,36 @@
+[project]
+name = "openstudio-mcp"
+version = "0.1.0"
+description = "Thin MCP server around OpenStudio CLI with async runs and testable outputs."
+requires-python = ">=3.11"
+dependencies = [
+  "fastmcp>=0.4.0",
+  "pydantic>=2.6",
+  "psutil>=5.9",
+  "jsonschema>=4.21",
+  "openstudio==3.11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-timeout>=2.3.1",
+  "mcp",
+]
+
+[project.scripts]
+openstudio-mcp = "mcp_server.server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+include = ["mcp_server*"]
+exclude = ["docker*", "tests*", "scripts*"]

@@ -1,0 +1,1 @@
+"""Space types skill."""

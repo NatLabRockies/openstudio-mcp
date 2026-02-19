@@ -1,0 +1,17 @@
+[
+  {
+    "ok": true,
+    "run_root": "/runs",
+    "max_concurrency": 1
+  },
+  {
+    "ok": false,
+    "error": "run_not_found",
+    "message": "Unknown run_id: x"
+  },
+  {
+    "ok": true,
+    "run_id": "abc",
+    "status": "running"
+  }
+]

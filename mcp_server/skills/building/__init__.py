@@ -1,0 +1,1 @@
+"""Building-level information skill."""

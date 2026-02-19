@@ -1,0 +1,233 @@
+"""Spaces and thermal zones operations.
+
+Extraction patterns adapted from openstudio-toolkit osm_objects/spaces.py
+and osm_objects/thermal_zones.py — using direct openstudio bindings.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+import openstudio
+
+from mcp_server.model_manager import get_model
+from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
+
+
+def _extract_space(model, space) -> dict[str, Any]:
+    """Extract space attributes to dict.
+
+    Fields mirror OpenStudio-Toolkit's get_space_object_as_dict().
+    """
+    return {
+        "handle": str(space.handle()),
+        "name": space.nameString(),
+        "space_type": optional_name(space.spaceType()),
+        "thermal_zone": optional_name(space.thermalZone()),
+        "building_story": optional_name(space.buildingStory()),
+        "default_construction_set": optional_name(space.defaultConstructionSet()),
+        "default_schedule_set": optional_name(space.defaultScheduleSet()),
+        "floor_area_m2": float(space.floorArea()),
+        "volume_m3": float(space.volume()),
+        "ceiling_height_m": float(space.ceilingHeight()),
+        "direction_of_relative_north_deg": float(space.directionofRelativeNorth()),
+        "x_origin_m": float(space.xOrigin()),
+        "y_origin_m": float(space.yOrigin()),
+        "z_origin_m": float(space.zOrigin()),
+        "part_of_total_floor_area": space.partofTotalFloorArea(),
+        "num_surfaces": len(space.surfaces()),
+        "num_people": len(space.people()),
+        "num_lights": len(space.lights()),
+        "num_electric_equipment": len(space.electricEquipment()),
+        "num_gas_equipment": len(space.gasEquipment()),
+    }
+
+
+def _extract_thermal_zone(model, zone) -> dict[str, Any]:
+    """Extract thermal zone attributes to dict.
+
+    Fields mirror OpenStudio-Toolkit's get_thermal_zone_object_as_dict().
+    """
+    # Get thermostat info
+    thermostat_name = None
+    heating_setpoint_schedule = None
+    cooling_setpoint_schedule = None
+
+    if zone.thermostatSetpointDualSetpoint().is_initialized():
+        thermostat = zone.thermostatSetpointDualSetpoint().get()
+        thermostat_name = thermostat.nameString()
+        heating_setpoint_schedule = optional_name(thermostat.heatingSetpointTemperatureSchedule())
+        cooling_setpoint_schedule = optional_name(thermostat.coolingSetpointTemperatureSchedule())
+
+    # Get HVAC equipment
+    equipment_list = []
+    for equip in zone.equipment():
+        equipment_list.append({
+            "type": equip.iddObjectType().valueName(),
+            "name": equip.nameString()
+        })
+
+    # Get air loop if connected
+    air_loop_name = None
+    if zone.airLoopHVAC().is_initialized():
+        air_loop_name = zone.airLoopHVAC().get().nameString()
+
+    return {
+        "handle": str(zone.handle()),
+        "name": zone.nameString(),
+        "multiplier": int(zone.multiplier()),
+        "floor_area_m2": float(zone.floorArea()),
+        "num_spaces": len(zone.spaces()),
+        "thermostat": thermostat_name,
+        "heating_setpoint_schedule": heating_setpoint_schedule,
+        "cooling_setpoint_schedule": cooling_setpoint_schedule,
+        "air_loop_hvac": air_loop_name,
+        "equipment": equipment_list,
+        "num_equipment": len(equipment_list),
+    }
+
+
+def list_spaces() -> dict[str, Any]:
+    """List all spaces in the model."""
+    try:
+        model = get_model()
+        spaces = list_all_as_dicts(model, "getSpaces", _extract_space)
+        return {
+            "ok": True,
+            "count": len(spaces),
+            "spaces": spaces
+        }
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to list spaces: {e}"}
+
+
+def get_space_details(space_name: str) -> dict[str, Any]:
+    """Get detailed information about a specific space."""
+    try:
+        model = get_model()
+        space = fetch_object(model, "Space", name=space_name)
+
+        if space is None:
+            return {"ok": False, "error": f"Space '{space_name}' not found"}
+
+        return {
+            "ok": True,
+            "space": _extract_space(model, space)
+        }
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to get space details: {e}"}
+
+
+def list_thermal_zones() -> dict[str, Any]:
+    """List all thermal zones in the model."""
+    try:
+        model = get_model()
+        zones = list_all_as_dicts(model, "getThermalZones", _extract_thermal_zone)
+        return {
+            "ok": True,
+            "count": len(zones),
+            "thermal_zones": zones
+        }
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to list thermal zones: {e}"}
+
+
+def get_thermal_zone_details(zone_name: str) -> dict[str, Any]:
+    """Get detailed information about a specific thermal zone."""
+    try:
+        model = get_model()
+        zone = fetch_object(model, "ThermalZone", name=zone_name)
+
+        if zone is None:
+            return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
+
+        return {
+            "ok": True,
+            "thermal_zone": _extract_thermal_zone(model, zone)
+        }
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to get thermal zone details: {e}"}
+
+
+def create_space(name: str, building_story_name: str | None = None,
+                space_type_name: str | None = None) -> dict[str, Any]:
+    """Create a new space in the model.
+
+    Args:
+        name: Name for the new space
+        building_story_name: Optional name of building story to assign
+        space_type_name: Optional name of space type to assign
+
+    Returns:
+        dict with ok=True and space details, or ok=False and error message
+    """
+    try:
+        model = get_model()
+
+        # Create space
+        space = openstudio.model.Space(model)
+        space.setName(name)
+
+        # Set optional relationships
+        if building_story_name:
+            story = fetch_object(model, "BuildingStory", name=building_story_name)
+            if story is None:
+                return {"ok": False, "error": f"Building story '{building_story_name}' not found"}
+            space.setBuildingStory(story)
+
+        if space_type_name:
+            space_type = fetch_object(model, "SpaceType", name=space_type_name)
+            if space_type is None:
+                return {"ok": False, "error": f"Space type '{space_type_name}' not found"}
+            space.setSpaceType(space_type)
+
+        # Extract and return
+        result = _extract_space(model, space)
+        return {"ok": True, "space": result}
+
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to create space: {e}"}
+
+
+def create_thermal_zone(name: str, space_names: list[str] | None = None) -> dict[str, Any]:
+    """Create a new thermal zone in the model.
+
+    Args:
+        name: Name for the new thermal zone
+        space_names: Optional list of space names to assign to this zone
+
+    Returns:
+        dict with ok=True and thermal_zone details, or ok=False and error message
+    """
+    try:
+        model = get_model()
+
+        # Create thermal zone
+        thermal_zone = openstudio.model.ThermalZone(model)
+        thermal_zone.setName(name)
+
+        # Assign spaces if provided
+        if space_names:
+            for space_name in space_names:
+                space = fetch_object(model, "Space", name=space_name)
+                if space is None:
+                    return {"ok": False, "error": f"Space '{space_name}' not found"}
+                space.setThermalZone(thermal_zone)
+
+        # Extract and return
+        result = _extract_thermal_zone(model, thermal_zone)
+        return {"ok": True, "thermal_zone": result}
+
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to create thermal zone: {e}"}

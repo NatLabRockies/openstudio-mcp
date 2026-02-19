@@ -1,0 +1,229 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.10, pytest-7.4.2, pluggy-1.3.0 -- C:\Python310\python.exe
+cachedir: .pytest_cache
+rootdir: C:\projects\openstudio-mcp-v2
+configfile: pyproject.toml
+plugins: anyio-4.12.1, cov-4.1.0, timeout-2.4.0
+collecting ... collected 73 items
+
+tests/test_hvac_systems_validation.py::test_system_1_coil_types 
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.5                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      openstudio-mcp                            │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[02/15/26 23:55:11] INFO     Starting MCP server 'openstudio-mcp' server.py:2506
+                             with transport 'stdio'                             
+PASSED
+tests/test_hvac_systems_validation.py::test_system_1_fan_present 
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.5                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      openstudio-mcp                            │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[02/15/26 23:55:13] INFO     Starting MCP server 'openstudio-mcp' server.py:2506
+                             with transport 'stdio'                             
+PASSED
+tests/test_hvac_systems_validation.py::test_system_1_multiple_zones 
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.5                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      openstudio-mcp                            │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[02/15/26 23:55:14] INFO     Starting MCP server 'openstudio-mcp' server.py:2506
+                             with transport 'stdio'                             
+PASSED
+tests/test_hvac_systems_validation.py::test_system_2_heat_pump_coils 
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.5                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      openstudio-mcp                            │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[02/15/26 23:55:16] INFO     Starting MCP server 'openstudio-mcp' server.py:2506
+                             with transport 'stdio'                             
+PASSED
+tests/test_hvac_systems_validation.py::test_system_2_fan_present 
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.5                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      openstudio-mcp                            │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[02/15/26 23:55:18] INFO     Starting MCP server 'openstudio-mcp' server.py:2506
+                             with transport 'stdio'                             
+PASSED
+tests/test_hvac_systems_validation.py::test_system_3_coil_types 
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.5                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      openstudio-mcp                            │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[02/15/26 23:55:19] INFO     Starting MCP server 'openstudio-mcp' server.py:2506
+                             with transport 'stdio'                             
+FAILED
+
+================================== FAILURES ===================================
+__________________________ test_system_3_coil_types ___________________________
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Python310\lib\site-packages\_pytest\runner.py", line 341, in from_call
+  |     result: Optional[TResult] = func()
+  |   File "C:\Python310\lib\site-packages\_pytest\runner.py", line 262, in <lambda>
+  |     lambda: ihook(item=item, **kwds), when=when, reraise=reraise
+  |   File "C:\Python310\lib\site-packages\pluggy\_hooks.py", line 493, in __call__
+  |     return self._hookexec(self.name, self._hookimpls, kwargs, firstresult)
+  |   File "C:\Python310\lib\site-packages\pluggy\_manager.py", line 115, in _hookexec
+  |     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  |   File "C:\Python310\lib\site-packages\pluggy\_callers.py", line 152, in _multicall
+  |     return outcome.get_result()
+  |   File "C:\Python310\lib\site-packages\pluggy\_result.py", line 114, in get_result
+  |     raise exc.with_traceback(exc.__traceback__)
+  |   File "C:\Python310\lib\site-packages\pluggy\_callers.py", line 77, in _multicall
+  |     res = hook_impl.function(*args)
+  |   File "C:\Python310\lib\site-packages\_pytest\runner.py", line 177, in pytest_runtest_call
+  |     raise e
+  |   File "C:\Python310\lib\site-packages\_pytest\runner.py", line 169, in pytest_runtest_call
+  |     item.runtest()
+  |   File "C:\Python310\lib\site-packages\_pytest\python.py", line 1792, in runtest
+  |     self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  |   File "C:\Python310\lib\site-packages\pluggy\_hooks.py", line 493, in __call__
+  |     return self._hookexec(self.name, self._hookimpls, kwargs, firstresult)
+  |   File "C:\Python310\lib\site-packages\pluggy\_manager.py", line 115, in _hookexec
+  |     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  |   File "C:\Python310\lib\site-packages\pluggy\_callers.py", line 113, in _multicall
+  |     raise exception.with_traceback(exception.__traceback__)
+  |   File "C:\Python310\lib\site-packages\pluggy\_callers.py", line 77, in _multicall
+  |     res = hook_impl.function(*args)
+  |   File "C:\Python310\lib\site-packages\_pytest\python.py", line 194, in pytest_pyfunc_call
+  |     result = testfunction(**testargs)
+  |   File "C:\projects\openstudio-mcp-v2\tests\test_hvac_systems_validation.py", line 286, in test_system_3_coil_types
+  |     asyncio.run(_run())
+  |   File "C:\Python310\lib\asyncio\runners.py", line 44, in run
+  |     return loop.run_until_complete(main)
+  |   File "C:\Python310\lib\asyncio\base_events.py", line 649, in run_until_complete
+  |     return future.result()
+  |   File "C:\projects\openstudio-mcp-v2\tests\test_hvac_systems_validation.py", line 248, in _run
+  |     async with stdio_client(server_params) as (read, write):
+  |   File "C:\Python310\lib\contextlib.py", line 217, in __aexit__
+  |     await self.gen.athrow(typ, value, traceback)
+  |   File "C:\Python310\lib\site-packages\mcp\client\stdio\__init__.py", line 182, in stdio_client
+  |     async with (
+  |   File "C:\Python310\lib\site-packages\anyio\_backends\_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Exception Group Traceback (most recent call last):
+    |   File "C:\Python310\lib\site-packages\mcp\client\stdio\__init__.py", line 189, in stdio_client
+    |     yield read_stream, write_stream
+    |   File "C:\projects\openstudio-mcp-v2\tests\test_hvac_systems_validation.py", line 249, in _run
+    |     async with ClientSession(read, write) as session:
+    |   File "C:\Python310\lib\site-packages\anyio\_backends\_asyncio.py", line 783, in __aexit__
+    |     raise BaseExceptionGroup(
+    | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+    +-+---------------- 1 ----------------
+      | Traceback (most recent call last):
+      |   File "C:\projects\openstudio-mcp-v2\tests\test_hvac_systems_validation.py", line 276, in _run
+      |     assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
+      | AssertionError: get_air_loop_details failed: Failed to get air loop details: 'ControllerOutdoorAir' object has no attribute 'is_initialized'
+      | assert False is True
+      |  +  where False = <built-in method get of dict object at 0x0000015352982C40>('ok')
+      |  +    where <built-in method get of dict object at 0x0000015352982C40> = {'error': "Failed to get air loop details: 'ControllerOutdoorAir' object has no attribute 'is_initialized'", 'ok': False}.get
+      +------------------------------------
+=========================== short test summary info ===========================
+FAILED tests/test_hvac_systems_validation.py::test_system_3_coil_types - exce...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+======================== 1 failed, 5 passed in 10.88s =========================
