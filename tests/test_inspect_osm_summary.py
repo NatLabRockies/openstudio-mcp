@@ -5,7 +5,6 @@ import shlex
 import uuid
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -59,34 +58,33 @@ def test_inspect_osm_summary_exact_values():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create example model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                print("create_example_osm:", create_result)
-                assert isinstance(create_result, dict)
-                assert create_result.get("ok") is True
-                osm_path = create_result.get("osm_path")
-                assert osm_path and str(osm_path).endswith(".osm")
+            # Create example model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            print("create_example_osm:", create_result)
+            assert isinstance(create_result, dict)
+            assert create_result.get("ok") is True
+            osm_path = create_result.get("osm_path")
+            assert osm_path and str(osm_path).endswith(".osm")
 
-                # Inspect it
-                insp_resp = await session.call_tool("inspect_osm_summary", {"osm_path": osm_path})
-                summary = _unwrap(insp_resp)
-                print("inspect_osm_summary:", summary)
+            # Inspect it
+            insp_resp = await session.call_tool("inspect_osm_summary", {"osm_path": osm_path})
+            summary = _unwrap(insp_resp)
+            print("inspect_osm_summary:", summary)
 
-                assert isinstance(summary, dict)
-                assert summary.get("ok") is True, summary
+            assert isinstance(summary, dict)
+            assert summary.get("ok") is True, summary
 
-                # Exact expectations for OpenStudio's example model (3.11.0)
-                assert summary.get("building_name") == "Building 1"
-                assert summary.get("spaces") == 4
-                assert summary.get("thermal_zones") == 1
-                assert summary.get("space_types_count") == 1
-                assert summary.get("space_types") == ["Space Type 1"]
-                assert summary.get("floor_area_m2") == 400.0
-                assert summary.get("openstudio_version") == "3.11.0"
+            # Exact expectations for OpenStudio's example model (3.11.0)
+            assert summary.get("building_name") == "Building 1"
+            assert summary.get("spaces") == 4
+            assert summary.get("thermal_zones") == 1
+            assert summary.get("space_types_count") == 1
+            assert summary.get("space_types") == ["Space Type 1"]
+            assert summary.get("floor_area_m2") == 400.0
+            assert summary.get("openstudio_version") == "3.11.0"
 
     asyncio.run(_run())

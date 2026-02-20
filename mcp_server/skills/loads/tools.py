@@ -1,17 +1,24 @@
 """MCP tool definitions for internal loads."""
+
 from __future__ import annotations
 
 from mcp_server.skills.loads.operations import (
-    list_people_loads,
-    list_lighting_loads,
+    create_electric_equipment as create_electric_equipment_op,
+)
+from mcp_server.skills.loads.operations import (
+    create_gas_equipment as create_gas_equipment_op,
+)
+from mcp_server.skills.loads.operations import (
+    create_infiltration as create_infiltration_op,
+)
+from mcp_server.skills.loads.operations import (
+    create_lights_definition,
+    create_people_definition,
     list_electric_equipment,
     list_gas_equipment,
     list_infiltration,
-    create_people_definition,
-    create_lights_definition,
-    create_electric_equipment as create_electric_equipment_op,
-    create_gas_equipment as create_gas_equipment_op,
-    create_infiltration as create_infiltration_op,
+    list_lighting_loads,
+    list_people_loads,
 )
 
 
@@ -128,8 +135,10 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_people_definition(
-            name=name, space_name=space_name,
-            people_per_area=people_per_area, num_people=num_people,
+            name=name,
+            space_name=space_name,
+            people_per_area=people_per_area,
+            num_people=num_people,
             schedule_name=schedule_name,
         )
 
@@ -154,8 +163,10 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_lights_definition(
-            name=name, space_name=space_name,
-            watts_per_area=watts_per_area, lighting_level_w=lighting_level_w,
+            name=name,
+            space_name=space_name,
+            watts_per_area=watts_per_area,
+            lighting_level_w=lighting_level_w,
             schedule_name=schedule_name,
         )
 
@@ -180,8 +191,10 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_electric_equipment_op(
-            name=name, space_name=space_name,
-            watts_per_area=watts_per_area, design_level_w=design_level_w,
+            name=name,
+            space_name=space_name,
+            watts_per_area=watts_per_area,
+            design_level_w=design_level_w,
             schedule_name=schedule_name,
         )
 
@@ -206,8 +219,10 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_gas_equipment_op(
-            name=name, space_name=space_name,
-            watts_per_area=watts_per_area, design_level_w=design_level_w,
+            name=name,
+            space_name=space_name,
+            watts_per_area=watts_per_area,
+            design_level_w=design_level_w,
             schedule_name=schedule_name,
         )
 
@@ -232,7 +247,9 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_infiltration_op(
-            name=name, space_name=space_name,
+            name=name,
+            space_name=space_name,
             flow_per_exterior_surface_area=flow_per_exterior_surface_area,
-            ach=ach, schedule_name=schedule_name,
+            ach=ach,
+            schedule_name=schedule_name,
         )

@@ -1,10 +1,11 @@
 """MCP tool definitions for object management."""
+
 from __future__ import annotations
 
 from mcp_server.skills.object_management.operations import (
     delete_object,
-    rename_object,
     list_model_objects,
+    rename_object,
 )
 
 
@@ -46,7 +47,9 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model_tool first.
         """
         return rename_object(
-            object_name=object_name, new_name=new_name, object_type=object_type,
+            object_name=object_name,
+            new_name=new_name,
+            object_type=object_type,
         )
 
     @mcp.tool(name="list_model_objects")

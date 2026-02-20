@@ -4,12 +4,12 @@ This is the critical Phase 1 test — it ensures the refactored skill
 structure produces the exact same set of MCP tools as the old monolithic
 server.py. If this passes, the migration is backward-compatible.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 from mcp_server.skills import register_all_skills
-
 
 EXPECTED_TOOLS = {
     "get_server_status",
@@ -176,6 +176,7 @@ def test_all_tool_names_registered():
                 tool_name = name or fn.__name__
                 registered_tools[tool_name] = fn
                 return fn
+
             return decorator
 
     mcp = FakeMCP()

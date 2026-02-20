@@ -1,14 +1,15 @@
 """MCP tool definitions for weather, design days, simulation control, and run periods."""
+
 from __future__ import annotations
 
 from mcp_server.skills.weather.operations import (
-    get_weather_info,
-    set_weather_file,
     add_design_day,
-    get_simulation_control,
-    set_simulation_control,
     get_run_period,
+    get_simulation_control,
+    get_weather_info,
     set_run_period,
+    set_simulation_control,
+    set_weather_file,
 )
 
 
@@ -72,10 +73,16 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model_tool first.
         """
         return add_design_day(
-            name=name, day_type=day_type, month=month, day=day,
-            dry_bulb_max_c=dry_bulb_max_c, dry_bulb_range_c=dry_bulb_range_c,
-            humidity_type=humidity_type, humidity_value=humidity_value,
-            wind_speed_ms=wind_speed_ms, barometric_pressure_pa=barometric_pressure_pa,
+            name=name,
+            day_type=day_type,
+            month=month,
+            day=day,
+            dry_bulb_max_c=dry_bulb_max_c,
+            dry_bulb_range_c=dry_bulb_range_c,
+            humidity_type=humidity_type,
+            humidity_value=humidity_value,
+            wind_speed_ms=wind_speed_ms,
+            barometric_pressure_pa=barometric_pressure_pa,
         )
 
     @mcp.tool(name="get_simulation_control")
@@ -152,6 +159,9 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model first.
         """
         return set_run_period(
-            begin_month=begin_month, begin_day=begin_day,
-            end_month=end_month, end_day=end_day, name=name,
+            begin_month=begin_month,
+            begin_day=begin_day,
+            end_month=end_month,
+            end_day=end_day,
+            name=name,
         )

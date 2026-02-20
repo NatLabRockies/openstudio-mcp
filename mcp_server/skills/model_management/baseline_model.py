@@ -7,6 +7,7 @@ constructions, and thermostats.
 Upstream source:
   https://github.com/NREL/OpenStudio-resources/blob/develop/model/simulationtests/lib/baseline_model.py
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,7 +26,7 @@ def _constructions_osm_path() -> Path:
         if p.exists():
             return p
     raise FileNotFoundError(
-        f"baseline_model_constructions.osm not found. Searched: {[str(c) for c in candidates]}"
+        f"baseline_model_constructions.osm not found. Searched: {[str(c) for c in candidates]}",
     )
 
 
@@ -205,7 +206,7 @@ class BaselineModel(openstudio.model.Model):
         self.getBuilding().setDefaultConstructionSet(default_set)
         # Clone air boundary construction
         if openstudio.VersionString(openstudio.openStudioVersion()) > openstudio.VersionString("3.4.0"):
-            lib.getConstructionAirBoundarys()[0].clone(self)
+            lib.getConstructionAirBoundaries()[0].clone(self)
         else:
             for c in lib.getConstructions():
                 if c.nameString().strip() == "Air_Wall":
@@ -403,6 +404,7 @@ class BaselineModel(openstudio.model.Model):
 # ---------------------------------------------------------------------------
 # Public entry point for MCP tool
 # ---------------------------------------------------------------------------
+
 
 def create_baseline_model(
     name: str = "Baseline Model",

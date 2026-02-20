@@ -16,7 +16,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 DEFAULT_SEB4_OSW = os.environ.get(
     "MCP_OSW_PATH",
     "tests/assets/SEB_model/SEB4_baseboard/workflow.osw",

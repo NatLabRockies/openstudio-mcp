@@ -5,6 +5,7 @@ MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" RUN_OPENSTUDIO_INTEGRATION=1 MCP_RUNS
   -e OPENSTUDIO_MCP_MODE=prod \
   openstudio-mcp:dev openstudio-mcp" pytest -vv -s tests/test_create_example_osm.py
 """
+
 import asyncio
 import json
 import os
@@ -13,7 +14,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -115,23 +115,22 @@ def test_create_example_osm_smoke():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                resp = await session.call_tool("create_example_osm", {"name": name})
-                result = _unwrap_mcp_result(resp)
+            resp = await session.call_tool("create_example_osm", {"name": name})
+            result = _unwrap_mcp_result(resp)
 
-                # Helpful for local debugging / CI logs
-                print("create_example_osm result:", result)
-                assert isinstance(result, dict), f"Unexpected tool result type: {type(result)}"
-                assert result.get("ok") is True, f"Tool returned ok!=true: {result}"
+            # Helpful for local debugging / CI logs
+            print("create_example_osm result:", result)
+            assert isinstance(result, dict), f"Unexpected tool result type: {type(result)}"
+            assert result.get("ok") is True, f"Tool returned ok!=true: {result}"
 
-                osm_path = result.get("osm_path")
-                assert osm_path, f"No osm_path returned: {result}"
-                assert str(osm_path).endswith(".osm"), f"Expected .osm path, got: {osm_path}"
-                assert str(osm_path).startswith("/runs/"), f"Expected osm_path under /runs, got: {osm_path}"
+            osm_path = result.get("osm_path")
+            assert osm_path, f"No osm_path returned: {result}"
+            assert str(osm_path).endswith(".osm"), f"Expected .osm path, got: {osm_path}"
+            assert str(osm_path).startswith("/runs/"), f"Expected osm_path under /runs, got: {osm_path}"
 
-                _maybe_check_host_file_exists(str(osm_path))
+            _maybe_check_host_file_exists(str(osm_path))
 
     asyncio.run(_run())

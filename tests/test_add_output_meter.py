@@ -5,7 +5,6 @@ import shlex
 import uuid
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -60,28 +59,30 @@ def test_add_output_meter_default():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Add output meter
-                meter_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Electricity:Facility"
-                })
-                meter_result = _unwrap(meter_resp)
+            # Add output meter
+            meter_resp = await session.call_tool(
+                "add_output_meter",
+                {
+                    "meter_name": "Electricity:Facility",
+                },
+            )
+            meter_result = _unwrap(meter_resp)
 
-                assert meter_result.get("ok") is True
-                assert meter_result["output_meter"]["name"] == "Electricity:Facility"
-                assert meter_result["output_meter"]["reporting_frequency"] == "Hourly"
+            assert meter_result.get("ok") is True
+            assert meter_result["output_meter"]["name"] == "Electricity:Facility"
+            assert meter_result["output_meter"]["reporting_frequency"] == "Hourly"
 
     asyncio.run(_run())
 
@@ -105,28 +106,30 @@ def test_add_output_meter_monthly():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Add output meter with monthly reporting
-                meter_resp = await session.call_tool("add_output_meter", {
+            # Add output meter with monthly reporting
+            meter_resp = await session.call_tool(
+                "add_output_meter",
+                {
                     "meter_name": "Gas:Facility",
-                    "reporting_frequency": "Monthly"
-                })
-                meter_result = _unwrap(meter_resp)
+                    "reporting_frequency": "Monthly",
+                },
+            )
+            meter_result = _unwrap(meter_resp)
 
-                assert meter_result.get("ok") is True
-                assert meter_result["output_meter"]["reporting_frequency"] == "Monthly"
+            assert meter_result.get("ok") is True
+            assert meter_result["output_meter"]["reporting_frequency"] == "Monthly"
 
     asyncio.run(_run())
 
@@ -148,19 +151,21 @@ def test_add_output_meter_no_model_loaded():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Try to add output meter without loading model
-                meter_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Electricity:Facility"
-                })
-                meter_result = _unwrap(meter_resp)
+            # Try to add output meter without loading model
+            meter_resp = await session.call_tool(
+                "add_output_meter",
+                {
+                    "meter_name": "Electricity:Facility",
+                },
+            )
+            meter_result = _unwrap(meter_resp)
 
-                assert meter_result.get("ok") is False
-                assert "error" in meter_result
-                assert "No model loaded" in meter_result["error"]
+            assert meter_result.get("ok") is False
+            assert "error" in meter_result
+            assert "No model loaded" in meter_result["error"]
 
     asyncio.run(_run())
 
@@ -184,35 +189,40 @@ def test_add_multiple_output_meters():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Add electricity meter
-                elec_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Electricity:Facility"
-                })
-                elec_result = _unwrap(elec_resp)
-                assert elec_result.get("ok") is True
+            # Add electricity meter
+            elec_resp = await session.call_tool(
+                "add_output_meter",
+                {
+                    "meter_name": "Electricity:Facility",
+                },
+            )
+            elec_result = _unwrap(elec_resp)
+            assert elec_result.get("ok") is True
 
-                # Add gas meter
-                gas_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Gas:Facility"
-                })
-                gas_result = _unwrap(gas_resp)
-                assert gas_result.get("ok") is True
+            # Add gas meter
+            gas_resp = await session.call_tool(
+                "add_output_meter",
+                {
+                    "meter_name": "Gas:Facility",
+                },
+            )
+            gas_result = _unwrap(gas_resp)
+            assert gas_result.get("ok") is True
 
-                # Both should have unique handles
-                assert elec_result["output_meter"]["handle"] != gas_result["output_meter"]["handle"]
+            # Both should have unique handles
+            assert elec_result["output_meter"]["handle"] != gas_result["output_meter"]["handle"]
 
     asyncio.run(_run())
 
@@ -236,31 +246,36 @@ def test_add_heating_cooling_meters():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Add heating electricity meter
-                heating_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Heating:Electricity"
-                })
-                heating_result = _unwrap(heating_resp)
-                assert heating_result.get("ok") is True
+            # Add heating electricity meter
+            heating_resp = await session.call_tool(
+                "add_output_meter",
+                {
+                    "meter_name": "Heating:Electricity",
+                },
+            )
+            heating_result = _unwrap(heating_resp)
+            assert heating_result.get("ok") is True
 
-                # Add cooling electricity meter
-                cooling_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Cooling:Electricity"
-                })
-                cooling_result = _unwrap(cooling_resp)
-                assert cooling_result.get("ok") is True
+            # Add cooling electricity meter
+            cooling_resp = await session.call_tool(
+                "add_output_meter",
+                {
+                    "meter_name": "Cooling:Electricity",
+                },
+            )
+            cooling_result = _unwrap(cooling_resp)
+            assert cooling_result.get("ok") is True
 
     asyncio.run(_run())

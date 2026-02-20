@@ -1,10 +1,11 @@
 """MCP tool definitions for schedules."""
+
 from __future__ import annotations
 
 from mcp_server.skills.schedules.operations import (
-    list_schedule_rulesets,
-    get_schedule_details,
     create_schedule_ruleset,
+    get_schedule_details,
+    list_schedule_rulesets,
 )
 
 
@@ -45,8 +46,7 @@ def register(mcp):
         return get_schedule_details(schedule_name=schedule_name)
 
     @mcp.tool(name="create_schedule_ruleset")
-    def create_schedule_ruleset_tool(name: str, schedule_type: str = "Fractional",
-                                    default_value: float = 1.0):
+    def create_schedule_ruleset_tool(name: str, schedule_type: str = "Fractional", default_value: float = 1.0):
         """Create a new schedule ruleset with a constant default day schedule.
 
         Args:
@@ -64,5 +64,4 @@ def register(mcp):
 
         Requires a model to be loaded via load_osm_model_tool first.
         """
-        return create_schedule_ruleset(name=name, schedule_type=schedule_type,
-                                      default_value=default_value)
+        return create_schedule_ruleset(name=name, schedule_type=schedule_type, default_value=default_value)

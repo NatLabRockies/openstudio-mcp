@@ -5,7 +5,6 @@ import shlex
 import uuid
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -60,29 +59,28 @@ def test_list_spaces():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # List spaces
-                spaces_resp = await session.call_tool("list_spaces", {})
-                spaces_result = _unwrap(spaces_resp)
+            # List spaces
+            spaces_resp = await session.call_tool("list_spaces", {})
+            spaces_result = _unwrap(spaces_resp)
 
-                assert isinstance(spaces_result, dict)
-                assert spaces_result.get("ok") is True
-                assert spaces_result["count"] == 4
-                assert len(spaces_result["spaces"]) == 4
-                assert "name" in spaces_result["spaces"][0]
-                assert "floor_area_m2" in spaces_result["spaces"][0]
+            assert isinstance(spaces_result, dict)
+            assert spaces_result.get("ok") is True
+            assert spaces_result["count"] == 4
+            assert len(spaces_result["spaces"]) == 4
+            assert "name" in spaces_result["spaces"][0]
+            assert "floor_area_m2" in spaces_result["spaces"][0]
 
     asyncio.run(_run())
 
@@ -100,24 +98,23 @@ def test_list_spaces_baseline():
 
     async def _run():
         server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                cr = await session.call_tool("create_baseline_osm", {"name": name})
-                cd = _unwrap(cr)
-                assert cd.get("ok") is True, cd
-                lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            cr = await session.call_tool("create_baseline_osm", {"name": name})
+            cd = _unwrap(cr)
+            assert cd.get("ok") is True, cd
+            lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+            assert _unwrap(lr).get("ok") is True
 
-                sr = await session.call_tool("list_spaces", {})
-                sd = _unwrap(sr)
-                print("baseline spaces:", sd)
-                assert sd.get("ok") is True
-                assert sd["count"] == 10  # 2 floors * 5 zones
-                # Check perimeter/core naming
-                names = [s["name"] for s in sd["spaces"]]
-                assert any("Core" in n for n in names)
-                assert any("Perimeter" in n for n in names)
+            sr = await session.call_tool("list_spaces", {})
+            sd = _unwrap(sr)
+            print("baseline spaces:", sd)
+            assert sd.get("ok") is True
+            assert sd["count"] == 10  # 2 floors * 5 zones
+            # Check perimeter/core naming
+            names = [s["name"] for s in sd["spaces"]]
+            assert any("Core" in n for n in names)
+            assert any("Perimeter" in n for n in names)
 
     asyncio.run(_run())
 
@@ -135,23 +132,22 @@ def test_thermal_zones_baseline():
 
     async def _run():
         server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                cr = await session.call_tool("create_baseline_osm", {"name": name})
-                cd = _unwrap(cr)
-                assert cd.get("ok") is True, cd
-                lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            cr = await session.call_tool("create_baseline_osm", {"name": name})
+            cd = _unwrap(cr)
+            assert cd.get("ok") is True, cd
+            lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+            assert _unwrap(lr).get("ok") is True
 
-                zr = await session.call_tool("list_thermal_zones", {})
-                zd = _unwrap(zr)
-                print("baseline zones:", zd)
-                assert zd.get("ok") is True
-                assert zd["count"] == 10
-                # Each zone has 1 space
-                for z in zd["thermal_zones"]:
-                    assert z["num_spaces"] == 1
+            zr = await session.call_tool("list_thermal_zones", {})
+            zd = _unwrap(zr)
+            print("baseline zones:", zd)
+            assert zd.get("ok") is True
+            assert zd["count"] == 10
+            # Each zone has 1 space
+            for z in zd["thermal_zones"]:
+                assert z["num_spaces"] == 1
 
     asyncio.run(_run())
 
@@ -175,27 +171,26 @@ def test_list_thermal_zones():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # List zones
-                zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_result = _unwrap(zones_resp)
+            # List zones
+            zones_resp = await session.call_tool("list_thermal_zones", {})
+            zones_result = _unwrap(zones_resp)
 
-                assert isinstance(zones_result, dict)
-                assert zones_result.get("ok") is True
-                assert zones_result["count"] == 1
-                assert "name" in zones_result["thermal_zones"][0]
-                assert "num_spaces" in zones_result["thermal_zones"][0]
+            assert isinstance(zones_result, dict)
+            assert zones_result.get("ok") is True
+            assert zones_result["count"] == 1
+            assert "name" in zones_result["thermal_zones"][0]
+            assert "num_spaces" in zones_result["thermal_zones"][0]
 
     asyncio.run(_run())

@@ -36,20 +36,20 @@ A mechanical engineer is designing a DOAS + fan coil system for an office. They 
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `add_doas_system` | Creates DOAS air loop + zone fan coils |
-| `set_sizing_properties` | Adjusts plant loop temperatures |
-| `list_hvac_components` | Discovers all HVAC components |
-| `get/set_component_properties` | Read and modify equipment |
+| Tool                           | Purpose                                |
+| ------------------------------ | -------------------------------------- |
+| `add_doas_system`              | Creates DOAS air loop + zone fan coils |
+| `set_sizing_properties`        | Adjusts plant loop temperatures        |
+| `list_hvac_components`         | Discovers all HVAC components          |
+| `get/set_component_properties` | Read and modify equipment              |
 
 ## Supported Zone Equipment Types
 
-| Type | Description |
-|------|-------------|
-| `FanCoil` | Four-pipe fan coil unit |
-| `Radiant` | Low-temp radiant floor/ceiling |
-| `ChilledBeam` | Active chilled beam |
+| Type          | Description                    |
+| ------------- | ------------------------------ |
+| `FanCoil`     | Four-pipe fan coil unit        |
+| `Radiant`     | Low-temp radiant floor/ceiling |
+| `ChilledBeam` | Active chilled beam            |
 
 ## Integration Test
 

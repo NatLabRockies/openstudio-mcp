@@ -3,6 +3,7 @@
 Extraction patterns adapted from openstudio-toolkit osm_objects/building.py
 and osm_objects/building_stories.py — using direct openstudio bindings.
 """
+
 from __future__ import annotations
 
 import math
@@ -64,8 +65,12 @@ def _extract_building_info(model, building) -> dict[str, Any]:
         "gas_equipment_power_w": _safe_float(building.gasEquipmentPower()),
         "gas_equipment_power_per_floor_area_w_m2": _safe_float(building.gasEquipmentPowerPerFloorArea()),
         "infiltration_design_flow_rate_m3_s": _safe_float(building.infiltrationDesignFlowRate()),
-        "infiltration_design_flow_per_exterior_surface_area": _safe_float(building.infiltrationDesignFlowPerExteriorSurfaceArea()),
-        "infiltration_design_flow_per_exterior_wall_area": _safe_float(building.infiltrationDesignFlowPerExteriorWallArea()),
+        "infiltration_design_flow_per_exterior_surface_area": _safe_float(
+            building.infiltrationDesignFlowPerExteriorSurfaceArea(),
+        ),
+        "infiltration_design_flow_per_exterior_wall_area": _safe_float(
+            building.infiltrationDesignFlowPerExteriorWallArea(),
+        ),
         "north_axis_deg": float(building.northAxis()),
         "standards_building_type": standards_building_type,
         "standards_number_of_stories": standards_number_of_stories,
@@ -81,9 +86,15 @@ def _extract_building_story(model, story) -> dict[str, Any]:
     return {
         "handle": str(story.handle()),
         "name": story.nameString(),
-        "nominal_z_coordinate_m": float(story.nominalZCoordinate().get()) if story.nominalZCoordinate().is_initialized() else None,
-        "nominal_floor_to_floor_height_m": float(story.nominalFloortoFloorHeight().get()) if story.nominalFloortoFloorHeight().is_initialized() else None,
-        "nominal_floor_to_ceiling_height_m": float(story.nominalFloortoCeilingHeight().get()) if story.nominalFloortoCeilingHeight().is_initialized() else None,
+        "nominal_z_coordinate_m": float(story.nominalZCoordinate().get())
+        if story.nominalZCoordinate().is_initialized()
+        else None,
+        "nominal_floor_to_floor_height_m": float(story.nominalFloortoFloorHeight().get())
+        if story.nominalFloortoFloorHeight().is_initialized()
+        else None,
+        "nominal_floor_to_ceiling_height_m": float(story.nominalFloortoCeilingHeight().get())
+        if story.nominalFloortoCeilingHeight().is_initialized()
+        else None,
         "default_construction_set": optional_name(story.defaultConstructionSet()),
         "default_schedule_set": optional_name(story.defaultScheduleSet()),
         "rendering_color": story.renderingColor().name() if story.renderingColor().is_initialized() else None,
@@ -103,7 +114,7 @@ def get_building_info() -> dict[str, Any]:
 
         return {
             "ok": True,
-            "building": _extract_building_info(model, building)
+            "building": _extract_building_info(model, building),
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -125,33 +136,27 @@ def get_model_summary() -> dict[str, Any]:
             "building_name": building.nameString(),
             "floor_area_m2": float(building.floorArea()),
             "conditioned_floor_area_m2": float(building.conditionedFloorArea()),
-
             # Spaces and zones
             "spaces": len(model.getSpaces()),
-            "building_stories": len(model.getBuildingStorys()),
+            "building_stories": len(model.getBuildingStoreys()),
             "thermal_zones": len(model.getThermalZones()),
-
             # Geometry
             "surfaces": len(model.getSurfaces()),
             "sub_surfaces": len(model.getSubSurfaces()),
             "shading_surfaces": len(model.getShadingSurfaces()),
-
             # Constructions
             "materials": len(model.getMaterials()),
             "constructions": len(model.getConstructions()),
             "construction_sets": len(model.getDefaultConstructionSets()),
-
             # Loads
             "space_types": len(model.getSpaceTypes()),
             "people": len(model.getPeoples()),
             "lights": len(model.getLightss()),
-            "electric_equipment": len(model.getElectricEquipments()),
-            "gas_equipment": len(model.getGasEquipments()),
-
+            "electric_equipment": len(model.getElectricEquipment()),
+            "gas_equipment": len(model.getGasEquipment()),
             # Schedules
             "schedule_rulesets": len(model.getScheduleRulesets()),
             "schedule_constants": len(model.getScheduleConstants()),
-
             # HVAC
             "air_loops": len(model.getAirLoopHVACs()),
             "plant_loops": len(model.getPlantLoops()),
@@ -160,7 +165,7 @@ def get_model_summary() -> dict[str, Any]:
 
         return {
             "ok": True,
-            "summary": summary
+            "summary": summary,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -176,12 +181,12 @@ def list_building_stories() -> dict[str, Any]:
     """
     try:
         model = get_model()
-        stories = list_all_as_dicts(model, "getBuildingStorys", _extract_building_story)
+        stories = list_all_as_dicts(model, "getBuildingStoreys", _extract_building_story)
 
         return {
             "ok": True,
             "count": len(stories),
-            "building_stories": stories
+            "building_stories": stories,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

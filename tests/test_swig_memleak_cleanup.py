@@ -14,11 +14,12 @@ import time
 
 import pytest
 
-
 # ---- helpers (same pattern as test_stdio_smoke.py) --------------------------
+
 
 class StreamReader(threading.Thread):
     """Continuously read lines from a stream into a Queue."""
+
     def __init__(self, stream, out_queue: queue.Queue):
         super().__init__(daemon=True)
         self.stream = stream
@@ -66,6 +67,7 @@ def _read_json_line(stdout_q: queue.Queue, *, timeout_s: float) -> dict:
 
 # ---- test -------------------------------------------------------------------
 
+
 @pytest.mark.timeout(60)
 def test_no_swig_memory_leak_warning_on_exit():
     """After loading a model and closing stdin, stderr must not contain
@@ -90,27 +92,35 @@ def test_no_swig_memory_leak_warning_on_exit():
 
     try:
         time.sleep(0.2)
-        assert proc.poll() is None, (
-            f"Server exited early rc={proc.returncode}\n{''.join(_drain(stderr_q))}"
-        )
+        assert proc.poll() is None, f"Server exited early rc={proc.returncode}\n{''.join(_drain(stderr_q))}"
 
         # 1. initialize
-        _write_json(proc, {
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "clientInfo": {"name": "pytest", "version": "0"},
-                "capabilities": {},
+        _write_json(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "clientInfo": {"name": "pytest", "version": "0"},
+                    "capabilities": {},
+                },
             },
-        })
+        )
         resp = _read_json_line(stdout_q, timeout_s=10)
         assert resp.get("id") == 1
 
         # 2. create_example_osm to get a loadable file
-        _write_json(proc, {
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": "create_example_osm", "arguments": {}},
-        })
+        _write_json(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "create_example_osm", "arguments": {}},
+            },
+        )
         resp = _read_json_line(stdout_q, timeout_s=30)
         assert resp.get("id") == 2
         # extract osm_path from tool result text
@@ -120,10 +130,15 @@ def test_no_swig_memory_leak_warning_on_exit():
         osm_path = result_data["osm_path"]
 
         # 3. load the model (so _current_model holds a SWIG Model*)
-        _write_json(proc, {
-            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "load_osm_model", "arguments": {"osm_path": osm_path}},
-        })
+        _write_json(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "load_osm_model", "arguments": {"osm_path": osm_path}},
+            },
+        )
         resp = _read_json_line(stdout_q, timeout_s=15)
         assert resp.get("id") == 3
 
@@ -141,6 +156,4 @@ def test_no_swig_memory_leak_warning_on_exit():
     stderr_lines = _drain(stderr_q)
     stderr_text = "".join(stderr_lines)
 
-    assert "memory leak" not in stderr_text.lower(), (
-        f"SWIG memory leak warning found in stderr:\n{stderr_text}"
-    )
+    assert "memory leak" not in stderr_text.lower(), f"SWIG memory leak warning found in stderr:\n{stderr_text}"

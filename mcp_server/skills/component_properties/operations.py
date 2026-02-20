@@ -7,6 +7,7 @@ The 5B controls operations (economizer, sizing, setpoint managers) access
 components via their parent objects (air loop, plant loop) rather than by
 name, so they use direct OpenStudio API calls inline.
 """
+
 from __future__ import annotations
 
 import openstudio
@@ -14,14 +15,14 @@ import openstudio
 from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import fetch_object
 from mcp_server.skills.component_properties.components import (
-    COMPONENT_TYPES,
     CATEGORIES,
+    COMPONENT_TYPES,
 )
-
 
 # ===================================================================
 # 5A: Component Query & Modify
 # ===================================================================
+
 
 def _find_all_components(model: openstudio.model.Model, category: str | None = None) -> list[dict]:
     """Scan model for all HVAC components of known types.
@@ -38,11 +39,13 @@ def _find_all_components(model: openstudio.model.Model, category: str | None = N
         if not hasattr(model, getter_name):
             continue
         for obj in getattr(model, getter_name)():
-            components.append({
-                "name": obj.nameString(),
-                "type": os_type,
-                "category": type_def["category"],
-            })
+            components.append(
+                {
+                    "name": obj.nameString(),
+                    "type": os_type,
+                    "category": type_def["category"],
+                },
+            )
     components.sort(key=lambda d: d["name"])
     return components
 
@@ -101,9 +104,7 @@ def get_component_properties(component_name: str) -> dict:
     return {
         "ok": True,
         "component_name": component_name,
-        "component_type": next(
-            k for k, v in COMPONENT_TYPES.items() if v is type_def
-        ),
+        "component_type": next(k for k, v in COMPONENT_TYPES.items() if v is type_def),
         "category": type_def["category"],
         "properties": props,
     }
@@ -142,6 +143,7 @@ def set_component_properties(component_name: str, properties: dict) -> dict:
 # These operations access components via their parent objects (air loop,
 # plant loop) rather than by name. They use direct OpenStudio API calls
 # because each controller type has unique access patterns.
+
 
 def set_economizer_properties(air_loop_name: str, properties: dict) -> dict:
     """Modify outdoor air economizer properties on an air loop.

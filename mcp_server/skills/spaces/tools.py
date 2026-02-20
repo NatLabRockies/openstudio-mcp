@@ -1,13 +1,14 @@
 """MCP tool definitions for spaces and thermal zones."""
+
 from __future__ import annotations
 
 from mcp_server.skills.spaces.operations import (
-    list_spaces,
-    get_space_details,
-    list_thermal_zones,
-    get_thermal_zone_details,
     create_space,
     create_thermal_zone,
+    get_space_details,
+    get_thermal_zone_details,
+    list_spaces,
+    list_thermal_zones,
 )
 
 
@@ -73,8 +74,7 @@ def register(mcp):
         return get_thermal_zone_details(zone_name=zone_name)
 
     @mcp.tool(name="create_space")
-    def create_space_tool(name: str, building_story_name: str | None = None,
-                         space_type_name: str | None = None):
+    def create_space_tool(name: str, building_story_name: str | None = None, space_type_name: str | None = None):
         """Create a new space in the loaded OpenStudio model.
 
         Args:
@@ -90,8 +90,7 @@ def register(mcp):
 
         Requires a model to be loaded via load_osm_model_tool first.
         """
-        return create_space(name=name, building_story_name=building_story_name,
-                          space_type_name=space_type_name)
+        return create_space(name=name, building_story_name=building_story_name, space_type_name=space_type_name)
 
     @mcp.tool(name="create_thermal_zone")
     def create_thermal_zone_tool(name: str, space_names: list[str] | None = None):

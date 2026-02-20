@@ -3,6 +3,7 @@
 Provides list_common_measures: scan COMMON_MEASURES_DIR for available
 measures from the openstudio-common-measures-gem.
 """
+
 from __future__ import annotations
 
 import os
@@ -12,7 +13,6 @@ from typing import Any
 import openstudio
 
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
-
 
 # Category classification for common measures.
 # Only the 20 curated measures are categorized; everything else is "other".
@@ -64,7 +64,7 @@ def list_common_measures(category: str | None = None) -> dict[str, Any]:
         return {
             "ok": False,
             "error": f"Common measures directory not found: {measures_dir}. "
-                     "Ensure COMMON_MEASURES_DIR is set and measures are installed.",
+            "Ensure COMMON_MEASURES_DIR is set and measures are installed.",
         }
 
     results = []

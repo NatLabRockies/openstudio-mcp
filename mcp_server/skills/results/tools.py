@@ -1,4 +1,5 @@
 """MCP tool definitions for simulation results analysis."""
+
 from __future__ import annotations
 
 from mcp_server.skills.results.operations import (
@@ -110,8 +111,13 @@ def register(mcp):
             max_points: Cap on returned data points (default 10000)
         """
         return query_timeseries_op(
-            run_id=run_id, variable_name=variable_name, key_value=key_value,
-            start_month=start_month, start_day=start_day,
-            end_month=end_month, end_day=end_day,
-            frequency=frequency, max_points=int(max_points),
+            run_id=run_id,
+            variable_name=variable_name,
+            key_value=key_value,
+            start_month=start_month,
+            start_day=start_day,
+            end_month=end_month,
+            end_day=end_day,
+            frequency=frequency,
+            max_points=int(max_points),
         )

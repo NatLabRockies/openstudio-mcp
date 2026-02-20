@@ -6,13 +6,13 @@ import re
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from mcp_server.config import RUN_ROOT
 from mcp_server.util import resolve_run_dir, safe_read_text
 
 
-def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Optional[Path]:
+def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Path | None:
     """Find the first existing file from a list of relative path candidates."""
     for rel in rel_candidates:
         p = run_dir / rel
@@ -36,7 +36,7 @@ def _extract_total_site_energy_from_sql(sql_path: Path) -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
     try:
         cur = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='TabularDataWithStrings'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='TabularDataWithStrings'",
         )
         if not cur.fetchone():
             return {"ok": False, "reason": "missing_tabular_table"}
@@ -112,7 +112,7 @@ def _extract_total_site_energy_from_html(html_path: Path) -> dict[str, Any]:
     return {"ok": True, "value": val, "units": units}
 
 
-def _to_kbtu(value: float, units: Optional[str]) -> Optional[float]:
+def _to_kbtu(value: float, units: str | None) -> float | None:
     """Convert common EnergyPlus site-energy units to kBtu (best-effort)."""
     if not units:
         return None
@@ -160,7 +160,7 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
     eui = None
     if sql_path and sql_path.suffix.lower() == ".sql":
         try:
-            from mcp_server.skills.results.sql_extract import extract_unmet_hours, extract_eui  # type: ignore
+            from mcp_server.skills.results.sql_extract import extract_eui, extract_unmet_hours  # type: ignore
 
             unmet = extract_unmet_hours(sql_path)
             eui = extract_eui(sql_path)
@@ -175,9 +175,7 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
     if total_site:
         total_site_value = total_site.get("value")
         total_site_units = total_site.get("units")
-        total_site_kbtu = (
-            _to_kbtu(float(total_site_value), total_site_units) if total_site_value is not None else None
-        )
+        total_site_kbtu = _to_kbtu(float(total_site_value), total_site_units) if total_site_value is not None else None
         total_site_detail = {k: v for k, v in total_site.items() if k not in ("ok",)}
 
     return {
@@ -206,7 +204,10 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
 
 
 def read_run_artifact(
-    run_id: str, path: str, max_bytes: int = 400_000, offset: int = 0,
+    run_id: str,
+    path: str,
+    max_bytes: int = 400_000,
+    offset: int = 0,
 ) -> dict[str, Any]:
     """Read an artifact file from a run directory safely.
 
@@ -274,7 +275,8 @@ def read_run_artifact(
 # Tier 1 + Tier 2: SQL extraction wrappers
 # ---------------------------------------------------------------------------
 
-def _resolve_sql(run_id: str) -> tuple[Optional[Path], Optional[dict]]:
+
+def _resolve_sql(run_id: str) -> tuple[Path | None, dict | None]:
     """Resolve run_dir and find eplusout.sql. Returns (sql_path, error_dict)."""
     try:
         run_dir = resolve_run_dir(RUN_ROOT, run_id)
@@ -289,6 +291,7 @@ def _resolve_sql(run_id: str) -> tuple[Optional[Path], Optional[dict]]:
 def extract_end_use_breakdown_op(run_id: str, units: str = "IP") -> dict[str, Any]:
     """Extract end-use energy breakdown by fuel type."""
     from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
@@ -298,6 +301,7 @@ def extract_end_use_breakdown_op(run_id: str, units: str = "IP") -> dict[str, An
 def extract_envelope_summary_op(run_id: str) -> dict[str, Any]:
     """Extract opaque exterior and fenestration summary."""
     from mcp_server.skills.results.sql_extract import extract_envelope_summary
+
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
@@ -307,6 +311,7 @@ def extract_envelope_summary_op(run_id: str) -> dict[str, Any]:
 def extract_hvac_sizing_op(run_id: str) -> dict[str, Any]:
     """Extract zone and system HVAC sizing data."""
     from mcp_server.skills.results.sql_extract import extract_hvac_sizing
+
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
@@ -316,15 +321,17 @@ def extract_hvac_sizing_op(run_id: str) -> dict[str, Any]:
 def extract_zone_summary_op(run_id: str) -> dict[str, Any]:
     """Extract per-zone area and conditions summary."""
     from mcp_server.skills.results.sql_extract import extract_zone_summary
+
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
     return extract_zone_summary(sql_path)
 
 
-def extract_component_sizing_op(run_id: str, component_type: Optional[str] = None) -> dict[str, Any]:
+def extract_component_sizing_op(run_id: str, component_type: str | None = None) -> dict[str, Any]:
     """Extract autosized component values."""
     from mcp_server.skills.results.sql_extract import extract_component_sizing
+
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
@@ -335,22 +342,29 @@ def query_timeseries_op(
     run_id: str,
     variable_name: str,
     key_value: str = "*",
-    start_month: Optional[int] = None,
-    start_day: Optional[int] = None,
-    end_month: Optional[int] = None,
-    end_day: Optional[int] = None,
-    frequency: Optional[str] = None,
+    start_month: int | None = None,
+    start_day: int | None = None,
+    end_month: int | None = None,
+    end_day: int | None = None,
+    frequency: str | None = None,
     max_points: int = 10000,
 ) -> dict[str, Any]:
     """Query time-series data for a specific variable."""
     from mcp_server.skills.results.sql_extract import query_timeseries
+
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
     return query_timeseries(
-        sql_path, variable_name, key_value,
-        start_month, start_day, end_month, end_day,
-        frequency, max_points,
+        sql_path,
+        variable_name,
+        key_value,
+        start_month,
+        start_day,
+        end_month,
+        end_day,
+        frequency,
+        max_points,
     )
 
 

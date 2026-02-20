@@ -6,14 +6,14 @@ When an LLM connects to this MCP server (e.g. via Claude Desktop), it receives a
 
 ## Current State
 
-| Category | Count | Total chars | Avg chars/tool |
-|----------|-------|------------|----------------|
-| All tools | 107 | ~34,400 | 321 |
-| Worst offenders | hvac_systems (8) | 6,244 | 780 |
-| | comstock (2) | 1,646 | 823 |
-| | simulation_outputs (2) | 1,487 | 744 |
-| Best examples | simulation (7) | 907 | 130 |
-| | results (2) | 109 | 55 |
+| Category        | Count                  | Total chars | Avg chars/tool |
+| --------------- | ---------------------- | ----------- | -------------- |
+| All tools       | 107                    | ~34,400     | 321            |
+| Worst offenders | hvac_systems (8)       | 6,244       | 780            |
+|                 | comstock (2)           | 1,646       | 823            |
+|                 | simulation_outputs (2) | 1,487       | 744            |
+| Best examples   | simulation (7)         | 907         | 130            |
+|                 | results (2)            | 109         | 55             |
 
 ## Optimization Rules
 
@@ -85,6 +85,7 @@ AFTER: "Get detailed information about a specific space."
 ```
 
 **Keep** Args text when it conveys constraints or enum options not obvious from param name:
+
 - `system_type: ASHRAE baseline system type (1-10)` — keep
 - `terminal_type: "VAV_Reheat" | "VAV_NoReheat" | "PFP_Electric" | ...` — keep
 - `space_name: Name of the space to retrieve` — remove (obvious)
@@ -151,6 +152,7 @@ AFTER:
 ## Target Examples
 
 **Query tool (before: 361 chars → after: ~50 chars):**
+
 ```
 BEFORE: "List all spaces in the currently loaded model.\n\nReturns array of space objects with:\n- Name, handle, floor area, volume\n- Space type and thermal zone assignments\n- Building story\n- Default construction and schedule sets\n- Origin coordinates and orientation\n- Counts of surfaces, people, lights, equipment\n\nRequires a model to be loaded via load_osm_model_tool first."
 
@@ -158,6 +160,7 @@ AFTER: "List all spaces in the loaded model."
 ```
 
 **Creation tool (before: 427 chars → after: ~150 chars):**
+
 ```
 BEFORE: "Create a people (occupancy) load and assign to a space.\n\nArgs:\n    name: ...\n    space_name: ...\n    people_per_area: People per m² (use this OR num_people)\n    num_people: Absolute number (use this OR people_per_area)\n    schedule_name: Optional ScheduleRuleset for occupancy fraction\n\nExactly one sizing method required.\nRequires a model to be loaded via load_osm_model_tool first."
 
@@ -165,6 +168,7 @@ AFTER: "Create a people (occupancy) load and assign to a space. Provide exactly 
 ```
 
 **Complex tool (before: 1,232 chars → after: ~300 chars):**
+
 ```
 BEFORE: (add_radiant_system with advantages list, considerations list, full Args, JSON example)
 
@@ -173,16 +177,16 @@ AFTER: "Add low-temperature radiant heating/cooling system with plant loops. Opt
 
 ## Estimated Savings
 
-| Rule | Chars saved | Tokens saved |
-|------|-----------|-------------|
-| 1. Boilerplate removal | ~4,000 | ~1,000 |
-| 2. JSON examples | ~1,500 | ~375 |
-| 3. Returns bullet lists | ~2,000 | ~500 |
-| 4. Redundant Args | ~1,200 | ~300 |
-| 5. Educational text | ~1,200 | ~300 |
-| 6. Phase markers/cross-refs | ~300 | ~75 |
-| 7. Compress system list | ~400 | ~100 |
-| **Total** | **~10,600** | **~2,650** |
+| Rule                        | Chars saved | Tokens saved |
+| --------------------------- | ----------- | ------------ |
+| 1. Boilerplate removal      | ~4,000      | ~1,000       |
+| 2. JSON examples            | ~1,500      | ~375         |
+| 3. Returns bullet lists     | ~2,000      | ~500         |
+| 4. Redundant Args           | ~1,200      | ~300         |
+| 5. Educational text         | ~1,200      | ~300         |
+| 6. Phase markers/cross-refs | ~300        | ~75          |
+| 7. Compress system list     | ~400        | ~100         |
+| **Total**                   | **~10,600** | **~2,650**   |
 
 **Before: ~34,400 chars → After: ~23,800 chars (~31% reduction)**
 **Before: ~8,500 tokens → After: ~5,950 tokens (~30% reduction)**

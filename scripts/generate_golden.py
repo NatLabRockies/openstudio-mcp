@@ -1,13 +1,16 @@
 from __future__ import annotations
-import time, json
+
+import json
+import time
 from pathlib import Path
 
-from mcp_server.skills.simulation.operations import run_osw, get_run_status
 from mcp_server.skills.results.operations import extract_summary_metrics
+from mcp_server.skills.simulation.operations import get_run_status, run_osw
 
 FIX = Path("tests/fixtures")
 OSW = FIX / "workflow.osw"
 EPW = FIX / "weather.epw"
+
 
 def main():
     if not OSW.exists():
@@ -19,7 +22,7 @@ def main():
         raise SystemExit(resp)
     run_id = resp["run_id"]
 
-    deadline = time.time() + 60*30
+    deadline = time.time() + 60 * 30
     while time.time() < deadline:
         s = get_run_status(run_id)
         st = s["run"]["status"]
@@ -43,6 +46,7 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
     print(f"Wrote {out_path}")
+
 
 if __name__ == "__main__":
     main()

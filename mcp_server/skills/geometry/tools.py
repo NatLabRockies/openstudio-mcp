@@ -1,13 +1,14 @@
 """MCP tool definitions for geometry (surfaces and subsurfaces)."""
+
 from __future__ import annotations
 
 from mcp_server.skills.geometry.operations import (
-    list_surfaces,
+    create_space_from_floor_print,
+    create_subsurface,
+    create_surface,
     get_surface_details,
     list_subsurfaces,
-    create_surface,
-    create_subsurface,
-    create_space_from_floor_print,
+    list_surfaces,
     match_surfaces,
     set_window_to_wall_ratio,
 )
@@ -82,7 +83,9 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model first.
         """
         return create_surface(
-            name=name, vertices=vertices, space_name=space_name,
+            name=name,
+            vertices=vertices,
+            space_name=space_name,
             surface_type=surface_type,
             outside_boundary_condition=outside_boundary_condition,
         )
@@ -105,7 +108,8 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model first.
         """
         return create_subsurface(
-            name=name, vertices=vertices,
+            name=name,
+            vertices=vertices,
             parent_surface_name=parent_surface_name,
             subsurface_type=subsurface_type,
         )
@@ -134,7 +138,8 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model first.
         """
         return create_space_from_floor_print(
-            name=name, floor_vertices=floor_vertices,
+            name=name,
+            floor_vertices=floor_vertices,
             floor_to_ceiling_height=floor_to_ceiling_height,
             building_story_name=building_story_name,
             thermal_zone_name=thermal_zone_name,
@@ -173,6 +178,7 @@ def register(mcp):
         Requires a model to be loaded via load_osm_model first.
         """
         return set_window_to_wall_ratio(
-            surface_name=surface_name, ratio=ratio,
+            surface_name=surface_name,
+            ratio=ratio,
             sill_height_m=sill_height_m,
         )

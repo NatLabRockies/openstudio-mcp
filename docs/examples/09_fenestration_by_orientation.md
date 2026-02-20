@@ -30,25 +30,26 @@ A designer wants to optimize glazing for energy performance: 40% south (maximize
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `list_surfaces` | Find exterior walls and their azimuth (orientation) |
-| `set_window_to_wall_ratio` | Add centered window by glazing ratio |
-| `get_surface_details` | Verify net vs gross area after glazing |
-| `list_subsurfaces` | Confirm all windows were created |
+| Tool                       | Purpose                                             |
+| -------------------------- | --------------------------------------------------- |
+| `list_surfaces`            | Find exterior walls and their azimuth (orientation) |
+| `set_window_to_wall_ratio` | Add centered window by glazing ratio                |
+| `get_surface_details`      | Verify net vs gross area after glazing              |
+| `list_subsurfaces`         | Confirm all windows were created                    |
 
 ## Orientation Bins
 
-| Direction | Azimuth Range | Typical WWR |
-|-----------|--------------|-------------|
-| South | 135° - 225° | 30-40% (maximize daylight/solar gain) |
-| North | 315° - 45° | 15-25% (minimize heat loss) |
-| East | 45° - 135° | 20-30% (morning sun, reduce glare) |
-| West | 225° - 315° | 20-30% (afternoon sun, reduce cooling) |
+| Direction | Azimuth Range | Typical WWR                            |
+| --------- | ------------- | -------------------------------------- |
+| South     | 135° - 225°   | 30-40% (maximize daylight/solar gain)  |
+| North     | 315° - 45°    | 15-25% (minimize heat loss)            |
+| East      | 45° - 135°    | 20-30% (morning sun, reduce glare)     |
+| West      | 225° - 315°   | 20-30% (afternoon sun, reduce cooling) |
 
 ## Verification
 
 After applying WWR, check via `get_surface_details`:
+
 - `gross_area_m2` = total wall area (unchanged)
 - `net_area_m2` = wall area minus window area
 - Actual ratio = `1 - (net_area / gross_area)`

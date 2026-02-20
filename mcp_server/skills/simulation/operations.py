@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 import psutil
 
-from mcp_server.config import RUN_ROOT, LOG_TAIL_DEFAULT
+from mcp_server.config import LOG_TAIL_DEFAULT, RUN_ROOT
 from mcp_server.util import resolve_run_dir
 
 # Where the MCP server stores runs inside the container
@@ -110,7 +110,6 @@ def _get_run_record(run_id: str) -> RunRecord | None:
     if rec:
         _RUNS[run_id] = rec
     return rec
-
 
 
 def _now() -> float:
@@ -454,7 +453,7 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
                             "name": c.name,
                             "is_dir": c.is_dir(),
                             "size": c.stat().st_size if c.is_file() else None,
-                        }
+                        },
                     )
                 except Exception:
                     continue

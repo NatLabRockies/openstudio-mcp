@@ -1,4 +1,5 @@
 """MCP tool registrations for loop operations skill."""
+
 from __future__ import annotations
 
 import json
@@ -10,7 +11,7 @@ if TYPE_CHECKING:
     from mcp import FastMCP
 
 
-def register(mcp: "FastMCP") -> None:
+def register(mcp: FastMCP) -> None:
     """Register loop operations tools with MCP server."""
 
     @mcp.tool(name="add_supply_equipment")
@@ -42,9 +43,15 @@ def register(mcp: "FastMCP") -> None:
                 props = json.loads(properties) if isinstance(properties, str) else properties
             except json.JSONDecodeError as e:
                 return json.dumps({"ok": False, "error": f"Invalid JSON: {e}"})
-        return json.dumps(operations.add_supply_equipment(
-            plant_loop_name, equipment_type, equipment_name, props
-        ), indent=2)
+        return json.dumps(
+            operations.add_supply_equipment(
+                plant_loop_name,
+                equipment_type,
+                equipment_name,
+                props,
+            ),
+            indent=2,
+        )
 
     @mcp.tool(name="remove_supply_equipment")
     def remove_supply_equipment_tool(
@@ -60,9 +67,13 @@ def register(mcp: "FastMCP") -> None:
         Returns:
             JSON with removal result
         """
-        return json.dumps(operations.remove_supply_equipment(
-            plant_loop_name, equipment_name
-        ), indent=2)
+        return json.dumps(
+            operations.remove_supply_equipment(
+                plant_loop_name,
+                equipment_name,
+            ),
+            indent=2,
+        )
 
     @mcp.tool(name="add_zone_equipment")
     def add_zone_equipment_tool(
@@ -92,9 +103,15 @@ def register(mcp: "FastMCP") -> None:
                 props = json.loads(properties) if isinstance(properties, str) else properties
             except json.JSONDecodeError as e:
                 return json.dumps({"ok": False, "error": f"Invalid JSON: {e}"})
-        return json.dumps(operations.add_zone_equipment(
-            zone_name, equipment_type, equipment_name, props
-        ), indent=2)
+        return json.dumps(
+            operations.add_zone_equipment(
+                zone_name,
+                equipment_type,
+                equipment_name,
+                props,
+            ),
+            indent=2,
+        )
 
     @mcp.tool(name="remove_zone_equipment")
     def remove_zone_equipment_tool(
@@ -110,6 +127,10 @@ def register(mcp: "FastMCP") -> None:
         Returns:
             JSON with removal result
         """
-        return json.dumps(operations.remove_zone_equipment(
-            zone_name, equipment_name
-        ), indent=2)
+        return json.dumps(
+            operations.remove_zone_equipment(
+                zone_name,
+                equipment_name,
+            ),
+            indent=2,
+        )

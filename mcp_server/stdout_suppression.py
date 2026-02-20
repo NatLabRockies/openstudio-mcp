@@ -6,6 +6,7 @@ The OpenStudio SWIG bindings print memory leak warnings to stdout:
 This pollutes the MCP JSON-RPC protocol which requires clean stdout.
 We redirect these warnings to stderr instead.
 """
+
 from __future__ import annotations
 
 import atexit

@@ -1,4 +1,5 @@
 """MCP tool definitions for building-level queries."""
+
 from __future__ import annotations
 
 from mcp_server.skills.building.operations import (

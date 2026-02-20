@@ -3,6 +3,7 @@
 Explicit type dispatch — no dynamic getattr. Every supported type is listed
 in MANAGED_TYPES with its getter method name.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -15,7 +16,7 @@ MANAGED_TYPES: dict[str, str] = {
     # Spaces & zones
     "Space": "getSpaces",
     "ThermalZone": "getThermalZones",
-    "BuildingStory": "getBuildingStorys",
+    "BuildingStory": "getBuildingStoreys",
     # HVAC loops
     "AirLoopHVAC": "getAirLoopHVACs",
     "PlantLoop": "getPlantLoops",
@@ -41,8 +42,8 @@ MANAGED_TYPES: dict[str, str] = {
     # Loads
     "People": "getPeoples",
     "Lights": "getLightss",
-    "ElectricEquipment": "getElectricEquipments",
-    "GasEquipment": "getGasEquipments",
+    "ElectricEquipment": "getElectricEquipment",
+    "GasEquipment": "getGasEquipment",
     "SpaceInfiltrationDesignFlowRate": "getSpaceInfiltrationDesignFlowRates",
     # Constructions & materials
     "Construction": "getConstructions",
@@ -58,9 +59,7 @@ def _find_object_by_name(model, name: str, object_type: str | None = None):
     Returns (object, type_key) or (None, None).
     """
     types_to_search = (
-        {object_type: MANAGED_TYPES[object_type]}
-        if object_type and object_type in MANAGED_TYPES
-        else MANAGED_TYPES
+        {object_type: MANAGED_TYPES[object_type]} if object_type and object_type in MANAGED_TYPES else MANAGED_TYPES
     )
     for type_key, getter_name in types_to_search.items():
         getter = getattr(model, getter_name, None)
@@ -166,10 +165,7 @@ def list_model_objects(object_type: str) -> dict[str, Any]:
             return {"ok": False, "error": f"Model has no getter '{getter_name}'"}
 
         objects = getter()
-        items = [
-            {"name": obj.nameString(), "handle": str(obj.handle())}
-            for obj in objects
-        ]
+        items = [{"name": obj.nameString(), "handle": str(obj.handle())} for obj in objects]
         items.sort(key=lambda d: d["name"])
         return {"ok": True, "type": object_type, "count": len(items), "objects": items}
 

@@ -8,7 +8,7 @@ import os
 import shlex
 import sys
 import time
-from typing import Any, Optional
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -16,6 +16,7 @@ from mcp.client.stdio import stdio_client
 # --- result normalization ----------------------------------------------------
 # MCP tool calls can return different payload shapes depending on client
 # version. The helpers below normalize these into predictable Python objects.
+
 
 def _unwrap_mcp_result(res: Any) -> Any:
     """Normalize MCP tool results to plain Python types.
@@ -50,6 +51,7 @@ def _unwrap_mcp_result(res: Any) -> Any:
 # --- MCP calling convenience -------------------------------------------------
 # Wrap `session.call_tool` with consistent unwrapping + nicer exception messages.
 
+
 async def _call_tool(session: ClientSession, name: str, args: dict, timeout: float) -> Any:
     """Call an MCP tool with a timeout and normalize the response.
 
@@ -66,7 +68,8 @@ async def _call_tool(session: ClientSession, name: str, args: dict, timeout: flo
 # --- run bookkeeping ---------------------------------------------------------
 # Helper functions for interpreting run_osw responses.
 
-def _pick_run_id(run_res: Any) -> Optional[str]:
+
+def _pick_run_id(run_res: Any) -> str | None:
     """Extract the run_id from a run_osw response (best-effort)."""
     if isinstance(run_res, dict):
         return run_res.get("run_id") or run_res.get("id")
@@ -103,6 +106,7 @@ def _extract_logs_text(logs: Any) -> str:
 # --- small UX helpers --------------------------------------------------------
 # Used only for nicer run naming in output.
 
+
 def _guess_name_from_osw(osw_path: str) -> str:
     """Derive a stable, readable run name from an OSW path."""
     base = os.path.basename(osw_path.rstrip("/"))
@@ -112,6 +116,7 @@ def _guess_name_from_osw(osw_path: str) -> str:
 
 
 # --- CLI entrypoint ----------------------------------------------------------
+
 
 async def main() -> int:
     """CLI entrypoint.
@@ -172,101 +177,103 @@ async def main() -> int:
         env=os.environ.copy(),
     )
 
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
+    async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+        await session.initialize()
 
-            server_status = await _call_tool(session, "get_server_status", {}, timeout=args.tool_timeout)
-            print(f"Server status: {server_status}")
+        server_status = await _call_tool(session, "get_server_status", {}, timeout=args.tool_timeout)
+        print(f"Server status: {server_status}")
 
-            val = await _call_tool(session, "validate_osw", {"osw_path": osw_path}, timeout=args.tool_timeout)
-            print(f"Validate: {val}")
-            if isinstance(val, dict) and not val.get("ok", True):
-                print("ERROR: validate_osw returned ok=false", file=sys.stderr)
-                return 2
+        val = await _call_tool(session, "validate_osw", {"osw_path": osw_path}, timeout=args.tool_timeout)
+        print(f"Validate: {val}")
+        if isinstance(val, dict) and not val.get("ok", True):
+            print("ERROR: validate_osw returned ok=false", file=sys.stderr)
+            return 2
 
-            run_args: dict[str, Any] = {"osw_path": osw_path, "name": run_name}
-            if epw_path:
-                run_args["epw_path"] = epw_path
+        run_args: dict[str, Any] = {"osw_path": osw_path, "name": run_name}
+        if epw_path:
+            run_args["epw_path"] = epw_path
 
-            run_res = await _call_tool(session, "run_osw", run_args, timeout=args.tool_timeout)
-            if isinstance(run_res, dict) and run_res.get("ok") is False:
-                err = run_res.get("error") or run_res
-                print("ERROR: run_osw returned ok=false", file=sys.stderr)
-                print(err, file=sys.stderr)
-                return 2
+        run_res = await _call_tool(session, "run_osw", run_args, timeout=args.tool_timeout)
+        if isinstance(run_res, dict) and run_res.get("ok") is False:
+            err = run_res.get("error") or run_res
+            print("ERROR: run_osw returned ok=false", file=sys.stderr)
+            print(err, file=sys.stderr)
+            return 2
 
-            run_id = _pick_run_id(run_res)
-            if not run_id:
-                print("ERROR: Could not determine run_id from run_osw response:", file=sys.stderr)
-                print(run_res, file=sys.stderr)
-                return 2
+        run_id = _pick_run_id(run_res)
+        if not run_id:
+            print("ERROR: Could not determine run_id from run_osw response:", file=sys.stderr)
+            print(run_res, file=sys.stderr)
+            return 2
 
-            print(f"\nStarted run_id={run_id}")
-            print("Polling status + printing logs...\n")
+        print(f"\nStarted run_id={run_id}")
+        print("Polling status + printing logs...\n")
 
-            started = time.time()
-            terminal_states = {"success", "failed", "canceled", "cancelled"}
-            last_fingerprint: dict[str, int] = {}
+        started = time.time()
+        terminal_states = {"success", "failed", "canceled", "cancelled"}
+        last_fingerprint: dict[str, int] = {}
 
-            while True:
-                if time.time() - started > args.hard_timeout:
-                    print(f"\nERROR: timed out after {args.hard_timeout}s", file=sys.stderr)
-                    return 3
+        while True:
+            if time.time() - started > args.hard_timeout:
+                print(f"\nERROR: timed out after {args.hard_timeout}s", file=sys.stderr)
+                return 3
 
-                status = await _call_tool(session, "get_run_status", {"run_id": run_id}, timeout=args.tool_timeout)
-                state = _extract_status(status).lower()
-                print(f"[status] {status}")
+            status = await _call_tool(session, "get_run_status", {"run_id": run_id}, timeout=args.tool_timeout)
+            state = _extract_status(status).lower()
+            print(f"[status] {status}")
 
-                for stream in ("openstudio", "energyplus"):
-                    logs = await _call_tool(
-                        session,
-                        "get_run_logs",
-                        {"run_id": run_id, "stream": stream, "tail": args.tail},
-                        timeout=args.tool_timeout,
-                    )
-                    txt = _extract_logs_text(logs).rstrip()
-                    fp = hash(txt)
-                    if txt and last_fingerprint.get(stream) != fp:
-                        print(f"\n----- log tail ({stream}) -----")
-                        print(txt)
-                        print(f"----- end log tail ({stream}) -----\n")
-                        last_fingerprint[stream] = fp
+            for stream in ("openstudio", "energyplus"):
+                logs = await _call_tool(
+                    session,
+                    "get_run_logs",
+                    {"run_id": run_id, "stream": stream, "tail": args.tail},
+                    timeout=args.tool_timeout,
+                )
+                txt = _extract_logs_text(logs).rstrip()
+                fp = hash(txt)
+                if txt and last_fingerprint.get(stream) != fp:
+                    print(f"\n----- log tail ({stream}) -----")
+                    print(txt)
+                    print(f"----- end log tail ({stream}) -----\n")
+                    last_fingerprint[stream] = fp
 
-                if state in terminal_states:
-                    print(f"\nRun finished with state={state}\n")
-                    break
+            if state in terminal_states:
+                print(f"\nRun finished with state={state}\n")
+                break
 
-                await asyncio.sleep(args.poll)
+            await asyncio.sleep(args.poll)
 
-            artifacts = await _call_tool(session, "get_run_artifacts", {"run_id": run_id}, timeout=args.tool_timeout)
-            print("Artifacts:")
-            print(json.dumps(artifacts, indent=2, sort_keys=True, default=str))
+        artifacts = await _call_tool(session, "get_run_artifacts", {"run_id": run_id}, timeout=args.tool_timeout)
+        print("Artifacts:")
+        print(json.dumps(artifacts, indent=2, sort_keys=True, default=str))
 
-            metrics = await _call_tool(
-                session, "extract_summary_metrics", {"run_id": run_id}, timeout=args.tool_timeout
-            )
-            print("\nSummary metrics:")
-            print(json.dumps(metrics, indent=2, sort_keys=True, default=str))
+        metrics = await _call_tool(
+            session,
+            "extract_summary_metrics",
+            {"run_id": run_id},
+            timeout=args.tool_timeout,
+        )
+        print("\nSummary metrics:")
+        print(json.dumps(metrics, indent=2, sort_keys=True, default=str))
 
-            if args.read_eplustbl:
-                candidate = "run/eplustbl.htm"
-                try:
-                    tbl = await _call_tool(
-                        session,
-                        "read_run_artifact",
-                        {"run_id": run_id, "path": candidate, "max_bytes": 200_000},
-                        timeout=args.tool_timeout,
-                    )
-                    print(f"\nRead {candidate} (truncated):")
-                    if isinstance(tbl, dict):
-                        print(json.dumps(tbl, indent=2, sort_keys=True, default=str))
-                    else:
-                        print(str(tbl)[:2000])
-                except Exception as e:
-                    print(f"\nNOTE: read_run_artifact failed for {candidate}: {e}", file=sys.stderr)
+        if args.read_eplustbl:
+            candidate = "run/eplustbl.htm"
+            try:
+                tbl = await _call_tool(
+                    session,
+                    "read_run_artifact",
+                    {"run_id": run_id, "path": candidate, "max_bytes": 200_000},
+                    timeout=args.tool_timeout,
+                )
+                print(f"\nRead {candidate} (truncated):")
+                if isinstance(tbl, dict):
+                    print(json.dumps(tbl, indent=2, sort_keys=True, default=str))
+                else:
+                    print(str(tbl)[:2000])
+            except Exception as e:
+                print(f"\nNOTE: read_run_artifact failed for {candidate}: {e}", file=sys.stderr)
 
-            return 0 if state == "success" else 1
+        return 0 if state == "success" else 1
 
 
 if __name__ == "__main__":
