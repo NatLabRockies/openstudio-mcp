@@ -5,36 +5,12 @@ Tests verify coil types, plant loop setpoints, terminal settings, fan specs,
 economizer configuration, and equipment sizing.
 """
 import asyncio
-import json
-import os
 import pytest
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-
-# Get server command from environment
-MCP_SERVER_CMD = os.getenv("MCP_SERVER_CMD", "openstudio-mcp")
-MCP_SERVER_ARGS = os.getenv("MCP_SERVER_ARGS", "")
-
-if MCP_SERVER_ARGS:
-    server_args = MCP_SERVER_ARGS.split()
-else:
-    server_args = []
-
-server_params = StdioServerParameters(
-    command=MCP_SERVER_CMD,
-    args=server_args,
-    env=None,
-)
-
-
-def _unwrap(tool_result) -> dict:
-    """Extract dict from MCP tool result."""
-    for content in tool_result.content:
-        if hasattr(content, 'text'):
-            return json.loads(content.text)
-    raise ValueError(f"No text content in tool result: {tool_result}")
+from conftest import unwrap, integration_enabled, server_params
 
 
 # ============================================================================
@@ -44,20 +20,22 @@ def _unwrap(tool_result) -> dict:
 @pytest.mark.integration
 def test_system_1_coil_types():
     """Verify PTAC has electric heating coil and DX cooling coil."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s1_coils"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 # Create System 1 with electric heating
@@ -67,7 +45,7 @@ def test_system_1_coil_types():
                     "heating_fuel": "Electricity",
                     "system_name": "PTAC System"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
 
                 # Get zone HVAC equipment details
@@ -77,7 +55,7 @@ def test_system_1_coil_types():
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
                     "equipment_name": equip_name
                 })
-                equip_data = _unwrap(equip_resp)
+                equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
 
                 assert "heating_coil" in equip_data["equipment"]
@@ -91,20 +69,22 @@ def test_system_1_coil_types():
 @pytest.mark.integration
 def test_system_1_fan_present():
     """Verify PTAC has supply air fan."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s1_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -112,13 +92,13 @@ def test_system_1_fan_present():
                     "thermal_zone_names": [zone_name],
                     "system_name": "PTAC System"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 equip_name = system_data["system"]["equipment"][0]["equipment"]
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
                     "equipment_name": equip_name
                 })
-                equip_data = _unwrap(equip_resp)
+                equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
 
                 assert "fan" in equip_data["equipment"]
@@ -130,20 +110,22 @@ def test_system_1_fan_present():
 @pytest.mark.integration
 def test_system_1_multiple_zones():
     """Verify System 1 creates one PTAC per zone."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s1_multi"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]][:3]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -151,7 +133,7 @@ def test_system_1_multiple_zones():
                     "thermal_zone_names": zone_names,
                     "system_name": "PTAC System"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # Should have one PTAC per zone
                 assert len(system_data["system"]["equipment"]) == len(zone_names)
@@ -162,20 +144,22 @@ def test_system_1_multiple_zones():
 @pytest.mark.integration
 def test_system_2_heat_pump_coils():
     """Verify PTHP has DX heating and cooling coils."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s2_hp"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -183,13 +167,13 @@ def test_system_2_heat_pump_coils():
                     "thermal_zone_names": [zone_name],
                     "system_name": "PTHP System"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 equip_name = system_data["system"]["equipment"][0]["equipment"]
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
                     "equipment_name": equip_name
                 })
-                equip_data = _unwrap(equip_resp)
+                equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
 
                 # PTHP should have DX heating (heat pump) and DX cooling
@@ -202,20 +186,22 @@ def test_system_2_heat_pump_coils():
 @pytest.mark.integration
 def test_system_2_fan_present():
     """Verify PTHP has supply air fan."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s2_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -223,13 +209,13 @@ def test_system_2_fan_present():
                     "thermal_zone_names": [zone_name],
                     "system_name": "PTHP System"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 equip_name = system_data["system"]["equipment"][0]["equipment"]
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
                     "equipment_name": equip_name
                 })
-                equip_data = _unwrap(equip_resp)
+                equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
 
                 assert "fan" in equip_data["equipment"]
@@ -244,20 +230,22 @@ def test_system_2_fan_present():
 @pytest.mark.integration
 def test_system_3_coil_types():
     """Verify PSZ-AC has gas/electric heating and DX cooling coils."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_coils"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 # Test with gas heating
@@ -267,12 +255,12 @@ def test_system_3_coil_types():
                     "heating_fuel": "NaturalGas",
                     "system_name": "PSZ Gas"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ Gas"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
                 # Check for heating and cooling coils
@@ -289,20 +277,22 @@ def test_system_3_coil_types():
 @pytest.mark.integration
 def test_system_3_fan_verification():
     """Verify PSZ-AC has constant volume fan."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -314,7 +304,7 @@ def test_system_3_fan_verification():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ System"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
                 fans = air_loop_data["air_loop"]["detailed_components"]["fans"]
@@ -327,20 +317,22 @@ def test_system_3_fan_verification():
 @pytest.mark.integration
 def test_system_3_economizer_enabled():
     """Verify economizer enabled when requested."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_econ_on"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -353,7 +345,7 @@ def test_system_3_economizer_enabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
                 oa_system = air_loop_data["air_loop"]["outdoor_air_system"]
@@ -367,20 +359,22 @@ def test_system_3_economizer_enabled():
 @pytest.mark.integration
 def test_system_3_economizer_disabled():
     """Verify economizer disabled when requested."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_econ_off"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -393,7 +387,7 @@ def test_system_3_economizer_disabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ No Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
                 oa_system = air_loop_data["air_loop"]["outdoor_air_system"]
@@ -406,20 +400,22 @@ def test_system_3_economizer_disabled():
 @pytest.mark.integration
 def test_system_3_outdoor_air_present():
     """Verify PSZ-AC has outdoor air system."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_oa"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -431,7 +427,7 @@ def test_system_3_outdoor_air_present():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ System"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
                 assert air_loop_data["air_loop"]["outdoor_air_system"] is not None
@@ -442,20 +438,22 @@ def test_system_3_outdoor_air_present():
 @pytest.mark.integration
 def test_system_3_setpoint_managers():
     """Verify PSZ-AC has setpoint managers."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_spm"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -467,7 +465,7 @@ def test_system_3_setpoint_managers():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ System"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
                 setpoint_mgrs = air_loop_data["air_loop"]["setpoint_managers"]
@@ -479,20 +477,22 @@ def test_system_3_setpoint_managers():
 @pytest.mark.integration
 def test_system_3_electric_heating():
     """Verify PSZ-AC with electric heating has electric coil."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_elec"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -501,7 +501,7 @@ def test_system_3_electric_heating():
                     "heating_fuel": "Electricity",
                     "system_name": "PSZ Electric"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "Electric" in system_data["system"]["heating"]
 
@@ -511,20 +511,22 @@ def test_system_3_electric_heating():
 @pytest.mark.integration
 def test_system_3_gas_heating():
     """Verify PSZ-AC with gas heating has gas coil."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s3_gas"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -533,7 +535,7 @@ def test_system_3_gas_heating():
                     "heating_fuel": "NaturalGas",
                     "system_name": "PSZ Gas"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "Gas" in system_data["system"]["heating"]
 
@@ -547,20 +549,22 @@ def test_system_3_gas_heating():
 @pytest.mark.integration
 def test_system_4_heat_pump_coils():
     """Verify PSZ-HP has DX heating and cooling coils."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_hp"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -572,7 +576,7 @@ def test_system_4_heat_pump_coils():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ HP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -589,20 +593,22 @@ def test_system_4_heat_pump_coils():
 @pytest.mark.integration
 def test_system_4_supplemental_heat():
     """Verify PSZ-HP has supplemental electric heating."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_supp"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -610,7 +616,7 @@ def test_system_4_supplemental_heat():
                     "thermal_zone_names": [zone_name],
                     "system_name": "PSZ HP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 4 should have supplemental heating mentioned
                 assert system_data["system"]["heating"] is not None
@@ -621,20 +627,22 @@ def test_system_4_supplemental_heat():
 @pytest.mark.integration
 def test_system_4_fan_present():
     """Verify PSZ-HP has supply fan."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -646,7 +654,7 @@ def test_system_4_fan_present():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ HP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -659,20 +667,22 @@ def test_system_4_fan_present():
 @pytest.mark.integration
 def test_system_4_economizer_enabled():
     """Verify System 4 economizer when enabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -685,7 +695,7 @@ def test_system_4_economizer_enabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ HP Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -699,20 +709,22 @@ def test_system_4_economizer_enabled():
 @pytest.mark.integration
 def test_system_4_economizer_disabled():
     """Verify System 4 economizer when disabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_no_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -725,7 +737,7 @@ def test_system_4_economizer_disabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ HP No Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -738,20 +750,22 @@ def test_system_4_economizer_disabled():
 @pytest.mark.integration
 def test_system_4_outdoor_air_present():
     """Verify PSZ-HP has outdoor air system."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_oa"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -763,7 +777,7 @@ def test_system_4_outdoor_air_present():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ HP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -775,20 +789,22 @@ def test_system_4_outdoor_air_present():
 @pytest.mark.integration
 def test_system_4_setpoint_managers():
     """Verify PSZ-HP has setpoint managers."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_spm"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -800,7 +816,7 @@ def test_system_4_setpoint_managers():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "PSZ HP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -813,20 +829,22 @@ def test_system_4_setpoint_managers():
 @pytest.mark.integration
 def test_system_4_dx_cooling():
     """Verify System 4 uses DX cooling."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_dx"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -834,7 +852,7 @@ def test_system_4_dx_cooling():
                     "thermal_zone_names": [zone_name],
                     "system_name": "PSZ HP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert system_data["system"]["cooling"] == "Heat Pump"
 
@@ -844,14 +862,16 @@ def test_system_4_dx_cooling():
 @pytest.mark.integration
 def test_system_4_single_zone_only():
     """Verify System 4 requires exactly one zone."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s4_single"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
@@ -860,7 +880,7 @@ def test_system_4_single_zone_only():
                 zone2_resp = await session.call_tool("create_thermal_zone", {"name": "Zone 2"})
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]][:2]
 
                 # Try with 2 zones - should fail
@@ -869,7 +889,7 @@ def test_system_4_single_zone_only():
                     "thermal_zone_names": zone_names,
                     "system_name": "PSZ HP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert system_data.get("ok") is False
                 assert "exactly 1 zone" in system_data["error"].lower()
@@ -884,20 +904,22 @@ def test_system_4_single_zone_only():
 @pytest.mark.integration
 def test_system_5_hot_water_loop():
     """Verify System 5 creates hot water plant loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_hw"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -905,7 +927,7 @@ def test_system_5_hot_water_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV Reheat"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # Should have HW loop
                 assert "hot_water_loop" in system_data["system"]
@@ -915,7 +937,7 @@ def test_system_5_hot_water_loop():
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": hw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -927,20 +949,22 @@ def test_system_5_hot_water_loop():
 @pytest.mark.integration
 def test_system_5_boiler_present():
     """Verify System 5 has boiler on HW loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_boiler"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -949,13 +973,13 @@ def test_system_5_boiler_present():
                     "heating_fuel": "NaturalGas",
                     "system_name": "VAV Reheat"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 hw_loop_name = system_data["system"]["hot_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": hw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -971,20 +995,22 @@ def test_system_5_boiler_present():
 @pytest.mark.integration
 def test_system_5_vav_terminals():
     """Verify System 5 has VAV reheat terminals."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_terms"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -992,7 +1018,7 @@ def test_system_5_vav_terminals():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV Reheat"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # Should have terminals listed
                 assert "terminals" in system_data["system"]
@@ -1004,20 +1030,22 @@ def test_system_5_vav_terminals():
 @pytest.mark.integration
 def test_system_5_dx_cooling():
     """Verify System 5 uses DX cooling."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_dx"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1025,7 +1053,7 @@ def test_system_5_dx_cooling():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV Reheat"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "DX" in system_data["system"]["cooling"]
 
@@ -1035,20 +1063,22 @@ def test_system_5_dx_cooling():
 @pytest.mark.integration
 def test_system_5_variable_fan():
     """Verify System 5 has variable volume fan."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_vav_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1060,7 +1090,7 @@ def test_system_5_variable_fan():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV Reheat"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1073,20 +1103,22 @@ def test_system_5_variable_fan():
 @pytest.mark.integration
 def test_system_5_economizer_enabled():
     """Verify System 5 economizer when enabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1099,7 +1131,7 @@ def test_system_5_economizer_enabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1112,20 +1144,22 @@ def test_system_5_economizer_enabled():
 @pytest.mark.integration
 def test_system_5_economizer_disabled():
     """Verify System 5 economizer when disabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_no_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1138,7 +1172,7 @@ def test_system_5_economizer_disabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV No Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1151,20 +1185,22 @@ def test_system_5_economizer_disabled():
 @pytest.mark.integration
 def test_system_5_outdoor_air_present():
     """Verify System 5 has outdoor air system."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_oa"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1176,7 +1212,7 @@ def test_system_5_outdoor_air_present():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV Reheat"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1188,20 +1224,22 @@ def test_system_5_outdoor_air_present():
 @pytest.mark.integration
 def test_system_5_setpoint_managers():
     """Verify System 5 has setpoint managers."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_spm"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1213,7 +1251,7 @@ def test_system_5_setpoint_managers():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV Reheat"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1226,20 +1264,22 @@ def test_system_5_setpoint_managers():
 @pytest.mark.integration
 def test_system_5_reheat_coils():
     """Verify System 5 has hot water reheat coils."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_reheat"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1247,7 +1287,7 @@ def test_system_5_reheat_coils():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV Reheat"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # Terminals are VAV reheat type (names contain "VAV")
                 terminals = system_data["system"]["terminals"]
@@ -1260,20 +1300,22 @@ def test_system_5_reheat_coils():
 @pytest.mark.integration
 def test_system_5_heating_coils():
     """Verify System 5 has heating coils on air loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s5_htg"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1285,7 +1327,7 @@ def test_system_5_heating_coils():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV Reheat"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1303,20 +1345,22 @@ def test_system_5_heating_coils():
 @pytest.mark.integration
 def test_system_6_pfp_terminals():
     """Verify System 6 has PFP terminals."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_pfp"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1324,7 +1368,7 @@ def test_system_6_pfp_terminals():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "terminals" in system_data["system"]
                 # Terminals should be PFP type (names contain "PFP")
@@ -1338,20 +1382,22 @@ def test_system_6_pfp_terminals():
 @pytest.mark.integration
 def test_system_6_electric_reheat():
     """Verify System 6 uses electric reheat in PFP boxes."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_elec"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1359,7 +1405,7 @@ def test_system_6_electric_reheat():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 6 PFP terminals have electric reheat (inherent in PFP type)
                 terminals = system_data["system"]["terminals"]
@@ -1372,20 +1418,22 @@ def test_system_6_electric_reheat():
 @pytest.mark.integration
 def test_system_6_dx_cooling():
     """Verify System 6 uses DX cooling."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_dx"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1393,7 +1441,7 @@ def test_system_6_dx_cooling():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "DX" in system_data["system"]["cooling"]
 
@@ -1403,20 +1451,22 @@ def test_system_6_dx_cooling():
 @pytest.mark.integration
 def test_system_6_variable_fan():
     """Verify System 6 has variable volume fan on air loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1428,7 +1478,7 @@ def test_system_6_variable_fan():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1442,20 +1492,22 @@ def test_system_6_variable_fan():
 @pytest.mark.integration
 def test_system_6_economizer_enabled():
     """Verify System 6 economizer when enabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1468,7 +1520,7 @@ def test_system_6_economizer_enabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV PFP Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1481,20 +1533,22 @@ def test_system_6_economizer_enabled():
 @pytest.mark.integration
 def test_system_6_economizer_disabled():
     """Verify System 6 economizer when disabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_no_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1507,7 +1561,7 @@ def test_system_6_economizer_disabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV PFP No Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1520,20 +1574,22 @@ def test_system_6_economizer_disabled():
 @pytest.mark.integration
 def test_system_6_outdoor_air_present():
     """Verify System 6 has outdoor air system."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_oa"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1545,7 +1601,7 @@ def test_system_6_outdoor_air_present():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1557,20 +1613,22 @@ def test_system_6_outdoor_air_present():
 @pytest.mark.integration
 def test_system_6_setpoint_managers():
     """Verify System 6 has setpoint managers."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_spm"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1582,7 +1640,7 @@ def test_system_6_setpoint_managers():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1595,20 +1653,22 @@ def test_system_6_setpoint_managers():
 @pytest.mark.integration
 def test_system_6_preheat_coil():
     """Verify System 6 has preheat coil."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_preheat"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1620,7 +1680,7 @@ def test_system_6_preheat_coil():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1633,20 +1693,22 @@ def test_system_6_preheat_coil():
 @pytest.mark.integration
 def test_system_6_cooling_coil():
     """Verify System 6 has DX cooling coil."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s6_clg"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1658,7 +1720,7 @@ def test_system_6_cooling_coil():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -1676,20 +1738,22 @@ def test_system_6_cooling_coil():
 @pytest.mark.integration
 def test_system_7_chilled_water_loop():
     """Verify System 7 creates chilled water loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_chw"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1697,7 +1761,7 @@ def test_system_7_chilled_water_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "chilled_water_loop" in system_data["system"]
 
@@ -1705,7 +1769,7 @@ def test_system_7_chilled_water_loop():
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": chw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -1717,20 +1781,22 @@ def test_system_7_chilled_water_loop():
 @pytest.mark.integration
 def test_system_7_hot_water_loop():
     """Verify System 7 creates hot water loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_hw"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1738,7 +1804,7 @@ def test_system_7_hot_water_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "hot_water_loop" in system_data["system"]
 
@@ -1746,7 +1812,7 @@ def test_system_7_hot_water_loop():
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": hw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -1758,20 +1824,22 @@ def test_system_7_hot_water_loop():
 @pytest.mark.integration
 def test_system_7_condenser_loop():
     """Verify System 7 creates condenser water loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_cw"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1779,7 +1847,7 @@ def test_system_7_condenser_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "condenser_loop" in system_data["system"]
 
@@ -1789,20 +1857,22 @@ def test_system_7_condenser_loop():
 @pytest.mark.integration
 def test_system_7_chiller_present():
     """Verify System 7 has chiller."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_chiller"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1810,13 +1880,13 @@ def test_system_7_chiller_present():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 chw_loop_name = system_data["system"]["chilled_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": chw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -1831,20 +1901,22 @@ def test_system_7_chiller_present():
 @pytest.mark.integration
 def test_system_7_boiler_present():
     """Verify System 7 has boiler."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_boiler"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1852,13 +1924,13 @@ def test_system_7_boiler_present():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 hw_loop_name = system_data["system"]["hot_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": hw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -1873,20 +1945,22 @@ def test_system_7_boiler_present():
 @pytest.mark.integration
 def test_system_7_cooling_tower():
     """Verify System 7 has cooling tower."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_tower"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1894,13 +1968,13 @@ def test_system_7_cooling_tower():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 cw_loop_name = system_data["system"]["condenser_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": cw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -1915,20 +1989,22 @@ def test_system_7_cooling_tower():
 @pytest.mark.integration
 def test_system_7_vav_terminals():
     """Verify System 7 has VAV reheat terminals."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_terms"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1936,7 +2012,7 @@ def test_system_7_vav_terminals():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "terminals" in system_data["system"]
                 assert len(system_data["system"]["terminals"]) == len(zone_names)
@@ -1947,20 +2023,22 @@ def test_system_7_vav_terminals():
 @pytest.mark.integration
 def test_system_7_water_coils():
     """Verify System 7 uses water coils not DX."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_water"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -1968,7 +2046,7 @@ def test_system_7_water_coils():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 7 should use chilled water cooling
                 assert "Chilled Water" in system_data["system"]["cooling"] or "Water" in system_data["system"]["cooling"]
@@ -1979,20 +2057,22 @@ def test_system_7_water_coils():
 @pytest.mark.integration
 def test_system_7_variable_fan():
     """Verify System 7 has variable volume fan."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2004,7 +2084,7 @@ def test_system_7_variable_fan():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central VAV"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2017,20 +2097,22 @@ def test_system_7_variable_fan():
 @pytest.mark.integration
 def test_system_7_economizer_enabled():
     """Verify System 7 economizer when enabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2043,7 +2125,7 @@ def test_system_7_economizer_enabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central VAV Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2056,20 +2138,22 @@ def test_system_7_economizer_enabled():
 @pytest.mark.integration
 def test_system_7_economizer_disabled():
     """Verify System 7 economizer when disabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_no_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2082,7 +2166,7 @@ def test_system_7_economizer_disabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central VAV No Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2095,20 +2179,22 @@ def test_system_7_economizer_disabled():
 @pytest.mark.integration
 def test_system_7_outdoor_air_present():
     """Verify System 7 has outdoor air system."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_oa"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2120,7 +2206,7 @@ def test_system_7_outdoor_air_present():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central VAV"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2132,20 +2218,22 @@ def test_system_7_outdoor_air_present():
 @pytest.mark.integration
 def test_system_7_setpoint_managers():
     """Verify System 7 has setpoint managers."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s7_spm"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2157,7 +2245,7 @@ def test_system_7_setpoint_managers():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central VAV"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2174,20 +2262,22 @@ def test_system_7_setpoint_managers():
 @pytest.mark.integration
 def test_system_8_chilled_water_loop():
     """Verify System 8 creates chilled water loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_chw"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2195,7 +2285,7 @@ def test_system_8_chilled_water_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "chilled_water_loop" in system_data["system"]
 
@@ -2205,20 +2295,22 @@ def test_system_8_chilled_water_loop():
 @pytest.mark.integration
 def test_system_8_hot_water_loop():
     """Verify System 8 creates hot water loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_hw"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2226,7 +2318,7 @@ def test_system_8_hot_water_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 8 may or may not have HW loop (PFP with electric reheat)
                 # Just verify system was created
@@ -2238,20 +2330,22 @@ def test_system_8_hot_water_loop():
 @pytest.mark.integration
 def test_system_8_condenser_loop():
     """Verify System 8 creates condenser water loop."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_cw"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2259,7 +2353,7 @@ def test_system_8_condenser_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "condenser_loop" in system_data["system"]
 
@@ -2269,20 +2363,22 @@ def test_system_8_condenser_loop():
 @pytest.mark.integration
 def test_system_8_pfp_terminals():
     """Verify System 8 has PFP terminals."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_pfp"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2290,7 +2386,7 @@ def test_system_8_pfp_terminals():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert "terminals" in system_data["system"]
 
@@ -2300,20 +2396,22 @@ def test_system_8_pfp_terminals():
 @pytest.mark.integration
 def test_system_8_electric_reheat():
     """Verify System 8 uses electric reheat in PFP boxes."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_elec"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2321,7 +2419,7 @@ def test_system_8_electric_reheat():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 8 PFP terminals have electric reheat (inherent in PFP type)
                 terminals = system_data["system"]["terminals"]
@@ -2334,20 +2432,22 @@ def test_system_8_electric_reheat():
 @pytest.mark.integration
 def test_system_8_chiller_present():
     """Verify System 8 has chiller."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_chiller"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2355,13 +2455,13 @@ def test_system_8_chiller_present():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 chw_loop_name = system_data["system"]["chilled_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": chw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -2376,20 +2476,22 @@ def test_system_8_chiller_present():
 @pytest.mark.integration
 def test_system_8_cooling_tower():
     """Verify System 8 has cooling tower."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_tower"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2397,13 +2499,13 @@ def test_system_8_cooling_tower():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 cw_loop_name = system_data["system"]["condenser_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
                     "plant_loop_name": cw_loop_name
                 })
-                loop_data = _unwrap(loop_resp)
+                loop_data = unwrap(loop_resp)
 
                 assert loop_data.get("ok") is True, f"get_plant_loop_details failed: {loop_data.get('error')}"
 
@@ -2418,20 +2520,22 @@ def test_system_8_cooling_tower():
 @pytest.mark.integration
 def test_system_8_water_cooling():
     """Verify System 8 uses chilled water cooling."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_water"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2439,7 +2543,7 @@ def test_system_8_water_cooling():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central PFP"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 8 should use chilled water cooling
                 assert "Water" in system_data["system"]["cooling"]
@@ -2450,20 +2554,22 @@ def test_system_8_water_cooling():
 @pytest.mark.integration
 def test_system_8_variable_fan():
     """Verify System 8 has variable volume fan."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_fan"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2475,7 +2581,7 @@ def test_system_8_variable_fan():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2489,20 +2595,22 @@ def test_system_8_variable_fan():
 @pytest.mark.integration
 def test_system_8_economizer_enabled():
     """Verify System 8 economizer when enabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2515,7 +2623,7 @@ def test_system_8_economizer_enabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central PFP Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2528,20 +2636,22 @@ def test_system_8_economizer_enabled():
 @pytest.mark.integration
 def test_system_8_economizer_disabled():
     """Verify System 8 economizer when disabled."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_no_econ"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2554,7 +2664,7 @@ def test_system_8_economizer_disabled():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central PFP No Econ"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2567,20 +2677,22 @@ def test_system_8_economizer_disabled():
 @pytest.mark.integration
 def test_system_8_outdoor_air_present():
     """Verify System 8 has outdoor air system."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_oa"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2592,7 +2704,7 @@ def test_system_8_outdoor_air_present():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2604,20 +2716,22 @@ def test_system_8_outdoor_air_present():
 @pytest.mark.integration
 def test_system_8_setpoint_managers():
     """Verify System 8 has setpoint managers."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s8_spm"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2629,7 +2743,7 @@ def test_system_8_setpoint_managers():
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central PFP"
                 })
-                air_loop_data = _unwrap(air_loop_resp)
+                air_loop_data = unwrap(air_loop_resp)
 
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
 
@@ -2646,20 +2760,22 @@ def test_system_8_setpoint_managers():
 @pytest.mark.integration
 def test_system_9_unit_heaters():
     """Verify System 9 creates gas unit heaters."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s9_heaters"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2667,7 +2783,7 @@ def test_system_9_unit_heaters():
                     "thermal_zone_names": zone_names,
                     "system_name": "Gas Heaters"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert system_data.get("ok") is True
                 assert "equipment" in system_data["system"]
@@ -2678,20 +2794,22 @@ def test_system_9_unit_heaters():
 @pytest.mark.integration
 def test_system_9_no_cooling():
     """Verify System 9 has no cooling."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s9_no_clg"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2699,7 +2817,7 @@ def test_system_9_no_cooling():
                     "thermal_zone_names": zone_names,
                     "system_name": "Gas Heaters"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 9 should have no cooling or "None"
                 cooling = system_data["system"].get("cooling", "None")
@@ -2715,20 +2833,22 @@ def test_system_9_no_cooling():
 @pytest.mark.integration
 def test_system_10_unit_heaters():
     """Verify System 10 creates electric unit heaters."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s10_heaters"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2736,7 +2856,7 @@ def test_system_10_unit_heaters():
                     "thermal_zone_names": zone_names,
                     "system_name": "Electric Heaters"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 assert system_data.get("ok") is True
                 assert "equipment" in system_data["system"]
@@ -2747,20 +2867,22 @@ def test_system_10_unit_heaters():
 @pytest.mark.integration
 def test_system_10_no_cooling():
     """Verify System 10 has no cooling."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
     async def _run():
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 name = "test_s10_no_clg"
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_data = _unwrap(create_resp)
+                create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"]
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_data = _unwrap(zones_resp)
+                zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -2768,7 +2890,7 @@ def test_system_10_no_cooling():
                     "thermal_zone_names": zone_names,
                     "system_name": "Electric Heaters"
                 })
-                system_data = _unwrap(system_resp)
+                system_data = unwrap(system_resp)
 
                 # System 10 should have no cooling or "None"
                 cooling = system_data["system"].get("cooling", "None")

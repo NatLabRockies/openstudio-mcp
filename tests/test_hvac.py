@@ -1,37 +1,13 @@
 """Integration tests for HVAC skill."""
 import asyncio
-import json
 import os
-import shlex
 import uuid
 
 import pytest
 
-from mcp import ClientSession, StdioServerParameters
+from conftest import integration_enabled, server_params, unwrap
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-
-def _integration_enabled() -> bool:
-    return os.environ.get("RUN_OPENSTUDIO_INTEGRATION", "").strip() in ("1", "true", "TRUE", "yes", "YES")
-
-
-def _unwrap(res):
-    if isinstance(res, dict):
-        return res
-    content = getattr(res, "content", None)
-    if not content:
-        return res
-    first = content[0]
-    text = getattr(first, "text", None)
-    if text is None:
-        return str(first)
-    t = text.strip()
-    if not t:
-        return t
-    try:
-        return json.loads(t)
-    except Exception:
-        return t
 
 
 def _unique_name(prefix: str = "pytest_hvac") -> str:
@@ -45,38 +21,28 @@ def _unique_name(prefix: str = "pytest_hvac") -> str:
 @pytest.mark.integration
 def test_list_air_loops():
     """Test listing all air loop HVAC systems."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # List air loops
                 air_loops_resp = await session.call_tool("list_air_loops", {})
-                air_loops_result = _unwrap(air_loops_resp)
+                air_loops_result = unwrap(air_loops_resp)
                 print("list_air_loops:", air_loops_result)
 
                 assert isinstance(air_loops_result, dict)
@@ -106,38 +72,28 @@ def test_list_air_loops():
 @pytest.mark.integration
 def test_get_air_loop_details():
     """Test getting details for a specific air loop."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # First list air loops to see if any exist
                 list_resp = await session.call_tool("list_air_loops", {})
-                list_result = _unwrap(list_resp)
+                list_result = unwrap(list_resp)
                 assert list_result.get("ok") is True
 
                 if list_result["count"] == 0:
@@ -147,7 +103,7 @@ def test_get_air_loop_details():
 
                 # Get details for the first air loop
                 details_resp = await session.call_tool("get_air_loop_details", {"air_loop_name": air_loop_name})
-                details_result = _unwrap(details_resp)
+                details_result = unwrap(details_resp)
                 print("get_air_loop_details:", details_result)
 
                 assert isinstance(details_result, dict)
@@ -167,38 +123,28 @@ def test_get_air_loop_details():
 @pytest.mark.integration
 def test_get_air_loop_details_not_found():
     """Test getting details for a non-existent air loop."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # Try to get non-existent air loop
                 details_resp = await session.call_tool("get_air_loop_details", {"air_loop_name": "NonExistentAirLoop"})
-                details_result = _unwrap(details_resp)
+                details_result = unwrap(details_resp)
                 print("get_air_loop_details (not found):", details_result)
 
                 assert isinstance(details_result, dict)
@@ -212,38 +158,28 @@ def test_get_air_loop_details_not_found():
 @pytest.mark.integration
 def test_list_plant_loops():
     """Test listing all plant loops."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # List plant loops
                 plant_loops_resp = await session.call_tool("list_plant_loops", {})
-                plant_loops_result = _unwrap(plant_loops_resp)
+                plant_loops_result = unwrap(plant_loops_resp)
                 print("list_plant_loops:", plant_loops_result)
 
                 assert isinstance(plant_loops_result, dict)
@@ -273,38 +209,28 @@ def test_list_plant_loops():
 @pytest.mark.integration
 def test_list_zone_hvac_equipment():
     """Test listing all zone HVAC equipment."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # List zone HVAC equipment
                 zone_hvac_resp = await session.call_tool("list_zone_hvac_equipment", {})
-                zone_hvac_result = _unwrap(zone_hvac_resp)
+                zone_hvac_result = unwrap(zone_hvac_resp)
                 print("list_zone_hvac_equipment:", zone_hvac_result)
 
                 assert isinstance(zone_hvac_result, dict)
@@ -331,27 +257,23 @@ def test_list_zone_hvac_equipment():
 @pytest.mark.integration
 def test_air_loops_baseline():
     """Test air loop queries on baseline model with System 7 HVAC."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
     name = _unique_name("pytest_bl_hvac")
 
     async def _run():
-        server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name, "ashrae_sys_num": "07"})
-                cd = _unwrap(cr)
+                cd = unwrap(cr)
                 assert cd.get("ok") is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+                assert unwrap(lr).get("ok") is True
 
                 ar = await session.call_tool("list_air_loops", {})
-                ad = _unwrap(ar)
+                ad = unwrap(ar)
                 print("baseline air loops:", ad)
                 assert ad.get("ok") is True
                 assert ad["count"] >= 1
@@ -361,7 +283,7 @@ def test_air_loops_baseline():
 
                 # Also check plant loops (System 7 has chiller+boiler)
                 pr = await session.call_tool("list_plant_loops", {})
-                pd = _unwrap(pr)
+                pd = unwrap(pr)
                 print("baseline plant loops:", pd)
                 assert pd.get("ok") is True
                 assert pd["count"] >= 2  # HW + CHW loops (+ condenser)
@@ -372,27 +294,17 @@ def test_air_loops_baseline():
 @pytest.mark.integration
 def test_hvac_tools_without_loaded_model():
     """Test that HVAC tools fail gracefully when no model is loaded."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
-
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Try to list air loops without loading a model
                 air_loops_resp = await session.call_tool("list_air_loops", {})
-                air_loops_result = _unwrap(air_loops_resp)
+                air_loops_result = unwrap(air_loops_resp)
                 print("list_air_loops (no model):", air_loops_result)
 
                 assert isinstance(air_loops_result, dict)

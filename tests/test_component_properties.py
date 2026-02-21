@@ -1,62 +1,37 @@
 """Integration tests for component_properties skill (Phase 5A)."""
 import asyncio
 import json
-import os
-import shlex
 import pytest
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-INTEGRATION_ENV_VAR = "RUN_OPENSTUDIO_INTEGRATION"
-SERVER_CMD_VAR = "MCP_SERVER_CMD"
+from conftest import unwrap, integration_enabled, server_params
 
-pytestmark = pytest.mark.skipif(
-    os.getenv(INTEGRATION_ENV_VAR) != "1",
-    reason=f"{INTEGRATION_ENV_VAR} not set to 1"
-)
-
-
-def _unwrap(result) -> dict:
-    if hasattr(result, 'content') and len(result.content) > 0:
-        text_content = result.content[0]
-        if hasattr(text_content, 'text'):
-            return json.loads(text_content.text)
-    return {}
-
-
-def _get_server_params():
-    server_cmd = os.environ.get(SERVER_CMD_VAR, "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
-    return StdioServerParameters(
-        command=server_cmd,
-        args=server_args,
-        env=os.environ.copy()
-    )
+pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
 
 
 async def _create_and_load(session, name):
     """Create example model, load it, return zone names."""
     cr = await session.call_tool("create_example_osm", {"name": name})
-    cd = _unwrap(cr)
+    cd = unwrap(cr)
     assert cd.get("ok") is True, cd
     lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert _unwrap(lr).get("ok") is True
+    assert unwrap(lr).get("ok") is True
     zr = await session.call_tool("list_thermal_zones", {})
-    zd = _unwrap(zr)
+    zd = unwrap(zr)
     return [z["name"] for z in zd["thermal_zones"]]
 
 
 async def _create_baseline_and_load(session, name):
     """Create baseline 10-zone model, load it, return zone names."""
     cr = await session.call_tool("create_baseline_osm", {"name": name})
-    cd = _unwrap(cr)
+    cd = unwrap(cr)
     assert cd.get("ok") is True, cd
     lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert _unwrap(lr).get("ok") is True
+    assert unwrap(lr).get("ok") is True
     zr = await session.call_tool("list_thermal_zones", {})
-    zd = _unwrap(zr)
+    zd = unwrap(zr)
     return [z["name"] for z in zd["thermal_zones"]]
 
 
@@ -65,7 +40,7 @@ async def _create_baseline_and_load(session, name):
 def test_list_components():
     """List all components, verify count > 0."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_and_load(session, "cp_list")
@@ -75,7 +50,7 @@ def test_list_components():
                     "thermal_zone_names": zones,
                 })
                 result = await session.call_tool("list_hvac_components", {})
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert data["count"] > 0
                 assert len(data["components"]) > 0
@@ -85,7 +60,7 @@ def test_list_components():
 def test_list_components_by_category():
     """Filter components by category 'coil'."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_and_load(session, "cp_cat")
@@ -94,7 +69,7 @@ def test_list_components_by_category():
                     "thermal_zone_names": zones,
                 })
                 result = await session.call_tool("list_hvac_components", {"category": "coil"})
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 for c in data["components"]:
                     assert c["category"] == "coil"
@@ -104,7 +79,7 @@ def test_list_components_by_category():
 def test_get_heating_coil_properties():
     """Get PTAC heating coil properties."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_and_load(session, "cp_htg")
@@ -114,14 +89,14 @@ def test_get_heating_coil_properties():
                 })
                 # Find heating coil name
                 lr = await session.call_tool("list_hvac_components", {"category": "coil"})
-                comps = _unwrap(lr)["components"]
+                comps = unwrap(lr)["components"]
                 htg = next((c for c in comps if "Heating" in c["name"] and c["type"] == "CoilHeatingElectric"), None)
                 assert htg is not None, f"No heating coil found in {comps}"
 
                 result = await session.call_tool("get_component_properties", {
                     "component_name": htg["name"],
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert "efficiency" in data["properties"]
     asyncio.run(_run())
@@ -130,7 +105,7 @@ def test_get_heating_coil_properties():
 def test_get_cooling_coil_properties():
     """Get PTAC DX cooling coil, verify rated_cop exists."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_and_load(session, "cp_clg")
@@ -139,14 +114,14 @@ def test_get_cooling_coil_properties():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "coil"})
-                comps = _unwrap(lr)["components"]
+                comps = unwrap(lr)["components"]
                 clg = next((c for c in comps if "Cooling" in c["name"] and "DXSingleSpeed" in c["type"]), None)
                 assert clg is not None
 
                 result = await session.call_tool("get_component_properties", {
                     "component_name": clg["name"],
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert "rated_cop" in data["properties"]
     asyncio.run(_run())
@@ -155,7 +130,7 @@ def test_get_cooling_coil_properties():
 def test_get_fan_properties():
     """Get FanConstantVolume properties."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_and_load(session, "cp_fan")
@@ -164,14 +139,14 @@ def test_get_fan_properties():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "fan"})
-                comps = _unwrap(lr)["components"]
+                comps = unwrap(lr)["components"]
                 fan = next((c for c in comps if "Fan" in c["name"]), None)
                 assert fan is not None
 
                 result = await session.call_tool("get_component_properties", {
                     "component_name": fan["name"],
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert "pressure_rise_pa" in data["properties"]
     asyncio.run(_run())
@@ -180,7 +155,7 @@ def test_get_fan_properties():
 def test_set_fan_pressure_rise():
     """Set fan pressure_rise_pa to 400, verify round-trip."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_and_load(session, "cp_setfan")
@@ -189,13 +164,13 @@ def test_set_fan_pressure_rise():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "fan"})
-                fan = next(c for c in _unwrap(lr)["components"] if "Fan" in c["name"])
+                fan = next(c for c in unwrap(lr)["components"] if "Fan" in c["name"])
 
                 result = await session.call_tool("set_component_properties", {
                     "component_name": fan["name"],
                     "properties": json.dumps({"pressure_rise_pa": 400.0}),
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert abs(data["changes"]["pressure_rise_pa"]["new"] - 400.0) < 0.01
 
@@ -203,7 +178,7 @@ def test_set_fan_pressure_rise():
                 vr = await session.call_tool("get_component_properties", {
                     "component_name": fan["name"],
                 })
-                vd = _unwrap(vr)
+                vd = unwrap(vr)
                 assert vd["ok"] is True
                 assert abs(vd["properties"]["pressure_rise_pa"]["value"] - 400.0) < 0.01
     asyncio.run(_run())
@@ -212,7 +187,7 @@ def test_set_fan_pressure_rise():
 def test_set_invalid_property():
     """Unknown property name returns error."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_and_load(session, "cp_inv")
@@ -221,13 +196,13 @@ def test_set_invalid_property():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "fan"})
-                fan = next(c for c in _unwrap(lr)["components"] if "Fan" in c["name"])
+                fan = next(c for c in unwrap(lr)["components"] if "Fan" in c["name"])
 
                 result = await session.call_tool("set_component_properties", {
                     "component_name": fan["name"],
                     "properties": json.dumps({"nonexistent_prop": 42}),
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is False
                 assert "errors" in data
     asyncio.run(_run())
@@ -236,7 +211,7 @@ def test_set_invalid_property():
 def test_get_nonexistent_component():
     """Bad component name returns error."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await _create_and_load(session, "cp_nocomp")
@@ -244,7 +219,7 @@ def test_get_nonexistent_component():
                 result = await session.call_tool("get_component_properties", {
                     "component_name": "Nonexistent Widget",
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is False
     asyncio.run(_run())
 
@@ -254,7 +229,7 @@ def test_get_nonexistent_component():
 def test_list_components_system7():
     """System 7 has chiller, boiler, tower, pumps."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_baseline_and_load(session, "cp_sys7")
@@ -263,7 +238,7 @@ def test_list_components_system7():
                     "thermal_zone_names": zones,
                 })
                 result = await session.call_tool("list_hvac_components", {})
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 types = {c["type"] for c in data["components"]}
                 assert "ChillerElectricEIR" in types
@@ -275,7 +250,7 @@ def test_list_components_system7():
 def test_get_chiller_properties():
     """Get ChillerElectricEIR reference_cop."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_baseline_and_load(session, "cp_chill")
@@ -284,12 +259,12 @@ def test_get_chiller_properties():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "plant"})
-                chiller = next(c for c in _unwrap(lr)["components"] if c["type"] == "ChillerElectricEIR")
+                chiller = next(c for c in unwrap(lr)["components"] if c["type"] == "ChillerElectricEIR")
 
                 result = await session.call_tool("get_component_properties", {
                     "component_name": chiller["name"],
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert "reference_cop" in data["properties"]
                 assert data["properties"]["reference_cop"]["value"] > 0
@@ -299,7 +274,7 @@ def test_get_chiller_properties():
 def test_set_chiller_cop():
     """Set chiller reference_cop to 6.0, verify round-trip."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_baseline_and_load(session, "cp_setcop")
@@ -308,13 +283,13 @@ def test_set_chiller_cop():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "plant"})
-                chiller = next(c for c in _unwrap(lr)["components"] if c["type"] == "ChillerElectricEIR")
+                chiller = next(c for c in unwrap(lr)["components"] if c["type"] == "ChillerElectricEIR")
 
                 result = await session.call_tool("set_component_properties", {
                     "component_name": chiller["name"],
                     "properties": json.dumps({"reference_cop": 6.0}),
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert abs(data["changes"]["reference_cop"]["new"] - 6.0) < 0.01
 
@@ -322,7 +297,7 @@ def test_set_chiller_cop():
                 vr = await session.call_tool("get_component_properties", {
                     "component_name": chiller["name"],
                 })
-                vd = _unwrap(vr)
+                vd = unwrap(vr)
                 assert vd["ok"] is True
                 assert abs(vd["properties"]["reference_cop"]["value"] - 6.0) < 0.01
     asyncio.run(_run())
@@ -331,7 +306,7 @@ def test_set_chiller_cop():
 def test_get_boiler_properties():
     """Get BoilerHotWater efficiency."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_baseline_and_load(session, "cp_boiler")
@@ -340,12 +315,12 @@ def test_get_boiler_properties():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "plant"})
-                boiler = next(c for c in _unwrap(lr)["components"] if c["type"] == "BoilerHotWater")
+                boiler = next(c for c in unwrap(lr)["components"] if c["type"] == "BoilerHotWater")
 
                 result = await session.call_tool("get_component_properties", {
                     "component_name": boiler["name"],
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert "nominal_thermal_efficiency" in data["properties"]
     asyncio.run(_run())
@@ -354,7 +329,7 @@ def test_get_boiler_properties():
 def test_set_boiler_efficiency():
     """Set boiler nominal_thermal_efficiency to 0.95."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_baseline_and_load(session, "cp_setblr")
@@ -363,13 +338,13 @@ def test_set_boiler_efficiency():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "plant"})
-                boiler = next(c for c in _unwrap(lr)["components"] if c["type"] == "BoilerHotWater")
+                boiler = next(c for c in unwrap(lr)["components"] if c["type"] == "BoilerHotWater")
 
                 result = await session.call_tool("set_component_properties", {
                     "component_name": boiler["name"],
                     "properties": json.dumps({"nominal_thermal_efficiency": 0.95}),
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert abs(data["changes"]["nominal_thermal_efficiency"]["new"] - 0.95) < 0.01
 
@@ -377,7 +352,7 @@ def test_set_boiler_efficiency():
                 vr = await session.call_tool("get_component_properties", {
                     "component_name": boiler["name"],
                 })
-                vd = _unwrap(vr)
+                vd = unwrap(vr)
                 assert vd["ok"] is True
                 assert abs(vd["properties"]["nominal_thermal_efficiency"]["value"] - 0.95) < 0.01
     asyncio.run(_run())
@@ -386,7 +361,7 @@ def test_set_boiler_efficiency():
 def test_get_pump_properties():
     """Get PumpVariableSpeed rated_pump_head."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_baseline_and_load(session, "cp_pump")
@@ -395,14 +370,14 @@ def test_get_pump_properties():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "pump"})
-                comps = _unwrap(lr)["components"]
+                comps = unwrap(lr)["components"]
                 pump = next((c for c in comps if "Pump" in c["type"]), None)
                 assert pump is not None, f"No pump found: {comps}"
 
                 result = await session.call_tool("get_component_properties", {
                     "component_name": pump["name"],
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert "rated_pump_head_pa" in data["properties"]
     asyncio.run(_run())
@@ -411,7 +386,7 @@ def test_get_pump_properties():
 def test_set_pump_head():
     """Set pump rated_pump_head to 200000."""
     async def _run():
-        async with stdio_client(_get_server_params()) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 zones = await _create_baseline_and_load(session, "cp_setpmp")
@@ -420,14 +395,14 @@ def test_set_pump_head():
                     "thermal_zone_names": zones,
                 })
                 lr = await session.call_tool("list_hvac_components", {"category": "pump"})
-                comps = _unwrap(lr)["components"]
+                comps = unwrap(lr)["components"]
                 pump = next(c for c in comps if "Pump" in c["type"])
 
                 result = await session.call_tool("set_component_properties", {
                     "component_name": pump["name"],
                     "properties": json.dumps({"rated_pump_head_pa": 200000}),
                 })
-                data = _unwrap(result)
+                data = unwrap(result)
                 assert data["ok"] is True
                 assert abs(data["changes"]["rated_pump_head_pa"]["new"] - 200000) < 1
 
@@ -435,7 +410,7 @@ def test_set_pump_head():
                 vr = await session.call_tool("get_component_properties", {
                     "component_name": pump["name"],
                 })
-                vd = _unwrap(vr)
+                vd = unwrap(vr)
                 assert vd["ok"] is True
                 assert abs(vd["properties"]["rated_pump_head_pa"]["value"] - 200000) < 1
     asyncio.run(_run())
