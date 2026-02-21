@@ -355,6 +355,158 @@ You: Show me the end-use energy breakdown, envelope summary, HVAC sizing,
      frequency="Daily", start_month=1, end_month=1)
 ```
 
+### Example 12: One-Command Simulation (`/simulate`)
+
+Run a simulation and get results in one step.
+
+```
+You: /simulate
+```
+
+```
+1. save_osm_model(save_path="/runs/model.osm")
+2. run_simulation(osm_path="/runs/model.osm", epw_path="/inputs/weather.epw")
+3. get_run_status(run_id=...)          # polls until complete
+4. extract_summary_metrics(run_id=...) # EUI, total energy, unmet hours
+5. extract_end_use_breakdown(run_id=...)
+6. Presents formatted results summary
+```
+
+### Example 13: Comprehensive Energy Report (`/energy-report`)
+
+Extract all result categories from a completed simulation.
+
+```
+You: /energy-report
+```
+
+```
+1. extract_summary_metrics(run_id=...)       # EUI, total energy
+2. extract_end_use_breakdown(run_id=...)     # by fuel + end use
+3. extract_envelope_summary(run_id=...)      # U-values, SHGC
+4. extract_hvac_sizing(run_id=...)           # zone/system capacities
+5. extract_zone_summary(run_id=...)          # per-zone loads
+6. extract_component_sizing(run_id=...)      # autosized values
+7. Presents structured report with all sections
+```
+
+### Example 14: Model Quality Check (`/qaqc`)
+
+Check your model for common issues before running a simulation.
+
+```
+You: /qaqc
+```
+
+```
+1. inspect_osm_summary()             # structural overview
+2. get_model_summary()               # object counts
+3. list_thermal_zones()              # zones without HVAC?
+4. list_spaces()                     # spaces without zones?
+5. get_weather_info()                # EPW attached?
+6. get_run_period()                  # simulation dates set?
+7. list_zone_hvac_equipment()        # HVAC present?
+8. Reports issues by severity (errors, warnings, info)
+```
+
+### Example 15: Guided HVAC Selection (`/add-hvac`)
+
+Get a recommendation for the right HVAC system based on your building.
+
+```
+You: /add-hvac
+```
+
+```
+1. get_building_info()                        # building type, area
+2. list_thermal_zones()                       # zone count, names
+3. Recommends system type based on ASHRAE 90.1 Table G3.1.1
+4. add_baseline_system(system_type=3,
+     thermal_zone_names=["Zone 1", "Zone 2"],
+     heating_fuel="NaturalGas")
+5. list_air_loops()                           # verify
+6. list_zone_hvac_equipment()                 # verify
+```
+
+### Example 16: Complete Building from Scratch (`/new-building`)
+
+Create a full building model step by step.
+
+```
+You: /new-building
+```
+
+```
+1.  create_baseline_osm(name="office", ashrae_sys_num="03")
+2.  load_osm_model(osm_path=...)
+3.  list_surfaces()                           # find exterior walls
+4.  set_window_to_wall_ratio(surface_name="South Wall", ratio=0.4)
+5.  create_schedule_ruleset(name="Occ", schedule_type="Fractional", default_value=0.5)
+6.  create_people_definition(name="People", space_name=..., people_per_area=0.059)
+7.  create_lights_definition(name="Lights", space_name=..., watts_per_area=10.76)
+8.  create_electric_equipment(name="Plugs", space_name=..., watts_per_area=1.076)
+9.  set_weather_file(epw_path="/inputs/weather.epw")
+10. add_design_day(name="Htg 99.6%", ...)
+11. add_design_day(name="Clg 0.4%", ...)
+12. save_osm_model(save_path="/runs/office.osm")
+13. run_simulation(osm_path="/runs/office.osm", epw_path="/inputs/weather.epw")
+14. extract_summary_metrics(run_id=...)
+```
+
+### Example 17: Retrofit Analysis (`/retrofit`)
+
+Apply energy conservation measures and compare before/after performance.
+
+```
+You: /retrofit
+```
+
+```
+1.  save_osm_model(save_path="/runs/baseline.osm")
+2.  run_simulation(osm_path="/runs/baseline.osm", epw_path=...)
+3.  extract_summary_metrics(run_id=<baseline>)  # record baseline EUI
+4.  adjust_thermostat_setpoints(cooling_offset_f=2.0, heating_offset_f=-2.0)
+5.  save_osm_model(save_path="/runs/retrofit.osm")
+6.  run_simulation(osm_path="/runs/retrofit.osm", epw_path=...)
+7.  extract_summary_metrics(run_id=<retrofit>)   # compare EUI
+8.  extract_end_use_breakdown(run_id=<retrofit>)
+9.  Presents side-by-side comparison
+```
+
+### Example 18: Model Visualization (`/view`)
+
+Generate an interactive 3D view of your model.
+
+```
+You: /view
+```
+
+```
+1. view_model()
+2. Reports output file path — open in browser
+```
+
+---
+
+## Claude Code Skills
+
+When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 10 bundled skills provide workflow automation and domain knowledge:
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| `/simulate` | Workflow | One-command simulate + results extraction |
+| `/energy-report` | Workflow | Comprehensive multi-category energy report |
+| `/qaqc` | Task | Pre-simulation model quality check |
+| `/add-hvac` | Task | Guided ASHRAE system selection |
+| `/new-building` | Workflow | Full model creation from scratch |
+| `/retrofit` | Workflow | Before/after ECM analysis |
+| `/view` | Task | Quick 3D model visualization |
+| `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection criteria (auto-loaded) |
+| `openstudio-patterns` | Knowledge | Tool dependencies and model relationships (auto-loaded) |
+| `tool-workflows` | Knowledge | Multi-tool recipes for common operations (auto-loaded) |
+
+Workflow skills are invoked with `/skill-name`. Knowledge skills load automatically when relevant.
+
 ---
 
 ## Skills & Tools (124 total)
