@@ -10,6 +10,7 @@ LOG_TAIL_DEFAULT = int(os.environ.get("OPENSTUDIO_MCP_DEFAULT_LOG_TAIL", os.envi
 
 COMSTOCK_MEASURES_DIR = Path(os.environ.get("COMSTOCK_MEASURES_DIR", "/opt/comstock-measures"))
 COMMON_MEASURES_DIR = Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures"))
+SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/skills"))
 
 INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolve()
 
@@ -19,6 +20,7 @@ ALLOWED_PATH_ROOTS = [
     INPUT_ROOT,
     COMSTOCK_MEASURES_DIR,
     COMMON_MEASURES_DIR,
+    SKILLS_DIR,
 ]
 
 def is_path_allowed(p: Path) -> bool:

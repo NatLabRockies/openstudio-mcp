@@ -2,7 +2,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**21 skills &bull; 124 MCP tools &bull; 260+ integration tests**
+**22 skills &bull; 126 MCP tools &bull; 260+ integration tests**
 
 ---
 
@@ -54,6 +54,7 @@ Add (or merge into) the `mcpServers` block:
         "run", "--rm", "-i",
         "-v", "./tests/assets:/inputs",
         "-v", "./runs:/runs",
+        "-v", "./.claude/skills:/skills:ro",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
         "openstudio-mcp:dev", "openstudio-mcp"
       ]
@@ -64,6 +65,7 @@ Add (or merge into) the `mcpServers` block:
 
 - `./tests/assets:/inputs` — mounts the included test models so you can experiment right away. Replace with your own folder (e.g. `~/my-models:/inputs`) when ready.
 - `./runs:/runs` — simulation outputs are written here
+- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools
 - **Restart Claude Desktop** after saving the config file
 
 ### Step 3: Verify Connection
@@ -507,9 +509,24 @@ When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/
 
 Workflow skills are invoked with `/skill-name`. Knowledge skills load automatically when relevant.
 
+### Workflow Guides for All MCP Clients
+
+The same workflow guides are also available as MCP tools, so any MCP client (Claude Desktop, Cursor, etc.) can discover them:
+
+- `list_skills()` — see available workflows with descriptions
+- `get_skill(name)` — get step-by-step instructions for a specific workflow
+
+Mount the skills directory when running the container: `-v ./.claude/skills:/skills:ro`
+
 ---
 
-## Skills & Tools (124 total)
+## Skills & Tools (126 total)
+
+### Skill Discovery (2 tools)
+| Tool | Description |
+|------|-------------|
+| `list_skills` | List available workflow guides |
+| `get_skill` | Get step-by-step instructions for a workflow |
 
 ### Server Info (2 tools)
 | Tool | Description |
@@ -817,7 +834,7 @@ Full system diagram, security analysis & hardening recommendations: **[docs/arch
 
 ## Contributing
 
-### Adding a new skill
+### Adding a new MCP skill
 
 1. Create `mcp_server/skills/<name>/__init__.py`, `operations.py`, `tools.py`
 2. `operations.py` — pure business logic, returns `{"ok": True/False, ...}` dicts
@@ -825,6 +842,27 @@ Full system diagram, security analysis & hardening recommendations: **[docs/arch
 4. Add tests in `tests/test_<name>.py`
 5. Add CI step in `.github/workflows/ci.yml`
 6. The skill auto-registers via `skills/__init__.py` discovery
+7. Update `EXPECTED_TOOLS` in `tests/test_skill_registration.py`
+8. Update tool counts in `README.md` and `CLAUDE.md`
+
+### Adding a new Claude Code skill (workflow guide)
+
+1. Create `.claude/skills/<name>/SKILL.md` with YAML frontmatter:
+   ```yaml
+   ---
+   name: my-skill
+   description: Short description for discovery
+   ---
+   ```
+2. Add workflow instructions in the markdown body referencing MCP tool names
+3. For user-invocable skills, add `user-invocable: true` (or omit — default)
+4. For background knowledge, add `user-invocable: false`
+5. For fire-and-forget workflows, add `context: fork`
+6. Add integration test in `tests/test_skill_<name>.py` exercising the tool sequence
+7. Add test to a CI shard in `.github/workflows/ci.yml`
+8. Add example doc in `docs/examples/<N>_<name>.md`
+9. Update README examples section and Claude Code Skills table
+10. The skill auto-appears in `list_skills()` / `get_skill()` via the `/skills` mount
 
 ### Adding a new HVAC component type
 

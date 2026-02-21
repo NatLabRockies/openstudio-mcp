@@ -270,3 +270,22 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 - README updated with Examples 12-18 + Claude Code Skills table
 
 **Delivered:** 10 skills (7 user-invocable + 3 background knowledge), 8 tests, 7 example docs
+
+## Skill Discovery (COMPLETE ✅)
+
+**Goal:** Serve `.claude/skills/` workflow guides to all MCP clients (Claude Desktop, Cursor, etc.) via `list_skills` / `get_skill` tools, not just repo-aware agents.
+
+### Implemented:
+- `skill_discovery` skill: `list_skills` (scan `/skills/`, parse YAML frontmatter) + `get_skill` (strip frontmatter, return body + supporting files)
+- Simple frontmatter parser (no pyyaml dependency)
+- `SKILLS_DIR` env var (default `/skills`), added to `ALLOWED_PATH_ROOTS`
+- Path traversal protection in `get_skill`
+- Graceful degradation when no skills directory mounted
+- Docker volume mount: `-v ./.claude/skills:/skills:ro`
+
+### Testing:
+- 14 unit tests: `tests/test_skill_tools.py` (frontmatter parsing, list/get with various dir states)
+- 1 integration test: `tests/test_skill_tools_integration.py` (MCP client calling both tools)
+- Updated `tests/test_skill_registration.py` with new tool names
+
+**Delivered:** 1 skill, 2 tools, 15 tests
