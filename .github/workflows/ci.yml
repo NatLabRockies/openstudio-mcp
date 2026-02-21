@@ -61,18 +61,18 @@ jobs:
           mkdir -p runs
           case ${{ matrix.shard }} in
             1)
-              # sim test + component/weather + loop ops (8+10 deepened tests)
-              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py"
+              # sim test + component/weather + loop ops + skill_simulate
+              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_skill_simulate.py"
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=0.08220719519609203 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
             2)
-              # common_measures (20 tests), hvac_systems, geometry, zone terminal
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py"
+              # common_measures (20 tests), hvac_systems, geometry, zone terminal, skill_energy_report
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py"
               EXTRA_ENV=""
               ;;
             3)
-              # controls, object mgmt, loads, building, doas, hvac, measures (18 deepened)
-              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py"
+              # controls, object mgmt, loads, building, doas, hvac, measures, skill_qaqc
+              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_skill_qaqc.py"
               EXTRA_ENV=""
               ;;
             4)
