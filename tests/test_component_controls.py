@@ -6,31 +6,9 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, create_and_load, create_baseline_and_load
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
-
-
-async def _create_and_load(session, name):
-    cr = await session.call_tool("create_example_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
-
-
-async def _create_baseline_and_load(session, name):
-    cr = await session.call_tool("create_baseline_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
 
 
 # --- Economizer tests (System 3 PSZ-AC) ---
@@ -41,7 +19,7 @@ def test_set_economizer_type():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "ctrl_econ1")
+                zones = await create_and_load(session, "ctrl_econ1")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 3,
                     "thermal_zone_names": zones[:1],
@@ -78,7 +56,7 @@ def test_set_economizer_drybulb_limit():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "ctrl_econ2")
+                zones = await create_and_load(session, "ctrl_econ2")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 3,
                     "thermal_zone_names": zones[:1],
@@ -112,7 +90,7 @@ def test_economizer_no_oa_system():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                await _create_and_load(session, "ctrl_nooa")
+                await create_and_load(session, "ctrl_nooa")
                 # No air loop to test — try with bad name
                 result = await session.call_tool("set_economizer_properties", {
                     "air_loop_name": "Nonexistent Loop",
@@ -131,7 +109,7 @@ def test_set_setpoint_min_max_temp():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "ctrl_spm")
+                zones = await create_baseline_and_load(session, "ctrl_spm")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zones,
@@ -178,7 +156,7 @@ def test_set_chw_loop_exit_temp():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "ctrl_chw")
+                zones = await create_baseline_and_load(session, "ctrl_chw")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -213,7 +191,7 @@ def test_set_hw_loop_delta_t():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "ctrl_hw")
+                zones = await create_baseline_and_load(session, "ctrl_hw")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -247,7 +225,7 @@ def test_set_sizing_invalid_loop():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                await _create_and_load(session, "ctrl_invlp")
+                await create_and_load(session, "ctrl_invlp")
 
                 result = await session.call_tool("set_sizing_properties", {
                     "loop_name": "Nonexistent Loop",
@@ -264,7 +242,7 @@ def test_get_setpoint_manager_props():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "ctrl_getspm")
+                zones = await create_baseline_and_load(session, "ctrl_getspm")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -284,7 +262,7 @@ def test_set_economizer_differential_drybulb():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "ctrl_difdb")
+                zones = await create_and_load(session, "ctrl_difdb")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 3,
                     "thermal_zone_names": zones[:1],
@@ -317,7 +295,7 @@ def test_set_economizer_invalid_loop():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                await _create_and_load(session, "ctrl_inveco")
+                await create_and_load(session, "ctrl_inveco")
 
                 result = await session.call_tool("set_economizer_properties", {
                     "air_loop_name": "Nonexistent Loop",

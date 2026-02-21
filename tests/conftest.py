@@ -82,3 +82,39 @@ async def poll_until_done(s, run_id: str) -> dict:
         if state in terminal:
             return status
         await asyncio.sleep(POLL_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# Model setup helpers (shared across integration tests)
+# ---------------------------------------------------------------------------
+
+async def create_and_load(session, name):
+    """Create example model, load it, return zone names."""
+    cr = await session.call_tool("create_example_osm", {"name": name})
+    cd = unwrap(cr)
+    assert cd.get("ok") is True, cd
+    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+    assert unwrap(lr).get("ok") is True
+    zr = await session.call_tool("list_thermal_zones", {})
+    zd = unwrap(zr)
+    return [z["name"] for z in zd["thermal_zones"]]
+
+
+async def create_baseline_and_load(session, name):
+    """Create baseline 10-zone model, load it, return zone names."""
+    cr = await session.call_tool("create_baseline_osm", {"name": name})
+    cd = unwrap(cr)
+    assert cd.get("ok") is True, cd
+    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+    assert unwrap(lr).get("ok") is True
+    zr = await session.call_tool("list_thermal_zones", {})
+    zd = unwrap(zr)
+    return [z["name"] for z in zd["thermal_zones"]]
+
+
+async def setup_example(session, model_name):
+    """Create and load example model."""
+    cr = unwrap(await session.call_tool("create_example_osm", {"name": model_name}))
+    assert cr.get("ok") is True
+    lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
+    assert lr.get("ok") is True

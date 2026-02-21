@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, setup_example
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -19,13 +19,6 @@ def _unique(prefix: str = "pytest_weather") -> str:
 
 # EPW path — inside the container, the repo is at /repo
 EPW_PATH = "/repo/tests/assets/SEB_model/SEB4_baseboard/files/SRRL_2012AMY_60min.epw"
-
-
-async def _setup_example(session, model_name):
-    cr = unwrap(await session.call_tool("create_example_osm", {"name": model_name}))
-    assert cr.get("ok") is True
-    lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True
 
 
 # ---- Weather info tests ----
@@ -40,7 +33,7 @@ def test_get_weather_info_no_weather():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("get_weather_info", {}))
                 assert res.get("ok") is True
                 assert res["weather_file"] is None
@@ -56,7 +49,7 @@ def test_set_weather_file():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_weather_file", {
                     "epw_path": EPW_PATH
                 }))
@@ -80,7 +73,7 @@ def test_set_weather_file_not_found():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_weather_file", {
                     "epw_path": "/nonexistent/weather.epw"
                 }))
@@ -98,7 +91,7 @@ def test_get_weather_info_after_set():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 unwrap(await s.call_tool("set_weather_file", {"epw_path": EPW_PATH}))
                 res = unwrap(await s.call_tool("get_weather_info", {}))
                 assert res.get("ok") is True
@@ -122,7 +115,7 @@ def test_add_design_day_heating():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("add_design_day", {
                     "name": "Winter 99%",
                     "day_type": "WinterDesignDay",
@@ -150,7 +143,7 @@ def test_add_design_day_cooling():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("add_design_day", {
                     "name": "Summer 1%",
                     "day_type": "SummerDesignDay",
@@ -175,7 +168,7 @@ def test_add_design_day_verify_count():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 # Add heating DD
                 r1 = unwrap(await s.call_tool("add_design_day", {
                     "name": "Heating DD", "day_type": "WinterDesignDay",
@@ -205,7 +198,7 @@ def test_add_design_day_properties():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("add_design_day", {
                     "name": "Test DD", "day_type": "SummerDesignDay",
                     "month": 8, "day": 15,
@@ -236,7 +229,7 @@ def test_get_simulation_control_defaults():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("get_simulation_control", {}))
                 assert res.get("ok") is True
                 sc = res["simulation_control"]
@@ -261,7 +254,7 @@ def test_set_simulation_control_sizing():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_simulation_control", {
                     "do_zone_sizing": True,
                     "do_system_sizing": True,
@@ -289,7 +282,7 @@ def test_set_simulation_control_timestep():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_simulation_control", {
                     "timesteps_per_hour": 6,
                 }))
@@ -315,7 +308,7 @@ def test_get_run_period_default():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("get_run_period", {}))
                 assert res.get("ok") is True
                 rp = res["run_period"]
@@ -334,7 +327,7 @@ def test_set_run_period():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_run_period", {
                     "begin_month": 1, "begin_day": 1,
                     "end_month": 3, "end_day": 31,
@@ -366,7 +359,7 @@ def test_set_run_period_full_year():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_run_period", {
                     "begin_month": 1, "begin_day": 1,
                     "end_month": 12, "end_day": 31,

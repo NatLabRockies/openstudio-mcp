@@ -6,31 +6,9 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, create_and_load, create_baseline_and_load
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
-
-
-async def _create_and_load(session, name):
-    cr = await session.call_tool("create_example_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
-
-
-async def _create_baseline_and_load(session, name):
-    cr = await session.call_tool("create_baseline_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
 
 
 # --- Baseline model tests (System 7 w/ plant loops) ---
@@ -41,7 +19,7 @@ def test_add_second_boiler():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "lo_addblr")
+                zones = await create_baseline_and_load(session, "lo_addblr")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -75,7 +53,7 @@ def test_add_second_chiller():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "lo_addchl")
+                zones = await create_baseline_and_load(session, "lo_addchl")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -105,7 +83,7 @@ def test_remove_boiler():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "lo_rmblr")
+                zones = await create_baseline_and_load(session, "lo_rmblr")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -143,7 +121,7 @@ def test_add_equipment_invalid_type():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "lo_invtyp")
+                zones = await create_baseline_and_load(session, "lo_invtyp")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -168,7 +146,7 @@ def test_add_equipment_invalid_loop():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                await _create_and_load(session, "lo_invlp")
+                await create_and_load(session, "lo_invlp")
 
                 result = await session.call_tool("add_supply_equipment", {
                     "plant_loop_name": "Nonexistent Loop",
@@ -186,7 +164,7 @@ def test_remove_equipment_not_found():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "lo_rmnf")
+                zones = await create_baseline_and_load(session, "lo_rmnf")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -212,7 +190,7 @@ def test_add_baseboard_to_zone():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "lo_addbb")
+                zones = await create_and_load(session, "lo_addbb")
 
                 result = await session.call_tool("add_zone_equipment", {
                     "zone_name": zones[0],
@@ -237,7 +215,7 @@ def test_remove_zone_equipment():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "lo_rmbb")
+                zones = await create_and_load(session, "lo_rmbb")
 
                 await session.call_tool("add_zone_equipment", {
                     "zone_name": zones[0],
@@ -267,7 +245,7 @@ def test_add_zone_equipment_invalid_zone():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                await _create_and_load(session, "lo_invzn")
+                await create_and_load(session, "lo_invzn")
 
                 result = await session.call_tool("add_zone_equipment", {
                     "zone_name": "Nonexistent Zone",
@@ -285,7 +263,7 @@ def test_add_zone_equipment_invalid_type():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "lo_invzt")
+                zones = await create_and_load(session, "lo_invzt")
 
                 result = await session.call_tool("add_zone_equipment", {
                     "zone_name": zones[0],

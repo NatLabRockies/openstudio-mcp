@@ -7,21 +7,13 @@ import uuid
 
 import pytest
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, setup_example
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
 
 def _unique(prefix: str = "pytest_objmgmt") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
-
-
-async def _setup_example(session, model_name):
-    """Create + load example model."""
-    cr = unwrap(await session.call_tool("create_example_osm", {"name": model_name}))
-    assert cr.get("ok") is True
-    lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True
 
 
 async def _setup_baseline(session, model_name, ashrae_sys_num="07"):
@@ -45,7 +37,7 @@ def test_rename_space():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 # Get first space name
                 spaces = unwrap(await s.call_tool("list_spaces", {}))
                 old_name = spaces["spaces"][0]["name"]
@@ -71,7 +63,7 @@ def test_rename_thermal_zone():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 zones = unwrap(await s.call_tool("list_thermal_zones", {}))
                 old_name = zones["thermal_zones"][0]["name"]
                 res = unwrap(await s.call_tool("rename_object", {
@@ -99,7 +91,7 @@ def test_delete_space():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 # Create a new space to delete (don't delete model's original)
                 unwrap(await s.call_tool("create_space", {"name": "ToDelete"}))
                 spaces_before = unwrap(await s.call_tool("list_spaces", {}))
@@ -125,7 +117,7 @@ def test_delete_nonexistent():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("delete_object", {
                     "object_name": "DoesNotExist123"
                 }))
@@ -145,7 +137,7 @@ def test_list_objects_by_type():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("list_model_objects", {
                     "object_type": "Space"
                 }))
@@ -165,7 +157,7 @@ def test_list_objects_invalid_type():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("list_model_objects", {
                     "object_type": "FakeType"
                 }))
@@ -241,7 +233,7 @@ def test_delete_with_type_hint():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 # Create a schedule to delete
                 unwrap(await s.call_tool("create_schedule_ruleset", {
                     "name": "TempSched", "schedule_type": "Fractional", "default_value": 1.0
@@ -268,7 +260,7 @@ def test_rename_schedule():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 # Create a schedule to rename
                 unwrap(await s.call_tool("create_schedule_ruleset", {
                     "name": "OldSched", "schedule_type": "Fractional", "default_value": 1.0

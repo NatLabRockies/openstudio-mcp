@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, setup_example
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -17,16 +17,9 @@ def _unique_name(prefix: str = "pytest_geometry") -> str:
     return f"{prefix}_{token}"
 
 
-async def _setup_example(session, model_name):
-    cr = unwrap(await session.call_tool("create_example_osm", {"name": model_name}))
-    assert cr.get("ok") is True
-    lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True
-
-
 async def _setup_with_space(session, model_name, space_name):
     """Create model, load it, and create a space for geometry tests."""
-    await _setup_example(session, model_name)
+    await setup_example(session, model_name)
     sr = unwrap(await session.call_tool("create_space", {"name": space_name}))
     assert sr.get("ok") is True
 
@@ -233,7 +226,7 @@ def test_create_surface_invalid_space():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique_name())
+                await setup_example(s, _unique_name())
                 res = unwrap(await s.call_tool("create_surface", {
                     "name": "BadSurf",
                     "vertices": [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
@@ -326,7 +319,7 @@ def test_create_subsurface_invalid_parent():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique_name())
+                await setup_example(s, _unique_name())
                 res = unwrap(await s.call_tool("create_subsurface", {
                     "name": "BadSub",
                     "vertices": [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
@@ -350,7 +343,7 @@ def test_create_space_from_floor_print():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique_name())
+                await setup_example(s, _unique_name())
                 # 10x10m rectangle, 3m height
                 res = unwrap(await s.call_tool("create_space_from_floor_print", {
                     "name": "ExtrudedSpace",
@@ -384,7 +377,7 @@ def test_match_surfaces_adjacent_spaces():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique_name())
+                await setup_example(s, _unique_name())
                 # Create two side-by-side spaces sharing the wall at x=5
                 unwrap(await s.call_tool("create_space_from_floor_print", {
                     "name": "Left", "floor_vertices": [[0, 0], [5, 0], [5, 5], [0, 5]],
@@ -427,7 +420,7 @@ def test_match_surfaces_no_adjacency():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique_name())
+                await setup_example(s, _unique_name())
                 unwrap(await s.call_tool("create_space_from_floor_print", {
                     "name": "Solo", "floor_vertices": [[0, 0], [5, 0], [5, 5], [0, 5]],
                     "floor_to_ceiling_height": 3.0,

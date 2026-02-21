@@ -5,33 +5,9 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, create_and_load, create_baseline_and_load
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
-
-
-async def _create_and_load(session, name):
-    """Helper: create example model, load it, return zone names."""
-    cr = await session.call_tool("create_example_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
-
-
-async def _create_baseline_and_load(session, name):
-    """Helper: create baseline 10-zone model, load it, return zone names."""
-    cr = await session.call_tool("create_baseline_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
 
 
 # --- Example model tests (1 zone) ---
@@ -43,7 +19,7 @@ def test_replace_single_zone():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_and_load(session, "rzt_single")
+                zone_names = await create_and_load(session, "rzt_single")
 
                 # Add System 5 (VAV w/ Reheat)
                 sr = await session.call_tool("add_baseline_system", {
@@ -85,7 +61,7 @@ def test_zone_not_on_air_loop():
                 await session.initialize()
 
                 # Use baseline model and create a fresh space+zone not on any air loop
-                zone_names = await _create_baseline_and_load(session, "rzt_no_loop")
+                zone_names = await create_baseline_and_load(session, "rzt_no_loop")
 
                 # Create new space and zone not connected to any HVAC
                 await session.call_tool("create_space", {"name": "Unconnected Space"})
@@ -114,7 +90,7 @@ def test_zone_not_found():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                await _create_and_load(session, "rzt_not_found")
+                await create_and_load(session, "rzt_not_found")
 
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": "Nonexistent Zone",
@@ -136,7 +112,7 @@ def test_invalid_terminal_type():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_and_load(session, "rzt_bad_type")
+                zone_names = await create_and_load(session, "rzt_bad_type")
 
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": zone_names[0],
@@ -158,7 +134,7 @@ def test_hw_terminal_no_loop():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_and_load(session, "rzt_no_hw")
+                zone_names = await create_and_load(session, "rzt_no_hw")
 
                 # Add System 6 (Packaged VAV w/ PFP — no HW loop)
                 sr = await session.call_tool("add_baseline_system", {
@@ -191,7 +167,7 @@ def test_replace_single_zone_baseline():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_baseline_and_load(session, "rzt_baseline_single")
+                zone_names = await create_baseline_and_load(session, "rzt_baseline_single")
 
                 # Add System 7 (VAV w/ Reheat, chiller/boiler/tower)
                 sr = await session.call_tool("add_baseline_system", {
@@ -229,7 +205,7 @@ def test_mixed_terminals_baseline():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_baseline_and_load(session, "rzt_mixed")
+                zone_names = await create_baseline_and_load(session, "rzt_mixed")
 
                 # Add System 7
                 sr = await session.call_tool("add_baseline_system", {
@@ -270,7 +246,7 @@ def test_replace_preserves_other_zones_baseline():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_baseline_and_load(session, "rzt_preserve")
+                zone_names = await create_baseline_and_load(session, "rzt_preserve")
 
                 # Add System 7
                 sr = await session.call_tool("add_baseline_system", {
@@ -309,7 +285,7 @@ def test_gradual_retrofit_baseline():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_baseline_and_load(session, "rzt_retrofit")
+                zone_names = await create_baseline_and_load(session, "rzt_retrofit")
 
                 # Add System 7
                 sr = await session.call_tool("add_baseline_system", {
@@ -345,7 +321,7 @@ def test_replace_to_pfp_baseline():
         async with stdio_client(sp) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zone_names = await _create_baseline_and_load(session, "rzt_pfp")
+                zone_names = await create_baseline_and_load(session, "rzt_pfp")
 
                 # Add System 7
                 sr = await session.call_tool("add_baseline_system", {

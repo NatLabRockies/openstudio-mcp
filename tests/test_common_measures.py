@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, setup_example
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -23,14 +23,6 @@ async def _setup_baseline(session, model_name):
     """Create and load a baseline model."""
     cr = unwrap(await session.call_tool("create_baseline_osm", {"name": model_name}))
     assert cr.get("ok") is True, f"create_baseline_osm failed: {cr}"
-    lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True, f"load_osm_model failed: {lr}"
-
-
-async def _setup_example(session, model_name):
-    """Create and load a simple example model."""
-    cr = unwrap(await session.call_tool("create_example_osm", {"name": model_name}))
-    assert cr.get("ok") is True, f"create_example_osm failed: {cr}"
     lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
     assert lr.get("ok") is True, f"load_osm_model failed: {lr}"
 
@@ -584,7 +576,7 @@ def test_set_lifecycle_cost_params():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique("lcc_params"))
+                await setup_example(s, _unique("lcc_params"))
 
                 res = unwrap(await s.call_tool("set_lifecycle_cost_params", {
                     "study_period": 30,
@@ -606,7 +598,7 @@ def test_add_cost_per_floor_area():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique("cost_area"))
+                await setup_example(s, _unique("cost_area"))
 
                 res = unwrap(await s.call_tool("add_cost_per_floor_area", {
                     "material_cost": 5.0,

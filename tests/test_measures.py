@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, setup_example
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -19,13 +19,6 @@ def _unique(prefix: str = "pytest_measures") -> str:
 
 # Measure path inside container (repo mounted at /repo)
 MEASURE_DIR = "/repo/tests/assets/measures/set_building_name"
-
-
-async def _setup_example(session, model_name):
-    cr = unwrap(await session.call_tool("create_example_osm", {"name": model_name}))
-    assert cr.get("ok") is True
-    lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True
 
 
 @pytest.mark.integration
@@ -73,7 +66,7 @@ def test_apply_measure_default_args():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": MEASURE_DIR
                 }))
@@ -94,7 +87,7 @@ def test_apply_measure_custom_args():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": MEASURE_DIR,
                     "arguments": {"building_name": "My Custom Building"}
@@ -116,7 +109,7 @@ def test_apply_measure_invalid_dir():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": "/nonexistent/measure"
                 }))
@@ -134,7 +127,7 @@ def test_apply_measure_verify_model_changed():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 # Get original building name
                 bldg_before = unwrap(await s.call_tool("get_building_info", {}))
                 original_name = bldg_before["building"]["name"]

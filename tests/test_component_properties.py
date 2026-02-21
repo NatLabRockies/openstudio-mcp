@@ -6,33 +6,9 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-from conftest import unwrap, integration_enabled, server_params
+from conftest import unwrap, integration_enabled, server_params, create_and_load, create_baseline_and_load
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
-
-
-async def _create_and_load(session, name):
-    """Create example model, load it, return zone names."""
-    cr = await session.call_tool("create_example_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
-
-
-async def _create_baseline_and_load(session, name):
-    """Create baseline 10-zone model, load it, return zone names."""
-    cr = await session.call_tool("create_baseline_osm", {"name": name})
-    cd = unwrap(cr)
-    assert cd.get("ok") is True, cd
-    lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
-    zd = unwrap(zr)
-    return [z["name"] for z in zd["thermal_zones"]]
 
 
 # --- Example model tests (System 1 PTAC) ---
@@ -43,7 +19,7 @@ def test_list_components():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "cp_list")
+                zones = await create_and_load(session, "cp_list")
                 # Add System 1 PTAC
                 await session.call_tool("add_baseline_system", {
                     "system_type": 1,
@@ -63,7 +39,7 @@ def test_list_components_by_category():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "cp_cat")
+                zones = await create_and_load(session, "cp_cat")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": zones,
@@ -82,7 +58,7 @@ def test_get_heating_coil_properties():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "cp_htg")
+                zones = await create_and_load(session, "cp_htg")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": zones,
@@ -108,7 +84,7 @@ def test_get_cooling_coil_properties():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "cp_clg")
+                zones = await create_and_load(session, "cp_clg")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": zones,
@@ -133,7 +109,7 @@ def test_get_fan_properties():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "cp_fan")
+                zones = await create_and_load(session, "cp_fan")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": zones,
@@ -158,7 +134,7 @@ def test_set_fan_pressure_rise():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "cp_setfan")
+                zones = await create_and_load(session, "cp_setfan")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": zones,
@@ -190,7 +166,7 @@ def test_set_invalid_property():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_and_load(session, "cp_inv")
+                zones = await create_and_load(session, "cp_inv")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": zones,
@@ -214,7 +190,7 @@ def test_get_nonexistent_component():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                await _create_and_load(session, "cp_nocomp")
+                await create_and_load(session, "cp_nocomp")
 
                 result = await session.call_tool("get_component_properties", {
                     "component_name": "Nonexistent Widget",
@@ -232,7 +208,7 @@ def test_list_components_system7():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "cp_sys7")
+                zones = await create_baseline_and_load(session, "cp_sys7")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -253,7 +229,7 @@ def test_get_chiller_properties():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "cp_chill")
+                zones = await create_baseline_and_load(session, "cp_chill")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -277,7 +253,7 @@ def test_set_chiller_cop():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "cp_setcop")
+                zones = await create_baseline_and_load(session, "cp_setcop")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -309,7 +285,7 @@ def test_get_boiler_properties():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "cp_boiler")
+                zones = await create_baseline_and_load(session, "cp_boiler")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -332,7 +308,7 @@ def test_set_boiler_efficiency():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "cp_setblr")
+                zones = await create_baseline_and_load(session, "cp_setblr")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -364,7 +340,7 @@ def test_get_pump_properties():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "cp_pump")
+                zones = await create_baseline_and_load(session, "cp_pump")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
@@ -389,7 +365,7 @@ def test_set_pump_head():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                zones = await _create_baseline_and_load(session, "cp_setpmp")
+                zones = await create_baseline_and_load(session, "cp_setpmp")
                 await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zones,
