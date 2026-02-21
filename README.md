@@ -355,7 +355,7 @@ You: Show me the end-use energy breakdown, envelope summary, HVAC sizing,
      frequency="Daily", start_month=1, end_month=1)
 ```
 
-### Example 12: One-Command Simulation (`/simulate`)
+### Example 12: [One-Command Simulation (`/simulate`)](docs/examples/12_simulate.md)
 
 Run a simulation and get results in one step.
 
@@ -372,7 +372,7 @@ You: /simulate
 6. Presents formatted results summary
 ```
 
-### Example 13: Comprehensive Energy Report (`/energy-report`)
+### Example 13: [Comprehensive Energy Report (`/energy-report`)](docs/examples/13_energy_report.md)
 
 Extract all result categories from a completed simulation.
 
@@ -390,7 +390,7 @@ You: /energy-report
 7. Presents structured report with all sections
 ```
 
-### Example 14: Model Quality Check (`/qaqc`)
+### Example 14: [Model Quality Check (`/qaqc`)](docs/examples/14_qaqc.md)
 
 Check your model for common issues before running a simulation.
 
@@ -409,7 +409,7 @@ You: /qaqc
 8. Reports issues by severity (errors, warnings, info)
 ```
 
-### Example 15: Guided HVAC Selection (`/add-hvac`)
+### Example 15: [Guided HVAC Selection (`/add-hvac`)](docs/examples/15_add_hvac.md)
 
 Get a recommendation for the right HVAC system based on your building.
 
@@ -428,7 +428,7 @@ You: /add-hvac
 6. list_zone_hvac_equipment()                 # verify
 ```
 
-### Example 16: Complete Building from Scratch (`/new-building`)
+### Example 16: [Complete Building from Scratch (`/new-building`)](docs/examples/16_new_building.md)
 
 Create a full building model step by step.
 
@@ -453,7 +453,7 @@ You: /new-building
 14. extract_summary_metrics(run_id=...)
 ```
 
-### Example 17: Retrofit Analysis (`/retrofit`)
+### Example 17: [Retrofit Analysis (`/retrofit`)](docs/examples/17_retrofit.md)
 
 Apply energy conservation measures and compare before/after performance.
 
@@ -473,7 +473,7 @@ You: /retrofit
 9.  Presents side-by-side comparison
 ```
 
-### Example 18: Model Visualization (`/view`)
+### Example 18: [Model Visualization (`/view`)](docs/examples/18_view.md)
 
 Generate an interactive 3D view of your model.
 
