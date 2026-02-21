@@ -238,3 +238,35 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 - Pre-baked SQL fixture: `tests/assets/eplusout_seb4.sql` (trimmed from SEB4 sim)
 
 **Delivered:** 6 tools, 16 tests (no Docker needed)
+
+## Claude Code Skills (COMPLETE ✅)
+
+**Goal:** Add `.claude/skills/` prompt-based workflow guides so Claude Code (and other repo-aware agents) can orchestrate multi-tool workflows via `/slash` commands.
+
+### Tier 3: Background Knowledge Skills
+- `ashrae-baseline-guide` — ASHRAE 90.1 Table G3.1.1 system selection criteria (auto-loaded)
+- `openstudio-patterns` — Tool dependencies, model object relationships, common errors (auto-loaded)
+- `tool-workflows` — 12 multi-tool recipes for common operations (auto-loaded)
+- Validation test: `tests/test_skill_docs.py` — checks YAML frontmatter + cross-references tool names against MCP registry
+
+### Tier 2: Task Skills
+- `/qaqc` — Pre-simulation model quality check (7 inspection tools, reports by severity)
+- `/add-hvac` — Guided ASHRAE system selection based on building attributes
+- `/view` — Quick 3D model visualization via ViewModel measure
+
+### Tier 1: Workflow Skills
+- `/simulate` — Fire-and-forget (`context: fork`): save → run → poll → extract metrics + end-use
+- `/energy-report` — Fire-and-forget: extract all 6 result categories from completed sim
+- `/new-building` — Full model creation: baseline → glazing → schedules → loads → weather → simulate
+- `/retrofit` — Before/after ECM analysis with `ecm-catalog.md` supporting file
+
+### Testing
+- 7 integration tests: `test_skill_simulate.py`, `test_skill_energy_report.py`, `test_skill_qaqc.py`, `test_skill_add_hvac.py`, `test_skill_new_building.py`, `test_skill_retrofit.py`, `test_skill_view.py`
+- 1 validation test: `test_skill_docs.py` (unit, no Docker)
+- All added to CI shards in `.github/workflows/ci.yml`
+
+### Documentation
+- 7 example docs: `docs/examples/12_simulate.md` through `docs/examples/18_view.md`
+- README updated with Examples 12-18 + Claude Code Skills table
+
+**Delivered:** 10 skills (7 user-invocable + 3 background knowledge), 8 tests, 7 example docs
