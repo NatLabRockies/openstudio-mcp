@@ -1,0 +1,53 @@
+# https://docs.astral.sh/ruff/settings/
+fix = true
+line-length = 120
+
+# https://docs.astral.sh/ruff/settings/#format
+[format]
+docstring-code-format = true
+
+# https://docs.astral.sh/ruff/linter/#rule-selection
+[lint]
+# Enable these rules
+extend-select = [
+    "A",   # flake8-builtins
+    "ARG", # flake8-unused-arguments
+    "BLE", # flake8-blind-except
+    "C4",  # flake8-comprehensions
+    "COM", # flake8-commas
+    "DTZ", # flake8-datetimez
+    "E",   # Error
+    "EXE", # flake8-executable
+    "F",   # Pyflakes
+    "I",   # isort
+    "ICN", # flake8-import-conventions
+    "ISC", # flake8-implicit-str-concat
+    "N",   # pep8-naming
+    "NPY", # NumPy
+    "PD",  # pandas-vet
+    "PGH", # pygrep-hooks
+    "PIE", # flake8-pie
+    "PLC", # Pylint Convention
+    "PLE", # Pylint Error
+    "PLR", # Pylint Refactor
+    "PLW", # Pylint Warning
+    "PT",  # flake8-pytest-style
+    "Q",   # flake8-quotes
+    "RUF", # Ruff-specific rules
+    "S",   # flake8-bandit
+    "SIM", # flake8-simplify
+    "T10", # flake8-debugger
+    "TID", # flake8-tidy-imports
+    "UP",  # pyupgrade
+]
+# except for these specific errors
+# Ruff has a list of linting rules to ignore when using the Ruff formatter (as we are): https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+ignore = [
+    "PLR2004", # magic-value-comparison
+]
+
+[lint.per-file-ignores]
+"tests/*" = [
+    "PLR0913", # too-many-arguments
+    "S101",    # assert
+]

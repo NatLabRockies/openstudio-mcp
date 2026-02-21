@@ -3,19 +3,18 @@
 All model-querying skills call get_model() to access
 the currently loaded OpenStudio model.
 """
+
 from __future__ import annotations
 
 import atexit
 from pathlib import Path
-from typing import Optional
 
 import openstudio
 
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
-
-_current_model: Optional[openstudio.model.Model] = None
-_current_model_path: Optional[Path] = None
+_current_model: openstudio.model.Model | None = None
+_current_model_path: Path | None = None
 
 
 def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.model.Model:
@@ -37,7 +36,7 @@ def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.mod
     return _current_model
 
 
-def save_model(save_path: Optional[Path] = None) -> Path:
+def save_model(save_path: Path | None = None) -> Path:
     """Save current model. Returns path saved to."""
     if _current_model is None:
         raise RuntimeError("No model loaded.")
@@ -56,12 +55,12 @@ def get_model() -> openstudio.model.Model:
     return _current_model
 
 
-def get_model_path() -> Optional[Path]:
+def get_model_path() -> Path | None:
     """Return the file path of the currently loaded model, or None."""
     return _current_model_path
 
 
-def get_model_if_loaded() -> Optional[openstudio.model.Model]:
+def get_model_if_loaded() -> openstudio.model.Model | None:
     """Return the current model without raising, or None if not loaded."""
     return _current_model
 

@@ -7,11 +7,12 @@ import time
 
 import pytest
 
-
 # ---- helpers ---------------------------------------------------------------
+
 
 class StreamReader(threading.Thread):
     """Continuously read lines from a stream into a Queue."""
+
     def __init__(self, stream, out_queue: queue.Queue):
         super().__init__(daemon=True)
         self.stream = stream
@@ -63,7 +64,7 @@ def _read_json_line(stdout_q: queue.Queue, *, timeout_s: float) -> dict:
             obj = json.loads(s)
         except json.JSONDecodeError as e:
             raise AssertionError(
-                f"Protocol-breaking stdout (not JSON): {line!r}\n{e}"
+                f"Protocol-breaking stdout (not JSON): {line!r}\n{e}",
             )
 
         if not isinstance(obj, dict):
@@ -75,6 +76,7 @@ def _read_json_line(stdout_q: queue.Queue, *, timeout_s: float) -> dict:
 
 
 # ---- test -----------------------------------------------------------------
+
 
 @pytest.mark.timeout(30)
 def test_openstudio_mcp_stdio_is_clean_through_tool_call():
@@ -109,39 +111,41 @@ def test_openstudio_mcp_stdio_is_clean_through_tool_call():
         if proc.poll() is not None:
             err = "".join(_drain(stderr_q))
             raise AssertionError(
-                f"Server exited early with code {proc.returncode}\nStderr:\n{err}"
+                f"Server exited early with code {proc.returncode}\nStderr:\n{err}",
             )
 
         # --- initialize -----------------------------------------------------
-        _write_json(proc, {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "clientInfo": {"name": "pytest", "version": "0"},
-                "capabilities": {},
+        _write_json(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "clientInfo": {"name": "pytest", "version": "0"},
+                    "capabilities": {},
+                },
             },
-        })
+        )
 
         init_resp = _read_json_line(stdout_q, timeout_s=10)
         assert init_resp.get("id") == 1
         assert "result" in init_resp
 
         # --- tools/list -----------------------------------------------------
-        _write_json(proc, {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list",
-            "params": {},
-        })
+        _write_json(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {},
+            },
+        )
 
         tools_resp = _read_json_line(stdout_q, timeout_s=10)
-        tools = {
-            t.get("name")
-            for t in tools_resp["result"].get("tools", [])
-            if isinstance(t, dict)
-        }
+        tools = {t.get("name") for t in tools_resp["result"].get("tools", []) if isinstance(t, dict)}
 
         expected = {
             "run_osw",
@@ -155,15 +159,18 @@ def test_openstudio_mcp_stdio_is_clean_through_tool_call():
         assert not missing, f"Missing tools: {missing}"
 
         # --- NEW ASSERTION: call a real tool --------------------------------
-        _write_json(proc, {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "get_server_status",
-                "arguments": {},
+        _write_json(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_server_status",
+                    "arguments": {},
+                },
             },
-        })
+        )
 
         status_resp = _read_json_line(stdout_q, timeout_s=10)
         assert status_resp.get("id") == 3
@@ -176,7 +183,7 @@ def test_openstudio_mcp_stdio_is_clean_through_tool_call():
                 json.loads(ln)
             except Exception:
                 raise AssertionError(
-                    f"Protocol-breaking stdout after tool call: {ln!r}"
+                    f"Protocol-breaking stdout after tool call: {ln!r}",
                 )
 
     finally:

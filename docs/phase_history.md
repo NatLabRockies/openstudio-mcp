@@ -5,6 +5,7 @@
 ## Phase 2 (COMPLETE ✅)
 
 ### Completed:
+
 1. ✅ Step 17: `load_osm_model` + `save_osm_model` to `model_management/`
 2. ✅ Step 9: `building/` skill (building info, model summary, building stories)
 3. ✅ **Batch 1 (Steps 10-12):** `spaces/`, `geometry/`, `constructions/` - 10 tools, 6 tests ✅
@@ -12,26 +13,31 @@
 5. ✅ **Batch 3 (Steps 15-16):** `loads/`, `space_types/` - 7 tools, 10 tests ✅
 
 ### Summary:
+
 **Phase 2 delivered 10 query skills with 35 MCP tools and 35 integration tests.**
 
 ## Phase 3 (COMPLETE ✅ — Model Mutation & Creation Tools)
 
 ### Batch 1 (COMPLETE ✅):
+
 1. ✅ `create_space` — Create spaces w/ optional building story and space type
 2. ✅ `create_thermal_zone` — Create thermal zones and assign spaces
 3. ✅ `add_air_loop` — Add air loops and connect to thermal zones
 
 ### Batch 2 (COMPLETE ✅):
+
 4. ✅ `create_schedule_ruleset` — Create constant schedules (Fractional, Temperature, OnOff)
 5. ✅ `add_output_variable` — Add EnergyPlus output variables for simulation results
 6. ✅ `add_output_meter` — Add EnergyPlus output meters for energy tracking
 
 ### Batch 3 (COMPLETE ✅):
+
 7. ✅ `create_standard_opaque_material` — Create materials w/ thermal properties
 8. ✅ `create_construction` — Create layered constructions from materials
 9. ✅ `assign_construction_to_surface` — Assign constructions to surfaces
 
 ### Summary:
+
 **Phase 3 delivered 9 creation tools with 37 integration tests.**
 
 All tests passing locally. Enables complete building model creation: spaces, zones, HVAC, schedules, materials, constructions, and simulation outputs.
@@ -45,6 +51,7 @@ All tests passing locally. Enables complete building model creation: spaces, zon
 ### Phase 4A: ASHRAE Baseline Systems 1-3 ✅ COMPLETE
 
 **Implemented:**
+
 - ✅ Skill structure: `hvac_systems/` with baseline.py, wiring.py, catalog.py, validation.py
 - ✅ `add_baseline_system` — Create ASHRAE baseline systems
 - ✅ `list_baseline_systems` — List all baseline system types + modern templates
@@ -61,11 +68,13 @@ All tests passing locally. Enables complete building model creation: spaces, zon
 **All 10 ASHRAE 90.1 Appendix G baseline systems implemented!**
 
 Completed in 3 batches:
+
 - ✅ Batch 1: Systems 4-6 (PSZ-HP, Packaged VAV variants)
 - ✅ Batch 2: Systems 7-8 (Central VAV w/ chiller/boiler/tower)
 - ✅ Batch 3: Systems 9-10 (Gas/electric unit heaters)
 
 **Testing:** 18 comprehensive integration tests (all passing)
+
 - Component existence verification
 - Plant loop verification (Systems 5, 7-8)
 - Multi-zone rejection (PSZ systems)
@@ -73,6 +82,7 @@ Completed in 3 batches:
 - Edge case handling
 
 **Code Delivered:**
+
 - baseline.py: 1,277 lines (10 complete system implementations)
 - 18 integration tests
 - Full API routing (systems 1-10)
@@ -81,21 +91,25 @@ Completed in 3 batches:
 All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 
 ### Phase 4C: Air Terminal Replacement ✅ COMPLETE
+
 - `replace_air_terminals(system_name, terminal_type, ...)` — Swap terminals on existing air loops
 
 ### Phase 4D: Component-Level Validation Tests ✅ COMPLETE
+
 - 73 validation tests for all 10 baseline systems — all passing
 - Enhanced query tools: `get_plant_loop_details`, `get_zone_hvac_details`
 - Coil type/fan/economizer/setpoint/plant loop verification
 - Fixed coil extraction bug (OS underscore naming: `OS_Coil_Heating_Gas`)
 
 ### Phase 4E: Modern HVAC Templates ✅ COMPLETE
+
 - 3 tools: `add_doas_system`, `add_vrf_system`, `add_radiant_system`
 - 16 integration tests (6 DOAS + 5 VRF + 5 Radiant) — all passing
 - Key API fixes: VRF uses `addTerminal()` not `setVRFSystem()`, HR uses `setRatedEvaporativeCapacity`, radiant surface types are plural (`Floors`/`Ceilings`)
 - DOAS, VRF, Radiant system templates
 
 ### Phase 4F: Zone-Level Terminal Replacement ✅ COMPLETE
+
 - `replace_zone_terminal(zone_name, terminal_type, ...)` — Replace terminal on single zone
 - Enables mixed terminal types on same air loop
 - Gradual retrofits and zonal control strategies
@@ -105,6 +119,7 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 ### Implementation Structure:
 
 **Skills modules under `skills/hvac_systems/`:**
+
 - ✅ `baseline.py` — All 10 ASHRAE Appendix G baseline systems
 - ✅ `wiring.py` — Common connection patterns (plant loops, OA systems)
 - ✅ `validation.py` — Model integrity checks
@@ -122,6 +137,7 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 **Goal:** Generic registry-driven tools to query/modify HVAC component properties, controls, and loop equipment — not 225 per-component tools.
 
 ### 5A: Component Query & Modify ✅ COMPLETE
+
 - `list_hvac_components` — list all model HVAC components (15 types: coils, plant, fans, pumps)
 - `get_component_properties` — read all registered properties with values + units
 - `set_component_properties` — apply property changes, return old/new values
@@ -130,12 +146,14 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 - 15 integration tests
 
 ### 5B: Controls & Setpoints ✅ COMPLETE
+
 - `set_economizer_properties` — modify OA controller (economizer type, drybulb limits)
 - `set_sizing_properties` — modify SizingPlant (exit temp, delta-T)
 - `set_setpoint_manager_properties` — modify SPM (min/max supply air temp)
 - 10 integration tests
 
 ### 5C: Loop & Zone Surgery ✅ COMPLETE
+
 - `add_supply_equipment` — create + add to plant loop supply (Boiler, Chiller, Tower)
 - `remove_supply_equipment` — remove from plant loop supply
 - `add_zone_equipment` — create + add to zone (Baseboard, Unit Heater)
@@ -147,11 +165,13 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 ## Phase 6 (COMPLETE ✅ — Loads, Object Management, Weather & Measures)
 
 ### 6A: Load Creation ✅ COMPLETE
+
 - 5 tools: `create_people_definition`, `create_lights_definition`, `create_electric_equipment`, `create_gas_equipment`, `create_infiltration`
 - Extends existing `loads/` skill
 - 12 integration tests
 
 ### 6B: Object Management ✅ COMPLETE
+
 - 3 tools: `delete_object`, `rename_object`, `list_model_objects`
 - New `object_management/` skill
 - Supports 28+ types (spaces, zones, HVAC, loads, constructions, schedules)
@@ -159,6 +179,7 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 - 10 integration tests
 
 ### 6C: Weather, Design Days, SimControl & RunPeriod ✅ COMPLETE
+
 - 7 tools: `get_weather_info`, `set_weather_file`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period`
 - `weather/` skill
 - Complementary to OSW-level EPW override
@@ -167,6 +188,7 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 - 14 integration tests
 
 ### 6D: Measures ✅ COMPLETE
+
 - 2 tools: `list_measure_arguments`, `apply_measure`
 - New `measures/` skill
 - OSW-based approach (save → run measure → reload)
@@ -193,6 +215,7 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 **Goal:** Bundle openstudio-common-measures-gem (~79 measures) and expose 11 wrapper tools with typed args so LLMs get consistent, error-resistant recipes.
 
 ### Implemented:
+
 - Bundled `openstudio-common-measures-gem` v0.9.0 in Docker image at `/opt/common-measures`
 - Discovery: `list_common_measures` (categorized, ~79 measures)
 - 10 Tier 1 wrapper tools w/ typed args:
@@ -216,12 +239,14 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 ## Bug Fixes ✅
 
 ### get_building_info NaN/Inf crash
+
 - OpenStudio aggregate methods (`floorAreaPerPerson()`, `peoplePerFloorArea()`, etc.) return NaN/Inf when model has geometry but no people/lights/equipment
 - Trigger: `create_typical_building` w/ `add_hvac=false` leaves partial state → pydantic rejects NaN in JSON serialization
 - Fix: `_safe_float()` helper converts NaN/Inf → None for 12 density/ratio fields
 - Audited loads + space_types extractors — already safe (is_initialized + try/except guards)
 
 ### read_run_artifact MCP size limit
+
 - Large sim outputs (HTML reports ~900KB, SQL databases ~50MB) exceed MCP's ~1MB transport limit or flood context (~100K tokens)
 - New `copy_run_artifact` tool — copies to `/runs/exports/` on host-mounted volume, ~150 byte response
 - Added `offset` param to `read_run_artifact` for chunked reading
@@ -232,6 +257,7 @@ All 10 ASHRAE 90.1 Appendix G baseline systems implemented.
 **Goal:** Replace ~100K-token raw HTML reads with surgical SQL extraction returning ~300-1K tokens.
 
 ### Implemented:
+
 - 5 Tier 1 tabular extractors: `extract_end_use_breakdown`, `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`, `extract_component_sizing`
 - 1 Tier 2 timeseries: `query_timeseries` (date range filter, max_points cap)
 - Shared helpers: `_pivot_rows`, `_pivot_rows_map`, `_snake`, `_resolve_sql`

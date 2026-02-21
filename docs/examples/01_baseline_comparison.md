@@ -37,28 +37,29 @@ Repeat steps 1-9 with `ashrae_sys_num="07"`.
 ### Compare
 
 The AI compares:
+
 - **EUI** (kBtu/ft2/yr) — total energy use intensity
 - **Heating/cooling energy** — fuel breakdown
 - **Unmet hours** — comfort compliance
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `create_baseline_osm` | Creates 10-zone model with ASHRAE system |
-| `set_weather_file` | Attaches EPW to the model |
-| `add_design_day` | Heating/cooling design conditions for HVAC sizing |
-| `run_simulation` | Creates OSW and runs EnergyPlus |
-| `extract_summary_metrics` | Extracts EUI and unmet hours |
+| Tool                      | Purpose                                           |
+| ------------------------- | ------------------------------------------------- |
+| `create_baseline_osm`     | Creates 10-zone model with ASHRAE system          |
+| `set_weather_file`        | Attaches EPW to the model                         |
+| `add_design_day`          | Heating/cooling design conditions for HVAC sizing |
+| `run_simulation`          | Creates OSW and runs EnergyPlus                   |
+| `extract_summary_metrics` | Extracts EUI and unmet hours                      |
 
 ## ASHRAE Baseline Systems Reference
 
-| System | Type | Typical Use |
-|--------|------|-------------|
-| 01 | PTAC | Hotels, small offices |
-| 03 | PSZ-AC | Small commercial (<25,000 sqft) |
-| 05 | Packaged VAV | Medium commercial |
-| 07 | VAV w/ Reheat | Large commercial (>150,000 sqft) |
+| System | Type          | Typical Use                      |
+| ------ | ------------- | -------------------------------- |
+| 01     | PTAC          | Hotels, small offices            |
+| 03     | PSZ-AC        | Small commercial (<25,000 sqft)  |
+| 05     | Packaged VAV  | Medium commercial                |
+| 07     | VAV w/ Reheat | Large commercial (>150,000 sqft) |
 
 ## Integration Test
 

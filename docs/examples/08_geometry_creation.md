@@ -41,15 +41,15 @@ An engineer wants to model a two-zone office from scratch: a west and east zone,
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `create_space_from_floor_print` | Extrude floor polygon into space with walls, floor, ceiling |
-| `match_surfaces` | Pair shared walls between adjacent spaces as interior boundaries |
-| `set_window_to_wall_ratio` | Add glazing by ratio (e.g. 0.4 = 40%) — no vertex math needed |
-| `create_subsurface` | Add window/door with explicit vertices (when precise placement needed) |
-| `create_surface` | Add individual surfaces with explicit vertices (advanced) |
-| `set_simulation_control` | Enable/disable sizing calculations, weather file run |
-| `set_run_period` | Set begin/end month/day for annual simulation |
+| Tool                            | Purpose                                                                |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| `create_space_from_floor_print` | Extrude floor polygon into space with walls, floor, ceiling            |
+| `match_surfaces`                | Pair shared walls between adjacent spaces as interior boundaries       |
+| `set_window_to_wall_ratio`      | Add glazing by ratio (e.g. 0.4 = 40%) — no vertex math needed          |
+| `create_subsurface`             | Add window/door with explicit vertices (when precise placement needed) |
+| `create_surface`                | Add individual surfaces with explicit vertices (advanced)              |
+| `set_simulation_control`        | Enable/disable sizing calculations, weather file run                   |
+| `set_run_period`                | Set begin/end month/day for annual simulation                          |
 
 ## Geometry Tips
 

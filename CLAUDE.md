@@ -1,6 +1,7 @@
 # CLAUDE.md — Instructions for Claude Code
 
 ## Project: openstudio-mcp
+
 Building energy simulation MCP server using OpenStudio SDK Python bindings and Measures.
 
 **Template project:** This codebase is designed as a reference implementation
@@ -11,59 +12,63 @@ contributors unfamiliar with OpenStudio to understand and adapt.
 ## Architecture
 
 ## Skills Pattern
+
 - Each skill lives in `mcp_server/skills/<name>/`
 - `tools.py` exports `register(mcp)` — MCP tool definitions only
 - `operations.py` — business logic, returns plain dicts, no MCP awareness
 - `SKILL.md` — Anthropic-style skill definition (Phase 2+)
 
 ## Key Modules
+
 - `model_manager.py` — `load_model()`, `get_model()`, `save_model()`, `clear_model()`
 - `osm_helpers.py` — `fetch_object()`, `optional_name()`, `list_all_as_dicts()`
 - `skills/__init__.py` — `register_all_skills(mcp)` auto-discovers all skills
 
 ## Phase Roadmap
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 1 | ✅ COMPLETE | Scaffold + migrate existing tools (server info, model mgmt, simulation, results) |
-| Phase 2 | ✅ COMPLETE | Query skills - 10 skills, 35 tools |
-| Phase 3 | ✅ COMPLETE | Creation tools - 9 tools (spaces/zones/air loops, schedules/outputs, materials/constructions) |
-| Phase 4 | ✅ COMPLETE | System-level HVAC templates (10 ASHRAE baseline systems + modern templates) |
-| Phase 5 | ✅ COMPLETE | Component properties, controls & loop surgery (2 skills, 10 tools) |
-| Phase 6 | ✅ COMPLETE | Loads, object management, weather & measures (3 skills, 13 tools) |
-| Phase 7 | 📋 FUTURE | Advanced creation (geometry, space type wizard) |
+| Phase   | Status      | Description                                                                                            |
+| ------- | ----------- | ------------------------------------------------------------------------------------------------------ |
+| Phase 1 | ✅ COMPLETE | Scaffold + migrate existing tools (server info, model mgmt, simulation, results)                       |
+| Phase 2 | ✅ COMPLETE | Query skills - 10 skills, 35 tools                                                                     |
+| Phase 3 | ✅ COMPLETE | Creation tools - 9 tools (spaces/zones/air loops, schedules/outputs, materials/constructions)          |
+| Phase 4 | ✅ COMPLETE | System-level HVAC templates (10 ASHRAE baseline systems + modern templates)                            |
+| Phase 5 | ✅ COMPLETE | Component properties, controls & loop surgery (2 skills, 10 tools)                                     |
+| Phase 6 | ✅ COMPLETE | Loads, object management, weather & measures (3 skills, 13 tools)                                      |
+| Phase 7 | 📋 FUTURE   | Advanced creation (geometry, space type wizard)                                                        |
 | Phase 8 | ✅ COMPLETE | Bundle common-measures-gem (20 measures, 11 tools: reporting, thermostat, envelope, PV, visualization) |
 
 → Batch details: [`docs/phase_history.md`](docs/phase_history.md) | Phase 8 plan: [`docs/plan_common_measures.md`](docs/plan_common_measures.md)
 
 ## Current Skills
-| Skill | Tools | Phase |
-|-------|-------|-------|
-| `server_info` | `get_server_status`, `get_versions` | Phase 1 |
-| `model_management` | `create_example_osm`, `create_baseline_osm`, `inspect_osm_summary`, `load_osm_model`, `save_osm_model`, `list_files` | Phase 1 + 2 |
-| `simulation` | `validate_osw`, `run_osw`, `run_simulation`, `get_run_status`, `get_run_logs`, `get_run_artifacts`, `cancel_run` | Phase 1 |
-| `results` | `extract_summary_metrics`, `read_run_artifact`, `copy_run_artifact`, `extract_end_use_breakdown`, `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`, `extract_component_sizing`, `query_timeseries` | Phase 1 + 9 |
-| `building` | `get_building_info`, `get_model_summary`, `list_building_stories` | Phase 2 |
-| `spaces` | `list_spaces`, `get_space_details`, `list_thermal_zones`, `get_thermal_zone_details`, `create_space`, `create_thermal_zone` | Phase 2 + 3 |
-| `geometry` | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio` | Phase 2 + 7 |
-| `constructions` | `list_materials`, `list_constructions`, `list_construction_sets`, `create_standard_opaque_material`, `create_construction`, `assign_construction_to_surface` | Phase 2 + 3 |
-| `schedules` | `list_schedule_rulesets`, `get_schedule_details`, `create_schedule_ruleset` | Phase 2 + 3 |
-| `hvac` | `list_air_loops`, `get_air_loop_details`, `list_plant_loops`, `get_plant_loop_details`, `list_zone_hvac_equipment`, `get_zone_hvac_details`, `add_air_loop` | Phase 2 + 3 |
-| `loads` | `list_people_loads`, `list_lighting_loads`, `list_electric_equipment`, `list_gas_equipment`, `list_infiltration`, `create_people_definition`, `create_lights_definition`, `create_electric_equipment`, `create_gas_equipment`, `create_infiltration` | Phase 2 + 6A |
-| `space_types` | `list_space_types`, `get_space_type_details` | Phase 2 |
-| `simulation_outputs` | `add_output_variable`, `add_output_meter` | Phase 3 |
-| `hvac_systems` | `add_baseline_system`, `list_baseline_systems`, `get_baseline_system_info`, `replace_air_terminals`, `replace_zone_terminal`, `add_doas_system`, `add_vrf_system`, `add_radiant_system` | Phase 4 |
-| `component_properties` | `list_hvac_components`, `get_component_properties`, `set_component_properties`, `set_economizer_properties`, `set_sizing_properties`, `set_setpoint_manager_properties` | Phase 5 |
-| `loop_operations` | `add_supply_equipment`, `remove_supply_equipment`, `add_zone_equipment`, `remove_zone_equipment` | Phase 5 |
-| `object_management` | `delete_object`, `rename_object`, `list_model_objects` | Phase 6B |
-| `weather` | `get_weather_info`, `set_weather_file`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period` | Phase 6C |
-| `measures` | `list_measure_arguments`, `apply_measure` | Phase 6D |
-| `comstock` | `list_comstock_measures`, `create_typical_building` | ComStock |
-| `common_measures` | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `inject_idf`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8 |
+
+| Skill                  | Tools                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Phase        |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `server_info`          | `get_server_status`, `get_versions`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Phase 1      |
+| `model_management`     | `create_example_osm`, `create_baseline_osm`, `inspect_osm_summary`, `load_osm_model`, `save_osm_model`, `list_files`                                                                                                                                                                                                                                                                                                                                                                                                       | Phase 1 + 2  |
+| `simulation`           | `validate_osw`, `run_osw`, `run_simulation`, `get_run_status`, `get_run_logs`, `get_run_artifacts`, `cancel_run`                                                                                                                                                                                                                                                                                                                                                                                                           | Phase 1      |
+| `results`              | `extract_summary_metrics`, `read_run_artifact`, `copy_run_artifact`, `extract_end_use_breakdown`, `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`, `extract_component_sizing`, `query_timeseries`                                                                                                                                                                                                                                                                                                | Phase 1 + 9  |
+| `building`             | `get_building_info`, `get_model_summary`, `list_building_stories`                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Phase 2      |
+| `spaces`               | `list_spaces`, `get_space_details`, `list_thermal_zones`, `get_thermal_zone_details`, `create_space`, `create_thermal_zone`                                                                                                                                                                                                                                                                                                                                                                                                | Phase 2 + 3  |
+| `geometry`             | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio`                                                                                                                                                                                                                                                                                                                                           | Phase 2 + 7  |
+| `constructions`        | `list_materials`, `list_constructions`, `list_construction_sets`, `create_standard_opaque_material`, `create_construction`, `assign_construction_to_surface`                                                                                                                                                                                                                                                                                                                                                               | Phase 2 + 3  |
+| `schedules`            | `list_schedule_rulesets`, `get_schedule_details`, `create_schedule_ruleset`                                                                                                                                                                                                                                                                                                                                                                                                                                                | Phase 2 + 3  |
+| `hvac`                 | `list_air_loops`, `get_air_loop_details`, `list_plant_loops`, `get_plant_loop_details`, `list_zone_hvac_equipment`, `get_zone_hvac_details`, `add_air_loop`                                                                                                                                                                                                                                                                                                                                                                | Phase 2 + 3  |
+| `loads`                | `list_people_loads`, `list_lighting_loads`, `list_electric_equipment`, `list_gas_equipment`, `list_infiltration`, `create_people_definition`, `create_lights_definition`, `create_electric_equipment`, `create_gas_equipment`, `create_infiltration`                                                                                                                                                                                                                                                                       | Phase 2 + 6A |
+| `space_types`          | `list_space_types`, `get_space_type_details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Phase 2      |
+| `simulation_outputs`   | `add_output_variable`, `add_output_meter`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Phase 3      |
+| `hvac_systems`         | `add_baseline_system`, `list_baseline_systems`, `get_baseline_system_info`, `replace_air_terminals`, `replace_zone_terminal`, `add_doas_system`, `add_vrf_system`, `add_radiant_system`                                                                                                                                                                                                                                                                                                                                    | Phase 4      |
+| `component_properties` | `list_hvac_components`, `get_component_properties`, `set_component_properties`, `set_economizer_properties`, `set_sizing_properties`, `set_setpoint_manager_properties`                                                                                                                                                                                                                                                                                                                                                    | Phase 5      |
+| `loop_operations`      | `add_supply_equipment`, `remove_supply_equipment`, `add_zone_equipment`, `remove_zone_equipment`                                                                                                                                                                                                                                                                                                                                                                                                                           | Phase 5      |
+| `object_management`    | `delete_object`, `rename_object`, `list_model_objects`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Phase 6B     |
+| `weather`              | `get_weather_info`, `set_weather_file`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period`                                                                                                                                                                                                                                                                                                                                                                           | Phase 6C     |
+| `measures`             | `list_measure_arguments`, `apply_measure`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Phase 6D     |
+| `comstock`             | `list_comstock_measures`, `create_typical_building`                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | ComStock     |
+| `common_measures`      | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `inject_idf`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8      |
 
 **Total: 21 skills, 124 MCP tools, ~260 integration tests**
 
 ## Model Query Pattern
+
 ```python
 from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import optional_name, list_all_as_dicts
@@ -78,8 +83,10 @@ def list_things_op() -> dict:
 ```
 
 ## Stdout Suppression for MCP
+
 OpenStudio SWIG bindings print memory leak warnings to stdout, which breaks MCP JSON-RPC protocol.
 The `stdout_suppression.py` module handles this:
+
 - `suppress_openstudio_warnings()` context manager redirects stdout→stderr during operations
 - `atexit` handler catches warnings during Python cleanup/garbage collection
 - Already integrated into `model_manager.py` and `model_management/operations.py`
@@ -88,11 +95,13 @@ The `stdout_suppression.py` module handles this:
 ## Commands
 
 ### Docker Build & Test (Primary)
+
 ```bash
 docker build -f docker/Dockerfile -t openstudio-mcp:dev .
 ```
 
 Run integration tests in Docker (from Windows Git Bash):
+
 ```bash
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" \
   RUN_OPENSTUDIO_INTEGRATION=1 \
@@ -107,37 +116,44 @@ MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" \
 ```
 
 Run specific test file:
+
 ```bash
 # Same env vars as above, but specify test file
 pytest -vv tests/test_load_save_model.py
 ```
 
 ### Local Development
+
 - Lint: `ruff check mcp_server/`
 - Unit tests (no Docker): `pytest tests/test_skill_registration.py -v`
 
 ### Notes
+
 - Integration tests require Docker and OpenStudio (use the Docker command above)
 - The `MSYS_NO_PATHCONV` settings are needed on Windows to prevent path translation
 - Tests create temporary models in `/c/projects/openstudio-mcp/runs/` (mounted as `/runs` in container)
 
 ### Adding New Tests to CI
+
 CI uses 4 parallel shards in `.github/workflows/ci.yml`. To add a new test file,
 append it to the lightest shard's `FILES=` list in the `case` block. Keep shards
 roughly balanced (~200s each). See shard comments in the workflow for current balance.
 
 ## API Reference
+
 - **OpenStudio SDK (3.11.0):** `openstudio.model` (70+ classes), `openstudio.osversion.VersionTranslator`, `openstudio.BCLMeasure`
   - SDK docs: https://openstudio-sdk-documentation.s3.amazonaws.com/index.html
 - **OpenStudio CLI:** `openstudio run -w <osw>` (simulation), `openstudio run --measures_only -w <osw>` (measure execution)
 - **openstudio-resources** — HVAC wiring patterns, baseline model geometry
   - https://github.com/NatLabRockies/OpenStudio-resources/tree/develop/model/simulationtests
-  - Key files: baseline_sys*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, lib/baseline_model.py
+  - Key files: baseline_sys\*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, lib/baseline_model.py
 - **ComStock measures** (~61 bundled) — standards-based templates for typical buildings
   - https://github.com/NatLabRockies/ComStock (tag: `2025-3`, installed at `/opt/comstock-measures`)
 
 ## Adding New Component Types
+
 To add a new HVAC component type to `component_properties`:
+
 1. Add a `_get_<type>_props(obj)` function in `components.py` — returns dict of
    property_name -> {"value": ..., "unit": "..."}. Comment each API call.
 2. Add a `_set_<type>_props(obj, properties)` function — uses explicit if/elif
@@ -149,6 +165,7 @@ To add a new HVAC component type to `component_properties`:
 called directly so it's grepable, lintable, and visible in stack traces.
 
 ## Rules
+
 1. Keep files small where practical — aim for under 250 lines, but don't split artificially just to hit a number
 2. Every MCP tool must have a test in `tests/skills/` (Phase 2+) or `tests/` (existing)
 3. **Integration tests must be added to `.github/workflows/ci.yml`** — add a new step following the existing pattern

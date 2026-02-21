@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 ASSETS_ROOT = Path(__file__).resolve().parent / "assets"
 SEB_MODEL_ROOT = ASSETS_ROOT / "SEB_model"
 OSW_DIR = SEB_MODEL_ROOT / "SEB4_baseboard"
@@ -63,7 +62,7 @@ def test_run_seb4_baseboard_workflow(tmp_path: Path):
             f"Weather file referenced by workflow.osw cannot be found:\n"
             f"  workflow.osw weather_file: {weather_ref}\n"
             f"  expected path: {epw_repo_path}\n"
-            f"Fix the filename/casing or place the EPW at that exact path."
+            f"Fix the filename/casing or place the EPW at that exact path.",
         )
 
     # Copy the entire SEB_model folder into an isolated temp directory
@@ -80,10 +79,7 @@ def test_run_seb4_baseboard_workflow(tmp_path: Path):
     proc = _run_openstudio_workflow(run_dir, timeout_s=60 * 30)
 
     assert proc.returncode == 0, (
-        "OpenStudio run failed.\n"
-        f"cwd: {run_dir}\n"
-        f"stdout:\n{proc.stdout}\n"
-        f"stderr:\n{proc.stderr}\n"
+        f"OpenStudio run failed.\ncwd: {run_dir}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}\n"
     )
 
     # Primary success signal: out.osw is produced and indicates Success

@@ -5,7 +5,6 @@ import shlex
 import uuid
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -60,29 +59,31 @@ def test_add_output_variable_default():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Add output variable
-                output_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Mean Air Temperature"
-                })
-                output_result = _unwrap(output_resp)
+            # Add output variable
+            output_resp = await session.call_tool(
+                "add_output_variable",
+                {
+                    "variable_name": "Zone Mean Air Temperature",
+                },
+            )
+            output_result = _unwrap(output_resp)
 
-                assert output_result.get("ok") is True
-                assert output_result["output_variable"]["variable_name"] == "Zone Mean Air Temperature"
-                assert output_result["output_variable"]["key_value"] == "*"
-                assert output_result["output_variable"]["reporting_frequency"] == "Hourly"
+            assert output_result.get("ok") is True
+            assert output_result["output_variable"]["variable_name"] == "Zone Mean Air Temperature"
+            assert output_result["output_variable"]["key_value"] == "*"
+            assert output_result["output_variable"]["reporting_frequency"] == "Hourly"
 
     asyncio.run(_run())
 
@@ -106,34 +107,36 @@ def test_add_output_variable_with_key():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Get a thermal zone name
-                zones_resp = await session.call_tool("list_thermal_zones", {})
-                zones_result = _unwrap(zones_resp)
-                assert len(zones_result["thermal_zones"]) > 0
-                zone_name = zones_result["thermal_zones"][0]["name"]
+            # Get a thermal zone name
+            zones_resp = await session.call_tool("list_thermal_zones", {})
+            zones_result = _unwrap(zones_resp)
+            assert len(zones_result["thermal_zones"]) > 0
+            zone_name = zones_result["thermal_zones"][0]["name"]
 
-                # Add output variable for specific zone
-                output_resp = await session.call_tool("add_output_variable", {
+            # Add output variable for specific zone
+            output_resp = await session.call_tool(
+                "add_output_variable",
+                {
                     "variable_name": "Zone Mean Air Temperature",
-                    "key_value": zone_name
-                })
-                output_result = _unwrap(output_resp)
+                    "key_value": zone_name,
+                },
+            )
+            output_result = _unwrap(output_resp)
 
-                assert output_result.get("ok") is True
-                assert output_result["output_variable"]["key_value"] == zone_name
+            assert output_result.get("ok") is True
+            assert output_result["output_variable"]["key_value"] == zone_name
 
     asyncio.run(_run())
 
@@ -157,28 +160,30 @@ def test_add_output_variable_monthly():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Add output variable with monthly reporting
-                output_resp = await session.call_tool("add_output_variable", {
+            # Add output variable with monthly reporting
+            output_resp = await session.call_tool(
+                "add_output_variable",
+                {
                     "variable_name": "Surface Outside Face Temperature",
-                    "reporting_frequency": "Monthly"
-                })
-                output_result = _unwrap(output_resp)
+                    "reporting_frequency": "Monthly",
+                },
+            )
+            output_result = _unwrap(output_resp)
 
-                assert output_result.get("ok") is True
-                assert output_result["output_variable"]["reporting_frequency"] == "Monthly"
+            assert output_result.get("ok") is True
+            assert output_result["output_variable"]["reporting_frequency"] == "Monthly"
 
     asyncio.run(_run())
 
@@ -200,19 +205,21 @@ def test_add_output_variable_no_model_loaded():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Try to add output variable without loading model
-                output_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Mean Air Temperature"
-                })
-                output_result = _unwrap(output_resp)
+            # Try to add output variable without loading model
+            output_resp = await session.call_tool(
+                "add_output_variable",
+                {
+                    "variable_name": "Zone Mean Air Temperature",
+                },
+            )
+            output_result = _unwrap(output_resp)
 
-                assert output_result.get("ok") is False
-                assert "error" in output_result
-                assert "No model loaded" in output_result["error"]
+            assert output_result.get("ok") is False
+            assert "error" in output_result
+            assert "No model loaded" in output_result["error"]
 
     asyncio.run(_run())
 
@@ -236,33 +243,38 @@ def test_add_multiple_output_variables():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Add multiple output variables
-                var1_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Mean Air Temperature"
-                })
-                var1_result = _unwrap(var1_resp)
-                assert var1_result.get("ok") is True
+            # Add multiple output variables
+            var1_resp = await session.call_tool(
+                "add_output_variable",
+                {
+                    "variable_name": "Zone Mean Air Temperature",
+                },
+            )
+            var1_result = _unwrap(var1_resp)
+            assert var1_result.get("ok") is True
 
-                var2_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Air System Sensible Heating Rate"
-                })
-                var2_result = _unwrap(var2_resp)
-                assert var2_result.get("ok") is True
+            var2_resp = await session.call_tool(
+                "add_output_variable",
+                {
+                    "variable_name": "Zone Air System Sensible Heating Rate",
+                },
+            )
+            var2_result = _unwrap(var2_resp)
+            assert var2_result.get("ok") is True
 
-                # Both should have unique handles
-                assert var1_result["output_variable"]["handle"] != var2_result["output_variable"]["handle"]
+            # Both should have unique handles
+            assert var1_result["output_variable"]["handle"] != var2_result["output_variable"]["handle"]
 
     asyncio.run(_run())

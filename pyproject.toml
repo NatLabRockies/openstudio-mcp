@@ -1,7 +1,16 @@
+[build-system]
+requires = ["uv_build>=0.9.22,<0.10.0"]
+build-backend = "uv_build"
+
 [project]
 name = "openstudio-mcp"
 version = "0.1.0"
 description = "Thin MCP server around OpenStudio CLI with async runs and testable outputs."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE.md"]
+authors = [{ name = "Brian Ball", email = "brian.ball@nlr.gov" }]
+
 requires-python = ">=3.11"
 dependencies = [
   "fastmcp>=0.4.0",
@@ -11,8 +20,9 @@ dependencies = [
   "openstudio==3.11.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+  "pre-commit>=4",
   "pytest>=8.0",
   "pytest-timeout>=2.3.1",
   "mcp",
@@ -24,13 +34,9 @@ openstudio-mcp = "mcp_server.server:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+[tool.uv]
+default-groups = ["dev"]
 
-[tool.setuptools]
-package-dir = {"" = "."}
-
-[tool.setuptools.packages.find]
-include = ["mcp_server*"]
-exclude = ["docker*", "tests*", "scripts*"]
+[tool.uv.build-backend]
+module-name = "mcp_server"
+module-root = ""

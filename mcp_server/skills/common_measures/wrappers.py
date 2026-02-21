@@ -4,6 +4,7 @@ Each wrapper maps friendly Python kwargs to measure arguments, calls
 apply_measure internally. This gives LLMs a consistent, typed interface
 instead of raw apply_measure with guessable argument names.
 """
+
 from __future__ import annotations
 
 import os
@@ -29,6 +30,7 @@ def _run(measure_name: str, arguments: dict[str, str] | None = None) -> dict[str
 
 # --- 1. view_model: 3D geometry viewer ---
 
+
 def view_model_op(geometry_diagnostics: bool = False) -> dict[str, Any]:
     """Generate a Three.js HTML viewer of the current model geometry.
 
@@ -37,12 +39,16 @@ def view_model_op(geometry_diagnostics: bool = False) -> dict[str, Any]:
     Args:
         geometry_diagnostics: Enable surface/space convexity checks (slower)
     """
-    return _run("view_model", {
-        "use_geometry_diagnostics": str(geometry_diagnostics).lower(),
-    })
+    return _run(
+        "view_model",
+        {
+            "use_geometry_diagnostics": str(geometry_diagnostics).lower(),
+        },
+    )
 
 
 # --- 2. view_simulation_data: post-sim 3D data visualization ---
+
 
 def view_simulation_data_op(
     variable_names: list[str] | None = None,
@@ -65,17 +71,21 @@ def view_simulation_data_op(
     # Pad to 3 variables (measure expects exactly 3)
     while len(vars_) < 3:
         vars_.append(vars_[-1])
-    return _run("view_data", {
-        "model_source": "After Measure",
-        "reporting_frequency": reporting_frequency,
-        "variable_name_1": vars_[0],
-        "variable_name_2": vars_[1],
-        "variable_name_3": vars_[2],
-        "use_geometry_diagnostics": "false",
-    })
+    return _run(
+        "view_data",
+        {
+            "model_source": "After Measure",
+            "reporting_frequency": reporting_frequency,
+            "variable_name_1": vars_[0],
+            "variable_name_2": vars_[1],
+            "variable_name_3": vars_[2],
+            "use_geometry_diagnostics": "false",
+        },
+    )
 
 
 # --- 3. generate_results_report: comprehensive HTML report ---
+
 
 def generate_results_report_op(units: str = "IP") -> dict[str, Any]:
     """Generate a comprehensive HTML report from simulation results.
@@ -90,6 +100,7 @@ def generate_results_report_op(units: str = "IP") -> dict[str, Any]:
 
 
 # --- 4. run_qaqc_checks: ASHRAE QA/QC ---
+
 
 def run_qaqc_checks_op(
     template: str = "90.1-2013",
@@ -108,11 +119,16 @@ def run_qaqc_checks_op(
             "mech_efficiency", "mech_type", "supply_air_temp"
     """
     all_checks = [
-        "check_mech_sys_part_load_eff", "check_mech_sys_capacity",
-        "check_simultaneous_heating_and_cooling", "check_internal_loads",
-        "check_schedules", "check_envelope_conductance",
-        "check_domestic_hot_water", "check_mech_sys_efficiency",
-        "check_mech_sys_type", "check_supply_air_and_thermostat_temp_difference",
+        "check_mech_sys_part_load_eff",
+        "check_mech_sys_capacity",
+        "check_simultaneous_heating_and_cooling",
+        "check_internal_loads",
+        "check_schedules",
+        "check_envelope_conductance",
+        "check_domestic_hot_water",
+        "check_mech_sys_efficiency",
+        "check_mech_sys_type",
+        "check_supply_air_and_thermostat_temp_difference",
     ]
     # Map short names to full argument names
     short_to_full = {
@@ -140,6 +156,7 @@ def run_qaqc_checks_op(
 
 # --- 5. adjust_thermostat_setpoints ---
 
+
 def adjust_thermostat_setpoints_op(
     cooling_offset_f: float = 0.0,
     heating_offset_f: float = 0.0,
@@ -154,14 +171,18 @@ def adjust_thermostat_setpoints_op(
         heating_offset_f: Degrees F to lower heating setpoint (negative = cooler)
         alter_design_days: Also shift design day schedules
     """
-    return _run("AdjustThermostatSetpointsByDegrees", {
-        "cooling_adjustment": str(cooling_offset_f),
-        "heating_adjustment": str(heating_offset_f),
-        "alter_design_days": str(alter_design_days).lower(),
-    })
+    return _run(
+        "AdjustThermostatSetpointsByDegrees",
+        {
+            "cooling_adjustment": str(cooling_offset_f),
+            "heating_adjustment": str(heating_offset_f),
+            "alter_design_days": str(alter_design_days).lower(),
+        },
+    )
 
 
 # --- 6. replace_window_constructions ---
+
 
 def replace_window_constructions_op(
     construction_name: str,
@@ -177,14 +198,18 @@ def replace_window_constructions_op(
         fixed_windows: Replace fixed windows
         operable_windows: Replace operable windows
     """
-    return _run("ReplaceExteriorWindowConstruction", {
-        "construction": construction_name,
-        "change_fixed_windows": str(fixed_windows).lower(),
-        "change_operable_windows": str(operable_windows).lower(),
-    })
+    return _run(
+        "ReplaceExteriorWindowConstruction",
+        {
+            "construction": construction_name,
+            "change_fixed_windows": str(fixed_windows).lower(),
+            "change_operable_windows": str(operable_windows).lower(),
+        },
+    )
 
 
 # --- 7. enable_ideal_air_loads ---
+
 
 def enable_ideal_air_loads_op() -> dict[str, Any]:
     """Enable ideal air loads on all thermal zones.
@@ -196,6 +221,7 @@ def enable_ideal_air_loads_op() -> dict[str, Any]:
 
 
 # --- 8. clean_unused_objects ---
+
 
 def clean_unused_objects_op(
     space_types: bool = True,
@@ -215,16 +241,20 @@ def clean_unused_objects_op(
         constructions: Remove unused constructions and materials
         curves: Remove unused performance curves
     """
-    return _run("remove_orphan_objects_and_unused_resources", {
-        "remove_unused_space_types": str(space_types).lower(),
-        "remove_unused_load_defs": str(load_defs).lower(),
-        "remove_unused_schedules": str(schedules).lower(),
-        "remove_unused_constructions": str(constructions).lower(),
-        "remove_unused_curves": str(curves).lower(),
-    })
+    return _run(
+        "remove_orphan_objects_and_unused_resources",
+        {
+            "remove_unused_space_types": str(space_types).lower(),
+            "remove_unused_load_defs": str(load_defs).lower(),
+            "remove_unused_schedules": str(schedules).lower(),
+            "remove_unused_constructions": str(constructions).lower(),
+            "remove_unused_curves": str(curves).lower(),
+        },
+    )
 
 
 # --- 9. inject_idf ---
+
 
 def inject_idf_op(idf_path: str) -> dict[str, Any]:
     """Inject raw IDF objects from an external file into the model.
@@ -236,12 +266,16 @@ def inject_idf_op(idf_path: str) -> dict[str, Any]:
     Args:
         idf_path: Path to the IDF file containing objects to inject
     """
-    return _run("inject_idf_objects", {
-        "source_idf_path": idf_path,
-    })
+    return _run(
+        "inject_idf_objects",
+        {
+            "source_idf_path": idf_path,
+        },
+    )
 
 
 # --- 10. change_building_location ---
+
 
 def change_building_location_op(
     weather_file: str,
@@ -255,10 +289,13 @@ def change_building_location_op(
         weather_file: EPW weather file name (must be accessible in file_paths)
         climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto-detect
     """
-    return _run("ChangeBuildingLocation", {
-        "weather_file_name": weather_file,
-        "climate_zone": climate_zone,
-    })
+    return _run(
+        "ChangeBuildingLocation",
+        {
+            "weather_file_name": weather_file,
+            "climate_zone": climate_zone,
+        },
+    )
 
 
 # ===================================================================
@@ -275,6 +312,7 @@ def _resolve_handle(name: str) -> str:
     """
     from mcp_server.model_manager import get_model
     from mcp_server.stdout_suppression import suppress_openstudio_warnings
+
     with suppress_openstudio_warnings():
         model = get_model()
         obj = model.getModelObjectByName(name)
@@ -284,6 +322,7 @@ def _resolve_handle(name: str) -> str:
 
 
 # --- 11. set_thermostat_schedules ---
+
 
 def set_thermostat_schedules_op(
     zone_name: str,
@@ -306,6 +345,7 @@ def set_thermostat_schedules_op(
 
 
 # --- 12. replace_thermostat_schedules ---
+
 
 def replace_thermostat_schedules_op(
     zone_name: str,
@@ -332,6 +372,7 @@ def replace_thermostat_schedules_op(
 
 # --- 13. shift_schedule_time ---
 
+
 def shift_schedule_time_op(
     schedule_name: str,
     shift_hours: float = 1.0,
@@ -342,13 +383,17 @@ def shift_schedule_time_op(
         schedule_name: Name of the ScheduleRuleset to shift
         shift_hours: Hours to shift forward (use negative for backward, 24hr clock)
     """
-    return _run("ShiftScheduleProfileTime", {
-        "schedule": _resolve_handle(schedule_name),
-        "shift_value": str(shift_hours),
-    })
+    return _run(
+        "ShiftScheduleProfileTime",
+        {
+            "schedule": _resolve_handle(schedule_name),
+            "shift_value": str(shift_hours),
+        },
+    )
 
 
 # --- 14. add_rooftop_pv ---
+
 
 def add_rooftop_pv_op(
     fraction_of_surface: float = 0.75,
@@ -364,14 +409,18 @@ def add_rooftop_pv_op(
         cell_efficiency: PV cell efficiency (0-1, typical 0.15-0.22)
         inverter_efficiency: DC-to-AC inverter efficiency (0-1)
     """
-    return _run("add_rooftop_pv", {
-        "fraction_of_surface": str(fraction_of_surface),
-        "cell_efficiency": str(cell_efficiency),
-        "inverter_efficiency": str(inverter_efficiency),
-    })
+    return _run(
+        "add_rooftop_pv",
+        {
+            "fraction_of_surface": str(fraction_of_surface),
+            "cell_efficiency": str(cell_efficiency),
+            "inverter_efficiency": str(inverter_efficiency),
+        },
+    )
 
 
 # --- 15. add_pv_to_shading ---
+
 
 def add_pv_to_shading_op(
     shading_type: str = "Building Shading",
@@ -385,14 +434,18 @@ def add_pv_to_shading_op(
         fraction: Fraction of shading surface area with PV (0-1)
         cell_efficiency: PV cell efficiency (0-1)
     """
-    return _run("AddSimplePvToShadingSurfacesByType", {
-        "shading_type": shading_type,
-        "fraction_surfacearea_with_pv": str(fraction),
-        "value_for_cell_efficiency": str(cell_efficiency),
-    })
+    return _run(
+        "AddSimplePvToShadingSurfacesByType",
+        {
+            "shading_type": shading_type,
+            "fraction_surfacearea_with_pv": str(fraction),
+            "value_for_cell_efficiency": str(cell_efficiency),
+        },
+    )
 
 
 # --- 16. add_ev_load ---
+
 
 def add_ev_load_op(
     delay_type: str = "Min Delay",
@@ -410,16 +463,20 @@ def add_ev_load_op(
         ev_percent: Percent of parked vehicles that are EVs (0-100)
         use_model_occupancy: Use model occupancy to determine EV count
     """
-    return _run("add_ev_load", {
-        "delay_type": delay_type,
-        "charge_behavior": charge_behavior,
-        "chg_station_type": station_type,
-        "ev_percent": str(ev_percent),
-        "ev_use_model_occupancy": str(use_model_occupancy).lower(),
-    })
+    return _run(
+        "add_ev_load",
+        {
+            "delay_type": delay_type,
+            "charge_behavior": charge_behavior,
+            "chg_station_type": station_type,
+            "ev_percent": str(ev_percent),
+            "ev_use_model_occupancy": str(use_model_occupancy).lower(),
+        },
+    )
 
 
 # --- 17. add_zone_ventilation ---
+
 
 def add_zone_ventilation_op(
     zone_name: str,
@@ -447,6 +504,7 @@ def add_zone_ventilation_op(
 
 # --- 18. set_lifecycle_cost_params ---
 
+
 def set_lifecycle_cost_params_op(
     study_period: int = 25,
 ) -> dict[str, Any]:
@@ -455,12 +513,16 @@ def set_lifecycle_cost_params_op(
     Args:
         study_period: Analysis period in years (1-40)
     """
-    return _run("SetLifecycleCostParameters", {
-        "study_period": str(study_period),
-    })
+    return _run(
+        "SetLifecycleCostParameters",
+        {
+            "study_period": str(study_period),
+        },
+    )
 
 
 # --- 19. add_cost_per_floor_area ---
+
 
 def add_cost_per_floor_area_op(
     material_cost: float = 0.0,
@@ -478,16 +540,20 @@ def add_cost_per_floor_area_op(
         lcc_name: Name for the LCC object
         remove_existing: Remove existing building-level LCC objects first
     """
-    return _run("AddCostPerFloorAreaToBuilding", {
-        "material_cost_ip": str(material_cost),
-        "om_cost_ip": str(om_cost),
-        "expected_life": str(expected_life),
-        "lcc_name": lcc_name,
-        "remove_costs": str(remove_existing).lower(),
-    })
+    return _run(
+        "AddCostPerFloorAreaToBuilding",
+        {
+            "material_cost_ip": str(material_cost),
+            "om_cost_ip": str(om_cost),
+            "expected_life": str(expected_life),
+            "lcc_name": lcc_name,
+            "remove_costs": str(remove_existing).lower(),
+        },
+    )
 
 
 # --- 20. set_adiabatic_boundaries ---
+
 
 def set_adiabatic_boundaries_op(
     ext_roofs: bool = True,
@@ -511,12 +577,15 @@ def set_adiabatic_boundaries_op(
         east_walls: Make east-facing exterior walls adiabatic
         west_walls: Make west-facing exterior walls adiabatic
     """
-    return _run("set_exterior_walls_and_floors_to_adiabatic", {
-        "ext_roofs": str(ext_roofs).lower(),
-        "ext_floors": str(ext_floors).lower(),
-        "ground_floors": str(ground_floors).lower(),
-        "north_walls": str(north_walls).lower(),
-        "south_walls": str(south_walls).lower(),
-        "east_walls": str(east_walls).lower(),
-        "west_walls": str(west_walls).lower(),
-    })
+    return _run(
+        "set_exterior_walls_and_floors_to_adiabatic",
+        {
+            "ext_roofs": str(ext_roofs).lower(),
+            "ext_floors": str(ext_floors).lower(),
+            "ground_floors": str(ground_floors).lower(),
+            "north_walls": str(north_walls).lower(),
+            "south_walls": str(south_walls).lower(),
+            "east_walls": str(east_walls).lower(),
+            "west_walls": str(west_walls).lower(),
+        },
+    )

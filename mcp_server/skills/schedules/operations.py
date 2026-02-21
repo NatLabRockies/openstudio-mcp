@@ -3,6 +3,7 @@
 Extraction patterns adapted from openstudio-toolkit osm_objects/schedules.py
 — using direct openstudio bindings.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -47,7 +48,7 @@ def list_schedule_rulesets() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(schedules),
-            "schedule_rulesets": schedules
+            "schedule_rulesets": schedules,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -71,7 +72,7 @@ def get_schedule_details(schedule_name: str) -> dict[str, Any]:
         rules = []
         for rule in schedule.scheduleRules():
             rule_info = {
-                "name": rule.nameString() if hasattr(rule, 'nameString') else "Unnamed Rule",
+                "name": rule.nameString() if hasattr(rule, "nameString") else "Unnamed Rule",
                 "day_schedule": rule.daySchedule().nameString(),
                 "apply_sunday": rule.applySunday(),
                 "apply_monday": rule.applyMonday(),
@@ -97,7 +98,7 @@ def get_schedule_details(schedule_name: str) -> dict[str, Any]:
 
         return {
             "ok": True,
-            "schedule": result
+            "schedule": result,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -105,8 +106,7 @@ def get_schedule_details(schedule_name: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to get schedule details: {e}"}
 
 
-def create_schedule_ruleset(name: str, schedule_type: str = "Fractional",
-                           default_value: float = 1.0) -> dict[str, Any]:
+def create_schedule_ruleset(name: str, schedule_type: str = "Fractional", default_value: float = 1.0) -> dict[str, Any]:
     """Create a new schedule ruleset with a constant default day schedule.
 
     Args:

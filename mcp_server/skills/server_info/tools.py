@@ -1,4 +1,5 @@
 """MCP tool definitions for server info."""
+
 from __future__ import annotations
 
 from mcp_server.skills.server_info.operations import get_server_status, get_versions

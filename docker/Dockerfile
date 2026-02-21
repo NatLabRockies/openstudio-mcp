@@ -2,9 +2,12 @@ ARG OPENSTUDIO_VERSION=3.11.0
 FROM nrel/openstudio:${OPENSTUDIO_VERSION}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-venv python3-pip \
+    python3 python3-venv \
     ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # ComStock measures (openstudio-standards-based templates for space types,
 # constructions, HVAC, schedules). Only the measures/ directory is kept (~50 MB).
@@ -31,7 +34,7 @@ WORKDIR /repo
 
 # venv
 ENV VENV_PATH=/opt/venv
-RUN python3 -m venv $VENV_PATH
+RUN uv venv $VENV_PATH
 ENV PATH="$VENV_PATH/bin:$PATH"
 
 # Copy everything needed to install the package
@@ -39,8 +42,7 @@ COPY pyproject.toml /repo/pyproject.toml
 COPY mcp_server /repo/mcp_server
 COPY docker /repo/docker
 
-RUN pip install --no-cache-dir -U pip \
-    && pip install --no-cache-dir -e ".[dev]"
+RUN uv pip install -e ".[dev]"
 
 # (Optional) If you want the container to include any other repo files too:
 # COPY . /repo

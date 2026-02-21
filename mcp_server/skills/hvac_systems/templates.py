@@ -3,6 +3,7 @@
 These templates represent contemporary high-efficiency strategies beyond
 ASHRAE 90.1 baseline systems. Used for performance modeling, not compliance.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -25,7 +26,7 @@ def create_doas_system(
     name: str,
     energy_recovery: bool,
     sensible_effectiveness: float,
-    zone_equipment_type: str
+    zone_equipment_type: str,
 ) -> dict[str, Any]:
     """Create Dedicated Outdoor Air System with zone equipment.
 
@@ -123,21 +124,26 @@ def create_doas_system(
             # Chilled beam IS the DOAS air terminal (replaces uncontrolled)
             coil = openstudio.model.CoilCoolingCooledBeam(model)
             beam = openstudio.model.AirTerminalSingleDuctConstantVolumeCooledBeam(
-                model, model.alwaysOnDiscreteSchedule(), coil
+                model,
+                model.alwaysOnDiscreteSchedule(),
+                coil,
             )
             beam.setName(f"{name} Chilled Beam - {zone_name}")
             doas_loop.addBranchForZone(zone, beam)
             chw_loop.addDemandBranchForComponent(coil)
 
-            zone_equipment_list.append({
-                "type": "AirTerminalSingleDuctConstantVolumeCooledBeam",
-                "name": beam.nameString(),
-                "zone": zone_name
-            })
+            zone_equipment_list.append(
+                {
+                    "type": "AirTerminalSingleDuctConstantVolumeCooledBeam",
+                    "name": beam.nameString(),
+                    "zone": zone_name,
+                },
+            )
         else:
             # Standard uncontrolled terminal for DOAS ventilation
             terminal = openstudio.model.AirTerminalSingleDuctUncontrolled(
-                model, model.alwaysOnDiscreteSchedule()
+                model,
+                model.alwaysOnDiscreteSchedule(),
             )
             terminal.setName(f"{name} DOAS Terminal - {zone_name}")
             doas_loop.addBranchForZone(zone, terminal)
@@ -148,18 +154,20 @@ def create_doas_system(
                     model.alwaysOnDiscreteSchedule(),
                     openstudio.model.FanOnOff(model, model.alwaysOnDiscreteSchedule()),
                     openstudio.model.CoilCoolingWater(model, model.alwaysOnDiscreteSchedule()),
-                    openstudio.model.CoilHeatingWater(model, model.alwaysOnDiscreteSchedule())
+                    openstudio.model.CoilHeatingWater(model, model.alwaysOnDiscreteSchedule()),
                 )
                 fc.setName(f"{name} Fan Coil - {zone_name}")
                 fc.addToThermalZone(zone)
                 chw_loop.addDemandBranchForComponent(fc.coolingCoil())
                 hw_loop.addDemandBranchForComponent(fc.heatingCoil())
 
-                zone_equipment_list.append({
-                    "type": "ZoneHVACFourPipeFanCoil",
-                    "name": fc.nameString(),
-                    "zone": zone_name
-                })
+                zone_equipment_list.append(
+                    {
+                        "type": "ZoneHVACFourPipeFanCoil",
+                        "name": fc.nameString(),
+                        "zone": zone_name,
+                    },
+                )
 
             elif zone_equipment_type == "Radiant":
                 radiant = openstudio.model.ZoneHVACLowTempRadiantVarFlow(model)
@@ -168,11 +176,13 @@ def create_doas_system(
                 hw_loop.addDemandBranchForComponent(radiant)
                 chw_loop.addDemandBranchForComponent(radiant)
 
-                zone_equipment_list.append({
-                    "type": "ZoneHVACLowTempRadiantVarFlow",
-                    "name": radiant.nameString(),
-                    "zone": zone_name
-                })
+                zone_equipment_list.append(
+                    {
+                        "type": "ZoneHVACLowTempRadiantVarFlow",
+                        "name": radiant.nameString(),
+                        "zone": zone_name,
+                    },
+                )
 
     return {
         "name": name,
@@ -185,7 +195,7 @@ def create_doas_system(
         "chilled_water_loop": chw_loop_name,
         "hot_water_loop": hw_loop_name,
         "num_zones": len(zones),
-        "zone_equipment": zone_equipment_list
+        "zone_equipment": zone_equipment_list,
     }
 
 
@@ -194,7 +204,7 @@ def create_vrf_system(
     zones: list,
     name: str,
     heat_recovery: bool,
-    capacity_w: float | None
+    capacity_w: float | None,
 ) -> dict[str, Any]:
     """Create Variable Refrigerant Flow multi-zone heat pump system.
 
@@ -230,15 +240,14 @@ def create_vrf_system(
         else:
             vrf_system.autosizeRatedEvaporativeCapacity()
             autosized = True
+    elif capacity_w is not None:
+        vrf_system.setGrossRatedTotalCoolingCapacity(capacity_w)
+        vrf_system.setGrossRatedHeatingCapacity(capacity_w)
+        autosized = False
     else:
-        if capacity_w is not None:
-            vrf_system.setGrossRatedTotalCoolingCapacity(capacity_w)
-            vrf_system.setGrossRatedHeatingCapacity(capacity_w)
-            autosized = False
-        else:
-            vrf_system.autosizeGrossRatedTotalCoolingCapacity()
-            vrf_system.autosizeGrossRatedHeatingCapacity()
-            autosized = True
+        vrf_system.autosizeGrossRatedTotalCoolingCapacity()
+        vrf_system.autosizeGrossRatedHeatingCapacity()
+        autosized = True
 
     # Create VRF terminals for each zone
     terminals = []
@@ -252,10 +261,12 @@ def create_vrf_system(
         # Add to thermal zone
         terminal.addToThermalZone(zone)
 
-        terminals.append({
-            "name": terminal.nameString(),
-            "zone": zone.nameString()
-        })
+        terminals.append(
+            {
+                "name": terminal.nameString(),
+                "zone": zone.nameString(),
+            },
+        )
 
     return {
         "name": name,
@@ -264,7 +275,7 @@ def create_vrf_system(
         "heat_recovery": heat_recovery,
         "capacity_w": capacity_w if not autosized else "autosized",
         "num_zones": len(zones),
-        "terminals": terminals
+        "terminals": terminals,
     }
 
 
@@ -273,7 +284,7 @@ def create_radiant_system(
     zones: list,
     name: str,
     radiant_type: str,
-    ventilation_system: str
+    ventilation_system: str,
 ) -> dict[str, Any]:
     """Create low-temperature radiant heating/cooling system.
 
@@ -322,20 +333,24 @@ def create_radiant_system(
         hw_loop.addDemandBranchForComponent(radiant)
         chw_loop.addDemandBranchForComponent(radiant)
 
-        radiant_equipment.append({
-            "name": radiant.nameString(),
-            "zone": zone_name,
-            "type": radiant_type  # Return user-facing type, not OS enum
-        })
+        radiant_equipment.append(
+            {
+                "name": radiant.nameString(),
+                "zone": zone_name,
+                "type": radiant_type,  # Return user-facing type, not OS enum
+            },
+        )
 
     # Add DOAS for ventilation if requested
     doas_loop_name = None
     if ventilation_system == "DOAS":
         doas_result = create_doas_system(
-            model, zones, f"{name} Ventilation",
+            model,
+            zones,
+            f"{name} Ventilation",
             energy_recovery=True,
             sensible_effectiveness=0.75,
-            zone_equipment_type="None"  # Radiant handles sensible load
+            zone_equipment_type="None",  # Radiant handles sensible load
         )
         doas_loop_name = doas_result["doas_loop"]
 
@@ -350,5 +365,5 @@ def create_radiant_system(
         "ventilation_system": ventilation_system,
         "doas_loop": doas_loop_name,
         "num_zones": len(zones),
-        "radiant_equipment": radiant_equipment
+        "radiant_equipment": radiant_equipment,
     }

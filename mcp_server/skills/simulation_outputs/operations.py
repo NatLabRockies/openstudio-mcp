@@ -2,6 +2,7 @@
 
 These tools configure EnergyPlus outputs for simulation results.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,8 +12,11 @@ import openstudio
 from mcp_server.model_manager import get_model
 
 
-def add_output_variable(variable_name: str, key_value: str = "*",
-                       reporting_frequency: str = "Hourly") -> dict[str, Any]:
+def add_output_variable(
+    variable_name: str,
+    key_value: str = "*",
+    reporting_frequency: str = "Hourly",
+) -> dict[str, Any]:
     """Add an output variable to the model for simulation results.
 
     Args:
@@ -38,7 +42,7 @@ def add_output_variable(variable_name: str, key_value: str = "*",
                 "variable_name": output_var.variableName(),
                 "key_value": output_var.keyValue(),
                 "reporting_frequency": output_var.reportingFrequency(),
-            }
+            },
         }
 
     except RuntimeError as e:
@@ -71,7 +75,7 @@ def add_output_meter(meter_name: str, reporting_frequency: str = "Hourly") -> di
                 "handle": str(output_meter.handle()),
                 "name": output_meter.nameString(),
                 "reporting_frequency": output_meter.reportingFrequency(),
-            }
+            },
         }
 
     except RuntimeError as e:

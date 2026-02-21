@@ -29,23 +29,23 @@ An energy auditor wants to evaluate the impact of upgrading wall insulation from
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `list_constructions` | See existing wall assemblies |
-| `list_surfaces` | Find exterior walls by boundary condition |
-| `create_standard_opaque_material` | Define insulation properties |
-| `create_construction` | Stack material layers |
-| `assign_construction_to_surface` | Apply to each wall surface |
+| Tool                              | Purpose                                   |
+| --------------------------------- | ----------------------------------------- |
+| `list_constructions`              | See existing wall assemblies              |
+| `list_surfaces`                   | Find exterior walls by boundary condition |
+| `create_standard_opaque_material` | Define insulation properties              |
+| `create_construction`             | Stack material layers                     |
+| `assign_construction_to_surface`  | Apply to each wall surface                |
 
 ## Common Material Properties
 
-| Material | Conductivity (W/m-K) | Density (kg/m3) | Specific Heat (J/kg-K) |
-|----------|---------------------|-----------------|----------------------|
-| Concrete | 1.7 | 2400 | 900 |
-| Insulation (fiberglass) | 0.04 | 30 | 1000 |
-| Gypsum board | 0.16 | 800 | 1090 |
-| Wood | 0.15 | 600 | 1600 |
-| Steel | 50.0 | 7800 | 500 |
+| Material                | Conductivity (W/m-K) | Density (kg/m3) | Specific Heat (J/kg-K) |
+| ----------------------- | -------------------- | --------------- | ---------------------- |
+| Concrete                | 1.7                  | 2400            | 900                    |
+| Insulation (fiberglass) | 0.04                 | 30              | 1000                   |
+| Gypsum board            | 0.16                 | 800             | 1090                   |
+| Wood                    | 0.15                 | 600             | 1600                   |
+| Steel                   | 50.0                 | 7800            | 500                    |
 
 ## Integration Test
 

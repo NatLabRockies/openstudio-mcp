@@ -37,29 +37,33 @@ An engineer wants to start from a baseline model with ASHRAE System 5 (packaged 
 ## Workflow Phases
 
 ### Phase 1: Baseline Model (Steps 1-3)
+
 Start with `create_baseline_osm` which generates a multi-zone model with geometry, thermal zones, constructions, thermostats, and HVAC (System 5 = packaged VAV with reheat). This gives you a simulation-ready starting point.
 
 ### Phase 2: Internal Loads (Steps 4-5)
+
 Add occupancy and lighting loads to spaces. These drive the simulation's internal heat gains.
 
 ### Phase 3: Weather & Design Days (Steps 6-8)
+
 - **Weather file**: drives the annual simulation hour-by-hour
 - **Design days**: used for HVAC sizing calculations (peak heating/cooling conditions)
 
 ### Phase 4: Simulate & Review (Steps 9-12)
+
 Save the model, run EnergyPlus, poll for completion, and extract key metrics.
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `create_baseline_osm` | Multi-zone model with geometry + HVAC |
-| `create_people_definition` | Occupancy loads |
-| `create_lights_definition` | Lighting loads |
-| `set_weather_file` | Attach EPW to model |
-| `add_design_day` | Heating/cooling design conditions |
-| `run_simulation` | Run EnergyPlus from OSM + EPW |
-| `extract_summary_metrics` | EUI, energy, unmet hours |
+| Tool                       | Purpose                               |
+| -------------------------- | ------------------------------------- |
+| `create_baseline_osm`      | Multi-zone model with geometry + HVAC |
+| `create_people_definition` | Occupancy loads                       |
+| `create_lights_definition` | Lighting loads                        |
+| `set_weather_file`         | Attach EPW to model                   |
+| `add_design_day`           | Heating/cooling design conditions     |
+| `run_simulation`           | Run EnergyPlus from OSM + EPW         |
+| `extract_summary_metrics`  | EUI, energy, unmet hours              |
 
 ## Integration Test
 

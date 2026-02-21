@@ -4,6 +4,7 @@ Uses the OSW-based approach: save model → build OSW with measure step →
 run `openstudio run -w` → reload resulting model. This avoids Ruby script
 execution complexity and uses the well-tested OSW runner.
 """
+
 from __future__ import annotations
 
 import json
@@ -155,7 +156,7 @@ def apply_measure(
                 {
                     "measure_dir_name": measure_path.name,
                     "arguments": measure_args,
-                }
+                },
             ],
         }
         osw_path = run_dir / "workflow.osw"

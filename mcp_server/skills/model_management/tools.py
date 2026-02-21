@@ -1,4 +1,5 @@
 """MCP tool definitions for OSM model management."""
+
 from __future__ import annotations
 
 from mcp_server.skills.model_management.operations import (

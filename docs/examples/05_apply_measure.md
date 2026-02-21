@@ -36,10 +36,10 @@ This avoids Ruby script execution complexity and uses the well-tested OSW runner
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
+| Tool                     | Purpose                              |
+| ------------------------ | ------------------------------------ |
 | `list_measure_arguments` | Inspect measure args before applying |
-| `apply_measure` | Apply measure to in-memory model |
+| `apply_measure`          | Apply measure to in-memory model     |
 
 ## Measure Directory Structure
 

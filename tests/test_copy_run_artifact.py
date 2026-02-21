@@ -1,4 +1,5 @@
 """Integration tests for copy_run_artifact tool."""
+
 import asyncio
 import json
 import os
@@ -6,7 +7,6 @@ import shlex
 import uuid
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -51,33 +51,35 @@ def test_copy_run_artifact():
 
     async def _run():
         server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create example model, load it, then save to a flat run dir
-                cr = await session.call_tool("create_example_osm", {"name": run_id})
-                cd = _unwrap(cr)
-                assert cd.get("ok") is True, cd
+            # Create example model, load it, then save to a flat run dir
+            cr = await session.call_tool("create_example_osm", {"name": run_id})
+            cd = _unwrap(cr)
+            assert cd.get("ok") is True, cd
 
-                lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+            lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+            assert _unwrap(lr).get("ok") is True
 
-                # Save to /runs/<run_id>/model.osm — creates a flat run dir
-                save_path = f"/runs/{run_id}/model.osm"
-                sr = await session.call_tool("save_osm_model", {"save_path": save_path})
-                assert _unwrap(sr).get("ok") is True
+            # Save to /runs/<run_id>/model.osm — creates a flat run dir
+            save_path = f"/runs/{run_id}/model.osm"
+            sr = await session.call_tool("save_osm_model", {"save_path": save_path})
+            assert _unwrap(sr).get("ok") is True
 
-                # Now copy the artifact
-                resp = await session.call_tool("copy_run_artifact", {
+            # Now copy the artifact
+            resp = await session.call_tool(
+                "copy_run_artifact",
+                {
                     "run_id": run_id,
                     "path": "model.osm",
-                })
-                result = _unwrap(resp)
-                print("copy_run_artifact:", result)
-                assert result.get("ok") is True, result
-                assert "destination" in result
-                assert result["size_bytes"] > 0
+                },
+            )
+            result = _unwrap(resp)
+            print("copy_run_artifact:", result)
+            assert result.get("ok") is True, result
+            assert "destination" in result
+            assert result["size_bytes"] > 0
 
     asyncio.run(_run())
 
@@ -94,17 +96,19 @@ def test_copy_run_artifact_not_found():
 
     async def _run():
         server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                resp = await session.call_tool("copy_run_artifact", {
+            resp = await session.call_tool(
+                "copy_run_artifact",
+                {
                     "run_id": "nonexistent_run_12345",
                     "path": "foo.txt",
-                })
-                result = _unwrap(resp)
-                print("copy not found:", result)
-                assert result.get("ok") is False
-                assert "run_not_found" in result.get("error", "")
+                },
+            )
+            result = _unwrap(resp)
+            print("copy not found:", result)
+            assert result.get("ok") is False
+            assert "run_not_found" in result.get("error", "")
 
     asyncio.run(_run())

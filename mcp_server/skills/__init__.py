@@ -3,6 +3,7 @@
 Scans all sub-packages in this directory for a `tools` module
 with a `register(mcp)` function, then calls it.
 """
+
 from __future__ import annotations
 
 import importlib

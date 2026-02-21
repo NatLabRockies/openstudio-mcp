@@ -26,13 +26,13 @@ An engineer has a small office model with geometry and space types but no HVAC, 
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `list_comstock_measures` | Discover available measures and templates |
+| Tool                      | Purpose                                                         |
+| ------------------------- | --------------------------------------------------------------- |
+| `list_comstock_measures`  | Discover available measures and templates                       |
 | `create_typical_building` | Apply full standards template (constructions, loads, HVAC, SWH) |
-| `get_model_summary` | Verify objects were added to the model |
-| `list_air_loops` | Inspect the HVAC system created by the template |
-| `list_constructions` | Inspect envelope constructions assigned to surfaces |
+| `get_model_summary`       | Verify objects were added to the model                          |
+| `list_air_loops`          | Inspect the HVAC system created by the template                 |
+| `list_constructions`      | Inspect envelope constructions assigned to surfaces             |
 
 ## Tips
 

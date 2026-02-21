@@ -1,9 +1,10 @@
 """MCP tool definitions for space types."""
+
 from __future__ import annotations
 
 from mcp_server.skills.space_types.operations import (
-    list_space_types,
     get_space_type_details,
+    list_space_types,
 )
 
 

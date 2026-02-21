@@ -8,7 +8,7 @@ import re
 import shlex
 import time
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import pytest
 from mcp import ClientSession, StdioServerParameters
@@ -128,7 +128,7 @@ def _is_containerish_path(p: str) -> bool:
     return False
 
 
-async def _call_tool(session: ClientSession, name: str, args: dict, timeout: Optional[float] = None) -> Any:
+async def _call_tool(session: ClientSession, name: str, args: dict, timeout: float | None = None) -> Any:
     if timeout is None:
         raw = await session.call_tool(name, args)
     else:
@@ -136,7 +136,7 @@ async def _call_tool(session: ClientSession, name: str, args: dict, timeout: Opt
     return _unwrap_mcp_result(raw)
 
 
-def _parse_metrics(metrics_payload: Any) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+def _parse_metrics(metrics_payload: Any) -> tuple[float | None, float | None, str | None]:
     """Returns (eui, total_site_energy_value, eui_units)."""
     if not isinstance(metrics_payload, dict):
         return None, None, None
@@ -194,14 +194,22 @@ def _format_metrics(metrics: Any) -> str:
     return " | ".join(parts)
 
 
-def _assert_close(name: str, got: float, expected: float, *, rtol: float, atol: float, units: str | None = None) -> None:
+def _assert_close(
+    name: str,
+    got: float,
+    expected: float,
+    *,
+    rtol: float,
+    atol: float,
+    units: str | None = None,
+) -> None:
     ok = math.isclose(got, expected, rel_tol=rtol, abs_tol=atol)
     u = f" {units}" if units else ""
     print(f"[openstudio-mcp] {name}_check: got={got}{u} expected={expected}{u} rtol={rtol} atol={atol} ok={ok}")
     assert ok, f"{name} mismatch: got={got}{u} expected={expected}{u} rtol={rtol} atol={atol}"
 
 
-async def _run_once_and_wait(*, osw_path: str, epw_path: Optional[str], allow_failure: bool = False) -> dict:
+async def _run_once_and_wait(*, osw_path: str, epw_path: str | None, allow_failure: bool = False) -> dict:
     # Allow running the MCP server as either:
     #   - local binary: MCP_SERVER_CMD=openstudio-mcp
     #   - docker wrapper: MCP_SERVER_CMD=docker + MCP_SERVER_ARGS="run ... openstudio-mcp:dev openstudio-mcp"
@@ -216,65 +224,67 @@ async def _run_once_and_wait(*, osw_path: str, epw_path: Optional[str], allow_fa
     hard_timeout = float(os.environ.get("MCP_HARD_TIMEOUT", str(60 * 30)))  # 30 min default
     tool_timeout = float(os.environ.get("MCP_TOOL_TIMEOUT", "30"))
 
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
+    async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+        await session.initialize()
 
-            run_args: dict[str, Any] = {"osw_path": osw_path, "epw_path": epw_path, "name": "SEB4_baseboard"}
-            run_res = await _call_tool(session, "run_osw", run_args, timeout=tool_timeout)
+        run_args: dict[str, Any] = {"osw_path": osw_path, "epw_path": epw_path, "name": "SEB4_baseboard"}
+        run_res = await _call_tool(session, "run_osw", run_args, timeout=tool_timeout)
 
-            # If the tool returns ok=false (validation / missing inputs), allow tests to assert on that.
-            if isinstance(run_res, dict) and run_res.get("ok") is False:
-                if allow_failure:
-                    return {"run_res": run_res}
-                raise AssertionError(f"run_osw returned ok=false: {run_res}")
+        # If the tool returns ok=false (validation / missing inputs), allow tests to assert on that.
+        if isinstance(run_res, dict) and run_res.get("ok") is False:
+            if allow_failure:
+                return {"run_res": run_res}
+            raise AssertionError(f"run_osw returned ok=false: {run_res}")
 
-            run_id = None
-            if isinstance(run_res, dict):
-                run_id = run_res.get("run_id") or run_res.get("id")
-            if not run_id:
-                if allow_failure:
-                    return {"run_id": None, "state": "failed", "run_res": run_res, "status": None, "metrics": None}
-                raise AssertionError(f"Could not determine run_id from: {run_res}")
+        run_id = None
+        if isinstance(run_res, dict):
+            run_id = run_res.get("run_id") or run_res.get("id")
+        if not run_id:
+            if allow_failure:
+                return {"run_id": None, "state": "failed", "run_res": run_res, "status": None, "metrics": None}
+            raise AssertionError(f"Could not determine run_id from: {run_res}")
 
-            last_log_fp = None
-            terminal = {"success", "failed", "error", "cancelled", "canceled"}
-            started = time.time()
+        last_log_fp = None
+        terminal = {"success", "failed", "error", "cancelled", "canceled"}
+        started = time.time()
 
-            while True:
-                if time.time() - started > hard_timeout:
-                    raise AssertionError(f"Timed out after {hard_timeout}s waiting for run to finish. run_id={run_id}")
+        while True:
+            if time.time() - started > hard_timeout:
+                raise AssertionError(f"Timed out after {hard_timeout}s waiting for run to finish. run_id={run_id}")
 
-                status = await _call_tool(session, "get_run_status", {"run_id": run_id}, timeout=tool_timeout)
-                logs = await _call_tool(
+            status = await _call_tool(session, "get_run_status", {"run_id": run_id}, timeout=tool_timeout)
+            logs = await _call_tool(
+                session,
+                "get_run_logs",
+                {"run_id": run_id, "stream": "openstudio", "tail": log_tail},
+                timeout=tool_timeout,
+            )
+
+            logs_text = None
+            if isinstance(logs, dict):
+                logs_text = logs.get("logs") or logs.get("text")
+            elif isinstance(logs, str):
+                logs_text = logs
+
+            if logs_text:
+                fp = hash(logs_text)
+                if fp != last_log_fp:
+                    print("----- log tail (openstudio) -----")
+                    print(logs_text.rstrip())
+                    print("----- end log tail (openstudio) -----\n")
+                    last_log_fp = fp
+
+            state = _extract_run_status(status).lower()
+            if state in terminal:
+                metrics = await _call_tool(
                     session,
-                    "get_run_logs",
-                    {"run_id": run_id, "stream": "openstudio", "tail": log_tail},
+                    "extract_summary_metrics",
+                    {"run_id": run_id},
                     timeout=tool_timeout,
                 )
+                return {"run_id": run_id, "status": status, "state": state, "metrics": metrics}
 
-                logs_text = None
-                if isinstance(logs, dict):
-                    logs_text = logs.get("logs") or logs.get("text")
-                elif isinstance(logs, str):
-                    logs_text = logs
-
-                if logs_text:
-                    fp = hash(logs_text)
-                    if fp != last_log_fp:
-                        print("----- log tail (openstudio) -----")
-                        print(logs_text.rstrip())
-                        print("----- end log tail (openstudio) -----\n")
-                        last_log_fp = fp
-
-                state = _extract_run_status(status).lower()
-                if state in terminal:
-                    metrics = await _call_tool(
-                        session, "extract_summary_metrics", {"run_id": run_id}, timeout=tool_timeout
-                    )
-                    return {"run_id": run_id, "status": status, "state": state, "metrics": metrics}
-
-                await asyncio.sleep(poll_seconds)
+            await asyncio.sleep(poll_seconds)
 
 
 def _host_path_exists_if_applicable(p: str) -> None:
@@ -368,7 +378,13 @@ def test_mcp_run_seb4_2012_override_weather_via_tool_arg():
     assert eui is not None, "Expected EUI to be present in metrics."
     assert total_site is not None, "Expected Total Site Energy to be present in metrics."
     _assert_close("eui_2012_override", eui, EXPECTED_2012_EUI, rtol=EUI_RTOL, atol=EUI_ATOL, units=units)
-    _assert_close("total_site_energy_2012_override", total_site, EXPECTED_2012_TOTAL_SITE_ENERGY, rtol=SITE_RTOL, atol=SITE_ATOL)
+    _assert_close(
+        "total_site_energy_2012_override",
+        total_site,
+        EXPECTED_2012_TOTAL_SITE_ENERGY,
+        rtol=SITE_RTOL,
+        atol=SITE_ATOL,
+    )
 
 
 @pytest.mark.integration
@@ -388,9 +404,12 @@ def test_mcp_run_seb4_bad_weather_in_osw_fails_validation():
     err = str(run_res.get("error") or "")
     issues = run_res.get("issues") or []
     joined = " | ".join(map(str, issues))
-    assert ("weather" in err.lower()) or ("weather" in joined.lower()) or ("epw" in err.lower()) or ("epw" in joined.lower()), (
-        f"Expected a weather/EPW validation error. error={err!r} issues={issues!r}"
-    )
+    assert (
+        ("weather" in err.lower())
+        or ("weather" in joined.lower())
+        or ("epw" in err.lower())
+        or ("epw" in joined.lower())
+    ), f"Expected a weather/EPW validation error. error={err!r} issues={issues!r}"
 
 
 @pytest.mark.integration
@@ -426,6 +445,7 @@ def test_mcp_run_seb4_bad_weather_in_osw_succeeds_with_epw_override():
             atol=SITE_ATOL,
             units=None,
         )
+
 
 @pytest.mark.integration
 def test_mcp_bad_osw_path_fails_cleanly():

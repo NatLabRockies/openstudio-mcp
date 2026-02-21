@@ -4,6 +4,7 @@ Provides:
 - list_comstock_measures: scan COMSTOCK_MEASURES_DIR for available measures
 - create_typical_building: wrapper around create_typical_building_from_model measure
 """
+
 from __future__ import annotations
 
 import os
@@ -16,14 +17,19 @@ from mcp_server.model_manager import get_model
 from mcp_server.skills.measures.operations import apply_measure
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
-
 # Category classification for ComStock measures
 _BASELINE_PREFIXES = (
-    "set_wall_template", "set_roof_template", "set_hvac_template",
-    "set_interior_lighting_template", "set_exterior_lighting_template",
-    "set_service_water_heating_template", "set_electric_equipment_template",
-    "set_gas_equipment_template", "set_refrigeration_template",
-    "set_elevator_template", "set_transformer_template",
+    "set_wall_template",
+    "set_roof_template",
+    "set_hvac_template",
+    "set_interior_lighting_template",
+    "set_exterior_lighting_template",
+    "set_service_water_heating_template",
+    "set_electric_equipment_template",
+    "set_gas_equipment_template",
+    "set_refrigeration_template",
+    "set_elevator_template",
+    "set_transformer_template",
     "replace_baseline_windows",
 )
 _SETUP_NAMES = {
@@ -62,7 +68,7 @@ def list_comstock_measures(category: str | None = None) -> dict[str, Any]:
         return {
             "ok": False,
             "error": f"ComStock measures directory not found: {measures_dir}. "
-                     "Ensure COMSTOCK_MEASURES_DIR is set and measures are installed.",
+            "Ensure COMSTOCK_MEASURES_DIR is set and measures are installed.",
         }
 
     results = []
@@ -163,8 +169,7 @@ def create_typical_building(
     if not measure_path.is_dir():
         return {
             "ok": False,
-            "error": f"Measure not found: {measure_path}. "
-                     "Ensure ComStock measures are installed.",
+            "error": f"Measure not found: {measure_path}. Ensure ComStock measures are installed.",
         }
 
     # Ensure building and space types have standardsBuildingType set.
@@ -176,7 +181,7 @@ def create_typical_building(
         if not bldg.standardsBuildingType().is_initialized():
             bldg.setStandardsBuildingType(building_type)
         if not bldg.standardsNumberOfStories().is_initialized():
-            bldg.setStandardsNumberOfStories(len(model.getBuildingStorys()))
+            bldg.setStandardsNumberOfStories(len(model.getBuildingStoreys()))
         # Set space type standards info if missing
         for st in model.getSpaceTypes():
             if not st.standardsBuildingType().is_initialized():

@@ -10,12 +10,12 @@
 
 Ask your AI assistant to do things like:
 
-- *"Create a 10-zone office building with VAV reheat and run an annual simulation"*
-- *"What's the EUI? Show me the unmet heating hours."*
-- *"Switch the HVAC from VAV to VRF heat pumps and compare energy use"*
-- *"Add R-30 roof insulation and see how it affects the cooling load"*
-- *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing"*
-- *"Apply the AEDG Small Office measure from my local measures directory"*
+- _"Create a 10-zone office building with VAV reheat and run an annual simulation"_
+- _"What's the EUI? Show me the unmet heating hours."_
+- _"Switch the HVAC from VAV to VRF heat pumps and compare energy use"_
+- _"Add R-30 roof insulation and see how it affects the cooling load"_
+- _"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing"_
+- _"Apply the AEDG Small Office measure from my local measures directory"_
 
 The server handles all the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
@@ -51,11 +51,17 @@ Add (or merge into) the `mcpServers` block:
     "openstudio-mcp": {
       "command": "docker",
       "args": [
-        "run", "--rm", "-i",
-        "-v", "./tests/assets:/inputs",
-        "-v", "./runs:/runs",
-        "-e", "OPENSTUDIO_MCP_MODE=prod",
-        "openstudio-mcp:dev", "openstudio-mcp"
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        "./tests/assets:/inputs",
+        "-v",
+        "./runs:/runs",
+        "-e",
+        "OPENSTUDIO_MCP_MODE=prod",
+        "openstudio-mcp:dev",
+        "openstudio-mcp"
       ]
     }
   }
@@ -360,218 +366,237 @@ You: Show me the end-use energy breakdown, envelope summary, HVAC sizing,
 ## Skills & Tools (124 total)
 
 ### Server Info (2 tools)
-| Tool | Description |
-|------|-------------|
-| `get_server_status` | Server health check |
-| `get_versions` | OpenStudio, EnergyPlus, Ruby versions |
+
+| Tool                | Description                           |
+| ------------------- | ------------------------------------- |
+| `get_server_status` | Server health check                   |
+| `get_versions`      | OpenStudio, EnergyPlus, Ruby versions |
 
 ### Model Management (6 tools)
-| Tool | Description |
-|------|-------------|
-| `create_example_osm` | Create single-zone example model |
-| `create_baseline_osm` | Create 10-zone baseline with ASHRAE system 1-10 |
-| `inspect_osm_summary` | Quick structural summary of OSM file |
-| `load_osm_model` | Load OSM into memory for querying/editing |
-| `save_osm_model` | Save in-memory model to disk |
-| `list_files` | Discover files in /inputs and /runs (OSM, EPW, results) |
+
+| Tool                  | Description                                             |
+| --------------------- | ------------------------------------------------------- |
+| `create_example_osm`  | Create single-zone example model                        |
+| `create_baseline_osm` | Create 10-zone baseline with ASHRAE system 1-10         |
+| `inspect_osm_summary` | Quick structural summary of OSM file                    |
+| `load_osm_model`      | Load OSM into memory for querying/editing               |
+| `save_osm_model`      | Save in-memory model to disk                            |
+| `list_files`          | Discover files in /inputs and /runs (OSM, EPW, results) |
 
 ### Building (3 tools)
-| Tool | Description |
-|------|-------------|
-| `get_building_info` | Building name, area, volume, orientation |
-| `get_model_summary` | Object counts by category |
-| `list_building_stories` | List building stories with spaces |
+
+| Tool                    | Description                              |
+| ----------------------- | ---------------------------------------- |
+| `get_building_info`     | Building name, area, volume, orientation |
+| `get_model_summary`     | Object counts by category                |
+| `list_building_stories` | List building stories with spaces        |
 
 ### Spaces (6 tools)
-| Tool | Description |
-|------|-------------|
-| `list_spaces` | List all spaces with area/volume |
-| `get_space_details` | Detailed space info (surfaces, loads, zone) |
-| `list_thermal_zones` | List thermal zones with spaces |
-| `get_thermal_zone_details` | Zone equipment, thermostat, multiplier |
-| `create_space` | Create space with optional story/space type |
-| `create_thermal_zone` | Create thermal zone, assign spaces |
+
+| Tool                       | Description                                 |
+| -------------------------- | ------------------------------------------- |
+| `list_spaces`              | List all spaces with area/volume            |
+| `get_space_details`        | Detailed space info (surfaces, loads, zone) |
+| `list_thermal_zones`       | List thermal zones with spaces              |
+| `get_thermal_zone_details` | Zone equipment, thermostat, multiplier      |
+| `create_space`             | Create space with optional story/space type |
+| `create_thermal_zone`      | Create thermal zone, assign spaces          |
 
 ### Geometry (8 tools)
-| Tool | Description |
-|------|-------------|
-| `list_surfaces` | List surfaces (walls, floors, roofs) |
-| `get_surface_details` | Surface vertices, construction, boundary |
-| `list_subsurfaces` | List windows, doors, skylights |
-| `create_surface` | Create surface with explicit 3D vertices |
-| `create_subsurface` | Create window/door on a parent surface |
-| `create_space_from_floor_print` | Extrude floor polygon into space with all surfaces |
-| `match_surfaces` | Intersect + match shared walls between adjacent spaces |
-| `set_window_to_wall_ratio` | Add centered window by glazing ratio (e.g. 0.4 = 40%) |
+
+| Tool                            | Description                                            |
+| ------------------------------- | ------------------------------------------------------ |
+| `list_surfaces`                 | List surfaces (walls, floors, roofs)                   |
+| `get_surface_details`           | Surface vertices, construction, boundary               |
+| `list_subsurfaces`              | List windows, doors, skylights                         |
+| `create_surface`                | Create surface with explicit 3D vertices               |
+| `create_subsurface`             | Create window/door on a parent surface                 |
+| `create_space_from_floor_print` | Extrude floor polygon into space with all surfaces     |
+| `match_surfaces`                | Intersect + match shared walls between adjacent spaces |
+| `set_window_to_wall_ratio`      | Add centered window by glazing ratio (e.g. 0.4 = 40%)  |
 
 ### Constructions (6 tools)
-| Tool | Description |
-|------|-------------|
-| `list_materials` | List materials with thermal properties |
-| `list_constructions` | List constructions with layers |
-| `list_construction_sets` | List default construction sets |
-| `create_standard_opaque_material` | Create material with conductivity/density |
-| `create_construction` | Create layered construction from materials |
-| `assign_construction_to_surface` | Assign construction to surface |
+
+| Tool                              | Description                                |
+| --------------------------------- | ------------------------------------------ |
+| `list_materials`                  | List materials with thermal properties     |
+| `list_constructions`              | List constructions with layers             |
+| `list_construction_sets`          | List default construction sets             |
+| `create_standard_opaque_material` | Create material with conductivity/density  |
+| `create_construction`             | Create layered construction from materials |
+| `assign_construction_to_surface`  | Assign construction to surface             |
 
 ### Schedules (3 tools)
-| Tool | Description |
-|------|-------------|
-| `list_schedule_rulesets` | List schedule rulesets |
-| `get_schedule_details` | Schedule type, values, rules |
+
+| Tool                      | Description                                      |
+| ------------------------- | ------------------------------------------------ |
+| `list_schedule_rulesets`  | List schedule rulesets                           |
+| `get_schedule_details`    | Schedule type, values, rules                     |
 | `create_schedule_ruleset` | Create constant schedule (Fractional/Temp/OnOff) |
 
 ### HVAC (7 tools)
-| Tool | Description |
-|------|-------------|
-| `list_air_loops` | List air loops with zones served |
-| `get_air_loop_details` | Air loop components, sizing, OA system |
-| `add_air_loop` | Create air loop and connect zones |
-| `list_plant_loops` | List plant loops (heating, cooling, condenser) |
-| `get_plant_loop_details` | Plant loop supply/demand components |
-| `list_zone_hvac_equipment` | List zone-level HVAC equipment |
-| `get_zone_hvac_details` | Zone equipment details |
+
+| Tool                       | Description                                    |
+| -------------------------- | ---------------------------------------------- |
+| `list_air_loops`           | List air loops with zones served               |
+| `get_air_loop_details`     | Air loop components, sizing, OA system         |
+| `add_air_loop`             | Create air loop and connect zones              |
+| `list_plant_loops`         | List plant loops (heating, cooling, condenser) |
+| `get_plant_loop_details`   | Plant loop supply/demand components            |
+| `list_zone_hvac_equipment` | List zone-level HVAC equipment                 |
+| `get_zone_hvac_details`    | Zone equipment details                         |
 
 ### Loads (10 tools)
-| Tool | Description |
-|------|-------------|
-| `list_people_loads` | List people/occupancy definitions |
-| `list_lighting_loads` | List lighting definitions |
-| `list_electric_equipment` | List electric equipment |
-| `list_gas_equipment` | List gas equipment |
-| `list_infiltration` | List infiltration definitions |
-| `create_people_definition` | Create people load (by area or count) |
-| `create_lights_definition` | Create lighting load (by area or wattage) |
-| `create_electric_equipment` | Create electric equipment load |
-| `create_gas_equipment` | Create gas equipment load |
-| `create_infiltration` | Create infiltration (by area or ACH) |
+
+| Tool                        | Description                               |
+| --------------------------- | ----------------------------------------- |
+| `list_people_loads`         | List people/occupancy definitions         |
+| `list_lighting_loads`       | List lighting definitions                 |
+| `list_electric_equipment`   | List electric equipment                   |
+| `list_gas_equipment`        | List gas equipment                        |
+| `list_infiltration`         | List infiltration definitions             |
+| `create_people_definition`  | Create people load (by area or count)     |
+| `create_lights_definition`  | Create lighting load (by area or wattage) |
+| `create_electric_equipment` | Create electric equipment load            |
+| `create_gas_equipment`      | Create gas equipment load                 |
+| `create_infiltration`       | Create infiltration (by area or ACH)      |
 
 ### Space Types (2 tools)
-| Tool | Description |
-|------|-------------|
-| `list_space_types` | List space types with default loads |
+
+| Tool                     | Description                            |
+| ------------------------ | -------------------------------------- |
+| `list_space_types`       | List space types with default loads    |
 | `get_space_type_details` | Space type loads, schedules, standards |
 
 ### Simulation (7 tools)
-| Tool | Description |
-|------|-------------|
-| `validate_osw` | Validate OSW workflow file |
-| `run_osw` | Run EnergyPlus simulation from an OSW file |
-| `run_simulation` | Run simulation from just an OSM + optional EPW |
-| `get_run_status` | Poll simulation run status |
-| `get_run_logs` | Tail simulation logs |
-| `get_run_artifacts` | List simulation output files |
-| `cancel_run` | Cancel running simulation |
+
+| Tool                | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `validate_osw`      | Validate OSW workflow file                     |
+| `run_osw`           | Run EnergyPlus simulation from an OSW file     |
+| `run_simulation`    | Run simulation from just an OSM + optional EPW |
+| `get_run_status`    | Poll simulation run status                     |
+| `get_run_logs`      | Tail simulation logs                           |
+| `get_run_artifacts` | List simulation output files                   |
+| `cancel_run`        | Cancel running simulation                      |
 
 ### Results (9 tools)
-| Tool | Description |
-|------|-------------|
-| `extract_summary_metrics` | Extract EUI, energy, unmet hours from results |
-| `read_run_artifact` | Read simulation output file contents |
-| `copy_run_artifact` | Copy large artifact to host-mounted path |
-| `extract_end_use_breakdown` | Energy breakdown by end use and fuel type (IP/SI) |
-| `extract_envelope_summary` | Opaque + fenestration U-values and areas |
-| `extract_hvac_sizing` | Autosized zone and system HVAC capacities |
-| `extract_zone_summary` | Per-zone areas, conditions, multipliers |
-| `extract_component_sizing` | Autosized HVAC component values (filterable) |
-| `query_timeseries` | Time-series output variable data with date/cap filters |
+
+| Tool                        | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `extract_summary_metrics`   | Extract EUI, energy, unmet hours from results          |
+| `read_run_artifact`         | Read simulation output file contents                   |
+| `copy_run_artifact`         | Copy large artifact to host-mounted path               |
+| `extract_end_use_breakdown` | Energy breakdown by end use and fuel type (IP/SI)      |
+| `extract_envelope_summary`  | Opaque + fenestration U-values and areas               |
+| `extract_hvac_sizing`       | Autosized zone and system HVAC capacities              |
+| `extract_zone_summary`      | Per-zone areas, conditions, multipliers                |
+| `extract_component_sizing`  | Autosized HVAC component values (filterable)           |
+| `query_timeseries`          | Time-series output variable data with date/cap filters |
 
 ### Simulation Outputs (2 tools)
-| Tool | Description |
-|------|-------------|
+
+| Tool                  | Description                    |
+| --------------------- | ------------------------------ |
 | `add_output_variable` | Add EnergyPlus output variable |
-| `add_output_meter` | Add EnergyPlus output meter |
+| `add_output_meter`    | Add EnergyPlus output meter    |
 
 ### HVAC Systems (8 tools)
-| Tool | Description |
-|------|-------------|
-| `add_baseline_system` | Add ASHRAE 90.1 baseline system (types 1-10) |
-| `list_baseline_systems` | List all baseline + modern template types |
-| `get_baseline_system_info` | Get metadata for specific system type |
-| `replace_air_terminals` | Replace ALL terminals on an air loop |
-| `replace_zone_terminal` | Replace terminal on a single zone |
-| `add_doas_system` | Add DOAS with fan coils, radiant, or chilled beams |
-| `add_vrf_system` | Add VRF multi-zone heat pump system |
-| `add_radiant_system` | Add low-temperature radiant heating/cooling |
+
+| Tool                       | Description                                        |
+| -------------------------- | -------------------------------------------------- |
+| `add_baseline_system`      | Add ASHRAE 90.1 baseline system (types 1-10)       |
+| `list_baseline_systems`    | List all baseline + modern template types          |
+| `get_baseline_system_info` | Get metadata for specific system type              |
+| `replace_air_terminals`    | Replace ALL terminals on an air loop               |
+| `replace_zone_terminal`    | Replace terminal on a single zone                  |
+| `add_doas_system`          | Add DOAS with fan coils, radiant, or chilled beams |
+| `add_vrf_system`           | Add VRF multi-zone heat pump system                |
+| `add_radiant_system`       | Add low-temperature radiant heating/cooling        |
 
 ### Component Properties (6 tools)
-| Tool | Description |
-|------|-------------|
-| `list_hvac_components` | List all HVAC components (15 types: coils, plant, fans, pumps) |
-| `get_component_properties` | Read all properties of a named component |
-| `set_component_properties` | Modify properties on a named component |
-| `set_economizer_properties` | Modify OA economizer settings on air loop |
-| `set_sizing_properties` | Modify plant loop sizing (exit temp, delta-T) |
-| `set_setpoint_manager_properties` | Modify setpoint manager min/max temps |
+
+| Tool                              | Description                                                    |
+| --------------------------------- | -------------------------------------------------------------- |
+| `list_hvac_components`            | List all HVAC components (15 types: coils, plant, fans, pumps) |
+| `get_component_properties`        | Read all properties of a named component                       |
+| `set_component_properties`        | Modify properties on a named component                         |
+| `set_economizer_properties`       | Modify OA economizer settings on air loop                      |
+| `set_sizing_properties`           | Modify plant loop sizing (exit temp, delta-T)                  |
+| `set_setpoint_manager_properties` | Modify setpoint manager min/max temps                          |
 
 ### Loop Operations (4 tools)
-| Tool | Description |
-|------|-------------|
-| `add_supply_equipment` | Add boiler/chiller/tower to plant loop supply |
-| `remove_supply_equipment` | Remove equipment from plant loop supply |
-| `add_zone_equipment` | Add baseboard/unit heater to thermal zone |
-| `remove_zone_equipment` | Remove equipment from thermal zone |
+
+| Tool                      | Description                                   |
+| ------------------------- | --------------------------------------------- |
+| `add_supply_equipment`    | Add boiler/chiller/tower to plant loop supply |
+| `remove_supply_equipment` | Remove equipment from plant loop supply       |
+| `add_zone_equipment`      | Add baseboard/unit heater to thermal zone     |
+| `remove_zone_equipment`   | Remove equipment from thermal zone            |
 
 ### Object Management (3 tools)
-| Tool | Description |
-|------|-------------|
-| `delete_object` | Delete any named object (28+ supported types) |
-| `rename_object` | Rename any named object |
-| `list_model_objects` | List all objects of a given type |
+
+| Tool                 | Description                                   |
+| -------------------- | --------------------------------------------- |
+| `delete_object`      | Delete any named object (28+ supported types) |
+| `rename_object`      | Rename any named object                       |
+| `list_model_objects` | List all objects of a given type              |
 
 ### Weather & Simulation Config (7 tools)
-| Tool | Description |
-|------|-------------|
-| `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
-| `set_weather_file` | Attach EPW weather file to model |
-| `add_design_day` | Add heating/cooling design day |
-| `get_simulation_control` | Read sizing flags and timesteps per hour |
-| `set_simulation_control` | Modify sizing flags and/or timestep |
-| `get_run_period` | Read run period begin/end dates |
-| `set_run_period` | Set run period dates (auto-enables weather file run) |
+
+| Tool                     | Description                                          |
+| ------------------------ | ---------------------------------------------------- |
+| `get_weather_info`       | Read weather file info (city, lat, lon, timezone)    |
+| `set_weather_file`       | Attach EPW weather file to model                     |
+| `add_design_day`         | Add heating/cooling design day                       |
+| `get_simulation_control` | Read sizing flags and timesteps per hour             |
+| `set_simulation_control` | Modify sizing flags and/or timestep                  |
+| `get_run_period`         | Read run period begin/end dates                      |
+| `set_run_period`         | Set run period dates (auto-enables weather file run) |
 
 ### Measures (2 tools)
-| Tool | Description |
-|------|-------------|
+
+| Tool                     | Description                                      |
+| ------------------------ | ------------------------------------------------ |
 | `list_measure_arguments` | List measure arguments with defaults and choices |
-| `apply_measure` | Apply OpenStudio measure to in-memory model |
+| `apply_measure`          | Apply OpenStudio measure to in-memory model      |
 
 ### ComStock Measures (2 tools)
 
 ~61 bundled [ComStock](https://github.com/NREL/ComStock) measures (openstudio-standards-based templates for space types, constructions, HVAC, schedules). Pre-installed in Docker image.
 
-| Tool | Description |
-|------|-------------|
-| `list_comstock_measures` | List bundled measures with category filter (baseline/upgrade/setup) |
-| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry |
+| Tool                      | Description                                                         |
+| ------------------------- | ------------------------------------------------------------------- |
+| `list_comstock_measures`  | List bundled measures with category filter (baseline/upgrade/setup) |
+| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry        |
 
 ### Common Measures (21 tools)
 
 ~79 bundled [openstudio-common-measures-gem](https://github.com/NREL/openstudio-common-measures-gem) measures (reporting, thermostats, envelope, renewables, visualization, model cleanup). Pre-installed in Docker image. 20 curated measures with 21 dedicated wrapper tools.
 
-| Tool | Description |
-|------|-------------|
-| `list_common_measures` | List bundled measures with category filter (reporting/thermostat/envelope/loads/renewables/etc.) |
-| `view_model` | Generate interactive 3D Three.js HTML viewer of model geometry |
-| `view_simulation_data` | Generate 3D viewer with simulation data overlaid on surfaces |
-| `generate_results_report` | Comprehensive HTML report (~25 sections: energy, HVAC, envelope, zones) |
-| `run_qaqc_checks` | ASHRAE baseline QA/QC checks (efficiency, capacity, envelope, loads) |
-| `adjust_thermostat_setpoints` | Shift all heating/cooling setpoints by degree offset |
-| `replace_window_constructions` | Bulk-replace all exterior window constructions |
-| `enable_ideal_air_loads` | Enable ideal air loads on all zones (quick sizing studies) |
-| `clean_unused_objects` | Remove orphan objects and unused resources |
-| `inject_idf` | Inject raw IDF objects from external file |
-| `change_building_location` | Set weather file + climate zone + design days |
-| `set_thermostat_schedules` | Apply thermostat schedules from library |
-| `replace_thermostat_schedules` | Replace existing thermostat schedules |
-| `shift_schedule_time` | Shift schedule profiles by hours |
-| `add_rooftop_pv` | Add rooftop PV panels |
-| `add_pv_to_shading` | Add PV to shading surfaces by type |
-| `add_ev_load` | Add electric vehicle charging load |
-| `add_zone_ventilation` | Add zone ventilation design flow rate |
-| `set_lifecycle_cost_params` | Set lifecycle cost analysis parameters |
-| `add_cost_per_floor_area` | Add cost per floor area to building |
-| `set_adiabatic_boundaries` | Set exterior walls/floors to adiabatic |
+| Tool                           | Description                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `list_common_measures`         | List bundled measures with category filter (reporting/thermostat/envelope/loads/renewables/etc.) |
+| `view_model`                   | Generate interactive 3D Three.js HTML viewer of model geometry                                   |
+| `view_simulation_data`         | Generate 3D viewer with simulation data overlaid on surfaces                                     |
+| `generate_results_report`      | Comprehensive HTML report (~25 sections: energy, HVAC, envelope, zones)                          |
+| `run_qaqc_checks`              | ASHRAE baseline QA/QC checks (efficiency, capacity, envelope, loads)                             |
+| `adjust_thermostat_setpoints`  | Shift all heating/cooling setpoints by degree offset                                             |
+| `replace_window_constructions` | Bulk-replace all exterior window constructions                                                   |
+| `enable_ideal_air_loads`       | Enable ideal air loads on all zones (quick sizing studies)                                       |
+| `clean_unused_objects`         | Remove orphan objects and unused resources                                                       |
+| `inject_idf`                   | Inject raw IDF objects from external file                                                        |
+| `change_building_location`     | Set weather file + climate zone + design days                                                    |
+| `set_thermostat_schedules`     | Apply thermostat schedules from library                                                          |
+| `replace_thermostat_schedules` | Replace existing thermostat schedules                                                            |
+| `shift_schedule_time`          | Shift schedule profiles by hours                                                                 |
+| `add_rooftop_pv`               | Add rooftop PV panels                                                                            |
+| `add_pv_to_shading`            | Add PV to shading surfaces by type                                                               |
+| `add_ev_load`                  | Add electric vehicle charging load                                                               |
+| `add_zone_ventilation`         | Add zone ventilation design flow rate                                                            |
+| `set_lifecycle_cost_params`    | Set lifecycle cost analysis parameters                                                           |
+| `add_cost_per_floor_area`      | Add cost per floor area to building                                                              |
+| `set_adiabatic_boundaries`     | Set exterior walls/floors to adiabatic                                                           |
 
 ---
 
@@ -579,18 +604,18 @@ You: Show me the end-use energy breakdown, envelope summary, HVAC sizing,
 
 All 10 ASHRAE 90.1 Appendix G baseline systems are supported via `add_baseline_system`:
 
-| System | Type | Description |
-|--------|------|-------------|
-| 01 | PTAC | Packaged terminal AC (zone-level) |
-| 02 | PTHP | Packaged terminal heat pump (zone-level) |
-| 03 | PSZ-AC | Packaged single-zone rooftop AC |
-| 04 | PSZ-HP | Packaged single-zone heat pump |
-| 05 | Packaged VAV w/ Reheat | VAV with hot water reheat coils |
-| 06 | Packaged VAV w/ PFP Boxes | VAV with parallel fan-powered boxes |
-| 07 | VAV w/ Reheat | Central VAV, chiller + boiler + cooling tower |
-| 08 | VAV w/ PFP Boxes | Central VAV with parallel fan-powered terminal |
-| 09 | Gas Unit Heater | Heating-only (warehouses, garages) |
-| 10 | Electric Unit Heater | Heating-only, electric |
+| System | Type                      | Description                                    |
+| ------ | ------------------------- | ---------------------------------------------- |
+| 01     | PTAC                      | Packaged terminal AC (zone-level)              |
+| 02     | PTHP                      | Packaged terminal heat pump (zone-level)       |
+| 03     | PSZ-AC                    | Packaged single-zone rooftop AC                |
+| 04     | PSZ-HP                    | Packaged single-zone heat pump                 |
+| 05     | Packaged VAV w/ Reheat    | VAV with hot water reheat coils                |
+| 06     | Packaged VAV w/ PFP Boxes | VAV with parallel fan-powered boxes            |
+| 07     | VAV w/ Reheat             | Central VAV, chiller + boiler + cooling tower  |
+| 08     | VAV w/ PFP Boxes          | Central VAV with parallel fan-powered terminal |
+| 09     | Gas Unit Heater           | Heating-only (warehouses, garages)             |
+| 10     | Electric Unit Heater      | Heating-only, electric                         |
 
 Plus 3 modern templates: **DOAS**, **VRF**, **Radiant**.
 
@@ -600,14 +625,28 @@ Plus 3 modern templates: **DOAS**, **VRF**, **Radiant**.
 
 The component properties tools can query and modify these 15 HVAC component types:
 
-| Category | Components |
-|----------|------------|
+| Category  | Components                                                                                                                                         |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Coils** | CoilHeatingGas, CoilHeatingElectric, CoilHeatingWater, CoilCoolingWater, CoilCoolingDXSingleSpeed, CoilCoolingDXTwoSpeed, CoilHeatingDXSingleSpeed |
-| **Plant** | BoilerHotWater, ChillerElectricEIR, CoolingTowerSingleSpeed |
-| **Fans** | FanConstantVolume, FanVariableVolume, FanOnOff |
-| **Pumps** | PumpConstantSpeed, PumpVariableSpeed |
+| **Plant** | BoilerHotWater, ChillerElectricEIR, CoolingTowerSingleSpeed                                                                                        |
+| **Fans**  | FanConstantVolume, FanVariableVolume, FanOnOff                                                                                                     |
+| **Pumps** | PumpConstantSpeed, PumpVariableSpeed                                                                                                               |
 
 ---
+
+## Development
+
+Initialize the virtual environment with uv:
+
+```bash
+uv sync
+```
+
+Run pre-commit checks:
+
+```bash
+uv run pre-commit run -a
+```
 
 ## Testing
 
@@ -637,10 +676,10 @@ docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
 
 ## Dev vs Prod Mode
 
-| Mode | Purpose | Behavior |
-|------|---------|----------|
-| `dev` (default) | Local development | FastMCP banner + INFO logs |
-| `prod` | MCP host usage | Banner disabled, quieter logs |
+| Mode            | Purpose           | Behavior                      |
+| --------------- | ----------------- | ----------------------------- |
+| `dev` (default) | Local development | FastMCP banner + INFO logs    |
+| `prod`          | MCP host usage    | Banner disabled, quieter logs |
 
 ```bash
 # Prod mode (recommended for MCP hosts)

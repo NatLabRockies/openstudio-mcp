@@ -1,4 +1,5 @@
 """Model management operations — create, load, inspect, convert OSM files."""
+
 from __future__ import annotations
 
 import os
@@ -7,10 +8,10 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import RUN_ROOT, INPUT_ROOT, is_path_allowed
 from mcp_server import model_manager
-from mcp_server.stdout_suppression import suppress_openstudio_warnings
+from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed
 from mcp_server.skills.model_management.baseline_model import create_baseline_model
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def _safe_name(s: str) -> str:
@@ -65,7 +66,7 @@ def _vector_size(v) -> int:
     try:
         return int(v.size())
     except Exception:
-        return int(len(v))
+        return len(v)
 
 
 def inspect_osm_summary(osm_path: str) -> dict[str, Any]:
@@ -258,12 +259,14 @@ def list_files(directory: str | None = None, pattern: str = "*") -> dict[str, An
                     continue
                 full = Path(root) / fname
                 size = full.stat().st_size
-                files.append({
-                    "name": fname,
-                    "path": str(full),
-                    "size_bytes": size,
-                    "extension": full.suffix,
-                })
+                files.append(
+                    {
+                        "name": fname,
+                        "path": str(full),
+                        "size_bytes": size,
+                        "extension": full.suffix,
+                    },
+                )
 
     files.sort(key=lambda f: f["name"])
     return {"ok": True, "total_files": len(files), "files": files}

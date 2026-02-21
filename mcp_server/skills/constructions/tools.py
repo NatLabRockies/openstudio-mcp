@@ -1,13 +1,14 @@
 """MCP tool definitions for constructions (materials, constructions, sets)."""
+
 from __future__ import annotations
 
 from mcp_server.skills.constructions.operations import (
-    list_materials,
-    list_constructions,
-    list_construction_sets,
-    create_standard_opaque_material,
-    create_construction,
     assign_construction_to_surface,
+    create_construction,
+    create_standard_opaque_material,
+    list_construction_sets,
+    list_constructions,
+    list_materials,
 )
 
 
@@ -60,11 +61,14 @@ def register(mcp):
         return list_construction_sets()
 
     @mcp.tool(name="create_standard_opaque_material")
-    def create_standard_opaque_material_tool(name: str, roughness: str = "Smooth",
-                                            thickness_m: float = 0.1,
-                                            conductivity_w_m_k: float = 0.5,
-                                            density_kg_m3: float = 800.0,
-                                            specific_heat_j_kg_k: float = 1000.0):
+    def create_standard_opaque_material_tool(
+        name: str,
+        roughness: str = "Smooth",
+        thickness_m: float = 0.1,
+        conductivity_w_m_k: float = 0.5,
+        density_kg_m3: float = 800.0,
+        specific_heat_j_kg_k: float = 1000.0,
+    ):
         """Create a standard opaque material with thermal properties.
 
         Args:
@@ -84,11 +88,14 @@ def register(mcp):
 
         Requires a model to be loaded via load_osm_model_tool first.
         """
-        return create_standard_opaque_material(name=name, roughness=roughness,
-                                              thickness_m=thickness_m,
-                                              conductivity_w_m_k=conductivity_w_m_k,
-                                              density_kg_m3=density_kg_m3,
-                                              specific_heat_j_kg_k=specific_heat_j_kg_k)
+        return create_standard_opaque_material(
+            name=name,
+            roughness=roughness,
+            thickness_m=thickness_m,
+            conductivity_w_m_k=conductivity_w_m_k,
+            density_kg_m3=density_kg_m3,
+            specific_heat_j_kg_k=specific_heat_j_kg_k,
+        )
 
     @mcp.tool(name="create_construction")
     def create_construction_tool(name: str, material_names: list[str]):
@@ -125,5 +132,4 @@ def register(mcp):
 
         Requires a model to be loaded via load_osm_model_tool first.
         """
-        return assign_construction_to_surface(surface_name=surface_name,
-                                             construction_name=construction_name)
+        return assign_construction_to_surface(surface_name=surface_name, construction_name=construction_name)

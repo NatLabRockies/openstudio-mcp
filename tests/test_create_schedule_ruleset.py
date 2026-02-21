@@ -5,7 +5,6 @@ import shlex
 import uuid
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -60,35 +59,37 @@ def test_create_schedule_ruleset_fractional():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Create fractional schedule
-                schedule_resp = await session.call_tool("create_schedule_ruleset", {
+            # Create fractional schedule
+            schedule_resp = await session.call_tool(
+                "create_schedule_ruleset",
+                {
                     "name": "Always On Test",
                     "schedule_type": "Fractional",
-                    "default_value": 1.0
-                })
-                schedule_result = _unwrap(schedule_resp)
+                    "default_value": 1.0,
+                },
+            )
+            schedule_result = _unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is True
-                assert schedule_result["schedule"]["name"] == "Always On Test"
-                assert "handle" in schedule_result["schedule"]
+            assert schedule_result.get("ok") is True
+            assert schedule_result["schedule"]["name"] == "Always On Test"
+            assert "handle" in schedule_result["schedule"]
 
-                # Verify it appears in list
-                list_resp = await session.call_tool("list_schedule_rulesets", {})
-                list_result = _unwrap(list_resp)
-                assert any(s["name"] == "Always On Test" for s in list_result["schedule_rulesets"])
+            # Verify it appears in list
+            list_resp = await session.call_tool("list_schedule_rulesets", {})
+            list_result = _unwrap(list_resp)
+            assert any(s["name"] == "Always On Test" for s in list_result["schedule_rulesets"])
 
     asyncio.run(_run())
 
@@ -112,33 +113,35 @@ def test_create_schedule_ruleset_temperature():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Create temperature schedule
-                schedule_resp = await session.call_tool("create_schedule_ruleset", {
+            # Create temperature schedule
+            schedule_resp = await session.call_tool(
+                "create_schedule_ruleset",
+                {
                     "name": "Constant 21C",
                     "schedule_type": "Temperature",
-                    "default_value": 21.0
-                })
-                schedule_result = _unwrap(schedule_resp)
+                    "default_value": 21.0,
+                },
+            )
+            schedule_result = _unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is True
-                assert schedule_result["schedule"]["name"] == "Constant 21C"
+            assert schedule_result.get("ok") is True
+            assert schedule_result["schedule"]["name"] == "Constant 21C"
 
-                # Independent query verification
-                lst = _unwrap(await session.call_tool("list_schedule_rulesets", {}))
-                assert any(s["name"] == "Constant 21C" for s in lst["schedule_rulesets"])
+            # Independent query verification
+            lst = _unwrap(await session.call_tool("list_schedule_rulesets", {}))
+            assert any(s["name"] == "Constant 21C" for s in lst["schedule_rulesets"])
 
     asyncio.run(_run())
 
@@ -162,32 +165,34 @@ def test_create_schedule_ruleset_onoff():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Create on/off schedule
-                schedule_resp = await session.call_tool("create_schedule_ruleset", {
+            # Create on/off schedule
+            schedule_resp = await session.call_tool(
+                "create_schedule_ruleset",
+                {
                     "name": "Always Off",
                     "schedule_type": "OnOff",
-                    "default_value": 0.0
-                })
-                schedule_result = _unwrap(schedule_resp)
+                    "default_value": 0.0,
+                },
+            )
+            schedule_result = _unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is True
-                assert schedule_result["schedule"]["name"] == "Always Off"
+            assert schedule_result.get("ok") is True
+            assert schedule_result["schedule"]["name"] == "Always Off"
 
-                lst = _unwrap(await session.call_tool("list_schedule_rulesets", {}))
-                assert any(s["name"] == "Always Off" for s in lst["schedule_rulesets"])
+            lst = _unwrap(await session.call_tool("list_schedule_rulesets", {}))
+            assert any(s["name"] == "Always Off" for s in lst["schedule_rulesets"])
 
     asyncio.run(_run())
 
@@ -209,17 +214,16 @@ def test_create_schedule_ruleset_no_model_loaded():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Try to create schedule without loading model
-                schedule_resp = await session.call_tool("create_schedule_ruleset", {"name": "Should Fail"})
-                schedule_result = _unwrap(schedule_resp)
+            # Try to create schedule without loading model
+            schedule_resp = await session.call_tool("create_schedule_ruleset", {"name": "Should Fail"})
+            schedule_result = _unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is False
-                assert "error" in schedule_result
-                assert "No model loaded" in schedule_result["error"]
+            assert schedule_result.get("ok") is False
+            assert "error" in schedule_result
+            assert "No model loaded" in schedule_result["error"]
 
     asyncio.run(_run())
 
@@ -243,30 +247,29 @@ def test_create_schedule_ruleset_details():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # Create schedule
-                schedule_resp = await session.call_tool("create_schedule_ruleset", {"name": "Test Schedule"})
-                schedule_result = _unwrap(schedule_resp)
-                assert schedule_result.get("ok") is True
+            # Create schedule
+            schedule_resp = await session.call_tool("create_schedule_ruleset", {"name": "Test Schedule"})
+            schedule_result = _unwrap(schedule_resp)
+            assert schedule_result.get("ok") is True
 
-                # Get details
-                details_resp = await session.call_tool("get_schedule_details", {"schedule_name": "Test Schedule"})
-                details_result = _unwrap(details_resp)
+            # Get details
+            details_resp = await session.call_tool("get_schedule_details", {"schedule_name": "Test Schedule"})
+            details_result = _unwrap(details_resp)
 
-                assert details_result.get("ok") is True
-                assert details_result["schedule"]["name"] == "Test Schedule"
-                assert details_result["schedule"]["num_rules"] == 0  # No rules yet
+            assert details_result.get("ok") is True
+            assert details_result["schedule"]["name"] == "Test Schedule"
+            assert details_result["schedule"]["num_rules"] == 0  # No rules yet
 
     asyncio.run(_run())

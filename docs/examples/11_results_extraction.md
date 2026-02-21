@@ -28,14 +28,14 @@ electricity profile.
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
+| Tool                        | Purpose                                                |
+| --------------------------- | ------------------------------------------------------ |
 | `extract_end_use_breakdown` | Energy by fuel type (heating, cooling, lighting, etc.) |
-| `extract_envelope_summary` | Wall/window U-values and areas |
-| `extract_hvac_sizing` | Zone/system autosized capacities |
-| `extract_zone_summary` | Per-zone areas and conditions |
-| `extract_component_sizing` | Individual equipment autosized values |
-| `query_timeseries` | Time-series data with date range filter |
+| `extract_envelope_summary`  | Wall/window U-values and areas                         |
+| `extract_hvac_sizing`       | Zone/system autosized capacities                       |
+| `extract_zone_summary`      | Per-zone areas and conditions                          |
+| `extract_component_sizing`  | Individual equipment autosized values                  |
+| `query_timeseries`          | Time-series data with date range filter                |
 
 ## Tips
 

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any
+
 
 def _q(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
     cur = conn.execute(sql, params)
     return cur.fetchall()
 
-def _try_float(s: Any) -> Optional[float]:
+
+def _try_float(s: Any) -> float | None:
     if s is None:
         return None
     try:
@@ -17,15 +19,19 @@ def _try_float(s: Any) -> Optional[float]:
     except Exception:
         return None
 
+
 def extract_unmet_hours(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
-        rows = _q(conn, '''
+        rows = _q(
+            conn,
+            """
             SELECT ReportName, TableName, RowName, ColumnName, Value
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%AnnualBuildingUtilityPerformanceSummary%'
               AND TableName LIKE '%Comfort%Setpoint%Not Met%'
-        ''')
+        """,
+        )
         heating = None
         cooling = None
         for r in rows:
@@ -37,18 +43,26 @@ def extract_unmet_hours(sql_path: Path) -> dict:
                 heating = val
             if cooling is None and ("cooling" in col) and ("occupied" in col):
                 cooling = val
-        return {"heating": heating, "cooling": cooling, "source": "TabularDataWithStrings/Comfort and Setpoint Not Met Summary"}
+        return {
+            "heating": heating,
+            "cooling": cooling,
+            "source": "TabularDataWithStrings/Comfort and Setpoint Not Met Summary",
+        }
     finally:
         conn.close()
+
 
 def extract_eui(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
-        rows = _q(conn, '''
+        rows = _q(
+            conn,
+            """
             SELECT ReportName, TableName, RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%AnnualBuildingUtilityPerformanceSummary%'
-        ''')
+        """,
+        )
         total_site = None
         total_site_units = None
         area = None
@@ -83,7 +97,7 @@ def extract_eui(sql_path: Path) -> dict:
             "total_building_area_units": area_units,
             "computed_eui": eui,
             "computed_eui_units": f"{total_site_units}/{area_units}" if (total_site_units and area_units) else None,
-            "source": "TabularDataWithStrings/AnnualBuildingUtilityPerformanceSummary"
+            "source": "TabularDataWithStrings/AnnualBuildingUtilityPerformanceSummary",
         }
     finally:
         conn.close()
@@ -93,19 +107,27 @@ def extract_eui(sql_path: Path) -> dict:
 # Tier 1: Tabular report extractors
 # ---------------------------------------------------------------------------
 
+
 def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
     """Extract end-use energy breakdown by fuel type from AnnualBuildingUtilityPerformanceSummary."""
     conn = sqlite3.connect(str(sql_path))
     try:
-        rows = _q(conn, '''
+        rows = _q(
+            conn,
+            """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%AnnualBuildingUtilityPerformanceSummary%'
               AND TableName = 'End Uses'
-        ''')
+        """,
+        )
         if not rows:
-            return {"ok": True, "end_uses": [], "totals": {},
-                    "source": "AnnualBuildingUtilityPerformanceSummary/End Uses"}
+            return {
+                "ok": True,
+                "end_uses": [],
+                "totals": {},
+                "source": "AnnualBuildingUtilityPerformanceSummary/End Uses",
+            }
 
         # Collect all fuel columns and end-use rows
         data: dict[str, dict[str, float]] = {}  # row_name -> {col_name: value}
@@ -158,22 +180,28 @@ def extract_envelope_summary(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
         # Opaque exterior surfaces
-        opaque_rows = _q(conn, '''
+        opaque_rows = _q(
+            conn,
+            """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%EnvelopeSummary%'
               AND TableName LIKE '%Opaque Exterior%'
-        ''')
+        """,
+        )
         opaque = _pivot_rows(opaque_rows)
 
         # Fenestration
-        fen_rows = _q(conn, '''
+        fen_rows = _q(
+            conn,
+            """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%EnvelopeSummary%'
               AND TableName LIKE '%Exterior Fenestration%'
               AND TableName NOT LIKE '%Shaded%'
-        ''')
+        """,
+        )
         fenestration = _pivot_rows(fen_rows)
 
         return {
@@ -191,19 +219,25 @@ def extract_hvac_sizing(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
         # Zone sensible cooling
-        zone_cool = _q(conn, '''
+        zone_cool = _q(
+            conn,
+            """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%HVACSizingSummary%'
               AND TableName LIKE '%Zone Sensible Cooling%'
-        ''')
+        """,
+        )
         # Zone sensible heating
-        zone_heat = _q(conn, '''
+        zone_heat = _q(
+            conn,
+            """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%HVACSizingSummary%'
               AND TableName LIKE '%Zone Sensible Heating%'
-        ''')
+        """,
+        )
         # Merge cooling + heating per zone
         cool_map = _pivot_rows_map(zone_cool)
         heat_map = _pivot_rows_map(zone_heat)
@@ -220,12 +254,15 @@ def extract_hvac_sizing(sql_path: Path) -> dict:
             zone_sizing.append(entry)
 
         # System sizing
-        sys_rows = _q(conn, '''
+        sys_rows = _q(
+            conn,
+            """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%HVACSizingSummary%'
               AND TableName LIKE '%System Design Air Flow%'
-        ''')
+        """,
+        )
         system_sizing = _pivot_rows(sys_rows, name_key="system")
 
         return {
@@ -242,12 +279,15 @@ def extract_zone_summary(sql_path: Path) -> dict:
     """Extract per-zone area/conditions from InputVerificationandResultsSummary."""
     conn = sqlite3.connect(str(sql_path))
     try:
-        rows = _q(conn, '''
+        rows = _q(
+            conn,
+            """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName LIKE '%InputVerification%Results%'
               AND TableName LIKE '%Zone Summary%'
-        ''')
+        """,
+        )
         zones = _pivot_rows(rows, name_key="zone")
 
         return {
@@ -259,27 +299,33 @@ def extract_zone_summary(sql_path: Path) -> dict:
         conn.close()
 
 
-def extract_component_sizing(sql_path: Path, component_type: Optional[str] = None) -> dict:
+def extract_component_sizing(sql_path: Path, component_type: str | None = None) -> dict:
     """Extract autosized component values from ComponentSizingSummary."""
     conn = sqlite3.connect(str(sql_path))
     try:
         if component_type:
-            rows = _q(conn, '''
+            rows = _q(
+                conn,
+                """
                 SELECT TableName, RowName, ColumnName, Value, Units
                 FROM TabularDataWithStrings
                 WHERE ReportName LIKE '%ComponentSizingSummary%'
                   AND TableName LIKE ?
-            ''', (f'%{component_type}%',))
+            """,
+                (f"%{component_type}%",),
+            )
         else:
-            rows = _q(conn, '''
+            rows = _q(
+                conn,
+                """
                 SELECT TableName, RowName, ColumnName, Value, Units
                 FROM TabularDataWithStrings
                 WHERE ReportName LIKE '%ComponentSizingSummary%'
-            ''')
+            """,
+            )
 
         if not rows:
-            return {"ok": True, "components": [],
-                    "source": "ComponentSizingSummary"}
+            return {"ok": True, "components": [], "source": "ComponentSizingSummary"}
 
         # Group by TableName (component type) + RowName (instance)
         grouped: dict[str, dict[str, dict[str, Any]]] = {}
@@ -297,11 +343,13 @@ def extract_component_sizing(sql_path: Path, component_type: Optional[str] = Non
         components = []
         for comp_type, instances in grouped.items():
             for inst_name, props in instances.items():
-                components.append({
-                    "type": comp_type,
-                    "name": inst_name,
-                    "properties": props,
-                })
+                components.append(
+                    {
+                        "type": comp_type,
+                        "name": inst_name,
+                        "properties": props,
+                    },
+                )
 
         return {
             "ok": True,
@@ -316,15 +364,16 @@ def extract_component_sizing(sql_path: Path, component_type: Optional[str] = Non
 # Tier 2: Time-series extractor
 # ---------------------------------------------------------------------------
 
+
 def query_timeseries(
     sql_path: Path,
     variable_name: str,
     key_value: str = "*",
-    start_month: Optional[int] = None,
-    start_day: Optional[int] = None,
-    end_month: Optional[int] = None,
-    end_day: Optional[int] = None,
-    frequency: Optional[str] = None,
+    start_month: int | None = None,
+    start_day: int | None = None,
+    end_month: int | None = None,
+    end_day: int | None = None,
+    frequency: str | None = None,
     max_points: int = 10000,
 ) -> dict:
     """Query time-series data from ReportData/ReportDataDictionary/Time tables."""
@@ -334,21 +383,23 @@ def query_timeseries(
         cnt = _q(conn, "SELECT COUNT(*) as c FROM ReportData")[0]["c"]
         if cnt == 0:
             return {
-                "ok": True, "data": [], "count": 0,
+                "ok": True,
+                "data": [],
+                "count": 0,
                 "message": "No timeseries data. Add output variables via add_output_variable before running simulation.",
             }
 
         # Build query with filters
         where_clauses = ["rdd.Name LIKE ?"]
-        params: list[Any] = [f'%{variable_name}%']
+        params: list[Any] = [f"%{variable_name}%"]
 
         if key_value != "*":
             where_clauses.append("rdd.KeyValue LIKE ?")
-            params.append(f'%{key_value}%')
+            params.append(f"%{key_value}%")
 
         if frequency:
             where_clauses.append("rdd.ReportingFrequency LIKE ?")
-            params.append(f'%{frequency}%')
+            params.append(f"%{frequency}%")
 
         # Date range filters on Time table
         if start_month is not None:
@@ -364,17 +415,17 @@ def query_timeseries(
         where_sql = " AND ".join(where_clauses)
 
         # Count total available
-        count_sql = f'''
+        count_sql = f"""
             SELECT COUNT(*) as c
             FROM ReportData rd
             JOIN ReportDataDictionary rdd ON rd.ReportDataDictionaryIndex = rdd.ReportDataDictionaryIndex
             JOIN Time t ON rd.TimeIndex = t.TimeIndex
             WHERE {where_sql}
-        '''
+        """
         total_available = _q(conn, count_sql, tuple(params))[0]["c"]
 
         # Fetch data with cap
-        data_sql = f'''
+        data_sql = f"""
             SELECT rd.Value, t.Month, t.Day, t.Hour, t.Minute,
                    rdd.Name, rdd.KeyValue, rdd.Units, rdd.ReportingFrequency
             FROM ReportData rd
@@ -383,23 +434,30 @@ def query_timeseries(
             WHERE {where_sql}
             ORDER BY t.Month, t.Day, t.Hour, t.Minute
             LIMIT ?
-        '''
+        """
         rows = _q(conn, data_sql, tuple(params + [max_points]))
 
         if not rows:
             return {
-                "ok": True, "variable": variable_name, "key": key_value,
-                "data": [], "count": 0,
+                "ok": True,
+                "variable": variable_name,
+                "key": key_value,
+                "data": [],
+                "count": 0,
                 "message": f"No data found for variable '{variable_name}'.",
             }
 
         data = []
         for r in rows:
-            data.append({
-                "month": r["Month"], "day": r["Day"],
-                "hour": r["Hour"], "minute": r["Minute"],
-                "value": r["Value"],
-            })
+            data.append(
+                {
+                    "month": r["Month"],
+                    "day": r["Day"],
+                    "hour": r["Hour"],
+                    "minute": r["Minute"],
+                    "value": r["Value"],
+                },
+            )
 
         return {
             "ok": True,
@@ -419,6 +477,7 @@ def query_timeseries(
 # ---------------------------------------------------------------------------
 # Helpers for pivoting TabularDataWithStrings rows
 # ---------------------------------------------------------------------------
+
 
 def _snake(s: str) -> str:
     """Convert column name to snake_case key."""

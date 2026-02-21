@@ -1,4 +1,5 @@
 """Model validation and integrity checks for HVAC systems."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -43,7 +44,7 @@ def validate_air_loop(air_loop) -> dict[str, Any]:
         "issues": issues,
         "warnings": warnings,
         "zones_served": len(zones),
-        "supply_components": len(supply_components)
+        "supply_components": len(supply_components),
     }
 
 
@@ -81,7 +82,7 @@ def validate_plant_loop(plant_loop) -> dict[str, Any]:
         "issues": issues,
         "warnings": warnings,
         "supply_components": len(supply_components),
-        "demand_components": len(demand_components)
+        "demand_components": len(demand_components),
     }
 
 
@@ -113,7 +114,7 @@ def validate_zone_equipment(thermal_zone) -> dict[str, Any]:
         "issues": issues,
         "warnings": warnings,
         "equipment_count": len(equipment),
-        "has_air_terminal": has_air_terminal
+        "has_air_terminal": has_air_terminal,
     }
 
 
@@ -141,12 +142,12 @@ def validate_system(model, system_name: str) -> dict[str, Any]:
             "ok": True,
             "valid": all_valid,
             "air_loop": air_loop_validation,
-            "zones": zone_validations
+            "zones": zone_validations,
         }
 
     # If no air loop, might be zone equipment only
     return {
         "ok": True,
         "valid": True,
-        "message": "System validation not implemented for this system type"
+        "message": "System validation not implemented for this system type",
     }

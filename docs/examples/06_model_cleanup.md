@@ -21,23 +21,23 @@ A modeler received a building model with auto-generated names ("Thermal Zone 1",
 
 ## Key Tools Used
 
-| Tool | Purpose |
-|------|---------|
-| `rename_object` | Rename any named model object |
-| `delete_object` | Delete any named model object |
+| Tool                 | Purpose                             |
+| -------------------- | ----------------------------------- |
+| `rename_object`      | Rename any named model object       |
+| `delete_object`      | Delete any named model object       |
 | `list_model_objects` | List all objects of a specific type |
 
 ## Supported Object Types (28+)
 
 The object management tools support these types:
 
-| Category | Types |
-|----------|-------|
-| **Spaces** | Space, ThermalZone, BuildingStory |
-| **HVAC** | AirLoopHVAC, PlantLoop, all 15 component types |
-| **Loads** | People, Lights, ElectricEquipment, GasEquipment, SpaceInfiltrationDesignFlowRate |
-| **Constructions** | Construction, StandardOpaqueMaterial |
-| **Schedules** | ScheduleRuleset |
+| Category          | Types                                                                            |
+| ----------------- | -------------------------------------------------------------------------------- |
+| **Spaces**        | Space, ThermalZone, BuildingStory                                                |
+| **HVAC**          | AirLoopHVAC, PlantLoop, all 15 component types                                   |
+| **Loads**         | People, Lights, ElectricEquipment, GasEquipment, SpaceInfiltrationDesignFlowRate |
+| **Constructions** | Construction, StandardOpaqueMaterial                                             |
+| **Schedules**     | ScheduleRuleset                                                                  |
 
 ## Cascade Warnings
 

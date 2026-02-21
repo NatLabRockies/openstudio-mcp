@@ -5,7 +5,6 @@ import shlex
 import uuid
 
 import pytest
-
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -60,28 +59,27 @@ def test_list_materials():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # List materials
-                materials_resp = await session.call_tool("list_materials", {})
-                materials_result = _unwrap(materials_resp)
+            # List materials
+            materials_resp = await session.call_tool("list_materials", {})
+            materials_result = _unwrap(materials_resp)
 
-                assert isinstance(materials_result, dict)
-                assert materials_result.get("ok") is True
-                assert materials_result["count"] > 0
-                assert "name" in materials_result["materials"][0]
-                assert "type" in materials_result["materials"][0]
+            assert isinstance(materials_result, dict)
+            assert materials_result.get("ok") is True
+            assert materials_result["count"] > 0
+            assert "name" in materials_result["materials"][0]
+            assert "type" in materials_result["materials"][0]
 
     asyncio.run(_run())
 
@@ -105,28 +103,27 @@ def test_list_constructions():
             env=os.environ.copy(),
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-                # Create and load model
-                create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
-                assert create_result.get("ok") is True
+            # Create and load model
+            create_resp = await session.call_tool("create_example_osm", {"name": name})
+            create_result = _unwrap(create_resp)
+            assert create_result.get("ok") is True
 
-                load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
-                assert load_result.get("ok") is True
+            load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
+            load_result = _unwrap(load_resp)
+            assert load_result.get("ok") is True
 
-                # List constructions
-                constructions_resp = await session.call_tool("list_constructions", {})
-                constructions_result = _unwrap(constructions_resp)
+            # List constructions
+            constructions_resp = await session.call_tool("list_constructions", {})
+            constructions_result = _unwrap(constructions_resp)
 
-                assert isinstance(constructions_result, dict)
-                assert constructions_result.get("ok") is True
-                assert constructions_result["count"] > 0
-                assert "name" in constructions_result["constructions"][0]
-                assert "layers" in constructions_result["constructions"][0]
+            assert isinstance(constructions_result, dict)
+            assert constructions_result.get("ok") is True
+            assert constructions_result["count"] > 0
+            assert "name" in constructions_result["constructions"][0]
+            assert "layers" in constructions_result["constructions"][0]
 
     asyncio.run(_run())
 
@@ -144,34 +141,33 @@ def test_constructions_baseline():
 
     async def _run():
         server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                cr = await session.call_tool("create_baseline_osm", {"name": name})
-                cd = _unwrap(cr)
-                assert cd.get("ok") is True, cd
-                lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+        async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            cr = await session.call_tool("create_baseline_osm", {"name": name})
+            cd = _unwrap(cr)
+            assert cd.get("ok") is True, cd
+            lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+            assert _unwrap(lr).get("ok") is True
 
-                # Materials — baseline has walls, roof, floor materials
-                mr = await session.call_tool("list_materials", {})
-                md = _unwrap(mr)
-                print("baseline materials:", md)
-                assert md.get("ok") is True
-                assert md["count"] >= 5  # Multiple materials from construction library
+            # Materials — baseline has walls, roof, floor materials
+            mr = await session.call_tool("list_materials", {})
+            md = _unwrap(mr)
+            print("baseline materials:", md)
+            assert md.get("ok") is True
+            assert md["count"] >= 5  # Multiple materials from construction library
 
-                # Constructions
-                cr2 = await session.call_tool("list_constructions", {})
-                cd2 = _unwrap(cr2)
-                print("baseline constructions:", cd2)
-                assert cd2.get("ok") is True
-                assert cd2["count"] >= 4  # Ext wall, roof, floor, int wall at minimum
+            # Constructions
+            cr2 = await session.call_tool("list_constructions", {})
+            cd2 = _unwrap(cr2)
+            print("baseline constructions:", cd2)
+            assert cd2.get("ok") is True
+            assert cd2["count"] >= 4  # Ext wall, roof, floor, int wall at minimum
 
-                # Construction sets
-                csr = await session.call_tool("list_construction_sets", {})
-                csd = _unwrap(csr)
-                print("baseline construction sets:", csd)
-                assert csd.get("ok") is True
-                assert csd["count"] >= 1  # DefaultConstructionSet from library
+            # Construction sets
+            csr = await session.call_tool("list_construction_sets", {})
+            csd = _unwrap(csr)
+            print("baseline construction sets:", csd)
+            assert csd.get("ok") is True
+            assert csd["count"] >= 1  # DefaultConstructionSet from library
 
     asyncio.run(_run())
