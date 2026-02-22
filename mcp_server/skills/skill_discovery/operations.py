@@ -77,6 +77,8 @@ def get_skill_op(name: str) -> dict:
 
     # Sanitize: prevent path traversal
     safe_name = Path(name).name
+    if safe_name in (".", "..", "") or "/" in name or "\\" in name:
+        return {"ok": False, "error": f"Invalid skill name: '{name}'"}
     skill_dir = SKILLS_DIR / safe_name
     skill_md = skill_dir / "SKILL.md"
 
