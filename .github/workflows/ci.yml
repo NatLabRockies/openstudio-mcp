@@ -83,7 +83,6 @@ jobs:
           esac
           docker run --rm \
             -v "$PWD:/repo" -v "$PWD/runs:/runs" \
-            -v "$PWD/.claude/skills:/skills:ro" \
             -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD \
             $EXTRA_ENV \
             openstudio-mcp:dev bash -lc "cd /repo && pytest -vv -s $FILES"
