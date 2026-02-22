@@ -147,6 +147,9 @@ EXPECTED_TOOLS = {
     "set_lifecycle_cost_params",
     "add_cost_per_floor_area",
     "set_adiabatic_boundaries",
+    # Skill Discovery
+    "list_skills",
+    "get_skill",
 }
 
 

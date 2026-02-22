@@ -6,40 +6,16 @@ MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" RUN_OPENSTUDIO_INTEGRATION=1 MCP_RUNS
   openstudio-mcp:dev openstudio-mcp" pytest -vv -s tests/test_create_example_osm.py
 """
 import asyncio
-import json
 import os
-import shlex
 import uuid
 from pathlib import Path
 
 import pytest
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-
-def _integration_enabled() -> bool:
-    return os.environ.get("RUN_OPENSTUDIO_INTEGRATION", "").strip() in ("1", "true", "TRUE", "yes", "YES")
-
-
-def _unwrap_mcp_result(res):
-    """Normalize MCP tool results to plain Python dict/string."""
-    if isinstance(res, dict):
-        return res
-    content = getattr(res, "content", None)
-    if not content:
-        return res
-    first = content[0]
-    text = getattr(first, "text", None)
-    if text is None:
-        return str(first)
-    t = text.strip()
-    if not t:
-        return t
-    try:
-        return json.loads(t)
-    except Exception:
-        return t
+from conftest import unwrap, integration_enabled, server_params
 
 
 def _normalize_host_runs_dir(host_runs: str) -> Path:
@@ -99,28 +75,18 @@ def _unique_name(prefix: str = "pytest_example_model") -> str:
 
 @pytest.mark.integration
 def test_create_example_osm_smoke():
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 resp = await session.call_tool("create_example_osm", {"name": name})
-                result = _unwrap_mcp_result(resp)
+                result = unwrap(resp)
 
                 # Helpful for local debugging / CI logs
                 print("create_example_osm result:", result)

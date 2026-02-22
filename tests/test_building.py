@@ -1,36 +1,12 @@
 import asyncio
-import json
 import os
-import shlex
 import uuid
 
 import pytest
 
-from mcp import ClientSession, StdioServerParameters
+from conftest import unwrap, integration_enabled, server_params
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-
-def _integration_enabled() -> bool:
-    return os.environ.get("RUN_OPENSTUDIO_INTEGRATION", "").strip() in ("1", "true", "TRUE", "yes", "YES")
-
-
-def _unwrap(res):
-    if isinstance(res, dict):
-        return res
-    content = getattr(res, "content", None)
-    if not content:
-        return res
-    first = content[0]
-    text = getattr(first, "text", None)
-    if text is None:
-        return str(first)
-    t = text.strip()
-    if not t:
-        return t
-    try:
-        return json.loads(t)
-    except Exception:
-        return t
 
 
 def _unique_name(prefix: str = "pytest_building") -> str:
@@ -44,38 +20,28 @@ def _unique_name(prefix: str = "pytest_building") -> str:
 @pytest.mark.integration
 def test_get_building_info():
     """Test getting detailed building information."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # Get building info
                 building_resp = await session.call_tool("get_building_info", {})
-                building_result = _unwrap(building_resp)
+                building_result = unwrap(building_resp)
                 print("get_building_info:", building_result)
 
                 assert isinstance(building_result, dict)
@@ -97,38 +63,28 @@ def test_get_building_info():
 @pytest.mark.integration
 def test_get_model_summary():
     """Test getting model summary with object counts."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # Get model summary
                 summary_resp = await session.call_tool("get_model_summary", {})
-                summary_result = _unwrap(summary_resp)
+                summary_result = unwrap(summary_resp)
                 print("get_model_summary:", summary_result)
 
                 assert isinstance(summary_result, dict)
@@ -162,38 +118,28 @@ def test_get_model_summary():
 @pytest.mark.integration
 def test_list_building_stories():
     """Test listing building stories."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # List building stories
                 stories_resp = await session.call_tool("list_building_stories", {})
-                stories_result = _unwrap(stories_resp)
+                stories_result = unwrap(stories_resp)
                 print("list_building_stories:", stories_result)
 
                 assert isinstance(stories_result, dict)
@@ -219,27 +165,23 @@ def test_list_building_stories():
 @pytest.mark.integration
 def test_building_info_baseline():
     """Test building info with 10-zone baseline model."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
     name = _unique_name("pytest_bl_building")
 
     async def _run():
-        server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
-                cd = _unwrap(cr)
+                cd = unwrap(cr)
                 assert cd.get("ok") is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+                assert unwrap(lr).get("ok") is True
 
                 br = await session.call_tool("get_building_info", {})
-                bd = _unwrap(br)
+                bd = unwrap(br)
                 print("baseline building_info:", bd)
                 assert bd.get("ok") is True, bd
                 b = bd["building"]
@@ -251,27 +193,23 @@ def test_building_info_baseline():
 @pytest.mark.integration
 def test_building_stories_baseline():
     """Test building stories with 2-story baseline model."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
     name = _unique_name("pytest_bl_stories")
 
     async def _run():
-        server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
-                cd = _unwrap(cr)
+                cd = unwrap(cr)
                 assert cd.get("ok") is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+                assert unwrap(lr).get("ok") is True
 
                 sr = await session.call_tool("list_building_stories", {})
-                sd = _unwrap(sr)
+                sd = unwrap(sr)
                 print("baseline stories:", sd)
                 assert sd.get("ok") is True, sd
                 assert sd["count"] == 2
@@ -291,28 +229,24 @@ def test_building_info_no_loads():
     OpenStudio when the model has geometry but no people/lights/equipment.
     Pydantic rejects NaN in JSON, causing a hard crash.
     """
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
     name = _unique_name("pytest_noloads")
 
     async def _run():
-        server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 # Baseline model has geometry but no loads
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
-                cd = _unwrap(cr)
+                cd = unwrap(cr)
                 assert cd.get("ok") is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+                assert unwrap(lr).get("ok") is True
 
                 br = await session.call_tool("get_building_info", {})
-                bd = _unwrap(br)
+                bd = unwrap(br)
                 print("no-loads building_info:", bd)
                 assert bd.get("ok") is True, f"get_building_info crashed: {bd}"
 
@@ -331,27 +265,17 @@ def test_building_info_no_loads():
 @pytest.mark.integration
 def test_building_tools_without_loaded_model():
     """Test that building tools fail gracefully when no model is loaded."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
-
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Try to get building info without loading a model
                 building_resp = await session.call_tool("get_building_info", {})
-                building_result = _unwrap(building_resp)
+                building_result = unwrap(building_resp)
                 print("get_building_info (no model):", building_result)
 
                 assert isinstance(building_result, dict)
