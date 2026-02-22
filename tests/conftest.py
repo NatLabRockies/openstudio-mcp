@@ -39,7 +39,7 @@ def unwrap(res):
     """Extract a dict (or string) from a CallToolResult."""
     content = getattr(res, "content", None)
     if not content:
-        return res if isinstance(res, dict) else {}
+        return res if isinstance(res, dict) else {"_raw": str(res)}
     text = getattr(content[0], "text", None)
     if text is None:
         return str(content[0])
