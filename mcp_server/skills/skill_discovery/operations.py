@@ -15,12 +15,12 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
     """
     if not text.startswith("---"):
         return {}, text
-    # Find closing --- (skip the opening one)
-    end = text.find("---", 3)
+    # Find closing --- on its own line (skip the opening one)
+    end = text.find("\n---", 3)
     if end == -1:
         return {}, text
     fm_text = text[3:end].strip()
-    body = text[end + 3:].strip()
+    body = text[end + 4:].strip()
     fm: dict = {}
     for line in fm_text.splitlines():
         line = line.strip()
