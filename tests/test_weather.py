@@ -4,60 +4,21 @@ Tests get_weather_info, set_weather_file, add_design_day.
 EPW files at tests/assets/SEB_model/SEB4_baseboard/files/.
 """
 import asyncio
-import json
-import os
-import shlex
 import uuid
 
 import pytest
 
-from mcp import ClientSession, StdioServerParameters
+from conftest import unwrap, integration_enabled, server_params, setup_example
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-
-def _integration_enabled() -> bool:
-    return os.environ.get("RUN_OPENSTUDIO_INTEGRATION", "").strip() in ("1", "true", "TRUE", "yes", "YES")
-
-
-def _unwrap(res):
-    if isinstance(res, dict):
-        return res
-    content = getattr(res, "content", None)
-    if not content:
-        return res
-    first = content[0]
-    text = getattr(first, "text", None)
-    if text is None:
-        return str(first)
-    t = text.strip()
-    if not t:
-        return t
-    try:
-        return json.loads(t)
-    except Exception:
-        return t
 
 
 def _unique(prefix: str = "pytest_weather") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
-def _server_params():
-    cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    args = shlex.split(args_env) if args_env else []
-    return StdioServerParameters(command=cmd, args=args, env=os.environ.copy())
-
-
 # EPW path — inside the container, the repo is at /repo
 EPW_PATH = "/repo/tests/assets/SEB_model/SEB4_baseboard/files/SRRL_2012AMY_60min.epw"
-
-
-async def _setup_example(session, model_name):
-    cr = _unwrap(await session.call_tool("create_example_osm", {"name": model_name}))
-    assert cr.get("ok") is True
-    lr = _unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True
 
 
 # ---- Weather info tests ----
@@ -65,15 +26,15 @@ async def _setup_example(session, model_name):
 @pytest.mark.integration
 def test_get_weather_info_no_weather():
     """Fresh example model has no weather file."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("get_weather_info", {}))
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("get_weather_info", {}))
                 assert res.get("ok") is True
                 assert res["weather_file"] is None
     asyncio.run(_run())
@@ -81,22 +42,22 @@ def test_get_weather_info_no_weather():
 
 @pytest.mark.integration
 def test_set_weather_file():
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("set_weather_file", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("set_weather_file", {
                     "epw_path": EPW_PATH
                 }))
                 assert res.get("ok") is True
                 assert res["weather_file"] is not None
 
                 # Independent query verification
-                wi = _unwrap(await s.call_tool("get_weather_info", {}))
+                wi = unwrap(await s.call_tool("get_weather_info", {}))
                 assert wi.get("ok") is True
                 assert wi["weather_file"] is not None
                 assert "SRRL" in wi["weather_file"].get("path", "") or wi["weather_file"].get("latitude") is not None
@@ -105,15 +66,15 @@ def test_set_weather_file():
 
 @pytest.mark.integration
 def test_set_weather_file_not_found():
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("set_weather_file", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("set_weather_file", {
                     "epw_path": "/nonexistent/weather.epw"
                 }))
                 assert res.get("ok") is False
@@ -123,16 +84,16 @@ def test_set_weather_file_not_found():
 @pytest.mark.integration
 def test_get_weather_info_after_set():
     """After setting EPW, weather info should have lat/lon."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                _unwrap(await s.call_tool("set_weather_file", {"epw_path": EPW_PATH}))
-                res = _unwrap(await s.call_tool("get_weather_info", {}))
+                await setup_example(s, _unique())
+                unwrap(await s.call_tool("set_weather_file", {"epw_path": EPW_PATH}))
+                res = unwrap(await s.call_tool("get_weather_info", {}))
                 assert res.get("ok") is True
                 wf = res["weather_file"]
                 assert wf is not None
@@ -147,15 +108,15 @@ def test_get_weather_info_after_set():
 
 @pytest.mark.integration
 def test_add_design_day_heating():
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("add_design_day", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("add_design_day", {
                     "name": "Winter 99%",
                     "day_type": "WinterDesignDay",
                     "month": 1, "day": 21,
@@ -175,15 +136,15 @@ def test_add_design_day_heating():
 
 @pytest.mark.integration
 def test_add_design_day_cooling():
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("add_design_day", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("add_design_day", {
                     "name": "Summer 1%",
                     "day_type": "SummerDesignDay",
                     "month": 7, "day": 21,
@@ -200,23 +161,23 @@ def test_add_design_day_cooling():
 @pytest.mark.integration
 def test_add_design_day_verify_count():
     """Add two design days and verify count."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
+                await setup_example(s, _unique())
                 # Add heating DD
-                r1 = _unwrap(await s.call_tool("add_design_day", {
+                r1 = unwrap(await s.call_tool("add_design_day", {
                     "name": "Heating DD", "day_type": "WinterDesignDay",
                     "month": 1, "day": 21, "dry_bulb_max_c": -20.0,
                     "dry_bulb_range_c": 0.0,
                 }))
                 assert r1.get("ok") is True
                 # Add cooling DD
-                r2 = _unwrap(await s.call_tool("add_design_day", {
+                r2 = unwrap(await s.call_tool("add_design_day", {
                     "name": "Cooling DD", "day_type": "SummerDesignDay",
                     "month": 7, "day": 21, "dry_bulb_max_c": 35.0,
                     "dry_bulb_range_c": 11.0,
@@ -230,15 +191,15 @@ def test_add_design_day_verify_count():
 @pytest.mark.integration
 def test_add_design_day_properties():
     """Verify temperature and humidity set correctly."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("add_design_day", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("add_design_day", {
                     "name": "Test DD", "day_type": "SummerDesignDay",
                     "month": 8, "day": 15,
                     "dry_bulb_max_c": 36.5, "dry_bulb_range_c": 12.3,
@@ -261,15 +222,15 @@ def test_add_design_day_properties():
 @pytest.mark.integration
 def test_get_simulation_control_defaults():
     """Fresh model should return simulation control with default values."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("get_simulation_control", {}))
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("get_simulation_control", {}))
                 assert res.get("ok") is True
                 sc = res["simulation_control"]
                 # All flags should be booleans
@@ -286,15 +247,15 @@ def test_get_simulation_control_defaults():
 @pytest.mark.integration
 def test_set_simulation_control_sizing():
     """Set sizing flags and read back."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("set_simulation_control", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("set_simulation_control", {
                     "do_zone_sizing": True,
                     "do_system_sizing": True,
                     "do_plant_sizing": True,
@@ -314,22 +275,22 @@ def test_set_simulation_control_sizing():
 @pytest.mark.integration
 def test_set_simulation_control_timestep():
     """Set timesteps_per_hour=6 and read back."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("set_simulation_control", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("set_simulation_control", {
                     "timesteps_per_hour": 6,
                 }))
                 assert res.get("ok") is True
                 assert res["simulation_control"]["timesteps_per_hour"] == 6
 
                 # Independent query verification
-                gc = _unwrap(await s.call_tool("get_simulation_control", {}))
+                gc = unwrap(await s.call_tool("get_simulation_control", {}))
                 assert gc["simulation_control"]["timesteps_per_hour"] == 6
     asyncio.run(_run())
 
@@ -340,15 +301,15 @@ def test_set_simulation_control_timestep():
 @pytest.mark.integration
 def test_get_run_period_default():
     """Fresh model should have a default RunPeriod."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("get_run_period", {}))
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("get_run_period", {}))
                 assert res.get("ok") is True
                 rp = res["run_period"]
                 assert "begin_month" in rp
@@ -359,15 +320,15 @@ def test_get_run_period_default():
 @pytest.mark.integration
 def test_set_run_period():
     """Set Jan-Mar run period and read back."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("set_run_period", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("set_run_period", {
                     "begin_month": 1, "begin_day": 1,
                     "end_month": 3, "end_day": 31,
                     "name": "Jan-Mar",
@@ -380,7 +341,7 @@ def test_set_run_period():
                 assert rp["end_day"] == 31
 
                 # Independent query verification
-                gr = _unwrap(await s.call_tool("get_run_period", {}))
+                gr = unwrap(await s.call_tool("get_run_period", {}))
                 grp = gr["run_period"]
                 assert grp["begin_month"] == 1
                 assert grp["end_month"] == 3
@@ -391,15 +352,15 @@ def test_set_run_period():
 @pytest.mark.integration
 def test_set_run_period_full_year():
     """Set full year and read back."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("integration disabled")
 
     async def _run():
-        async with stdio_client(_server_params()) as (r, w):
+        async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await _setup_example(s, _unique())
-                res = _unwrap(await s.call_tool("set_run_period", {
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("set_run_period", {
                     "begin_month": 1, "begin_day": 1,
                     "end_month": 12, "end_day": 31,
                 }))
@@ -410,7 +371,7 @@ def test_set_run_period_full_year():
                 assert rp["end_day"] == 31
 
                 # Independent query verification
-                gr = _unwrap(await s.call_tool("get_run_period", {}))
+                gr = unwrap(await s.call_tool("get_run_period", {}))
                 grp = gr["run_period"]
                 assert grp["begin_month"] == 1
                 assert grp["begin_day"] == 1

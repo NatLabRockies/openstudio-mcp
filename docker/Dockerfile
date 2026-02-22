@@ -45,6 +45,7 @@ RUN pip install --no-cache-dir -U pip \
 # (Optional) If you want the container to include any other repo files too:
 # COPY . /repo
 
+COPY .claude/skills /skills
 COPY scripts /repo/scripts
 COPY tests /repo/tests
 COPY README.md /repo/README.md

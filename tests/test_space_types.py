@@ -1,37 +1,13 @@
 """Integration tests for space_types skill."""
 import asyncio
-import json
 import os
-import shlex
 import uuid
 
 import pytest
 
-from mcp import ClientSession, StdioServerParameters
+from conftest import integration_enabled, server_params, unwrap
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-
-def _integration_enabled() -> bool:
-    return os.environ.get("RUN_OPENSTUDIO_INTEGRATION", "").strip() in ("1", "true", "TRUE", "yes", "YES")
-
-
-def _unwrap(res):
-    if isinstance(res, dict):
-        return res
-    content = getattr(res, "content", None)
-    if not content:
-        return res
-    first = content[0]
-    text = getattr(first, "text", None)
-    if text is None:
-        return str(first)
-    t = text.strip()
-    if not t:
-        return t
-    try:
-        return json.loads(t)
-    except Exception:
-        return t
 
 
 def _unique_name(prefix: str = "pytest_space_types") -> str:
@@ -45,38 +21,28 @@ def _unique_name(prefix: str = "pytest_space_types") -> str:
 @pytest.mark.integration
 def test_list_space_types():
     """Test listing all space types."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # List space types
                 space_types_resp = await session.call_tool("list_space_types", {})
-                space_types_result = _unwrap(space_types_resp)
+                space_types_result = unwrap(space_types_resp)
                 print("list_space_types:", space_types_result)
 
                 assert isinstance(space_types_result, dict)
@@ -105,38 +71,28 @@ def test_list_space_types():
 @pytest.mark.integration
 def test_get_space_type_details():
     """Test getting details for a specific space type."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # First list space types to get a valid name
                 list_resp = await session.call_tool("list_space_types", {})
-                list_result = _unwrap(list_resp)
+                list_result = unwrap(list_resp)
                 assert list_result.get("ok") is True
                 assert list_result["count"] > 0, "Need at least one space type for this test"
 
@@ -144,7 +100,7 @@ def test_get_space_type_details():
 
                 # Get details for the first space type
                 details_resp = await session.call_tool("get_space_type_details", {"space_type_name": space_type_name})
-                details_result = _unwrap(details_resp)
+                details_result = unwrap(details_resp)
                 print("get_space_type_details:", details_result)
 
                 assert isinstance(details_result, dict)
@@ -171,38 +127,28 @@ def test_get_space_type_details():
 @pytest.mark.integration
 def test_get_space_type_details_not_found():
     """Test getting details for a non-existent space type."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
-
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
 
     name = _unique_name()
 
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
-                create_result = _unwrap(create_resp)
+                create_result = unwrap(create_resp)
                 assert create_result.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
-                load_result = _unwrap(load_resp)
+                load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
                 # Try to get non-existent space type
                 details_resp = await session.call_tool("get_space_type_details", {"space_type_name": "NonExistentSpaceType"})
-                details_result = _unwrap(details_resp)
+                details_result = unwrap(details_resp)
                 print("get_space_type_details (not found):", details_result)
 
                 assert isinstance(details_result, dict)
@@ -216,27 +162,17 @@ def test_get_space_type_details_not_found():
 @pytest.mark.integration
 def test_space_types_tools_without_loaded_model():
     """Test that space type tools fail gracefully when no model is loaded."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
-
     async def _run():
-        server_params = StdioServerParameters(
-            command=server_cmd,
-            args=server_args,
-            env=os.environ.copy(),
-        )
-
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 # Try to list space types without loading a model
                 space_types_resp = await session.call_tool("list_space_types", {})
-                space_types_result = _unwrap(space_types_resp)
+                space_types_result = unwrap(space_types_resp)
                 print("list_space_types (no model):", space_types_result)
 
                 assert isinstance(space_types_result, dict)
@@ -250,27 +186,23 @@ def test_space_types_tools_without_loaded_model():
 @pytest.mark.integration
 def test_space_types_baseline():
     """Test space types in baseline model with loads attached."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
     name = _unique_name("pytest_bl_stypes")
 
     async def _run():
-        server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
-                cd = _unwrap(cr)
+                cd = unwrap(cr)
                 assert cd.get("ok") is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert _unwrap(lr).get("ok") is True
+                assert unwrap(lr).get("ok") is True
 
                 sr = await session.call_tool("list_space_types", {})
-                sd = _unwrap(sr)
+                sd = unwrap(sr)
                 print("baseline space types:", sd)
                 assert sd.get("ok") is True
                 assert sd["count"] >= 1
@@ -288,7 +220,7 @@ def test_space_types_baseline():
 
                 # Get details
                 dr = await session.call_tool("get_space_type_details", {"space_type_name": bl_st["name"]})
-                dd = _unwrap(dr)
+                dd = unwrap(dr)
                 assert dd.get("ok") is True
                 assert len(dd["space_type"]["spaces"]) == 10  # All 10 spaces use this type
 

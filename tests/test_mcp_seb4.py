@@ -5,14 +5,15 @@ import json
 import math
 import os
 import re
-import shlex
 import time
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import pytest
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession
 from mcp.client.stdio import stdio_client
+
+from conftest import unwrap, integration_enabled, server_params
 
 # -----------------------------------------------------------------------------
 # Defaults (override via environment variables in CI or locally)
@@ -49,30 +50,6 @@ SITE_ATOL = float(os.environ.get("EXPECTED_SITE_ATOL", "0.0"))
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-def _integration_enabled() -> bool:
-    return os.environ.get("RUN_OPENSTUDIO_INTEGRATION", "0") == "1"
-
-
-def _unwrap_mcp_result(res: Any) -> Any:
-    """Normalize MCP python client responses to plain dict/str when possible."""
-    if isinstance(res, dict):
-        return res
-    content = getattr(res, "content", None)
-    if not content:
-        return res
-    first = content[0]
-    text = getattr(first, "text", None)
-    if text is None:
-        return str(first)
-    t = text.strip()
-    if not t:
-        return t
-    try:
-        return json.loads(t)
-    except Exception:
-        return t
-
-
 def _extract_run_status(status: Any) -> str:
     """openstudio-mcp returns: {"ok": True, "run": {"status": "..."}}."""
     if isinstance(status, dict):
@@ -133,7 +110,7 @@ async def _call_tool(session: ClientSession, name: str, args: dict, timeout: Opt
         raw = await session.call_tool(name, args)
     else:
         raw = await asyncio.wait_for(session.call_tool(name, args), timeout=timeout)
-    return _unwrap_mcp_result(raw)
+    return unwrap(raw)
 
 
 def _parse_metrics(metrics_payload: Any) -> Tuple[Optional[float], Optional[float], Optional[str]]:
@@ -202,21 +179,12 @@ def _assert_close(name: str, got: float, expected: float, *, rtol: float, atol: 
 
 
 async def _run_once_and_wait(*, osw_path: str, epw_path: Optional[str], allow_failure: bool = False) -> dict:
-    # Allow running the MCP server as either:
-    #   - local binary: MCP_SERVER_CMD=openstudio-mcp
-    #   - docker wrapper: MCP_SERVER_CMD=docker + MCP_SERVER_ARGS="run ... openstudio-mcp:dev openstudio-mcp"
-    server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
-    server_args_env = os.environ.get("MCP_SERVER_ARGS", "").strip()
-    server_args = shlex.split(server_args_env) if server_args_env else []
-
-    server_params = StdioServerParameters(command=server_cmd, args=server_args, env=os.environ.copy())
-
     poll_seconds = float(os.environ.get("MCP_POLL_SECONDS", "2"))
     log_tail = int(os.environ.get("MCP_LOG_TAIL", "200"))
     hard_timeout = float(os.environ.get("MCP_HARD_TIMEOUT", str(60 * 30)))  # 30 min default
     tool_timeout = float(os.environ.get("MCP_TOOL_TIMEOUT", "30"))
 
-    async with stdio_client(server_params) as (read, write):
+    async with stdio_client(server_params()) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
@@ -300,7 +268,7 @@ def _host_path_exists_if_applicable(p: str) -> None:
 @pytest.mark.integration
 def test_mcp_run_seb4_2013_default_weather():
     """Run the default SEB4 OSW (2013 EPW via file_paths) and sanity-check EUI."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
     _host_path_exists_if_applicable(DEFAULT_OSW_2013)
@@ -323,7 +291,7 @@ def test_mcp_run_seb4_2013_default_weather():
 @pytest.mark.integration
 def test_mcp_run_seb4_2012_hardcoded_weather_in_osw():
     """Run workflow2.osw which hardcodes the 2012 EPW, and check EUI + total site energy."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
     _host_path_exists_if_applicable(DEFAULT_OSW_2012_HARDCODED)
@@ -348,7 +316,7 @@ def test_mcp_run_seb4_2012_hardcoded_weather_in_osw():
 @pytest.mark.integration
 def test_mcp_run_seb4_2012_override_weather_via_tool_arg():
     """Run workflow.osw but override weather to the 2012 EPW via run_osw(epw_path)."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
     _host_path_exists_if_applicable(DEFAULT_OSW_2013)
@@ -374,7 +342,7 @@ def test_mcp_run_seb4_2012_override_weather_via_tool_arg():
 @pytest.mark.integration
 def test_mcp_run_seb4_bad_weather_in_osw_fails_validation():
     """workflow3.osw references a missing EPW; server should fail fast with a clear error."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
     _host_path_exists_if_applicable(DEFAULT_OSW_2013_BAD_WEATHER)
@@ -396,7 +364,7 @@ def test_mcp_run_seb4_bad_weather_in_osw_fails_validation():
 @pytest.mark.integration
 def test_mcp_run_seb4_bad_weather_in_osw_succeeds_with_epw_override():
     """workflow3.osw has a bad weather_file, but an explicit --epw override should still work."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
     _host_path_exists_if_applicable(DEFAULT_OSW_2013_BAD_WEATHER)
@@ -430,7 +398,7 @@ def test_mcp_run_seb4_bad_weather_in_osw_succeeds_with_epw_override():
 @pytest.mark.integration
 def test_mcp_bad_osw_path_fails_cleanly():
     """Regression guard: running a missing OSW should fail cleanly (no hang, no ExceptionGroup noise)."""
-    if not _integration_enabled():
+    if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
     missing = os.environ.get("MCP_MISSING_OSW_PATH", "/definitely/not/a/real/workflow.osw")

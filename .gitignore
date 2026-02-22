@@ -16,8 +16,9 @@ venv/
 *.swp
 *.swo
 
-# Claude Code
-.claude/
+# Claude Code (keep skills/ tracked for all users)
+.claude/*
+!.claude/skills/
 
 # Test artifacts — generated OSM files from integration test runs
 runs/

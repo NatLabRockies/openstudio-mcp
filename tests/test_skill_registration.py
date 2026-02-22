@@ -147,6 +147,9 @@ EXPECTED_TOOLS = {
     "set_lifecycle_cost_params",
     "add_cost_per_floor_area",
     "set_adiabatic_boundaries",
+    # Skill Discovery
+    "list_skills",
+    "get_skill",
 }
 
 
@@ -177,6 +180,10 @@ def test_all_tool_names_registered():
                 registered_tools[tool_name] = fn
                 return fn
             return decorator
+        def prompt(self, **kw):
+            return lambda fn: fn
+        def resource(self, *a, **kw):
+            return lambda fn: fn
 
     mcp = FakeMCP()
     register_all_skills(mcp)
