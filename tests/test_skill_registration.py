@@ -180,6 +180,10 @@ def test_all_tool_names_registered():
                 registered_tools[tool_name] = fn
                 return fn
             return decorator
+        def prompt(self, **kw):
+            return lambda fn: fn
+        def resource(self, *a, **kw):
+            return lambda fn: fn
 
     mcp = FakeMCP()
     register_all_skills(mcp)
