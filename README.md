@@ -1,8 +1,10 @@
 # openstudio-mcp
 
+[![MCP Badge](https://lobehub.com/badge/mcp/natlabrockies-openstudio-mcp?style=for-the-badge)](https://lobehub.com/mcp/natlabrockies-openstudio-mcp)
+
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 126 MCP tools &bull; 260+ integration tests**
+**22 skills &bull; 126 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 260+ integration tests**
 
 ---
 

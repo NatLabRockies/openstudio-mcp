@@ -29,6 +29,10 @@ def _get_registered_tool_names() -> set[str]:
                 registered[tool_name] = fn
                 return fn
             return decorator
+        def prompt(self, **kw):
+            return lambda fn: fn
+        def resource(self, *a, **kw):
+            return lambda fn: fn
 
     register_all_skills(FakeMCP())
     return set(registered.keys())
