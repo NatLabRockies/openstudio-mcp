@@ -56,7 +56,11 @@ def fetch_object(
         method = f"get{object_type}"
         if not hasattr(model, method):
             return None
-        result = getattr(model, method)(openstudio.toUUID(handle))
+        try:
+            uuid = openstudio.toUUID(handle)
+        except Exception:
+            return None
+        result = getattr(model, method)(uuid)
         return result.get() if result.is_initialized() else None
 
     return None

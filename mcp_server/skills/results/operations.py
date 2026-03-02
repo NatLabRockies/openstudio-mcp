@@ -364,6 +364,8 @@ def copy_run_artifact(run_id: str, path: str, destination: str = "/runs/exports"
     The destination is on the same bind-mounted volume, so the file is
     directly accessible on the host filesystem.
     """
+    from mcp_server.config import is_path_allowed
+
     try:
         run_dir = resolve_run_dir(RUN_ROOT, run_id)
     except FileNotFoundError:
@@ -380,6 +382,11 @@ def copy_run_artifact(run_id: str, path: str, destination: str = "/runs/exports"
         return {"ok": False, "error": "not_found", "message": f"Missing file: {path}", "run_id": run_id}
 
     dest_dir = Path(destination)
+    if not is_path_allowed(dest_dir):
+        return {
+            "ok": False, "error": "invalid_destination",
+            "message": f"Destination not in allowed roots: {destination}",
+        }
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_file = dest_dir / full.name
 

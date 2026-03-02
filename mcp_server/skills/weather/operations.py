@@ -10,6 +10,7 @@ from typing import Any
 
 import openstudio
 
+from mcp_server.config import is_path_allowed
 from mcp_server.model_manager import get_model
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
@@ -60,6 +61,12 @@ def set_weather_file(epw_path: str) -> dict[str, Any]:
         epw_path: Absolute path to an EPW file
     """
     try:
+        from pathlib import Path
+
+        p = Path(epw_path)
+        if not is_path_allowed(p):
+            return {"ok": False, "error": f"EPW path not in allowed roots: {epw_path}"}
+
         model = get_model()
 
         # Parse EPW

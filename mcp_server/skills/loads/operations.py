@@ -284,6 +284,8 @@ def create_people_definition(
     try:
         if people_per_area is None and num_people is None:
             return {"ok": False, "error": "Provide people_per_area or num_people"}
+        if people_per_area is not None and num_people is not None:
+            return {"ok": False, "error": "Provide only one of people_per_area or num_people, not both"}
         model = get_model()
         space = _resolve_space(model, space_name)
         if space is None:
@@ -328,6 +330,8 @@ def create_lights_definition(
     try:
         if watts_per_area is None and lighting_level_w is None:
             return {"ok": False, "error": "Provide watts_per_area or lighting_level_w"}
+        if watts_per_area is not None and lighting_level_w is not None:
+            return {"ok": False, "error": "Provide only one of watts_per_area or lighting_level_w, not both"}
         model = get_model()
         space = _resolve_space(model, space_name)
         if space is None:
@@ -370,6 +374,8 @@ def create_electric_equipment(
     try:
         if watts_per_area is None and design_level_w is None:
             return {"ok": False, "error": "Provide watts_per_area or design_level_w"}
+        if watts_per_area is not None and design_level_w is not None:
+            return {"ok": False, "error": "Provide only one of watts_per_area or design_level_w, not both"}
         model = get_model()
         space = _resolve_space(model, space_name)
         if space is None:
@@ -412,6 +418,8 @@ def create_gas_equipment(
     try:
         if watts_per_area is None and design_level_w is None:
             return {"ok": False, "error": "Provide watts_per_area or design_level_w"}
+        if watts_per_area is not None and design_level_w is not None:
+            return {"ok": False, "error": "Provide only one of watts_per_area or design_level_w, not both"}
         model = get_model()
         space = _resolve_space(model, space_name)
         if space is None:
@@ -454,6 +462,8 @@ def create_infiltration(
     try:
         if flow_per_exterior_surface_area is None and ach is None:
             return {"ok": False, "error": "Provide flow_per_exterior_surface_area or ach"}
+        if flow_per_exterior_surface_area is not None and ach is not None:
+            return {"ok": False, "error": "Provide only one of flow_per_exterior_surface_area or ach, not both"}
         model = get_model()
         space = _resolve_space(model, space_name)
         if space is None:

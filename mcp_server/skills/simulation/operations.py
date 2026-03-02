@@ -410,7 +410,10 @@ def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "open
     if not rec:
         return {"ok": False, "error": f"Unknown run_id: {run_id}"}
 
-    tail_lines = int(tail or DEFAULT_LOG_TAIL)
+    try:
+        tail_lines = int(tail) if tail is not None else DEFAULT_LOG_TAIL
+    except (ValueError, TypeError):
+        tail_lines = DEFAULT_LOG_TAIL
 
     if stream == "openstudio":
         path = rec.run_dir / "openstudio.log"

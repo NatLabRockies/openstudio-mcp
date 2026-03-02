@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 """
 
+ALLOWED_COLUMNS = frozenset({
+    "run_id", "name", "status", "created_at", "started_at", "ended_at",
+    "pid", "run_dir", "osw_path", "epw_path", "exit_code", "error",
+})
+
 def _db_path(run_root: Path) -> Path:
     return run_root / "run_registry.sqlite3"
 
@@ -33,7 +38,15 @@ def init_db(run_root: Path) -> None:
     finally:
         conn.close()
 
+def _validate_columns(keys: set[str]) -> None:
+    """Raise ValueError if any column name is not in the whitelist."""
+    bad = keys - ALLOWED_COLUMNS
+    if bad:
+        raise ValueError(f"Invalid column names: {bad}")
+
+
 def insert_run(run_root: Path, row: dict[str, Any]) -> None:
+    _validate_columns(set(row.keys()))
     init_db(run_root)
     conn = sqlite3.connect(_db_path(run_root))
     try:
@@ -47,6 +60,7 @@ def insert_run(run_root: Path, row: dict[str, Any]) -> None:
 def update_run(run_root: Path, run_id: str, **fields: Any) -> None:
     if not fields:
         return
+    _validate_columns(set(fields.keys()))
     init_db(run_root)
     conn = sqlite3.connect(_db_path(run_root))
     try:
