@@ -133,7 +133,7 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
         # Conversion: GJ -> kBtu for IP
         units_note = "SI (original units from SQL)"
         if units.upper() == "IP":
-            factor = 947817.12  # GJ -> kBtu
+            factor = 947.817  # GJ -> kBtu (1 GJ = 947.817 kBtu)
             units_note = "Converted to kBtu"
             for entry in end_uses:
                 for k, v in list(entry.items()):

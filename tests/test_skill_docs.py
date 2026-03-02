@@ -15,7 +15,10 @@ import yaml
 from mcp_server.skills import register_all_skills
 
 
-SKILLS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "skills"
+# Repo-relative path (host/CI), fallback to Docker baked-in path
+_REPO_SKILLS = Path(__file__).resolve().parent.parent / ".claude" / "skills"
+_DOCKER_SKILLS = Path("/skills")
+SKILLS_DIR = _REPO_SKILLS if _REPO_SKILLS.exists() else _DOCKER_SKILLS
 
 
 def _get_registered_tool_names() -> set[str]:

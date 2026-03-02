@@ -1,0 +1,20 @@
+# Ruff config for code review — report only, no auto-fix
+# Run: ruff check mcp_server/
+
+# Don't auto-fix — review findings first
+fix = false
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes (unused imports, undefined names)
+    "B",    # flake8-bugbear (common bugs, design problems)
+    "SIM",  # flake8-simplify (simplifiable constructs)
+    "UP",   # pyupgrade (Python version upgrades)
+    "RET",  # flake8-return (unnecessary return statements)
+    "PTH",  # flake8-use-pathlib (os.path → pathlib)
+]
+
+[lint.per-file-ignores]
+# Tests can have broader exceptions
+"tests/**" = ["B", "SIM"]

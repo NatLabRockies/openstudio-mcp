@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeReviewFindings",
+  "description": "Structured output for code review findings from Codex CLI",
+  "type": "object",
+  "required": ["scope", "findings"],
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Directory or file scope that was reviewed"
+    },
+    "review_focus": {
+      "type": "string",
+      "description": "Custom review focus if provided, otherwise 'standard'"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "severity", "category", "description"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Relative file path from project root"
+          },
+          "line": {
+            "type": "integer",
+            "description": "Line number (0 if not applicable)"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low"]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "error_handling",
+              "is_initialized",
+              "dead_code",
+              "type_safety",
+              "security",
+              "consistency",
+              "resource_leak",
+              "performance",
+              "pattern_violation",
+              "other"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "What's wrong and why it matters"
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "Concrete fix suggestion (code snippet or approach)"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer" },
+        "by_severity": {
+          "type": "object",
+          "properties": {
+            "critical": { "type": "integer" },
+            "high": { "type": "integer" },
+            "medium": { "type": "integer" },
+            "low": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}

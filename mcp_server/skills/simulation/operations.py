@@ -259,17 +259,22 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
         # In case OSW lived outside src_dir copy (unlikely), copy explicitly
         shutil.copy2(src_osw, staged_osw)
 
-    # Load staged OSW and ensure referenced seed file is present (even if ../something.osm)
+    # Load staged OSW and ensure referenced seed file is present.
+    # Always stage the seed directly into run_dir (flatten any ../ refs)
+    # and rewrite the OSW pointer so OpenStudio finds it.
     osw = _load_json(staged_osw)
     seed_rel = osw.get("seed_file")
     if seed_rel:
         seed_src = (src_dir / seed_rel).resolve()
-        # If it exists in source, ensure it exists in staged run dir in same relative location
         if seed_src.exists():
-            seed_dst = (run_dir / seed_rel).resolve()
-            seed_dst.parent.mkdir(parents=True, exist_ok=True)
+            # Flatten: use just the filename, always inside run_dir
+            seed_dst = run_dir / Path(seed_rel).name
             if not seed_dst.exists():
                 shutil.copy2(seed_src, seed_dst)
+            # Rewrite OSW to point at the flattened location
+            if seed_rel != Path(seed_rel).name:
+                osw["seed_file"] = Path(seed_rel).name
+                _dump_json(staged_osw, osw)
 
     # If an EPW is provided, stage it into files/ and rewrite weather_file to match
     staged_epw: Path | None = None

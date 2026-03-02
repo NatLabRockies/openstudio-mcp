@@ -241,6 +241,33 @@ class TestExampleWorkflow:
         assert all(pt["month"] == 1 for pt in ts["data"])
 
 
+class TestEndUseConversionFactor:
+    """C-3 regression: GJ→kBtu factor must be 947.817, not 947817.12."""
+
+    def test_ip_values_in_kbtu_range(self, sql_path):
+        """IP end-use values should be kBtu (hundreds to millions), not GBtu."""
+        from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+        si = extract_end_use_breakdown(sql_path, units="SI")
+        ip = extract_end_use_breakdown(sql_path, units="IP")
+        assert si["ok"] and ip["ok"]
+        # Pick first non-zero numeric value from SI and IP
+        for si_entry, ip_entry in zip(si["end_uses"], ip["end_uses"]):
+            for k in si_entry:
+                if k == "name":
+                    continue
+                si_val = si_entry.get(k)
+                ip_val = ip_entry.get(k)
+                if isinstance(si_val, (int, float)) and si_val > 0:
+                    # 1 GJ = 947.817 kBtu — ratio should be ~948, not ~948000
+                    ratio = ip_val / si_val
+                    assert 900 < ratio < 1000, (
+                        f"IP/SI ratio for {k}={ratio:.1f}, expected ~947.8 "
+                        f"(si={si_val}, ip={ip_val})"
+                    )
+                    return  # one check is enough
+        pytest.skip("No non-zero SI values found to verify conversion")
+
+
 class TestMissingSql:
     def test_end_use_bad_path(self):
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown

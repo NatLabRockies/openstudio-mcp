@@ -16,6 +16,8 @@ def _run_cmd(cmd: list[str]) -> tuple[int, str]:
         return 0, out.strip()
     except subprocess.CalledProcessError as e:
         return e.returncode, (e.output or "").strip()
+    except OSError as e:
+        return -1, str(e)
 
 
 def get_server_status() -> dict:
