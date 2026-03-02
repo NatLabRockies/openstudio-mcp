@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 from typing import Any
-import openstudio
 
+import openstudio
 
 
 def replace_terminals(
     model,
     air_loop,
     terminal_type: str,
-    options: dict[str, Any]
+    options: dict[str, Any],
 ) -> dict[str, Any]:
     """Replace all terminals on an air loop with new type.
 
@@ -41,7 +41,7 @@ def replace_terminals(
         if len(zones_and_terminals) == 0:
             return {
                 "ok": False,
-                "error": f"No thermal zones connected to air loop '{air_loop_name}'"
+                "error": f"No thermal zones connected to air loop '{air_loop_name}'",
             }
 
         # Record old terminal type for reporting
@@ -74,7 +74,7 @@ def replace_terminals(
             else:
                 return {
                     "ok": False,
-                    "error": f"Unknown terminal_type: {terminal_type}"
+                    "error": f"Unknown terminal_type: {terminal_type}",
                 }
 
             # If terminal creation failed (e.g., missing HW loop), propagate error immediately
@@ -90,8 +90,8 @@ def replace_terminals(
                 "terminals_replaced": len(new_terminals),
                 "old_terminal_type": old_terminal_type,
                 "new_terminal_type": terminal_type,
-                "zones": [zone.nameString() for zone in zones]
-            }
+                "zones": [zone.nameString() for zone in zones],
+            },
         }
 
     except Exception as e:
@@ -153,7 +153,7 @@ def _get_zones_and_terminals(air_loop) -> list[dict[str, Any]]:
                             result.append({
                                 "zone": zone_obj,
                                 "terminal": terminal,
-                                "terminal_type": terminal_type
+                                "terminal_type": terminal_type,
                             })
                             break  # Found the terminal for this zone on this air loop, move to next zone
 
@@ -164,7 +164,7 @@ def _create_vav_reheat_terminal(
     model,
     air_loop,
     zone,
-    options: dict[str, Any]
+    options: dict[str, Any],
 ) -> dict[str, Any]:
     """Create VAV terminal with hot water reheat coil.
 
@@ -186,7 +186,7 @@ def _create_vav_reheat_terminal(
         if hw_loop is None:
             return {
                 "ok": False,
-                "error": "VAV_Reheat requires a hot water plant loop. None found in model."
+                "error": "VAV_Reheat requires a hot water plant loop. None found in model.",
             }
 
         always_on = model.alwaysOnDiscreteSchedule()
@@ -198,7 +198,7 @@ def _create_vav_reheat_terminal(
 
         # Create VAV terminal with reheat coil
         terminal = openstudio.model.AirTerminalSingleDuctVAVReheat(
-            model, always_on, reheat_coil
+            model, always_on, reheat_coil,
         )
         terminal.setName(f"{zone.nameString()} VAV Reheat Terminal")
 
@@ -222,7 +222,7 @@ def _create_vav_no_reheat_terminal(
     model,
     air_loop,
     zone,
-    options: dict[str, Any]
+    options: dict[str, Any],
 ) -> dict[str, Any]:
     """Create VAV terminal without reheat."""
     try:
@@ -251,7 +251,7 @@ def _create_pfp_electric_terminal(
     model,
     air_loop,
     zone,
-    options: dict[str, Any]
+    options: dict[str, Any],
 ) -> dict[str, Any]:
     """Create parallel fan-powered terminal with electric reheat."""
     try:
@@ -267,7 +267,7 @@ def _create_pfp_electric_terminal(
 
         # Create terminal
         terminal = openstudio.model.AirTerminalSingleDuctParallelPIUReheat(
-            model, always_on, fan, reheat_coil
+            model, always_on, fan, reheat_coil,
         )
         terminal.setName(f"{zone.nameString()} PFP Electric Terminal")
 
@@ -290,7 +290,7 @@ def _create_pfp_hw_terminal(
     model,
     air_loop,
     zone,
-    options: dict[str, Any]
+    options: dict[str, Any],
 ) -> dict[str, Any]:
     """Create parallel fan-powered terminal with hot water reheat."""
     try:
@@ -299,7 +299,7 @@ def _create_pfp_hw_terminal(
         if hw_loop is None:
             return {
                 "ok": False,
-                "error": "PFP_HotWater requires a hot water plant loop. None found in model."
+                "error": "PFP_HotWater requires a hot water plant loop. None found in model.",
             }
 
         always_on = model.alwaysOnDiscreteSchedule()
@@ -315,7 +315,7 @@ def _create_pfp_hw_terminal(
 
         # Create terminal
         terminal = openstudio.model.AirTerminalSingleDuctParallelPIUReheat(
-            model, always_on, fan, reheat_coil
+            model, always_on, fan, reheat_coil,
         )
         terminal.setName(f"{zone.nameString()} PFP HW Terminal")
 
@@ -338,7 +338,7 @@ def _create_cav_terminal(
     model,
     air_loop,
     zone,
-    options: dict[str, Any]
+    options: dict[str, Any],
 ) -> dict[str, Any]:
     """Create constant air volume terminal (uncontrolled)."""
     try:
@@ -361,7 +361,7 @@ def replace_zone_terminal(
     model,
     zone,
     terminal_type: str,
-    options: dict[str, Any]
+    options: dict[str, Any],
 ) -> dict[str, Any]:
     """Replace the air terminal on a single zone.
 
@@ -394,7 +394,7 @@ def replace_zone_terminal(
         if air_loop is None:
             return {
                 "ok": False,
-                "error": f"Zone '{zone_name}' is not connected to any air loop"
+                "error": f"Zone '{zone_name}' is not connected to any air loop",
             }
 
         air_loop_name = air_loop.nameString()
@@ -428,7 +428,7 @@ def replace_zone_terminal(
                 "old_terminal_type": old_terminal_type,
                 "new_terminal_type": terminal_type,
                 "new_terminal_name": new_terminal.nameString(),
-            }
+            },
         }
 
     except Exception as e:

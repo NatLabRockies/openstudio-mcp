@@ -5,12 +5,13 @@ but returns plain dicts (no pandas dependency).
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 import openstudio
 
 
-def optional_name(os_optional) -> Optional[str]:
+def optional_name(os_optional) -> str | None:
     """Extract name string from an OpenStudio Optional, or None.
 
     Handles the common pattern:
@@ -30,8 +31,8 @@ def optional_name(os_optional) -> Optional[str]:
 def fetch_object(
     model: openstudio.model.Model,
     object_type: str,
-    name: Optional[str] = None,
-    handle: Optional[str] = None,
+    name: str | None = None,
+    handle: str | None = None,
 ) -> Any:
     """Fetch a single OpenStudio object by name or handle.
 

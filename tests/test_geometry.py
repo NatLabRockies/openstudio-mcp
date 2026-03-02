@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params, setup_example
+from conftest import integration_enabled, server_params, setup_example, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 

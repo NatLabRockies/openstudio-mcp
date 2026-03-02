@@ -7,13 +7,12 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
 
 # -----------------------------------------------------------------------------
 # Defaults (override via environment variables in CI or locally)
@@ -89,7 +88,7 @@ def _is_containerish_path(p: str) -> bool:
     norm = p.replace("\\", "/")
 
     # Common container mount roots for this project
-    if norm.startswith("/repo/") or norm == "/repo" or norm.startswith("/inputs/") or norm.startswith("/runs/"):
+    if norm.startswith(("/repo/", "/inputs/", "/runs/")) or norm == "/repo":
         return True
 
     # MSYS path-rewrite form: C:/Program Files/Git/inputs/...
@@ -105,7 +104,7 @@ def _is_containerish_path(p: str) -> bool:
     return False
 
 
-async def _call_tool(session: ClientSession, name: str, args: dict, timeout: Optional[float] = None) -> Any:
+async def _call_tool(session: ClientSession, name: str, args: dict, timeout: float | None = None) -> Any:
     if timeout is None:
         raw = await session.call_tool(name, args)
     else:
@@ -113,7 +112,7 @@ async def _call_tool(session: ClientSession, name: str, args: dict, timeout: Opt
     return unwrap(raw)
 
 
-def _parse_metrics(metrics_payload: Any) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+def _parse_metrics(metrics_payload: Any) -> tuple[float | None, float | None, str | None]:
     """Returns (eui, total_site_energy_value, eui_units)."""
     if not isinstance(metrics_payload, dict):
         return None, None, None
@@ -178,7 +177,7 @@ def _assert_close(name: str, got: float, expected: float, *, rtol: float, atol: 
     assert ok, f"{name} mismatch: got={got}{u} expected={expected}{u} rtol={rtol} atol={atol}"
 
 
-async def _run_once_and_wait(*, osw_path: str, epw_path: Optional[str], allow_failure: bool = False) -> dict:
+async def _run_once_and_wait(*, osw_path: str, epw_path: str | None, allow_failure: bool = False) -> dict:
     poll_seconds = float(os.environ.get("MCP_POLL_SECONDS", "2"))
     log_tail = int(os.environ.get("MCP_LOG_TAIL", "200"))
     hard_timeout = float(os.environ.get("MCP_HARD_TIMEOUT", str(60 * 30)))  # 30 min default
@@ -238,7 +237,7 @@ async def _run_once_and_wait(*, osw_path: str, epw_path: Optional[str], allow_fa
                 state = _extract_run_status(status).lower()
                 if state in terminal:
                     metrics = await _call_tool(
-                        session, "extract_summary_metrics", {"run_id": run_id}, timeout=tool_timeout
+                        session, "extract_summary_metrics", {"run_id": run_id}, timeout=tool_timeout,
                     )
                     return {"run_id": run_id, "status": status, "state": state, "metrics": metrics}
 

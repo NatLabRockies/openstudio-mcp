@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+
 import openstudio
 
 
@@ -11,7 +12,7 @@ def create_baseline_system_1(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 1: PTAC with electric resistance heating and DX cooling.
 
@@ -53,7 +54,7 @@ def create_baseline_system_1(
 
         # Create PTAC unit
         ptac = openstudio.model.ZoneHVACPackagedTerminalAirConditioner(
-            model, always_on, fan, htg_coil, clg_coil
+            model, always_on, fan, htg_coil, clg_coil,
         )
         ptac.setName(ptac_name)
 
@@ -65,7 +66,7 @@ def create_baseline_system_1(
             "equipment": ptac_name,
             "heating_coil": htg_coil.nameString(),
             "cooling_coil": clg_coil.nameString(),
-            "fan": fan.nameString()
+            "fan": fan.nameString(),
         })
 
     return {
@@ -79,8 +80,8 @@ def create_baseline_system_1(
             "zones_served": len(zones),
             "equipment": equipment_added,
             "heating": "Electric Resistance",
-            "cooling": "DX Single Speed"
-        }
+            "cooling": "DX Single Speed",
+        },
     }
 
 
@@ -90,7 +91,7 @@ def create_baseline_system_2(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 2: PTHP (Packaged Terminal Heat Pump).
 
@@ -136,7 +137,7 @@ def create_baseline_system_2(
 
         # Create PTHP unit
         pthp = openstudio.model.ZoneHVACPackagedTerminalHeatPump(
-            model, always_on, fan, htg_coil, clg_coil, supp_htg_coil
+            model, always_on, fan, htg_coil, clg_coil, supp_htg_coil,
         )
         pthp.setName(pthp_name)
 
@@ -149,7 +150,7 @@ def create_baseline_system_2(
             "heating_coil": htg_coil.nameString(),
             "cooling_coil": clg_coil.nameString(),
             "supplemental_heating_coil": supp_htg_coil.nameString(),
-            "fan": fan.nameString()
+            "fan": fan.nameString(),
         })
 
     return {
@@ -163,8 +164,8 @@ def create_baseline_system_2(
             "zones_served": len(zones),
             "equipment": equipment_added,
             "heating": "Heat Pump",
-            "cooling": "Heat Pump"
-        }
+            "cooling": "Heat Pump",
+        },
     }
 
 
@@ -174,7 +175,7 @@ def create_baseline_system_3(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 3: PSZ-AC (Packaged Single Zone Air Conditioner).
 
@@ -197,13 +198,13 @@ def create_baseline_system_3(
     """
     from mcp_server.skills.hvac_systems.wiring import (
         add_outdoor_air_system,
-        create_setpoint_manager_single_zone_reheat
+        create_setpoint_manager_single_zone_reheat,
     )
 
     if len(zones) != 1:
         return {
             "ok": False,
-            "error": f"PSZ-AC requires exactly 1 zone, got {len(zones)}"
+            "error": f"PSZ-AC requires exactly 1 zone, got {len(zones)}",
         }
 
     zone = zones[0]
@@ -244,7 +245,7 @@ def create_baseline_system_3(
 
     # Add setpoint manager
     setpoint_mgr = create_setpoint_manager_single_zone_reheat(
-        model, zone, air_loop.supplyOutletNode()
+        model, zone, air_loop.supplyOutletNode(),
     )
 
     return {
@@ -262,8 +263,8 @@ def create_baseline_system_3(
             "heating": "Gas Furnace" if heating_fuel == "NaturalGas" else "Electric Resistance",
             "cooling": "DX Single Speed",
             "outdoor_air_system": oa_system.nameString() if oa_system else None,
-            "setpoint_manager": setpoint_mgr.nameString() if setpoint_mgr else None
-        }
+            "setpoint_manager": setpoint_mgr.nameString() if setpoint_mgr else None,
+        },
     }
 
 
@@ -273,7 +274,7 @@ def create_baseline_system_4(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 4: PSZ-HP (Packaged Single Zone Heat Pump).
 
@@ -297,13 +298,13 @@ def create_baseline_system_4(
     """
     from mcp_server.skills.hvac_systems.wiring import (
         add_outdoor_air_system,
-        create_setpoint_manager_single_zone_reheat
+        create_setpoint_manager_single_zone_reheat,
     )
 
     if len(zones) != 1:
         return {
             "ok": False,
-            "error": f"PSZ-HP requires exactly 1 zone, got {len(zones)}"
+            "error": f"PSZ-HP requires exactly 1 zone, got {len(zones)}",
         }
 
     zone = zones[0]
@@ -345,7 +346,7 @@ def create_baseline_system_4(
 
     # Add setpoint manager
     setpoint_mgr = create_setpoint_manager_single_zone_reheat(
-        model, zone, air_loop.supplyOutletNode()
+        model, zone, air_loop.supplyOutletNode(),
     )
 
     return {
@@ -363,8 +364,8 @@ def create_baseline_system_4(
             "heating": "Heat Pump",
             "cooling": "Heat Pump",
             "outdoor_air_system": oa_system.nameString() if oa_system else None,
-            "setpoint_manager": setpoint_mgr.nameString() if setpoint_mgr else None
-        }
+            "setpoint_manager": setpoint_mgr.nameString() if setpoint_mgr else None,
+        },
     }
 
 
@@ -374,7 +375,7 @@ def create_baseline_system_5(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 5: Packaged VAV with Reheat.
 
@@ -397,9 +398,9 @@ def create_baseline_system_5(
         dict with system details
     """
     from mcp_server.skills.hvac_systems.wiring import (
+        add_boiler_to_loop,
         add_outdoor_air_system,
         create_hot_water_loop,
-        add_boiler_to_loop
     )
 
     always_on = model.alwaysOnDiscreteSchedule()
@@ -436,7 +437,7 @@ def create_baseline_system_5(
 
     # Add setpoint manager (scheduled)
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_supply_air_temp_schedule(model)
+        model, _create_supply_air_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Supply Air Setpoint Manager")
     setpoint_mgr.addToNode(air_loop.supplyOutletNode())
@@ -451,7 +452,7 @@ def create_baseline_system_5(
 
         # Create VAV terminal with reheat
         terminal = openstudio.model.AirTerminalSingleDuctVAVReheat(
-            model, always_on, reheat_coil
+            model, always_on, reheat_coil,
         )
         terminal.setName(f"{name} VAV Terminal - {zone.nameString()}")
         air_loop.addBranchForZone(zone, terminal)
@@ -471,8 +472,8 @@ def create_baseline_system_5(
             "terminals": terminals,
             "economizer": economizer,
             "heating": "Hot Water Reheat",
-            "cooling": "DX Two Speed"
-        }
+            "cooling": "DX Two Speed",
+        },
     }
 
 
@@ -482,7 +483,7 @@ def create_baseline_system_6(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 6: Packaged VAV with PFP Boxes.
 
@@ -535,7 +536,7 @@ def create_baseline_system_6(
 
     # Add setpoint manager
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_supply_air_temp_schedule(model)
+        model, _create_supply_air_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Supply Air Setpoint Manager")
     setpoint_mgr.addToNode(air_loop.supplyOutletNode())
@@ -553,7 +554,7 @@ def create_baseline_system_6(
 
         # Create parallel fan-powered terminal
         terminal = openstudio.model.AirTerminalSingleDuctParallelPIUReheat(
-            model, always_on, pfp_fan, reheat_coil
+            model, always_on, pfp_fan, reheat_coil,
         )
         terminal.setName(f"{name} PFP Terminal - {zone.nameString()}")
         air_loop.addBranchForZone(zone, terminal)
@@ -572,8 +573,8 @@ def create_baseline_system_6(
             "terminals": terminals,
             "economizer": economizer,
             "heating": "Electric Reheat in PFP Boxes",
-            "cooling": "DX Two Speed"
-        }
+            "cooling": "DX Two Speed",
+        },
     }
 
 
@@ -591,7 +592,7 @@ def create_baseline_system_7(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 7: VAV with Reheat.
 
@@ -604,13 +605,13 @@ def create_baseline_system_7(
     - Economizer
     """
     from mcp_server.skills.hvac_systems.wiring import (
+        add_boiler_to_loop,
+        add_chiller_to_loops,
+        add_cooling_tower_to_loop,
         add_outdoor_air_system,
         create_chilled_water_loop,
-        create_hot_water_loop,
         create_condenser_water_loop,
-        add_chiller_to_loops,
-        add_boiler_to_loop,
-        add_cooling_tower_to_loop
+        create_hot_water_loop,
     )
 
     always_on = model.alwaysOnDiscreteSchedule()
@@ -651,7 +652,7 @@ def create_baseline_system_7(
 
     # Add setpoint manager
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_supply_air_temp_schedule(model)
+        model, _create_supply_air_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Supply Air Setpoint Manager")
     setpoint_mgr.addToNode(air_loop.supplyOutletNode())
@@ -664,7 +665,7 @@ def create_baseline_system_7(
         hw_loop.addDemandBranchForComponent(reheat_coil)
 
         terminal = openstudio.model.AirTerminalSingleDuctVAVReheat(
-            model, always_on, reheat_coil
+            model, always_on, reheat_coil,
         )
         terminal.setName(f"{name} VAV Terminal - {zone.nameString()}")
         air_loop.addBranchForZone(zone, terminal)
@@ -686,8 +687,8 @@ def create_baseline_system_7(
             "terminals": terminals,
             "economizer": economizer,
             "heating": "Hot Water",
-            "cooling": "Chilled Water"
-        }
+            "cooling": "Chilled Water",
+        },
     }
 
 
@@ -697,7 +698,7 @@ def create_baseline_system_8(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 8: VAV with PFP Boxes.
 
@@ -710,13 +711,13 @@ def create_baseline_system_8(
     - Economizer
     """
     from mcp_server.skills.hvac_systems.wiring import (
+        add_boiler_to_loop,
+        add_chiller_to_loops,
+        add_cooling_tower_to_loop,
         add_outdoor_air_system,
         create_chilled_water_loop,
-        create_hot_water_loop,
         create_condenser_water_loop,
-        add_chiller_to_loops,
-        add_boiler_to_loop,
-        add_cooling_tower_to_loop
+        create_hot_water_loop,
     )
 
     always_on = model.alwaysOnDiscreteSchedule()
@@ -757,7 +758,7 @@ def create_baseline_system_8(
 
     # Add setpoint manager
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_supply_air_temp_schedule(model)
+        model, _create_supply_air_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Supply Air Setpoint Manager")
     setpoint_mgr.addToNode(air_loop.supplyOutletNode())
@@ -772,7 +773,7 @@ def create_baseline_system_8(
         pfp_fan.setName(f"{name} PFP Fan - {zone.nameString()}")
 
         terminal = openstudio.model.AirTerminalSingleDuctParallelPIUReheat(
-            model, always_on, pfp_fan, reheat_coil
+            model, always_on, pfp_fan, reheat_coil,
         )
         terminal.setName(f"{name} PFP Terminal - {zone.nameString()}")
         air_loop.addBranchForZone(zone, terminal)
@@ -794,8 +795,8 @@ def create_baseline_system_8(
             "terminals": terminals,
             "economizer": economizer,
             "heating": "Hot Water",
-            "cooling": "Chilled Water"
-        }
+            "cooling": "Chilled Water",
+        },
     }
 
 
@@ -805,7 +806,7 @@ def create_baseline_system_9(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 9: Heating and Ventilation (Gas).
 
@@ -842,7 +843,7 @@ def create_baseline_system_9(
 
         # Create unit heater
         unit_heater = openstudio.model.ZoneHVACUnitHeater(
-            model, always_on, fan, htg_coil
+            model, always_on, fan, htg_coil,
         )
         unit_heater.setName(heater_name)
 
@@ -851,7 +852,7 @@ def create_baseline_system_9(
 
         equipment_added.append({
             "zone": zone_name,
-            "equipment": heater_name
+            "equipment": heater_name,
         })
 
     return {
@@ -865,8 +866,8 @@ def create_baseline_system_9(
             "zones_served": len(zones),
             "equipment": equipment_added,
             "heating": "Gas Unit Heaters",
-            "cooling": "None"
-        }
+            "cooling": "None",
+        },
     }
 
 
@@ -876,7 +877,7 @@ def create_baseline_system_10(
     heating_fuel: str,
     cooling_fuel: str,
     economizer: bool,
-    name: str
+    name: str,
 ) -> dict[str, Any]:
     """Baseline System 10: Heating and Ventilation (Electric).
 
@@ -913,7 +914,7 @@ def create_baseline_system_10(
 
         # Create unit heater
         unit_heater = openstudio.model.ZoneHVACUnitHeater(
-            model, always_on, fan, htg_coil
+            model, always_on, fan, htg_coil,
         )
         unit_heater.setName(heater_name)
 
@@ -922,7 +923,7 @@ def create_baseline_system_10(
 
         equipment_added.append({
             "zone": zone_name,
-            "equipment": heater_name
+            "equipment": heater_name,
         })
 
     return {
@@ -936,6 +937,6 @@ def create_baseline_system_10(
             "zones_served": len(zones),
             "equipment": equipment_added,
             "heating": "Electric Unit Heaters",
-            "cooling": "None"
-        }
+            "cooling": "None",
+        },
     }

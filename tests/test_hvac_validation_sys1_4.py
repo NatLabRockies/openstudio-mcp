@@ -1,12 +1,10 @@
 """Validation tests for ASHRAE baseline systems 1-4 (PTAC, PTHP, PSZ-AC, PSZ-HP)."""
 import asyncio
-import pytest
 
+import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
-
 
 # ============================================================================
 # SYSTEM 1: PTAC - Coil + Fan + Sizing Tests (5 tests)
@@ -26,7 +24,7 @@ def test_system_1_coil_types():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -38,7 +36,7 @@ def test_system_1_coil_types():
                     "system_type": 1,
                     "thermal_zone_names": zone_names[:1],
                     "heating_fuel": "Electricity",
-                    "system_name": "PTAC System"
+                    "system_name": "PTAC System",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -48,7 +46,7 @@ def test_system_1_coil_types():
                 equip_name = equipment["equipment"]
 
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
-                    "equipment_name": equip_name
+                    "equipment_name": equip_name,
                 })
                 equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
@@ -75,7 +73,7 @@ def test_system_1_fan_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -85,13 +83,13 @@ def test_system_1_fan_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PTAC System"
+                    "system_name": "PTAC System",
                 })
                 system_data = unwrap(system_resp)
 
                 equip_name = system_data["system"]["equipment"][0]["equipment"]
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
-                    "equipment_name": equip_name
+                    "equipment_name": equip_name,
                 })
                 equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
@@ -116,7 +114,7 @@ def test_system_1_multiple_zones():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -126,7 +124,7 @@ def test_system_1_multiple_zones():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 1,
                     "thermal_zone_names": zone_names,
-                    "system_name": "PTAC System"
+                    "system_name": "PTAC System",
                 })
                 system_data = unwrap(system_resp)
 
@@ -150,7 +148,7 @@ def test_system_2_heat_pump_coils():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -160,13 +158,13 @@ def test_system_2_heat_pump_coils():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 2,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PTHP System"
+                    "system_name": "PTHP System",
                 })
                 system_data = unwrap(system_resp)
 
                 equip_name = system_data["system"]["equipment"][0]["equipment"]
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
-                    "equipment_name": equip_name
+                    "equipment_name": equip_name,
                 })
                 equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
@@ -192,7 +190,7 @@ def test_system_2_fan_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -202,13 +200,13 @@ def test_system_2_fan_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 2,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PTHP System"
+                    "system_name": "PTHP System",
                 })
                 system_data = unwrap(system_resp)
 
                 equip_name = system_data["system"]["equipment"][0]["equipment"]
                 equip_resp = await session.call_tool("get_zone_hvac_details", {
-                    "equipment_name": equip_name
+                    "equipment_name": equip_name,
                 })
                 equip_data = unwrap(equip_resp)
                 assert equip_data.get("ok") is True, f"get_zone_hvac_details failed: {equip_data.get('error')}"
@@ -236,7 +234,7 @@ def test_system_3_coil_types():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -248,12 +246,12 @@ def test_system_3_coil_types():
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
                     "heating_fuel": "NaturalGas",
-                    "system_name": "PSZ Gas"
+                    "system_name": "PSZ Gas",
                 })
                 system_data = unwrap(system_resp)
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ Gas"
+                    "air_loop_name": "PSZ Gas",
                 })
                 air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
@@ -283,7 +281,7 @@ def test_system_3_fan_verification():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -293,11 +291,11 @@ def test_system_3_fan_verification():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ System"
+                    "system_name": "PSZ System",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ System"
+                    "air_loop_name": "PSZ System",
                 })
                 air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
@@ -323,7 +321,7 @@ def test_system_3_economizer_enabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -334,11 +332,11 @@ def test_system_3_economizer_enabled():
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
                     "economizer": True,
-                    "system_name": "PSZ Econ"
+                    "system_name": "PSZ Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ Econ"
+                    "air_loop_name": "PSZ Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
@@ -365,7 +363,7 @@ def test_system_3_economizer_disabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -376,11 +374,11 @@ def test_system_3_economizer_disabled():
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
                     "economizer": False,
-                    "system_name": "PSZ No Econ"
+                    "system_name": "PSZ No Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ No Econ"
+                    "air_loop_name": "PSZ No Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
@@ -406,7 +404,7 @@ def test_system_3_outdoor_air_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -416,11 +414,11 @@ def test_system_3_outdoor_air_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ System"
+                    "system_name": "PSZ System",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ System"
+                    "air_loop_name": "PSZ System",
                 })
                 air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
@@ -444,7 +442,7 @@ def test_system_3_setpoint_managers():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -454,11 +452,11 @@ def test_system_3_setpoint_managers():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ System"
+                    "system_name": "PSZ System",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ System"
+                    "air_loop_name": "PSZ System",
                 })
                 air_loop_data = unwrap(air_loop_resp)
                 assert air_loop_data.get("ok") is True, f"get_air_loop_details failed: {air_loop_data.get('error')}"
@@ -483,7 +481,7 @@ def test_system_3_electric_heating():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -494,7 +492,7 @@ def test_system_3_electric_heating():
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
                     "heating_fuel": "Electricity",
-                    "system_name": "PSZ Electric"
+                    "system_name": "PSZ Electric",
                 })
                 system_data = unwrap(system_resp)
 
@@ -517,7 +515,7 @@ def test_system_3_gas_heating():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -528,7 +526,7 @@ def test_system_3_gas_heating():
                     "system_type": 3,
                     "thermal_zone_names": [zone_name],
                     "heating_fuel": "NaturalGas",
-                    "system_name": "PSZ Gas"
+                    "system_name": "PSZ Gas",
                 })
                 system_data = unwrap(system_resp)
 
@@ -555,7 +553,7 @@ def test_system_4_heat_pump_coils():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -565,11 +563,11 @@ def test_system_4_heat_pump_coils():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ HP"
+                    "system_name": "PSZ HP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ HP"
+                    "air_loop_name": "PSZ HP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -599,7 +597,7 @@ def test_system_4_supplemental_heat():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -609,7 +607,7 @@ def test_system_4_supplemental_heat():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ HP"
+                    "system_name": "PSZ HP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -633,7 +631,7 @@ def test_system_4_fan_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -643,11 +641,11 @@ def test_system_4_fan_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ HP"
+                    "system_name": "PSZ HP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ HP"
+                    "air_loop_name": "PSZ HP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -673,7 +671,7 @@ def test_system_4_economizer_enabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -684,11 +682,11 @@ def test_system_4_economizer_enabled():
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
                     "economizer": True,
-                    "system_name": "PSZ HP Econ"
+                    "system_name": "PSZ HP Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ HP Econ"
+                    "air_loop_name": "PSZ HP Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -715,7 +713,7 @@ def test_system_4_economizer_disabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -726,11 +724,11 @@ def test_system_4_economizer_disabled():
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
                     "economizer": False,
-                    "system_name": "PSZ HP No Econ"
+                    "system_name": "PSZ HP No Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ HP No Econ"
+                    "air_loop_name": "PSZ HP No Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -756,7 +754,7 @@ def test_system_4_outdoor_air_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -766,11 +764,11 @@ def test_system_4_outdoor_air_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ HP"
+                    "system_name": "PSZ HP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ HP"
+                    "air_loop_name": "PSZ HP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -795,7 +793,7 @@ def test_system_4_setpoint_managers():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -805,11 +803,11 @@ def test_system_4_setpoint_managers():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ HP"
+                    "system_name": "PSZ HP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "PSZ HP"
+                    "air_loop_name": "PSZ HP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -835,7 +833,7 @@ def test_system_4_dx_cooling():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -845,7 +843,7 @@ def test_system_4_dx_cooling():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
-                    "system_name": "PSZ HP"
+                    "system_name": "PSZ HP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -868,7 +866,7 @@ def test_system_4_single_zone_only():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Create second zone
@@ -882,7 +880,7 @@ def test_system_4_single_zone_only():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": zone_names,
-                    "system_name": "PSZ HP"
+                    "system_name": "PSZ HP",
                 })
                 system_data = unwrap(system_resp)
 

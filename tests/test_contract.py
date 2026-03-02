@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 import jsonschema
+
 
 def test_tool_response_schema_examples():
     schema_path = Path("mcp_server/schemas/tool_responses.schema.json")

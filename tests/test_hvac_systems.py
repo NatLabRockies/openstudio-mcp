@@ -1,11 +1,10 @@
 """Integration tests for hvac_systems skill."""
 import asyncio
-import pytest
 
+import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
 
@@ -50,7 +49,7 @@ def test_get_baseline_system_info():
 
                 # Get System 1 (PTAC) info
                 result = await session.call_tool("get_baseline_system_info", {
-                    "system_type": 1
+                    "system_type": 1,
                 })
                 data = unwrap(result)
 
@@ -77,14 +76,14 @@ def test_add_baseline_system_1_ptac():
 
                 # Create example model
                 create_resp = await session.call_tool("create_example_osm", {
-                    "name": name
+                    "name": name,
                 })
                 create_data = unwrap(create_resp)
                 assert create_data.get("ok") is True
 
                 # Load model
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
                 load_data = unwrap(load_resp)
                 assert load_data.get("ok") is True
@@ -104,7 +103,7 @@ def test_add_baseline_system_1_ptac():
                     "heating_fuel": "Electricity",
                     "cooling_fuel": "Electricity",
                     "economizer": False,
-                    "system_name": "PTAC System"
+                    "system_name": "PTAC System",
                 })
                 system_data = unwrap(system_resp)
 
@@ -145,13 +144,13 @@ def test_add_baseline_system_2_pthp():
 
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {
-                    "name": name
+                    "name": name,
                 })
                 create_data = unwrap(create_resp)
                 assert create_data.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
                 assert unwrap(load_resp).get("ok") is True
 
@@ -164,7 +163,7 @@ def test_add_baseline_system_2_pthp():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 2,
                     "thermal_zone_names": zone_names,
-                    "system_name": "PTHP System"
+                    "system_name": "PTHP System",
                 })
                 system_data = unwrap(system_resp)
 
@@ -193,13 +192,13 @@ def test_add_baseline_system_3_psz_ac():
 
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {
-                    "name": name
+                    "name": name,
                 })
                 create_data = unwrap(create_resp)
                 assert create_data.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
                 assert unwrap(load_resp).get("ok") is True
 
@@ -215,7 +214,7 @@ def test_add_baseline_system_3_psz_ac():
                     "heating_fuel": "NaturalGas",
                     "cooling_fuel": "Electricity",
                     "economizer": True,
-                    "system_name": "PSZ-AC System"
+                    "system_name": "PSZ-AC System",
                 })
                 system_data = unwrap(system_resp)
 
@@ -248,7 +247,7 @@ def test_add_baseline_system_error_no_model():
                 # Try to add system without loading model
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 1,
-                    "thermal_zone_names": ["Zone 1"]
+                    "thermal_zone_names": ["Zone 1"],
                 })
                 system_data = unwrap(system_resp)
 
@@ -271,20 +270,20 @@ def test_add_baseline_system_error_invalid_zone():
 
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {
-                    "name": name
+                    "name": name,
                 })
                 create_data = unwrap(create_resp)
                 assert create_data.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
                 assert unwrap(load_resp).get("ok") is True
 
                 # Try to add system with non-existent zone
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 1,
-                    "thermal_zone_names": ["NonExistentZone"]
+                    "thermal_zone_names": ["NonExistentZone"],
                 })
                 system_data = unwrap(system_resp)
 
@@ -324,7 +323,7 @@ def test_add_baseline_system_4_psz_hp():
                     "system_type": 4,
                     "thermal_zone_names": [zone_name],
                     "economizer": True,
-                    "system_name": "PSZ-HP Test"
+                    "system_name": "PSZ-HP Test",
                 })
                 system_data = unwrap(system_resp)
 
@@ -399,7 +398,7 @@ def test_add_baseline_system_5_vav_reheat():
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
                     "heating_fuel": "NaturalGas",
-                    "system_name": "VAV Reheat System"
+                    "system_name": "VAV Reheat System",
                 })
                 system_data = unwrap(system_resp)
 
@@ -434,7 +433,7 @@ def test_add_baseline_system_6_vav_pfp():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP System"
+                    "system_name": "VAV PFP System",
                 })
                 system_data = unwrap(system_resp)
 
@@ -505,7 +504,7 @@ def test_add_baseline_system_7_central_vav_reheat():
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
                     "heating_fuel": "NaturalGas",
-                    "system_name": "Central VAV System"
+                    "system_name": "Central VAV System",
                 })
                 system_data = unwrap(system_resp)
 
@@ -545,7 +544,7 @@ def test_system_7_plant_loop_verification():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -588,7 +587,7 @@ def test_add_baseline_system_8_central_vav_pfp():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV PFP"
+                    "system_name": "Central VAV PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -627,7 +626,7 @@ def test_system_8_pfp_terminals():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "PFP System"
+                    "system_name": "PFP System",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -666,7 +665,7 @@ def test_add_baseline_system_9_gas_unit_heaters():
                     "system_type": 9,
                     "thermal_zone_names": zone_names,
                     "heating_fuel": "NaturalGas",
-                    "system_name": "Gas Heaters"
+                    "system_name": "Gas Heaters",
                 })
                 system_data = unwrap(system_resp)
 
@@ -708,7 +707,7 @@ def test_add_baseline_system_10_electric_unit_heaters():
                     "system_type": 10,
                     "thermal_zone_names": zone_names,
                     "heating_fuel": "Electricity",
-                    "system_name": "Electric Heaters"
+                    "system_name": "Electric Heaters",
                 })
                 system_data = unwrap(system_resp)
 
@@ -749,7 +748,7 @@ def test_baseline_system_07_multi_zone():
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
                     "heating_fuel": "NaturalGas",
-                    "system_name": "Baseline VAV"
+                    "system_name": "Baseline VAV",
                 })
                 system_data = unwrap(system_resp)
 

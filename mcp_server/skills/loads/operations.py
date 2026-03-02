@@ -26,13 +26,13 @@ def _extract_people(model, people) -> dict[str, Any]:
 
     # Try to get definition method values
     try:
-        if hasattr(people, 'peopleDefinition') and people.peopleDefinition().is_initialized():
+        if hasattr(people, "peopleDefinition") and people.peopleDefinition().is_initialized():
             definition = people.peopleDefinition().get()
-            if hasattr(definition, 'numberofPeople') and definition.numberofPeople().is_initialized():
+            if hasattr(definition, "numberofPeople") and definition.numberofPeople().is_initialized():
                 result["number_of_people"] = float(definition.numberofPeople().get())
-            if hasattr(definition, 'peopleperSpaceFloorArea') and definition.peopleperSpaceFloorArea().is_initialized():
+            if hasattr(definition, "peopleperSpaceFloorArea") and definition.peopleperSpaceFloorArea().is_initialized():
                 result["people_per_floor_area"] = float(definition.peopleperSpaceFloorArea().get())
-            if hasattr(definition, 'spaceFloorAreaperPerson') and definition.spaceFloorAreaperPerson().is_initialized():
+            if hasattr(definition, "spaceFloorAreaperPerson") and definition.spaceFloorAreaperPerson().is_initialized():
                 result["floor_area_per_person_m2"] = float(definition.spaceFloorAreaperPerson().get())
     except Exception:
         pass
@@ -52,19 +52,19 @@ def _extract_lights(model, lights) -> dict[str, Any]:
 
     # Try to get definition method values
     try:
-        if hasattr(lights, 'lightsDefinition') and lights.lightsDefinition().is_initialized():
+        if hasattr(lights, "lightsDefinition") and lights.lightsDefinition().is_initialized():
             definition = lights.lightsDefinition().get()
-            if hasattr(definition, 'lightingLevel') and definition.lightingLevel().is_initialized():
+            if hasattr(definition, "lightingLevel") and definition.lightingLevel().is_initialized():
                 result["lighting_level_w"] = float(definition.lightingLevel().get())
-            if hasattr(definition, 'wattsperSpaceFloorArea') and definition.wattsperSpaceFloorArea().is_initialized():
+            if hasattr(definition, "wattsperSpaceFloorArea") and definition.wattsperSpaceFloorArea().is_initialized():
                 result["watts_per_floor_area_w_m2"] = float(definition.wattsperSpaceFloorArea().get())
-            if hasattr(definition, 'wattsperPerson') and definition.wattsperPerson().is_initialized():
+            if hasattr(definition, "wattsperPerson") and definition.wattsperPerson().is_initialized():
                 result["watts_per_person_w"] = float(definition.wattsperPerson().get())
-            if hasattr(definition, 'fractionRadiant'):
+            if hasattr(definition, "fractionRadiant"):
                 result["fraction_radiant"] = float(definition.fractionRadiant())
-            if hasattr(definition, 'fractionVisible'):
+            if hasattr(definition, "fractionVisible"):
                 result["fraction_visible"] = float(definition.fractionVisible())
-            if hasattr(definition, 'returnAirFraction'):
+            if hasattr(definition, "returnAirFraction"):
                 result["return_air_fraction"] = float(definition.returnAirFraction())
     except Exception:
         pass
@@ -84,19 +84,19 @@ def _extract_electric_equipment(model, equipment) -> dict[str, Any]:
 
     # Try to get definition method values
     try:
-        if hasattr(equipment, 'electricEquipmentDefinition') and equipment.electricEquipmentDefinition().is_initialized():
+        if hasattr(equipment, "electricEquipmentDefinition") and equipment.electricEquipmentDefinition().is_initialized():
             definition = equipment.electricEquipmentDefinition().get()
-            if hasattr(definition, 'designLevel') and definition.designLevel().is_initialized():
+            if hasattr(definition, "designLevel") and definition.designLevel().is_initialized():
                 result["design_level_w"] = float(definition.designLevel().get())
-            if hasattr(definition, 'wattsperSpaceFloorArea') and definition.wattsperSpaceFloorArea().is_initialized():
+            if hasattr(definition, "wattsperSpaceFloorArea") and definition.wattsperSpaceFloorArea().is_initialized():
                 result["watts_per_floor_area_w_m2"] = float(definition.wattsperSpaceFloorArea().get())
-            if hasattr(definition, 'wattsperPerson') and definition.wattsperPerson().is_initialized():
+            if hasattr(definition, "wattsperPerson") and definition.wattsperPerson().is_initialized():
                 result["watts_per_person_w"] = float(definition.wattsperPerson().get())
-            if hasattr(definition, 'fractionLatent'):
+            if hasattr(definition, "fractionLatent"):
                 result["fraction_latent"] = float(definition.fractionLatent())
-            if hasattr(definition, 'fractionRadiant'):
+            if hasattr(definition, "fractionRadiant"):
                 result["fraction_radiant"] = float(definition.fractionRadiant())
-            if hasattr(definition, 'fractionLost'):
+            if hasattr(definition, "fractionLost"):
                 result["fraction_lost"] = float(definition.fractionLost())
     except Exception:
         pass
@@ -116,19 +116,19 @@ def _extract_gas_equipment(model, equipment) -> dict[str, Any]:
 
     # Try to get definition method values
     try:
-        if hasattr(equipment, 'gasEquipmentDefinition') and equipment.gasEquipmentDefinition().is_initialized():
+        if hasattr(equipment, "gasEquipmentDefinition") and equipment.gasEquipmentDefinition().is_initialized():
             definition = equipment.gasEquipmentDefinition().get()
-            if hasattr(definition, 'designLevel') and definition.designLevel().is_initialized():
+            if hasattr(definition, "designLevel") and definition.designLevel().is_initialized():
                 result["design_level_w"] = float(definition.designLevel().get())
-            if hasattr(definition, 'wattsperSpaceFloorArea') and definition.wattsperSpaceFloorArea().is_initialized():
+            if hasattr(definition, "wattsperSpaceFloorArea") and definition.wattsperSpaceFloorArea().is_initialized():
                 result["watts_per_floor_area_w_m2"] = float(definition.wattsperSpaceFloorArea().get())
-            if hasattr(definition, 'wattsperPerson') and definition.wattsperPerson().is_initialized():
+            if hasattr(definition, "wattsperPerson") and definition.wattsperPerson().is_initialized():
                 result["watts_per_person_w"] = float(definition.wattsperPerson().get())
-            if hasattr(definition, 'fractionLatent'):
+            if hasattr(definition, "fractionLatent"):
                 result["fraction_latent"] = float(definition.fractionLatent())
-            if hasattr(definition, 'fractionRadiant'):
+            if hasattr(definition, "fractionRadiant"):
                 result["fraction_radiant"] = float(definition.fractionRadiant())
-            if hasattr(definition, 'fractionLost'):
+            if hasattr(definition, "fractionLost"):
                 result["fraction_lost"] = float(definition.fractionLost())
     except Exception:
         pass
@@ -175,7 +175,7 @@ def list_people_loads() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(people),
-            "people_loads": people
+            "people_loads": people,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -191,7 +191,7 @@ def list_lighting_loads() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(lights),
-            "lighting_loads": lights
+            "lighting_loads": lights,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -207,7 +207,7 @@ def list_electric_equipment() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(equipment),
-            "electric_equipment": equipment
+            "electric_equipment": equipment,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -223,7 +223,7 @@ def list_gas_equipment() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(equipment),
-            "gas_equipment": equipment
+            "gas_equipment": equipment,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -239,7 +239,7 @@ def list_infiltration() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(infiltration),
-            "infiltration": infiltration
+            "infiltration": infiltration,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

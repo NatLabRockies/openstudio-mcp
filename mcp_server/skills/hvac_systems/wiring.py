@@ -7,7 +7,7 @@ import openstudio
 def add_outdoor_air_system(
     model,
     air_loop,
-    economizer: bool = False
+    economizer: bool = False,
 ) -> openstudio.model.AirLoopHVACOutdoorAirSystem | None:
     """Add outdoor air system to air loop with optional economizer.
 
@@ -37,7 +37,7 @@ def add_outdoor_air_system(
 def create_setpoint_manager_single_zone_reheat(
     model,
     zone,
-    node
+    node,
 ) -> openstudio.model.SetpointManagerSingleZoneReheat:
     """Create single zone reheat setpoint manager for PSZ systems.
 
@@ -60,7 +60,7 @@ def create_setpoint_manager_single_zone_reheat(
 def create_chilled_water_loop(
     model,
     name: str,
-    cooling_fuel: str = "Electricity"
+    cooling_fuel: str = "Electricity",
 ) -> openstudio.model.PlantLoop:
     """Create standard chilled water loop for central systems.
 
@@ -83,7 +83,7 @@ def create_chilled_water_loop(
 
     # Setpoint manager
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_chw_temp_schedule(model)
+        model, _create_chw_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Setpoint Manager")
     setpoint_mgr.addToNode(loop.supplyOutletNode())
@@ -99,7 +99,7 @@ def create_chilled_water_loop(
 def create_hot_water_loop(
     model,
     name: str,
-    heating_fuel: str = "NaturalGas"
+    heating_fuel: str = "NaturalGas",
 ) -> openstudio.model.PlantLoop:
     """Create standard hot water loop for central systems.
 
@@ -122,7 +122,7 @@ def create_hot_water_loop(
 
     # Setpoint manager
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_hw_temp_schedule(model)
+        model, _create_hw_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Setpoint Manager")
     setpoint_mgr.addToNode(loop.supplyOutletNode())
@@ -137,7 +137,7 @@ def create_hot_water_loop(
 
 def create_condenser_water_loop(
     model,
-    name: str
+    name: str,
 ) -> openstudio.model.PlantLoop:
     """Create condenser water loop for chiller heat rejection.
 
@@ -177,7 +177,7 @@ def add_chiller_to_loops(
     model,
     chw_loop: openstudio.model.PlantLoop,
     cw_loop: openstudio.model.PlantLoop,
-    chiller_type: str = "ElectricEIR"
+    chiller_type: str = "ElectricEIR",
 ):
     """Add chiller to chilled water and condenser loops.
 
@@ -205,7 +205,7 @@ def add_chiller_to_loops(
 def add_boiler_to_loop(
     model,
     hw_loop: openstudio.model.PlantLoop,
-    heating_fuel: str = "NaturalGas"
+    heating_fuel: str = "NaturalGas",
 ):
     """Add boiler to hot water loop.
 
@@ -234,7 +234,7 @@ def add_boiler_to_loop(
 
 def add_cooling_tower_to_loop(
     model,
-    cw_loop: openstudio.model.PlantLoop
+    cw_loop: openstudio.model.PlantLoop,
 ):
     """Add cooling tower to condenser water loop.
 

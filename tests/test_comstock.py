@@ -7,8 +7,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -27,7 +26,7 @@ async def _setup_baseline(session, model_name, set_weather=False):
         # Use bundled Houston EPW from ComStock measures
         wr = unwrap(await session.call_tool("set_weather_file", {
             "epw_path": "/opt/comstock-measures/create_typical_building_from_model"
-                        "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw"
+                        "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw",
         }))
         assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
 
@@ -68,7 +67,7 @@ def test_list_comstock_measures_filter_baseline():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("list_comstock_measures", {
-                    "category": "baseline"
+                    "category": "baseline",
                 }))
                 assert res.get("ok") is True, f"Failed: {res}"
                 assert res["count"] > 0, "Expected at least 1 baseline measure"
@@ -91,7 +90,7 @@ def test_list_measure_arguments_comstock():
                 await s.initialize()
                 # First get the path from list_comstock_measures
                 listing = unwrap(await s.call_tool("list_comstock_measures", {
-                    "category": "baseline"
+                    "category": "baseline",
                 }))
                 assert listing.get("ok") is True
                 # Find set_wall_template
@@ -101,7 +100,7 @@ def test_list_measure_arguments_comstock():
                 measure_path = wall_measures[0]["path"]
                 # Now list its arguments
                 res = unwrap(await s.call_tool("list_measure_arguments", {
-                    "measure_dir": measure_path
+                    "measure_dir": measure_path,
                 }))
                 assert res.get("ok") is True, f"Failed: {res}"
                 assert len(res["arguments"]) >= 1, "Expected at least 1 argument"
@@ -127,14 +126,14 @@ def test_create_typical_building_default():
                 # Load a ComStock test model that has geometry + space types +
                 # standards info already configured
                 lr = unwrap(await s.call_tool("load_osm_model", {
-                    "osm_path": COMSTOCK_TEST_OSM
+                    "osm_path": COMSTOCK_TEST_OSM,
                 }))
                 assert lr.get("ok") is True, f"load_osm_model failed: {lr}"
 
                 # Set weather file with absolute path (model has relative ref)
                 wr = unwrap(await s.call_tool("set_weather_file", {
                     "epw_path": "/opt/comstock-measures/create_typical_building_from_model"
-                               "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw"
+                               "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw",
                 }))
                 assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
 
@@ -170,7 +169,7 @@ def test_apply_comstock_measure_direct():
 
                 # Find simulation_settings measure path
                 listing = unwrap(await s.call_tool("list_comstock_measures", {
-                    "category": "setup"
+                    "category": "setup",
                 }))
                 assert listing.get("ok") is True
                 sim_measures = [m for m in listing["measures"]
@@ -183,7 +182,7 @@ def test_apply_comstock_measure_direct():
 
                 # Apply it via generic apply_measure
                 res = unwrap(await s.call_tool("apply_measure", {
-                    "measure_dir": measure_path
+                    "measure_dir": measure_path,
                 }))
                 assert res.get("ok") is True, f"apply_measure failed: {res}"
 

@@ -25,7 +25,7 @@ def _constructions_osm_path() -> Path:
         if p.exists():
             return p
     raise FileNotFoundError(
-        f"baseline_model_constructions.osm not found. Searched: {[str(c) for c in candidates]}"
+        f"baseline_model_constructions.osm not found. Searched: {[str(c) for c in candidates]}",
     )
 
 

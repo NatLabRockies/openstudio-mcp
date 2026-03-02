@@ -7,8 +7,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params, setup_example
+from conftest import integration_enabled, server_params, setup_example, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -31,7 +30,7 @@ def test_list_measure_arguments():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("list_measure_arguments", {
-                    "measure_dir": MEASURE_DIR
+                    "measure_dir": MEASURE_DIR,
                 }))
                 assert res.get("ok") is True
                 assert len(res["arguments"]) >= 1
@@ -51,7 +50,7 @@ def test_list_measure_not_found():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("list_measure_arguments", {
-                    "measure_dir": "/nonexistent/measure"
+                    "measure_dir": "/nonexistent/measure",
                 }))
                 assert res.get("ok") is False
     asyncio.run(_run())
@@ -68,7 +67,7 @@ def test_apply_measure_default_args():
                 await s.initialize()
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("apply_measure", {
-                    "measure_dir": MEASURE_DIR
+                    "measure_dir": MEASURE_DIR,
                 }))
                 assert res.get("ok") is True
                 # After measure, building name should be "Test Building" (default)
@@ -90,7 +89,7 @@ def test_apply_measure_custom_args():
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": MEASURE_DIR,
-                    "arguments": {"building_name": "My Custom Building"}
+                    "arguments": {"building_name": "My Custom Building"},
                 }))
                 assert res.get("ok") is True
                 bldg = unwrap(await s.call_tool("get_building_info", {}))
@@ -111,7 +110,7 @@ def test_apply_measure_invalid_dir():
                 await s.initialize()
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("apply_measure", {
-                    "measure_dir": "/nonexistent/measure"
+                    "measure_dir": "/nonexistent/measure",
                 }))
                 assert res.get("ok") is False
     asyncio.run(_run())
@@ -135,7 +134,7 @@ def test_apply_measure_verify_model_changed():
                 new_name = f"Changed_{uuid.uuid4().hex[:6]}"
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": MEASURE_DIR,
-                    "arguments": {"building_name": new_name}
+                    "arguments": {"building_name": new_name},
                 }))
                 assert res.get("ok") is True
                 # Verify changed

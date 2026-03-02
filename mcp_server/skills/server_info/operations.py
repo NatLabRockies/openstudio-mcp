@@ -6,8 +6,9 @@ import subprocess
 
 import openstudio
 
-from mcp_server.config import RUN_ROOT, MAX_CONCURRENCY, LOG_TAIL_DEFAULT
-from mcp_server.version import __version__ as MCP_VERSION, OPENSTUDIO_SDK_VERSION
+from mcp_server.config import LOG_TAIL_DEFAULT, MAX_CONCURRENCY, RUN_ROOT
+from mcp_server.version import OPENSTUDIO_SDK_VERSION
+from mcp_server.version import __version__ as MCP_VERSION
 
 
 def _run_cmd(cmd: list[str]) -> tuple[int, str]:

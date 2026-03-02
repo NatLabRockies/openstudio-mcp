@@ -13,7 +13,6 @@ import openstudio
 
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
-
 # Category classification for common measures.
 # Only the 20 curated measures are categorized; everything else is "other".
 _CATEGORY_MAP: dict[str, str] = {

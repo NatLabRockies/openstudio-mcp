@@ -14,7 +14,6 @@ import time
 
 import pytest
 
-
 # ---- helpers (same pattern as test_stdio_smoke.py) --------------------------
 
 class StreamReader(threading.Thread):

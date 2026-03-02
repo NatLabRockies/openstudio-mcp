@@ -14,7 +14,6 @@ import yaml
 
 from mcp_server.skills import register_all_skills
 
-
 # Repo-relative path (host/CI), fallback to Docker baked-in path
 _REPO_SKILLS = Path(__file__).resolve().parent.parent / ".claude" / "skills"
 _DOCKER_SKILLS = Path("/skills")

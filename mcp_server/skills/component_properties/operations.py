@@ -14,10 +14,9 @@ import openstudio
 from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import fetch_object
 from mcp_server.skills.component_properties.components import (
-    COMPONENT_TYPES,
     CATEGORIES,
+    COMPONENT_TYPES,
 )
-
 
 # ===================================================================
 # 5A: Component Query & Modify

@@ -4,6 +4,7 @@ Uses pre-baked eplusout_seb4.sql fixture — no Docker/simulation needed.
 """
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -206,9 +207,12 @@ class TestExampleWorkflow:
 
     def test_full_results_deep_dive(self, sql_path):
         from mcp_server.skills.results.sql_extract import (
-            extract_end_use_breakdown, extract_envelope_summary,
-            extract_hvac_sizing, extract_zone_summary,
-            extract_component_sizing, query_timeseries,
+            extract_component_sizing,
+            extract_end_use_breakdown,
+            extract_envelope_summary,
+            extract_hvac_sizing,
+            extract_zone_summary,
+            query_timeseries,
         )
         # Step 1: End use breakdown
         end_uses = extract_end_use_breakdown(sql_path, units="IP")
@@ -272,10 +276,10 @@ class TestMissingSql:
     def test_end_use_bad_path(self):
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
         # Nonexistent path should raise (sqlite3 error)
-        with pytest.raises(Exception):
+        with pytest.raises((sqlite3.OperationalError, OSError)):
             extract_end_use_breakdown(Path("/nonexistent/eplusout.sql"))
 
     def test_envelope_bad_path(self):
         from mcp_server.skills.results.sql_extract import extract_envelope_summary
-        with pytest.raises(Exception):
+        with pytest.raises((sqlite3.OperationalError, OSError)):
             extract_envelope_summary(Path("/nonexistent/eplusout.sql"))

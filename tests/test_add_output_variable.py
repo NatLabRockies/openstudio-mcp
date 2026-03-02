@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -41,7 +40,7 @@ def test_add_output_variable_default():
 
                 # Add output variable
                 output_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Mean Air Temperature"
+                    "variable_name": "Zone Mean Air Temperature",
                 })
                 output_result = unwrap(output_resp)
 
@@ -84,7 +83,7 @@ def test_add_output_variable_with_key():
                 # Add output variable for specific zone
                 output_resp = await session.call_tool("add_output_variable", {
                     "variable_name": "Zone Mean Air Temperature",
-                    "key_value": zone_name
+                    "key_value": zone_name,
                 })
                 output_result = unwrap(output_resp)
 
@@ -119,7 +118,7 @@ def test_add_output_variable_monthly():
                 # Add output variable with monthly reporting
                 output_resp = await session.call_tool("add_output_variable", {
                     "variable_name": "Surface Outside Face Temperature",
-                    "reporting_frequency": "Monthly"
+                    "reporting_frequency": "Monthly",
                 })
                 output_result = unwrap(output_resp)
 
@@ -142,7 +141,7 @@ def test_add_output_variable_no_model_loaded():
 
                 # Try to add output variable without loading model
                 output_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Mean Air Temperature"
+                    "variable_name": "Zone Mean Air Temperature",
                 })
                 output_result = unwrap(output_resp)
 
@@ -177,13 +176,13 @@ def test_add_multiple_output_variables():
 
                 # Add multiple output variables
                 var1_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Mean Air Temperature"
+                    "variable_name": "Zone Mean Air Temperature",
                 })
                 var1_result = unwrap(var1_resp)
                 assert var1_result.get("ok") is True
 
                 var2_resp = await session.call_tool("add_output_variable", {
-                    "variable_name": "Zone Air System Sensible Heating Rate"
+                    "variable_name": "Zone Air System Sensible Heating Rate",
                 })
                 var2_result = unwrap(var2_resp)
                 assert var2_result.get("ok") is True
