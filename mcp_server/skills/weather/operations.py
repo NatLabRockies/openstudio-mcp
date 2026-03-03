@@ -115,6 +115,20 @@ def add_design_day(
         barometric_pressure_pa: Barometric pressure in Pa (default: 101325)
     """
     try:
+        # H-19: validate inputs
+        _VALID_DAY_TYPES = {"SummerDesignDay", "WinterDesignDay", "Sunday", "Monday", "Tuesday",
+                            "Wednesday", "Thursday", "Friday", "Saturday", "Holiday",
+                            "CustomDay1", "CustomDay2"}
+        if day_type not in _VALID_DAY_TYPES:
+            valid_str = ", ".join(sorted(_VALID_DAY_TYPES))
+            return {"ok": False, "error": f"Invalid day_type '{day_type}'. Valid: {valid_str}"}
+        if not (1 <= month <= 12):
+            return {"ok": False, "error": f"month must be 1-12, got {month}"}
+        if not (1 <= day <= 31):
+            return {"ok": False, "error": f"day must be 1-31, got {day}"}
+        if humidity_type is not None and humidity_type not in ("WetBulb", "DewPoint"):
+            return {"ok": False, "error": f"humidity_type must be 'WetBulb' or 'DewPoint', got '{humidity_type}'"}
+
         model = get_model()
 
         with suppress_openstudio_warnings():
@@ -203,6 +217,12 @@ def set_simulation_control(
     All parameters are optional — only provided values are changed.
     """
     try:
+        # H-20: validate timesteps_per_hour
+        _VALID_TIMESTEPS = {1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60}
+        if timesteps_per_hour is not None and timesteps_per_hour not in _VALID_TIMESTEPS:
+            return {"ok": False,
+                    "error": f"timesteps_per_hour must be in {sorted(_VALID_TIMESTEPS)}, got {timesteps_per_hour}"}
+
         model = get_model()
         sc = model.getSimulationControl()
         ts = model.getTimestep()
@@ -265,6 +285,14 @@ def set_run_period(
     is actually used during simulation.
     """
     try:
+        # H-20: validate month/day ranges
+        for label, val in [("begin_month", begin_month), ("end_month", end_month)]:
+            if not (1 <= val <= 12):
+                return {"ok": False, "error": f"{label} must be 1-12, got {val}"}
+        for label, val in [("begin_day", begin_day), ("end_day", end_day)]:
+            if not (1 <= val <= 31):
+                return {"ok": False, "error": f"{label} must be 1-31, got {val}"}
+
         model = get_model()
         rp = model.getRunPeriod()
         if name is not None:

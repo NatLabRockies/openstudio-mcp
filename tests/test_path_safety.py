@@ -275,3 +275,133 @@ class TestLoadXORValidation:
         result = create_infiltration("test", "space", flow_per_exterior_surface_area=0.001, ach=0.5)
         assert result["ok"] is False
         assert "not both" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# H-17: reject unknown schedule_type
+# ---------------------------------------------------------------------------
+
+class TestScheduleTypeValidation:
+    """H-17: create_schedule_ruleset rejects unknown schedule_type."""
+
+    def test_unknown_type_rejected(self):
+        from mcp_server.skills.schedules.operations import create_schedule_ruleset
+        result = create_schedule_ruleset("test", schedule_type="Bogus")
+        assert result["ok"] is False
+        assert "Invalid schedule_type" in result["error"]
+
+    def test_valid_types_accepted(self):
+        from mcp_server.skills.schedules.operations import create_schedule_ruleset
+        for st in ("Fractional", "Temperature", "OnOff"):
+            # Will fail downstream (no model loaded) but should NOT fail validation
+            result = create_schedule_ruleset("test", schedule_type=st)
+            if not result["ok"]:
+                assert "Invalid schedule_type" not in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# H-18: validate default_value per schedule type
+# ---------------------------------------------------------------------------
+
+class TestScheduleDefaultValueValidation:
+    """H-18: default_value range check per schedule_type."""
+
+    def test_fractional_out_of_range(self):
+        from mcp_server.skills.schedules.operations import create_schedule_ruleset
+        result = create_schedule_ruleset("test", schedule_type="Fractional", default_value=1.5)
+        assert result["ok"] is False
+        assert "0.0-1.0" in result["error"]
+
+    def test_fractional_negative(self):
+        from mcp_server.skills.schedules.operations import create_schedule_ruleset
+        result = create_schedule_ruleset("test", schedule_type="Fractional", default_value=-0.1)
+        assert result["ok"] is False
+        assert "0.0-1.0" in result["error"]
+
+    def test_onoff_invalid(self):
+        from mcp_server.skills.schedules.operations import create_schedule_ruleset
+        result = create_schedule_ruleset("test", schedule_type="OnOff", default_value=0.5)
+        assert result["ok"] is False
+        assert "0 or 1" in result["error"]
+
+    def test_temperature_no_range_check(self):
+        from mcp_server.skills.schedules.operations import create_schedule_ruleset
+        # Temperature allows any value — should not fail on value range
+        result = create_schedule_ruleset("test", schedule_type="Temperature", default_value=-40.0)
+        if not result["ok"]:
+            assert "default_value" not in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# H-19: validate add_design_day inputs
+# ---------------------------------------------------------------------------
+
+class TestDesignDayValidation:
+    """H-19: add_design_day rejects bad day_type, month, day, humidity_type."""
+
+    def test_bad_day_type(self):
+        from mcp_server.skills.weather.operations import add_design_day
+        result = add_design_day("test", "Bogus", 1, 21, -17.8, 0.0)
+        assert result["ok"] is False
+        assert "Invalid day_type" in result["error"]
+
+    def test_bad_month(self):
+        from mcp_server.skills.weather.operations import add_design_day
+        result = add_design_day("test", "WinterDesignDay", 13, 21, -17.8, 0.0)
+        assert result["ok"] is False
+        assert "month" in result["error"]
+
+    def test_bad_day(self):
+        from mcp_server.skills.weather.operations import add_design_day
+        result = add_design_day("test", "WinterDesignDay", 1, 0, -17.8, 0.0)
+        assert result["ok"] is False
+        assert "day" in result["error"]
+
+    def test_bad_humidity_type(self):
+        from mcp_server.skills.weather.operations import add_design_day
+        result = add_design_day("test", "WinterDesignDay", 1, 21, -17.8, 0.0, humidity_type="Bogus")
+        assert result["ok"] is False
+        assert "humidity_type" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# H-20: range checks in sim control + run period
+# ---------------------------------------------------------------------------
+
+class TestSimControlValidation:
+    """H-20: set_simulation_control rejects invalid timesteps_per_hour."""
+
+    def test_bad_timesteps(self):
+        from mcp_server.skills.weather.operations import set_simulation_control
+        result = set_simulation_control(timesteps_per_hour=7)
+        assert result["ok"] is False
+        assert "timesteps_per_hour" in result["error"]
+
+    def test_valid_timesteps_not_rejected(self):
+        from mcp_server.skills.weather.operations import set_simulation_control
+        for ts in (1, 4, 6, 60):
+            result = set_simulation_control(timesteps_per_hour=ts)
+            if not result["ok"]:
+                assert "timesteps_per_hour" not in result["error"]
+
+
+class TestRunPeriodValidation:
+    """H-20: set_run_period rejects invalid month/day values."""
+
+    def test_bad_begin_month(self):
+        from mcp_server.skills.weather.operations import set_run_period
+        result = set_run_period(begin_month=0, begin_day=1, end_month=12, end_day=31)
+        assert result["ok"] is False
+        assert "begin_month" in result["error"]
+
+    def test_bad_end_day(self):
+        from mcp_server.skills.weather.operations import set_run_period
+        result = set_run_period(begin_month=1, begin_day=1, end_month=12, end_day=32)
+        assert result["ok"] is False
+        assert "end_day" in result["error"]
+
+    def test_bad_end_month(self):
+        from mcp_server.skills.weather.operations import set_run_period
+        result = set_run_period(begin_month=1, begin_day=1, end_month=13, end_day=31)
+        assert result["ok"] is False
+        assert "end_month" in result["error"]

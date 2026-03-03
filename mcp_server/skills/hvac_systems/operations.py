@@ -255,6 +255,8 @@ def add_doas_system(
     energy_recovery: bool = True,
     sensible_effectiveness: float = 0.75,
     zone_equipment_type: str = "FanCoil",
+    heating_fuel: str = "NaturalGas",
+    cooling_fuel: str = "Electricity",
 ) -> dict[str, Any]:
     """Add Dedicated Outdoor Air System with zone equipment.
 
@@ -264,6 +266,8 @@ def add_doas_system(
         energy_recovery: Add ERV (default True)
         sensible_effectiveness: ERV sensible effectiveness 0-1 (default 0.75)
         zone_equipment_type: FanCoil | Radiant | Chiller_Beams
+        heating_fuel: NaturalGas | Electricity | DistrictHeating
+        cooling_fuel: Electricity | DistrictCooling
 
     Returns:
         dict with ok status and system details
@@ -288,6 +292,7 @@ def add_doas_system(
         result = templates.create_doas_system(
             model, zones, system_name, energy_recovery,
             sensible_effectiveness, zone_equipment_type,
+            heating_fuel, cooling_fuel,
         )
 
         return {"ok": True, "system": result}
@@ -344,6 +349,8 @@ def add_radiant_system(
     system_name: str = "Radiant",
     radiant_type: str = "Floor",
     ventilation_system: str = "DOAS",
+    heating_fuel: str = "NaturalGas",
+    cooling_fuel: str = "Electricity",
 ) -> dict[str, Any]:
     """Add low-temperature radiant heating/cooling system.
 
@@ -352,6 +359,8 @@ def add_radiant_system(
         system_name: Name prefix for radiant components
         radiant_type: Floor | Ceiling | Walls
         ventilation_system: DOAS | None (if None, ventilation must be added separately)
+        heating_fuel: NaturalGas | Electricity | DistrictHeating
+        cooling_fuel: Electricity | DistrictCooling
 
     Returns:
         dict with ok status and system details
@@ -380,6 +389,7 @@ def add_radiant_system(
         # Create radiant system
         result = templates.create_radiant_system(
             model, zones, system_name, radiant_type, ventilation_system,
+            heating_fuel, cooling_fuel,
         )
 
         return {"ok": True, "system": result}

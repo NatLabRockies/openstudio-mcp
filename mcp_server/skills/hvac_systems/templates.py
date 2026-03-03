@@ -26,6 +26,8 @@ def create_doas_system(
     energy_recovery: bool,
     sensible_effectiveness: float,
     zone_equipment_type: str,
+    heating_fuel: str = "NaturalGas",
+    cooling_fuel: str = "Electricity",
 ) -> dict[str, Any]:
     """Create Dedicated Outdoor Air System with zone equipment.
 
@@ -114,6 +116,15 @@ def create_doas_system(
         hw_loop = wiring.create_hot_water_loop(model, f"{name} HW Loop")
         hw_loop_name = hw_loop.nameString()
 
+    # Wire supply equipment to plant loops
+    cw_loop_name = None
+    if chw_loop:
+        cw_loop = wiring.add_cooling_supply(model, chw_loop, cooling_fuel, name)
+        if cw_loop:
+            cw_loop_name = cw_loop.nameString()
+    if hw_loop:
+        wiring.add_boiler_to_loop(model, hw_loop, heating_fuel)
+
     # Connect zones to DOAS loop and add zone equipment
     zone_equipment_list = []
     for zone in zones:
@@ -184,6 +195,9 @@ def create_doas_system(
         "zone_equipment_type": zone_equipment_type,
         "chilled_water_loop": chw_loop_name,
         "hot_water_loop": hw_loop_name,
+        "condenser_water_loop": cw_loop_name,
+        "heating_fuel": heating_fuel,
+        "cooling_fuel": cooling_fuel,
         "num_zones": len(zones),
         "zone_equipment": zone_equipment_list,
     }
@@ -274,6 +288,8 @@ def create_radiant_system(
     name: str,
     radiant_type: str,
     ventilation_system: str,
+    heating_fuel: str = "NaturalGas",
+    cooling_fuel: str = "Electricity",
 ) -> dict[str, Any]:
     """Create low-temperature radiant heating/cooling system.
 
@@ -304,6 +320,13 @@ def create_radiant_system(
     sizing = chw_loop.sizingPlant()
     sizing.setDesignLoopExitTemperature(14.4)  # 58F
     sizing.setLoopDesignTemperatureDifference(5.6)  # 10F delta
+
+    # Wire supply equipment to plant loops
+    cw_loop_name = None
+    cw_loop = wiring.add_cooling_supply(model, chw_loop, cooling_fuel, name)
+    if cw_loop:
+        cw_loop_name = cw_loop.nameString()
+    wiring.add_boiler_to_loop(model, hw_loop, heating_fuel)
 
     # Map user type to OpenStudio enum
     os_surface_type = _RADIANT_SURFACE_MAP.get(radiant_type, "Floors")
@@ -345,6 +368,9 @@ def create_radiant_system(
         "radiant_type": radiant_type,
         "hot_water_loop": hw_loop.nameString(),
         "chilled_water_loop": chw_loop.nameString(),
+        "condenser_water_loop": cw_loop_name,
+        "heating_fuel": heating_fuel,
+        "cooling_fuel": cooling_fuel,
         "hw_supply_temp_f": 120,
         "chw_supply_temp_f": 58,
         "ventilation_system": ventilation_system,

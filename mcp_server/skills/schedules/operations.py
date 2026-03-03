@@ -118,6 +118,18 @@ def create_schedule_ruleset(name: str, schedule_type: str = "Fractional",
         dict with ok=True and schedule details, or ok=False and error message
     """
     try:
+        # H-17: reject unknown schedule_type
+        valid_types = ("Fractional", "Temperature", "OnOff")
+        if schedule_type not in valid_types:
+            return {"ok": False,
+                    "error": f"Invalid schedule_type '{schedule_type}'. Valid: {', '.join(valid_types)}"}
+
+        # H-18: validate default_value per type
+        if schedule_type == "Fractional" and not (0.0 <= default_value <= 1.0):
+            return {"ok": False, "error": f"Fractional default_value must be 0.0-1.0, got {default_value}"}
+        if schedule_type == "OnOff" and default_value not in (0, 1, 0.0, 1.0):
+            return {"ok": False, "error": f"OnOff default_value must be 0 or 1, got {default_value}"}
+
         model = get_model()
 
         # Create schedule ruleset

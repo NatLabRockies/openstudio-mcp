@@ -162,11 +162,14 @@ def register(mcp: FastMCP) -> None:
         energy_recovery: bool = True,
         sensible_effectiveness: float = 0.75,
         zone_equipment_type: str = "FanCoil",
+        heating_fuel: str = "NaturalGas",
+        cooling_fuel: str = "Electricity",
     ) -> str:
         """Add Dedicated Outdoor Air System with zone equipment.
 
         Creates 100% outdoor air ventilation loop with optional energy recovery,
         plus zone-level sensible conditioning (fan coils, radiant panels, or chilled beams).
+        Plant loops are auto-wired with supply equipment (boiler/chiller/tower or district).
 
         DOAS decouples ventilation from sensible load, enabling:
         - Lower airflow rates (ventilation-only CFM vs cooling CFM)
@@ -179,6 +182,8 @@ def register(mcp: FastMCP) -> None:
             energy_recovery: Add energy recovery ventilator (default True)
             sensible_effectiveness: ERV sensible effectiveness 0-1 (default 0.75)
             zone_equipment_type: FanCoil | Radiant | Chiller_Beams (default FanCoil)
+            heating_fuel: NaturalGas | Electricity | DistrictHeating (default NaturalGas)
+            cooling_fuel: Electricity | DistrictCooling (default Electricity)
 
         Returns:
             JSON string with system details including DOAS loop, plant loops, and zone equipment
@@ -207,6 +212,8 @@ def register(mcp: FastMCP) -> None:
             energy_recovery=energy_recovery,
             sensible_effectiveness=sensible_effectiveness,
             zone_equipment_type=zone_equipment_type,
+            heating_fuel=heating_fuel,
+            cooling_fuel=cooling_fuel,
         )
         return json.dumps(result, indent=2)
 
@@ -265,11 +272,14 @@ def register(mcp: FastMCP) -> None:
         system_name: str = "Radiant",
         radiant_type: str = "Floor",
         ventilation_system: str = "DOAS",
+        heating_fuel: str = "NaturalGas",
+        cooling_fuel: str = "Electricity",
     ) -> str:
         """Add low-temperature radiant heating/cooling system.
 
         Creates hydronic radiant surfaces (floor, ceiling, or walls) with low-temperature
-        plant loops. Optionally adds DOAS for ventilation/dehumidification.
+        plant loops. Plant loops are auto-wired with supply equipment (boiler/chiller/tower
+        or district). Optionally adds DOAS for ventilation/dehumidification.
 
         Radiant advantages:
         - High thermal comfort (radiant heat transfer)
@@ -287,6 +297,8 @@ def register(mcp: FastMCP) -> None:
             system_name: Name prefix for radiant components (default "Radiant")
             radiant_type: Floor | Ceiling | Walls (default Floor)
             ventilation_system: DOAS | None (default DOAS, if None ventilation added separately)
+            heating_fuel: NaturalGas | Electricity | DistrictHeating (default NaturalGas)
+            cooling_fuel: Electricity | DistrictCooling (default Electricity)
 
         Returns:
             JSON string with system details including radiant surfaces and plant loops
@@ -314,5 +326,7 @@ def register(mcp: FastMCP) -> None:
             system_name=system_name,
             radiant_type=radiant_type,
             ventilation_system=ventilation_system,
+            heating_fuel=heating_fuel,
+            cooling_fuel=cooling_fuel,
         )
         return json.dumps(result, indent=2)

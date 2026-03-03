@@ -144,9 +144,9 @@ def validate_system(model, system_name: str) -> dict[str, Any]:
             "zones": zone_validations,
         }
 
-    # If no air loop, might be zone equipment only
+    # If no air loop, might be zone equipment only — can't validate
     return {
         "ok": True,
-        "valid": True,
+        "valid": None,
         "message": "System validation not implemented for this system type",
     }

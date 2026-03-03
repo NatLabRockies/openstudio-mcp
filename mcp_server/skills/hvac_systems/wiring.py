@@ -212,11 +212,17 @@ def add_boiler_to_loop(
     Args:
         model: OpenStudio model
         hw_loop: Hot water plant loop
-        heating_fuel: "NaturalGas" or "Electricity"
+        heating_fuel: "NaturalGas", "Electricity", or "DistrictHeating"
 
     Returns:
-        Boiler object
+        Boiler or DistrictHeating object
     """
+    if heating_fuel == "DistrictHeating":
+        district = openstudio.model.DistrictHeating(model)
+        district.setName(f"{hw_loop.nameString()} District Heating")
+        hw_loop.addSupplyBranchForComponent(district)
+        return district
+
     if heating_fuel == "NaturalGas":
         boiler = openstudio.model.BoilerHotWater(model)
         boiler.setName(f"{hw_loop.nameString()} Gas Boiler")
@@ -252,6 +258,35 @@ def add_cooling_tower_to_loop(
     cw_loop.addSupplyBranchForComponent(tower)
 
     return tower
+
+
+def add_cooling_supply(
+    model,
+    chw_loop: openstudio.model.PlantLoop,
+    cooling_fuel: str = "Electricity",
+    name_prefix: str = "",
+) -> openstudio.model.PlantLoop | None:
+    """Add chiller+condenser+tower OR district cooling to a CHW loop.
+
+    Args:
+        model: OpenStudio model
+        chw_loop: Chilled water plant loop
+        cooling_fuel: "Electricity" or "DistrictCooling"
+        name_prefix: Name prefix for condenser loop
+
+    Returns:
+        Condenser water PlantLoop (or None for district cooling)
+    """
+    if cooling_fuel == "DistrictCooling":
+        district = openstudio.model.DistrictCooling(model)
+        district.setName(f"{chw_loop.nameString()} District Cooling")
+        chw_loop.addSupplyBranchForComponent(district)
+        return None  # no condenser loop needed
+
+    cw_loop = create_condenser_water_loop(model, f"{name_prefix} Condenser Loop".strip())
+    add_chiller_to_loops(model, chw_loop, cw_loop)
+    add_cooling_tower_to_loop(model, cw_loop)
+    return cw_loop
 
 
 def _create_chw_temp_schedule(model) -> openstudio.model.ScheduleRuleset:
