@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 126 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 260+ integration tests**
+**22 skills &bull; 126 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
 
 ---
 
@@ -72,7 +72,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 124 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 126 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
