@@ -16,6 +16,7 @@ from typing import Any
 
 import openstudio
 
+from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE
 from mcp_server.model_manager import get_model, load_model
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
@@ -161,8 +162,14 @@ def apply_measure(
         osw_path = run_dir / "workflow.osw"
         osw_path.write_text(json.dumps(osw, indent=2), encoding="utf-8")
 
-        # Run openstudio
-        cmd = ["openstudio", "run", "--measures_only", "-w", str(osw_path)]
+        # Run openstudio with bundle flags for gem dependencies
+        cmd = [
+            "openstudio",
+            "--bundle", OSCLI_GEMFILE,
+            "--bundle_path", OSCLI_GEM_PATH,
+            "--bundle_without", "native_ext",
+            "run", "--measures_only", "-w", str(osw_path),
+        ]
         log_path = run_dir / "openstudio.log"
         with open(log_path, "w", encoding="utf-8") as log_f:
             proc = subprocess.run(

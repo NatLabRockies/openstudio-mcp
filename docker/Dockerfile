@@ -1,5 +1,6 @@
 ARG OPENSTUDIO_VERSION=3.11.0
 FROM nrel/openstudio:${OPENSTUDIO_VERSION}
+ARG OPENSTUDIO_VERSION
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip \
@@ -18,14 +19,24 @@ ENV COMSTOCK_MEASURES_DIR=/opt/comstock-measures
 
 # Common measures (openstudio-common-measures-gem — reporting, thermostats,
 # envelope, PV, visualization, model cleanup, IDF injection, etc.)
-ARG COMMON_MEASURES_TAG=v0.9.0
+ARG COMMON_MEASURES_TAG=v0.12.3
 RUN curl -sL https://github.com/NatLabRockies/openstudio-common-measures-gem/archive/refs/tags/${COMMON_MEASURES_TAG}.tar.gz | \
     tar xz -C /tmp && \
     mv /tmp/openstudio-common-measures-gem-*/lib/measures /opt/common-measures && \
-    rm -rf /tmp/openstudio-common-measures-gem-* && \
-    apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+    rm -rf /tmp/openstudio-common-measures-gem-*
 
 ENV COMMON_MEASURES_DIR=/opt/common-measures
+
+# Install OpenStudio bundled gems (provides openstudio-extension, openstudio-standards, etc.)
+# Pattern from https://github.com/NatLabRockies/docker-openstudio
+RUN mkdir -p /var/oscli \
+    && cp /usr/local/openstudio-${OPENSTUDIO_VERSION}/Ruby/Gemfile /var/oscli/ \
+    && cp /usr/local/openstudio-${OPENSTUDIO_VERSION}/Ruby/Gemfile.lock /var/oscli/ \
+    && cp /usr/local/openstudio-${OPENSTUDIO_VERSION}/Ruby/openstudio-gems.gemspec /var/oscli/ \
+    && gem install bundler -v 2.4.10 \
+    && cd /var/oscli \
+    && bundle _2.4.10_ install --path=gems --without=native_ext --jobs=4 --retry=3 \
+    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /repo
 

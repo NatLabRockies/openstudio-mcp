@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 import psutil
 
-from mcp_server.config import LOG_TAIL_DEFAULT, RUN_ROOT
+from mcp_server.config import LOG_TAIL_DEFAULT, OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
 from mcp_server.util import resolve_run_dir
 
 # Where the MCP server stores runs inside the container
@@ -292,9 +292,15 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
     # Create log files
     openstudio_log = run_dir / "openstudio.log"
 
-    # Kick off openstudio run
+    # Kick off openstudio run with bundle flags for gem dependencies
     # Note: use Popen so it can run async.
-    cmd = ["openstudio", "run", "-w", str(staged_osw)]
+    cmd = [
+        "openstudio",
+        "--bundle", OSCLI_GEMFILE,
+        "--bundle_path", OSCLI_GEM_PATH,
+        "--bundle_without", "native_ext",
+        "run", "-w", str(staged_osw),
+    ]
     proc = subprocess.Popen(
         cmd,
         cwd=str(run_dir),
