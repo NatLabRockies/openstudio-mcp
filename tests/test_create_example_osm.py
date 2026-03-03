@@ -11,11 +11,9 @@ import uuid
 from pathlib import Path
 
 import pytest
-
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
 
 
 def _normalize_host_runs_dir(host_runs: str) -> Path:

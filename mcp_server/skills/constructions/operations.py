@@ -25,17 +25,17 @@ def _extract_material(model, material) -> dict[str, Any]:
 
     # Add type-specific attributes using try-except to handle API variations
     try:
-        if hasattr(material, 'thickness'):
+        if hasattr(material, "thickness"):
             result["thickness_m"] = float(material.thickness())
-        if hasattr(material, 'conductivity'):
+        if hasattr(material, "conductivity"):
             result["conductivity_w_m_k"] = float(material.conductivity())
-        if hasattr(material, 'density'):
+        if hasattr(material, "density"):
             result["density_kg_m3"] = float(material.density())
-        if hasattr(material, 'specificHeat'):
+        if hasattr(material, "specificHeat"):
             result["specific_heat_j_kg_k"] = float(material.specificHeat())
-        if hasattr(material, 'roughness'):
+        if hasattr(material, "roughness"):
             result["roughness"] = material.roughness()
-        if hasattr(material, 'thermalResistance'):
+        if hasattr(material, "thermalResistance"):
             result["thermal_resistance_m2_k_w"] = float(material.thermalResistance())
     except Exception:
         pass  # Skip attributes that don't apply to this material type
@@ -100,7 +100,7 @@ def list_materials() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(materials),
-            "materials": materials
+            "materials": materials,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -116,7 +116,7 @@ def list_constructions() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(constructions),
-            "constructions": constructions
+            "constructions": constructions,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -132,7 +132,7 @@ def list_construction_sets() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(construction_sets),
-            "construction_sets": construction_sets
+            "construction_sets": construction_sets,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -252,8 +252,8 @@ def assign_construction_to_surface(surface_name: str, construction_name: str) ->
             "ok": True,
             "surface": {
                 "name": surface.nameString(),
-                "construction": construction.nameString()
-            }
+                "construction": construction.nameString(),
+            },
         }
 
     except RuntimeError as e:

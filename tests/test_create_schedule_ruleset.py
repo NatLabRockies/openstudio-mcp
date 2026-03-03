@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -43,7 +42,7 @@ def test_create_schedule_ruleset_fractional():
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {
                     "name": "Always On Test",
                     "schedule_type": "Fractional",
-                    "default_value": 1.0
+                    "default_value": 1.0,
                 })
                 schedule_result = unwrap(schedule_resp)
 
@@ -85,7 +84,7 @@ def test_create_schedule_ruleset_temperature():
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {
                     "name": "Constant 21C",
                     "schedule_type": "Temperature",
-                    "default_value": 21.0
+                    "default_value": 21.0,
                 })
                 schedule_result = unwrap(schedule_resp)
 
@@ -125,7 +124,7 @@ def test_create_schedule_ruleset_onoff():
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {
                     "name": "Always Off",
                     "schedule_type": "OnOff",
-                    "default_value": 0.0
+                    "default_value": 0.0,
                 })
                 schedule_result = unwrap(schedule_resp)
 

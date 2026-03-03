@@ -10,8 +10,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params, poll_until_done, EPW_PATH
+from conftest import EPW_PATH, integration_enabled, poll_until_done, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 

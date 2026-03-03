@@ -37,14 +37,14 @@ def register(mcp):
             f"Compare ASHRAE baseline System {system_a} vs System {system_b} "
             f"for a 10-zone office in {climate_city}.\n\n"
             "Steps:\n"
-            f"1. create_baseline_osm(name=\"office_sys{system_a}\", "
-            f"ashrae_sys_num=\"{system_a}\")\n"
+            f'1. create_baseline_osm(name="office_sys{system_a}", '
+            f'ashrae_sys_num="{system_a}")\n'
             "2. load_osm_model(osm_path=<returned path>)\n"
-            f"3. set_weather_file(epw_path=\"/inputs/{climate_city}.epw\")\n"
+            f'3. set_weather_file(epw_path="/inputs/{climate_city}.epw")\n'
             "4. add_design_day() — heating 99.6% and cooling 0.4%\n"
             "5. save_osm_model() and run_simulation()\n"
             "6. extract_summary_metrics() — note EUI and unmet hours\n"
-            f"7. Repeat steps 1-6 with ashrae_sys_num=\"{system_b}\"\n"
+            f'7. Repeat steps 1-6 with ashrae_sys_num="{system_b}"\n'
             "8. Compare EUI, heating/cooling energy, and unmet hours"
         )
 
@@ -65,12 +65,12 @@ def register(mcp):
             "1. load_osm_model(osm_path=<your model>)\n"
             "2. list_constructions() — review current assemblies\n"
             "3. list_surfaces() — find exterior walls\n"
-            "4. create_standard_opaque_material(name=\"New_Insulation\", "
+            '4. create_standard_opaque_material(name="New_Insulation", '
             "thickness_m=0.089, conductivity_w_m_k=0.04, "
             "density_kg_m3=30, specific_heat_j_kg_k=1000)\n"
-            "5. create_construction(name=\"High_R_Wall\", "
-            "material_names=[\"Exterior Finish\", \"New_Insulation\", "
-            "\"Gypsum Board\"])\n"
+            '5. create_construction(name="High_R_Wall", '
+            'material_names=["Exterior Finish", "New_Insulation", '
+            '"Gypsum Board"])\n'
             "6. assign_construction_to_surface() for each exterior wall\n"
             "7. save_osm_model()"
         )
@@ -90,13 +90,13 @@ def register(mcp):
             f"Create a full building model with ASHRAE System {system_type} "
             f"in {climate_city}, add loads, and simulate.\n\n"
             "Steps:\n"
-            f"1. create_baseline_osm(name=\"building\", "
-            f"ashrae_sys_num=\"{system_type}\")\n"
+            f'1. create_baseline_osm(name="building", '
+            f'ashrae_sys_num="{system_type}")\n'
             "2. load_osm_model(osm_path=<returned path>)\n"
             "3. list_spaces() — find spaces for load assignment\n"
             "4. create_people_definition(people_per_area=0.059)\n"
             "5. create_lights_definition(watts_per_area=10.76)\n"
-            f"6. set_weather_file(epw_path=\"/inputs/{climate_city}.epw\")\n"
+            f'6. set_weather_file(epw_path="/inputs/{climate_city}.epw")\n'
             "7. add_design_day() — heating and cooling design days\n"
             "8. save_osm_model() and run_simulation()\n"
             "9. Poll get_run_status() until complete\n"
@@ -114,19 +114,19 @@ def register(mcp):
         return (
             f"Extract all results from simulation run {run_id}.\n\n"
             "Steps:\n"
-            f"1. extract_summary_metrics(run_id=\"{run_id}\") — EUI overview\n"
-            f"2. extract_end_use_breakdown(run_id=\"{run_id}\") — "
+            f'1. extract_summary_metrics(run_id="{run_id}") — EUI overview\n'
+            f'2. extract_end_use_breakdown(run_id="{run_id}") — '
             "energy by fuel/end-use\n"
-            f"3. extract_envelope_summary(run_id=\"{run_id}\") — "
+            f'3. extract_envelope_summary(run_id="{run_id}") — '
             "wall/window U-values\n"
-            f"4. extract_hvac_sizing(run_id=\"{run_id}\") — "
+            f'4. extract_hvac_sizing(run_id="{run_id}") — '
             "autosized capacities\n"
-            f"5. extract_zone_summary(run_id=\"{run_id}\") — "
+            f'5. extract_zone_summary(run_id="{run_id}") — '
             "per-zone conditions\n"
-            f"6. extract_component_sizing(run_id=\"{run_id}\", "
-            "component_type=\"Coil\")\n"
-            f"7. query_timeseries(run_id=\"{run_id}\", "
-            "variable_name=\"Electricity:Facility\", frequency=\"Monthly\")"
+            f'6. extract_component_sizing(run_id="{run_id}", '
+            'component_type="Coil")\n'
+            f'7. query_timeseries(run_id="{run_id}", '
+            'variable_name="Electricity:Facility", frequency="Monthly")'
         )
 
     @mcp.prompt(
@@ -146,8 +146,8 @@ def register(mcp):
             "Steps:\n"
             "1. load_osm_model(osm_path=<model with geometry>)\n"
             "2. set_weather_file(epw_path=<matching EPW>)\n"
-            f"3. create_typical_building(template=\"{template}\", "
-            f"climate_zone=\"{climate_zone}\")\n"
+            f'3. create_typical_building(template="{template}", '
+            f'climate_zone="{climate_zone}")\n'
             "4. get_model_summary() — verify what was added\n"
             "5. list_air_loops() — inspect HVAC\n"
             "6. list_constructions() — inspect envelope\n"

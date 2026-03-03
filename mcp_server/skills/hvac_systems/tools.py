@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from mcp import FastMCP
 
 
-def register(mcp: "FastMCP") -> None:
+def register(mcp: FastMCP) -> None:
     """Register HVAC systems tools with MCP server."""
 
     @mcp.tool(name="add_baseline_system")
@@ -20,7 +20,7 @@ def register(mcp: "FastMCP") -> None:
         heating_fuel: str = "NaturalGas",
         cooling_fuel: str = "Electricity",
         economizer: bool = True,
-        system_name: str | None = None
+        system_name: str | None = None,
     ) -> str:
         """Add ASHRAE 90.1 Appendix G baseline HVAC system to the model.
 
@@ -54,7 +54,7 @@ def register(mcp: "FastMCP") -> None:
             heating_fuel=heating_fuel,
             cooling_fuel=cooling_fuel,
             economizer=economizer,
-            system_name=system_name
+            system_name=system_name,
         )
         return json.dumps(result, indent=2)
 
@@ -92,7 +92,7 @@ def register(mcp: "FastMCP") -> None:
     def replace_air_terminals_tool(
         air_loop_name: str,
         terminal_type: str,
-        terminal_options: dict | None = None
+        terminal_options: dict | None = None,
     ) -> str:
         """Replace air terminals on an existing air loop.
 
@@ -118,7 +118,7 @@ def register(mcp: "FastMCP") -> None:
         result = operations.replace_air_terminals(
             air_loop_name=air_loop_name,
             terminal_type=terminal_type,
-            terminal_options=terminal_options
+            terminal_options=terminal_options,
         )
         return json.dumps(result, indent=2)
 
@@ -126,7 +126,7 @@ def register(mcp: "FastMCP") -> None:
     def replace_zone_terminal_tool(
         zone_name: str,
         terminal_type: str,
-        terminal_options: dict | None = None
+        terminal_options: dict | None = None,
     ) -> str:
         """Replace the air terminal on a single zone.
 
@@ -151,7 +151,7 @@ def register(mcp: "FastMCP") -> None:
         result = operations.replace_zone_terminal(
             zone_name=zone_name,
             terminal_type=terminal_type,
-            terminal_options=terminal_options
+            terminal_options=terminal_options,
         )
         return json.dumps(result, indent=2)
 
@@ -161,12 +161,15 @@ def register(mcp: "FastMCP") -> None:
         system_name: str = "DOAS",
         energy_recovery: bool = True,
         sensible_effectiveness: float = 0.75,
-        zone_equipment_type: str = "FanCoil"
+        zone_equipment_type: str = "FanCoil",
+        heating_fuel: str = "NaturalGas",
+        cooling_fuel: str = "Electricity",
     ) -> str:
         """Add Dedicated Outdoor Air System with zone equipment.
 
         Creates 100% outdoor air ventilation loop with optional energy recovery,
         plus zone-level sensible conditioning (fan coils, radiant panels, or chilled beams).
+        Plant loops are auto-wired with supply equipment (boiler/chiller/tower or district).
 
         DOAS decouples ventilation from sensible load, enabling:
         - Lower airflow rates (ventilation-only CFM vs cooling CFM)
@@ -179,6 +182,8 @@ def register(mcp: "FastMCP") -> None:
             energy_recovery: Add energy recovery ventilator (default True)
             sensible_effectiveness: ERV sensible effectiveness 0-1 (default 0.75)
             zone_equipment_type: FanCoil | Radiant | Chiller_Beams (default FanCoil)
+            heating_fuel: NaturalGas | Electricity | DistrictHeating (default NaturalGas)
+            cooling_fuel: Electricity | DistrictCooling (default Electricity)
 
         Returns:
             JSON string with system details including DOAS loop, plant loops, and zone equipment
@@ -206,7 +211,9 @@ def register(mcp: "FastMCP") -> None:
             system_name=system_name,
             energy_recovery=energy_recovery,
             sensible_effectiveness=sensible_effectiveness,
-            zone_equipment_type=zone_equipment_type
+            zone_equipment_type=zone_equipment_type,
+            heating_fuel=heating_fuel,
+            cooling_fuel=cooling_fuel,
         )
         return json.dumps(result, indent=2)
 
@@ -215,7 +222,7 @@ def register(mcp: "FastMCP") -> None:
         thermal_zone_names: list[str],
         system_name: str = "VRF",
         heat_recovery: bool = True,
-        outdoor_unit_capacity_w: float | None = None
+        outdoor_unit_capacity_w: float | None = None,
     ) -> str:
         """Add Variable Refrigerant Flow multi-zone heat pump system.
 
@@ -255,7 +262,7 @@ def register(mcp: "FastMCP") -> None:
             thermal_zone_names=thermal_zone_names,
             system_name=system_name,
             heat_recovery=heat_recovery,
-            outdoor_unit_capacity_w=outdoor_unit_capacity_w
+            outdoor_unit_capacity_w=outdoor_unit_capacity_w,
         )
         return json.dumps(result, indent=2)
 
@@ -264,12 +271,15 @@ def register(mcp: "FastMCP") -> None:
         thermal_zone_names: list[str],
         system_name: str = "Radiant",
         radiant_type: str = "Floor",
-        ventilation_system: str = "DOAS"
+        ventilation_system: str = "DOAS",
+        heating_fuel: str = "NaturalGas",
+        cooling_fuel: str = "Electricity",
     ) -> str:
         """Add low-temperature radiant heating/cooling system.
 
         Creates hydronic radiant surfaces (floor, ceiling, or walls) with low-temperature
-        plant loops. Optionally adds DOAS for ventilation/dehumidification.
+        plant loops. Plant loops are auto-wired with supply equipment (boiler/chiller/tower
+        or district). Optionally adds DOAS for ventilation/dehumidification.
 
         Radiant advantages:
         - High thermal comfort (radiant heat transfer)
@@ -287,6 +297,8 @@ def register(mcp: "FastMCP") -> None:
             system_name: Name prefix for radiant components (default "Radiant")
             radiant_type: Floor | Ceiling | Walls (default Floor)
             ventilation_system: DOAS | None (default DOAS, if None ventilation added separately)
+            heating_fuel: NaturalGas | Electricity | DistrictHeating (default NaturalGas)
+            cooling_fuel: Electricity | DistrictCooling (default Electricity)
 
         Returns:
             JSON string with system details including radiant surfaces and plant loops
@@ -313,6 +325,8 @@ def register(mcp: "FastMCP") -> None:
             thermal_zone_names=thermal_zone_names,
             system_name=system_name,
             radiant_type=radiant_type,
-            ventilation_system=ventilation_system
+            ventilation_system=ventilation_system,
+            heating_fuel=heating_fuel,
+            cooling_fuel=cooling_fuel,
         )
         return json.dumps(result, indent=2)

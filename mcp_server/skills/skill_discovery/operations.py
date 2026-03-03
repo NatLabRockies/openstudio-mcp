@@ -1,7 +1,6 @@
 """Skill discovery operations — list and read workflow guides from /skills."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from mcp_server.config import SKILLS_DIR
@@ -22,8 +21,8 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
     fm_text = text[3:end].strip()
     body = text[end + 4:].strip()
     fm: dict = {}
-    for line in fm_text.splitlines():
-        line = line.strip()
+    for raw_line in fm_text.splitlines():
+        line = raw_line.strip()
         if not line or ":" not in line:
             continue
         key, _, value = line.partition(":")

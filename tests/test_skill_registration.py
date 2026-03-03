@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 
 from mcp_server.skills import register_all_skills
 
-
 EXPECTED_TOOLS = {
     "get_server_status",
     "get_versions",

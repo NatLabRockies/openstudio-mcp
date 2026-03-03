@@ -155,7 +155,7 @@ def apply_measure(
                 {
                     "measure_dir_name": measure_path.name,
                     "arguments": measure_args,
-                }
+                },
             ],
         }
         osw_path = run_dir / "workflow.osw"
@@ -172,6 +172,7 @@ def apply_measure(
                 stderr=subprocess.STDOUT,
                 env=os.environ.copy(),
                 timeout=300,  # 5 minute timeout
+                check=False,
             )
 
         if proc.returncode != 0:

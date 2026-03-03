@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from mcp_server.skills.comstock.operations import (
-    list_comstock_measures,
     create_typical_building,
+    list_comstock_measures,
 )
 
 

@@ -1,11 +1,11 @@
 """Validation tests for ASHRAE baseline systems 7-8 (Central VAV)."""
 
 import asyncio
+
 import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-from conftest import unwrap, integration_enabled, server_params
-
 
 # ============================================================================
 # SYSTEM 7: Central VAV w/ Reheat - All 3 Plant Loops (13 tests)
@@ -25,7 +25,7 @@ def test_system_7_chilled_water_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -35,7 +35,7 @@ def test_system_7_chilled_water_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
@@ -43,7 +43,7 @@ def test_system_7_chilled_water_loop():
 
                 chw_loop_name = system_data["system"]["chilled_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": chw_loop_name
+                    "plant_loop_name": chw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -68,7 +68,7 @@ def test_system_7_hot_water_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -78,7 +78,7 @@ def test_system_7_hot_water_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
@@ -86,7 +86,7 @@ def test_system_7_hot_water_loop():
 
                 hw_loop_name = system_data["system"]["hot_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": hw_loop_name
+                    "plant_loop_name": hw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -111,7 +111,7 @@ def test_system_7_condenser_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -121,7 +121,7 @@ def test_system_7_condenser_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
@@ -144,7 +144,7 @@ def test_system_7_chiller_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -154,13 +154,13 @@ def test_system_7_chiller_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
                 chw_loop_name = system_data["system"]["chilled_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": chw_loop_name
+                    "plant_loop_name": chw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -188,7 +188,7 @@ def test_system_7_boiler_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -198,13 +198,13 @@ def test_system_7_boiler_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
                 hw_loop_name = system_data["system"]["hot_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": hw_loop_name
+                    "plant_loop_name": hw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -232,7 +232,7 @@ def test_system_7_cooling_tower():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -242,13 +242,13 @@ def test_system_7_cooling_tower():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
                 cw_loop_name = system_data["system"]["condenser_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": cw_loop_name
+                    "plant_loop_name": cw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -276,7 +276,7 @@ def test_system_7_vav_terminals():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -286,7 +286,7 @@ def test_system_7_vav_terminals():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
@@ -310,7 +310,7 @@ def test_system_7_water_coils():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -320,7 +320,7 @@ def test_system_7_water_coils():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
 
@@ -344,7 +344,7 @@ def test_system_7_variable_fan():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -354,11 +354,11 @@ def test_system_7_variable_fan():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV"
+                    "air_loop_name": "Central VAV",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -384,7 +384,7 @@ def test_system_7_economizer_enabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -395,11 +395,11 @@ def test_system_7_economizer_enabled():
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
                     "economizer": True,
-                    "system_name": "Central VAV Econ"
+                    "system_name": "Central VAV Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV Econ"
+                    "air_loop_name": "Central VAV Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -425,7 +425,7 @@ def test_system_7_economizer_disabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -436,11 +436,11 @@ def test_system_7_economizer_disabled():
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
                     "economizer": False,
-                    "system_name": "Central VAV No Econ"
+                    "system_name": "Central VAV No Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV No Econ"
+                    "air_loop_name": "Central VAV No Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -466,7 +466,7 @@ def test_system_7_outdoor_air_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -476,11 +476,11 @@ def test_system_7_outdoor_air_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV"
+                    "air_loop_name": "Central VAV",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -505,7 +505,7 @@ def test_system_7_setpoint_managers():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -515,11 +515,11 @@ def test_system_7_setpoint_managers():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV"
+                    "air_loop_name": "Central VAV",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -549,7 +549,7 @@ def test_system_8_chilled_water_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -559,7 +559,7 @@ def test_system_8_chilled_water_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -582,7 +582,7 @@ def test_system_8_hot_water_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -592,7 +592,7 @@ def test_system_8_hot_water_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -617,7 +617,7 @@ def test_system_8_condenser_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -627,7 +627,7 @@ def test_system_8_condenser_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -650,7 +650,7 @@ def test_system_8_pfp_terminals():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -660,7 +660,7 @@ def test_system_8_pfp_terminals():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -683,7 +683,7 @@ def test_system_8_electric_reheat():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -693,7 +693,7 @@ def test_system_8_electric_reheat():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -719,7 +719,7 @@ def test_system_8_chiller_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -729,13 +729,13 @@ def test_system_8_chiller_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
                 chw_loop_name = system_data["system"]["chilled_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": chw_loop_name
+                    "plant_loop_name": chw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -763,7 +763,7 @@ def test_system_8_cooling_tower():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -773,13 +773,13 @@ def test_system_8_cooling_tower():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
                 cw_loop_name = system_data["system"]["condenser_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": cw_loop_name
+                    "plant_loop_name": cw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -807,7 +807,7 @@ def test_system_8_water_cooling():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -817,7 +817,7 @@ def test_system_8_water_cooling():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -841,7 +841,7 @@ def test_system_8_variable_fan():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -851,11 +851,11 @@ def test_system_8_variable_fan():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central PFP"
+                    "air_loop_name": "Central PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -882,7 +882,7 @@ def test_system_8_economizer_enabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -893,11 +893,11 @@ def test_system_8_economizer_enabled():
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
                     "economizer": True,
-                    "system_name": "Central PFP Econ"
+                    "system_name": "Central PFP Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central PFP Econ"
+                    "air_loop_name": "Central PFP Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -923,7 +923,7 @@ def test_system_8_economizer_disabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -934,11 +934,11 @@ def test_system_8_economizer_disabled():
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
                     "economizer": False,
-                    "system_name": "Central PFP No Econ"
+                    "system_name": "Central PFP No Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central PFP No Econ"
+                    "air_loop_name": "Central PFP No Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -964,7 +964,7 @@ def test_system_8_outdoor_air_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -974,11 +974,11 @@ def test_system_8_outdoor_air_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central PFP"
+                    "air_loop_name": "Central PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -1003,7 +1003,7 @@ def test_system_8_setpoint_managers():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -1013,11 +1013,11 @@ def test_system_8_setpoint_managers():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 8,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central PFP"
+                    "system_name": "Central PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central PFP"
+                    "air_loop_name": "Central PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 

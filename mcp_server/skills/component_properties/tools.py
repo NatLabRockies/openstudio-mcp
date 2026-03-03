@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from mcp import FastMCP
 
 
-def register(mcp: "FastMCP") -> None:
+def register(mcp: FastMCP) -> None:
     """Register component properties tools with MCP server."""
 
     @mcp.tool(name="list_hvac_components")

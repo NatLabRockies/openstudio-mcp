@@ -7,7 +7,6 @@ import time
 
 import pytest
 
-
 # ---- helpers ---------------------------------------------------------------
 
 class StreamReader(threading.Thread):
@@ -63,7 +62,7 @@ def _read_json_line(stdout_q: queue.Queue, *, timeout_s: float) -> dict:
             obj = json.loads(s)
         except json.JSONDecodeError as e:
             raise AssertionError(
-                f"Protocol-breaking stdout (not JSON): {line!r}\n{e}"
+                f"Protocol-breaking stdout (not JSON): {line!r}\n{e}",
             )
 
         if not isinstance(obj, dict):
@@ -109,7 +108,7 @@ def test_openstudio_mcp_stdio_is_clean_through_tool_call():
         if proc.poll() is not None:
             err = "".join(_drain(stderr_q))
             raise AssertionError(
-                f"Server exited early with code {proc.returncode}\nStderr:\n{err}"
+                f"Server exited early with code {proc.returncode}\nStderr:\n{err}",
             )
 
         # --- initialize -----------------------------------------------------
@@ -176,7 +175,7 @@ def test_openstudio_mcp_stdio_is_clean_through_tool_call():
                 json.loads(ln)
             except Exception:
                 raise AssertionError(
-                    f"Protocol-breaking stdout after tool call: {ln!r}"
+                    f"Protocol-breaking stdout after tool call: {ln!r}",
                 )
 
     finally:

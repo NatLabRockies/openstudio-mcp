@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from mcp_server.skills.object_management.operations import (
     delete_object,
-    rename_object,
     list_model_objects,
+    rename_object,
 )
 
 

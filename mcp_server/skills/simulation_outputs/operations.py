@@ -38,7 +38,7 @@ def add_output_variable(variable_name: str, key_value: str = "*",
                 "variable_name": output_var.variableName(),
                 "key_value": output_var.keyValue(),
                 "reporting_frequency": output_var.reportingFrequency(),
-            }
+            },
         }
 
     except RuntimeError as e:
@@ -71,7 +71,7 @@ def add_output_meter(meter_name: str, reporting_frequency: str = "Hourly") -> di
                 "handle": str(output_meter.handle()),
                 "name": output_meter.nameString(),
                 "reporting_frequency": output_meter.reportingFrequency(),
-            }
+            },
         }
 
     except RuntimeError as e:

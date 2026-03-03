@@ -6,8 +6,7 @@ Requires skills directory mounted at /skills inside the container.
 import asyncio
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 

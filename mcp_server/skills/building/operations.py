@@ -103,7 +103,7 @@ def get_building_info() -> dict[str, Any]:
 
         return {
             "ok": True,
-            "building": _extract_building_info(model, building)
+            "building": _extract_building_info(model, building),
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -160,7 +160,7 @@ def get_model_summary() -> dict[str, Any]:
 
         return {
             "ok": True,
-            "summary": summary
+            "summary": summary,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -181,7 +181,7 @@ def list_building_stories() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(stories),
-            "building_stories": stories
+            "building_stories": stories,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

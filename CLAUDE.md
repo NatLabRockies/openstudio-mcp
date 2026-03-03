@@ -93,7 +93,27 @@ The `stdout_suppression.py` module handles this:
 docker build -f docker/Dockerfile -t openstudio-mcp:dev .
 ```
 
-Run integration tests in Docker (from Windows Git Bash):
+Run all tests inside a single Docker container (fastest, matches CI):
+```bash
+docker run --rm \
+  -v "C:/projects/openstudio-mcp:/repo" \
+  -v "C:/projects/openstudio-mcp/runs:/runs" \
+  -e RUN_OPENSTUDIO_INTEGRATION=1 \
+  -e MCP_SERVER_CMD=openstudio-mcp \
+  openstudio-mcp:dev bash -lc "cd /repo && pytest -vv tests/test_*.py"
+```
+
+Run specific test file:
+```bash
+docker run --rm \
+  -v "C:/projects/openstudio-mcp:/repo" \
+  -v "C:/projects/openstudio-mcp/runs:/runs" \
+  -e RUN_OPENSTUDIO_INTEGRATION=1 \
+  -e MCP_SERVER_CMD=openstudio-mcp \
+  openstudio-mcp:dev bash -lc "cd /repo && pytest -vv tests/test_load_save_model.py"
+```
+
+Slow alternative (spawns a new Docker container per test — ~14 min vs ~9 min):
 ```bash
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" \
   RUN_OPENSTUDIO_INTEGRATION=1 \
@@ -107,20 +127,15 @@ MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" \
   pytest -vv tests/test_*.py
 ```
 
-Run specific test file:
-```bash
-# Same env vars as above, but specify test file
-pytest -vv tests/test_load_save_model.py
-```
-
 ### Local Development
 - Lint: `ruff check mcp_server/`
 - Unit tests (no Docker): `pytest tests/test_skill_registration.py -v`
 
 ### Notes
-- Integration tests require Docker and OpenStudio (use the Docker command above)
-- The `MSYS_NO_PATHCONV` settings are needed on Windows to prevent path translation
-- Tests create temporary models in `/c/projects/openstudio-mcp/runs/` (mounted as `/runs` in container)
+- Integration tests require Docker and OpenStudio
+- Use `C:/` Windows-style paths for Docker volume mounts (MSYS `/c/` paths don't resolve dotfile dirs)
+- Tests create temporary models in `runs/` (mounted as `/runs` in container)
+- After builds, prune dangling images: `docker image prune -f`
 
 ### Adding New Tests to CI
 CI uses 4 parallel shards in `.github/workflows/ci.yml`. To add a new test file,

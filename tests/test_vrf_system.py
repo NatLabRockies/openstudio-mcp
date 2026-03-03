@@ -12,10 +12,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
 
@@ -33,7 +32,7 @@ def test_vrf_heat_recovery():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -45,7 +44,7 @@ def test_vrf_heat_recovery():
                     "thermal_zone_names": zone_names,
                     "system_name": "VRF HR",
                     "heat_recovery": True,
-                    "outdoor_unit_capacity_w": None  # Autosize
+                    "outdoor_unit_capacity_w": None,  # Autosize
                 })
                 system_data = unwrap(system_resp)
 
@@ -78,7 +77,7 @@ def test_vrf_heat_pump():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -90,7 +89,7 @@ def test_vrf_heat_pump():
                     "thermal_zone_names": zone_names,
                     "system_name": "VRF HP",
                     "heat_recovery": False,
-                    "outdoor_unit_capacity_w": None
+                    "outdoor_unit_capacity_w": None,
                 })
                 system_data = unwrap(system_resp)
 
@@ -120,7 +119,7 @@ def test_vrf_multi_zone():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -132,7 +131,7 @@ def test_vrf_multi_zone():
                     "thermal_zone_names": zone_names,
                     "system_name": "VRF Multi",
                     "heat_recovery": True,
-                    "outdoor_unit_capacity_w": None
+                    "outdoor_unit_capacity_w": None,
                 })
                 system_data = unwrap(system_resp)
 
@@ -167,7 +166,7 @@ def test_vrf_capacity_autosize():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -179,7 +178,7 @@ def test_vrf_capacity_autosize():
                     "thermal_zone_names": zone_names,
                     "system_name": "VRF Auto",
                     "heat_recovery": True,
-                    "outdoor_unit_capacity_w": None
+                    "outdoor_unit_capacity_w": None,
                 })
                 system_data = unwrap(system_resp)
 
@@ -206,7 +205,7 @@ def test_vrf_capacity_explicit():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -219,7 +218,7 @@ def test_vrf_capacity_explicit():
                     "thermal_zone_names": zone_names,
                     "system_name": "VRF Fixed",
                     "heat_recovery": True,
-                    "outdoor_unit_capacity_w": capacity
+                    "outdoor_unit_capacity_w": capacity,
                 })
                 system_data = unwrap(system_resp)
 
@@ -260,7 +259,7 @@ def test_vrf_multi_zone_baseline():
                     "thermal_zone_names": zone_names,
                     "system_name": "Baseline VRF",
                     "heat_recovery": True,
-                    "outdoor_unit_capacity_w": None
+                    "outdoor_unit_capacity_w": None,
                 })
                 system_data = unwrap(system_resp)
 

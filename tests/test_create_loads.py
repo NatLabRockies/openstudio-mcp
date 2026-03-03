@@ -7,8 +7,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -41,7 +40,7 @@ def test_create_people_by_area():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_people_definition", {
-                    "name": "Office People", "space_name": space, "people_per_area": 0.05
+                    "name": "Office People", "space_name": space, "people_per_area": 0.05,
                 }))
                 assert res.get("ok") is True
                 assert res["people"]["name"] == "Office People"
@@ -63,7 +62,7 @@ def test_create_people_by_count():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_people_definition", {
-                    "name": "Lab People", "space_name": space, "num_people": 10.0
+                    "name": "Lab People", "space_name": space, "num_people": 10.0,
                 }))
                 assert res.get("ok") is True
                 assert res["people"]["name"] == "Lab People"
@@ -85,12 +84,12 @@ def test_create_people_with_schedule():
                 space = await _setup_model(s, _unique())
                 # Create a schedule first
                 sched = unwrap(await s.call_tool("create_schedule_ruleset", {
-                    "name": "Occ Schedule", "schedule_type": "Fractional", "default_value": 0.8
+                    "name": "Occ Schedule", "schedule_type": "Fractional", "default_value": 0.8,
                 }))
                 assert sched.get("ok") is True
                 res = unwrap(await s.call_tool("create_people_definition", {
                     "name": "Scheduled People", "space_name": space,
-                    "people_per_area": 0.04, "schedule_name": "Occ Schedule"
+                    "people_per_area": 0.04, "schedule_name": "Occ Schedule",
                 }))
                 assert res.get("ok") is True
                 assert res["people"]["number_of_people_schedule"] == "Occ Schedule"
@@ -113,7 +112,7 @@ def test_create_lights_by_area():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_lights_definition", {
-                    "name": "Office Lights", "space_name": space, "watts_per_area": 10.76
+                    "name": "Office Lights", "space_name": space, "watts_per_area": 10.76,
                 }))
                 assert res.get("ok") is True
                 assert res["lights"]["name"] == "Office Lights"
@@ -133,7 +132,7 @@ def test_create_lights_by_level():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_lights_definition", {
-                    "name": "Desk Lamp", "space_name": space, "lighting_level_w": 500.0
+                    "name": "Desk Lamp", "space_name": space, "lighting_level_w": 500.0,
                 }))
                 assert res.get("ok") is True
 
@@ -155,7 +154,7 @@ def test_create_electric_equipment():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_electric_equipment", {
-                    "name": "Computers", "space_name": space, "watts_per_area": 8.0
+                    "name": "Computers", "space_name": space, "watts_per_area": 8.0,
                 }))
                 assert res.get("ok") is True
                 assert res["electric_equipment"]["name"] == "Computers"
@@ -175,7 +174,7 @@ def test_create_gas_equipment():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_gas_equipment", {
-                    "name": "Kitchen Range", "space_name": space, "watts_per_area": 5.0
+                    "name": "Kitchen Range", "space_name": space, "watts_per_area": 5.0,
                 }))
                 assert res.get("ok") is True
                 assert res["gas_equipment"]["name"] == "Kitchen Range"
@@ -199,7 +198,7 @@ def test_create_infiltration_by_area():
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_infiltration", {
                     "name": "Envelope Leakage", "space_name": space,
-                    "flow_per_exterior_surface_area": 0.0003
+                    "flow_per_exterior_surface_area": 0.0003,
                 }))
                 assert res.get("ok") is True
                 assert res["infiltration"]["name"] == "Envelope Leakage"
@@ -219,7 +218,7 @@ def test_create_infiltration_by_ach():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_infiltration", {
-                    "name": "ACH Infiltration", "space_name": space, "ach": 0.5
+                    "name": "ACH Infiltration", "space_name": space, "ach": 0.5,
                 }))
                 assert res.get("ok") is True
 
@@ -241,7 +240,7 @@ def test_create_load_invalid_space():
                 await s.initialize()
                 await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_people_definition", {
-                    "name": "Bad", "space_name": "NonexistentSpace", "people_per_area": 0.05
+                    "name": "Bad", "space_name": "NonexistentSpace", "people_per_area": 0.05,
                 }))
                 assert res.get("ok") is False
                 assert "not found" in res["error"]
@@ -260,7 +259,7 @@ def test_create_load_invalid_schedule():
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_lights_definition", {
                     "name": "Bad Lights", "space_name": space,
-                    "watts_per_area": 10.0, "schedule_name": "NonexistentSchedule"
+                    "watts_per_area": 10.0, "schedule_name": "NonexistentSchedule",
                 }))
                 assert res.get("ok") is False
                 assert "not found" in res["error"]
@@ -278,7 +277,7 @@ def test_create_load_no_sizing_method():
                 await s.initialize()
                 space = await _setup_model(s, _unique())
                 res = unwrap(await s.call_tool("create_people_definition", {
-                    "name": "No Size", "space_name": space
+                    "name": "No Size", "space_name": space,
                 }))
                 assert res.get("ok") is False
                 assert "people_per_area" in res["error"] or "Provide" in res["error"]

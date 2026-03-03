@@ -16,7 +16,6 @@ from mcp_server.model_manager import get_model
 from mcp_server.skills.measures.operations import apply_measure
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
-
 # Category classification for ComStock measures
 _BASELINE_PREFIXES = (
     "set_wall_template", "set_roof_template", "set_hvac_template",
@@ -190,7 +189,7 @@ def create_typical_building(
             czs = model.getClimateZones()
             if len(czs.getClimateZones("ASHRAE")) == 0:
                 # Parse "ASHRAE 169-2013-4A" → "4A"
-                cz_value = climate_zone.split("-")[-1] if "-" in climate_zone else climate_zone
+                cz_value = climate_zone.rsplit("-", maxsplit=1)[-1] if "-" in climate_zone else climate_zone
                 czs.setClimateZone("ASHRAE", cz_value)
     except RuntimeError as e:
         return {"ok": False, "error": f"Failed to prepare model: {e}"}

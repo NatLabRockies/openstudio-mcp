@@ -1,11 +1,10 @@
 """Integration tests for replace_air_terminals."""
 import asyncio
-import pytest
 
+import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
 
 
 @pytest.mark.integration
@@ -26,7 +25,7 @@ def test_replace_vav_to_pfp():
                 assert create_data.get("ok") is True
 
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
                 load_data = unwrap(load_resp)
                 assert load_data.get("ok") is True
@@ -40,7 +39,7 @@ def test_replace_vav_to_pfp():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV System"
+                    "system_name": "VAV System",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -48,7 +47,7 @@ def test_replace_vav_to_pfp():
                 # Replace terminals with PFP electric
                 replace_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "VAV System",
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 replace_data = unwrap(replace_resp)
 
@@ -61,7 +60,7 @@ def test_replace_vav_to_pfp():
 
                 # Independent query verification
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV System"
+                    "air_loop_name": "VAV System",
                 }))
                 for t in ald["air_loop"].get("terminals", []):
                     assert "PIU" in t["type"] or "PFP" in t.get("name", "")
@@ -85,7 +84,7 @@ def test_replace_pfp_to_vav():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Get zones
@@ -97,7 +96,7 @@ def test_replace_pfp_to_vav():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat System"
+                    "system_name": "VAV Reheat System",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -105,7 +104,7 @@ def test_replace_pfp_to_vav():
                 # Replace VAV reheat with PFP electric (going from reheat to PFP)
                 replace_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "VAV Reheat System",
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 replace_data = unwrap(replace_resp)
 
@@ -115,7 +114,7 @@ def test_replace_pfp_to_vav():
                 assert replace_data["air_loop"]["new_terminal_type"] == "PFP_Electric"
 
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV Reheat System"
+                    "air_loop_name": "VAV Reheat System",
                 }))
                 for t in ald["air_loop"].get("terminals", []):
                     assert "PIU" in t["type"] or "PFP" in t.get("name", "")
@@ -139,7 +138,7 @@ def test_replace_with_options():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Get zones
@@ -151,7 +150,7 @@ def test_replace_with_options():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV System"
+                    "system_name": "VAV System",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -160,7 +159,7 @@ def test_replace_with_options():
                 replace_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "VAV System",
                     "terminal_type": "VAV_NoReheat",
-                    "terminal_options": {"min_airflow_fraction": 0.2}
+                    "terminal_options": {"min_airflow_fraction": 0.2},
                 })
                 replace_data = unwrap(replace_resp)
 
@@ -168,7 +167,7 @@ def test_replace_with_options():
                 assert replace_data["air_loop"]["terminals_replaced"] == len(zone_names)
 
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV System"
+                    "air_loop_name": "VAV System",
                 }))
                 for t in ald["air_loop"].get("terminals", []):
                     assert "NoReheat" in t["type"]
@@ -192,13 +191,13 @@ def test_replace_invalid_air_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Try to replace terminals on non-existent air loop
                 replace_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "Nonexistent Loop",
-                    "terminal_type": "VAV_Reheat"
+                    "terminal_type": "VAV_Reheat",
                 })
                 replace_data = unwrap(replace_resp)
 
@@ -224,7 +223,7 @@ def test_replace_invalid_terminal_type():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Get zones
@@ -236,13 +235,13 @@ def test_replace_invalid_terminal_type():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV System"
+                    "system_name": "VAV System",
                 })
 
                 # Try to replace with invalid terminal type
                 replace_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "VAV System",
-                    "terminal_type": "InvalidType"
+                    "terminal_type": "InvalidType",
                 })
                 replace_data = unwrap(replace_resp)
 
@@ -268,7 +267,7 @@ def test_replace_hw_terminal_no_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Get zones
@@ -280,7 +279,7 @@ def test_replace_hw_terminal_no_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 3,
                     "thermal_zone_names": zone_names[:1],  # Single zone only
-                    "system_name": "PSZ System"
+                    "system_name": "PSZ System",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -288,7 +287,7 @@ def test_replace_hw_terminal_no_loop():
                 # Try to replace with VAV_Reheat (needs HW loop)
                 replace_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "PSZ System",
-                    "terminal_type": "VAV_Reheat"
+                    "terminal_type": "VAV_Reheat",
                 })
                 replace_data = unwrap(replace_resp)
 
@@ -314,7 +313,7 @@ def test_replace_preserves_zones():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Get zones
@@ -326,7 +325,7 @@ def test_replace_preserves_zones():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV System"
+                    "system_name": "VAV System",
                 })
                 system_data = unwrap(system_resp)
                 assert system_data.get("ok") is True
@@ -334,7 +333,7 @@ def test_replace_preserves_zones():
                 # Replace terminals
                 replace_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "VAV System",
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 replace_data = unwrap(replace_resp)
                 assert replace_data.get("ok") is True
@@ -363,7 +362,7 @@ def test_replace_multiple_times():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 # Get zones
@@ -375,13 +374,13 @@ def test_replace_multiple_times():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV System"
+                    "system_name": "VAV System",
                 })
 
                 # First replacement
                 replace1_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "VAV System",
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 replace1_data = unwrap(replace1_resp)
                 assert replace1_data.get("ok") is True
@@ -389,7 +388,7 @@ def test_replace_multiple_times():
                 # Second replacement
                 replace2_resp = await session.call_tool("replace_air_terminals", {
                     "air_loop_name": "VAV System",
-                    "terminal_type": "VAV_NoReheat"
+                    "terminal_type": "VAV_NoReheat",
                 })
                 replace2_data = unwrap(replace2_resp)
                 assert replace2_data.get("ok") is True
@@ -397,7 +396,7 @@ def test_replace_multiple_times():
                 assert "PFP" in replace2_data["air_loop"]["old_terminal_type"] or "PIU" in replace2_data["air_loop"]["old_terminal_type"]
 
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV System"
+                    "air_loop_name": "VAV System",
                 }))
                 for t in ald["air_loop"].get("terminals", []):
                     assert "NoReheat" in t["type"]

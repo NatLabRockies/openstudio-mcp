@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from mcp_server.skills.skill_discovery.operations import (
-    list_skills_op,
     get_skill_op,
+    list_skills_op,
 )
 
 

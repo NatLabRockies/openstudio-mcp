@@ -1,11 +1,11 @@
 """Validation tests for ASHRAE baseline systems 9-10 (Unit Heaters)."""
 
 import asyncio
+
 import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-from conftest import unwrap, integration_enabled, server_params
-
 
 # ============================================================================
 # SYSTEM 9: Gas Unit Heaters - Zone Equipment (2 tests)
@@ -25,7 +25,7 @@ def test_system_9_unit_heaters():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -35,7 +35,7 @@ def test_system_9_unit_heaters():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 9,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Gas Heaters"
+                    "system_name": "Gas Heaters",
                 })
                 system_data = unwrap(system_resp)
 
@@ -59,7 +59,7 @@ def test_system_9_no_cooling():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -69,7 +69,7 @@ def test_system_9_no_cooling():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 9,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Gas Heaters"
+                    "system_name": "Gas Heaters",
                 })
                 system_data = unwrap(system_resp)
 
@@ -98,7 +98,7 @@ def test_system_10_unit_heaters():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -108,7 +108,7 @@ def test_system_10_unit_heaters():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 10,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Electric Heaters"
+                    "system_name": "Electric Heaters",
                 })
                 system_data = unwrap(system_resp)
 
@@ -132,7 +132,7 @@ def test_system_10_no_cooling():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -142,7 +142,7 @@ def test_system_10_no_cooling():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 10,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Electric Heaters"
+                    "system_name": "Electric Heaters",
                 })
                 system_data = unwrap(system_resp)
 

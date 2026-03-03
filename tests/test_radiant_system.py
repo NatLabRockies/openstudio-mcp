@@ -11,10 +11,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
 
@@ -32,7 +31,7 @@ def test_radiant_floor():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -44,7 +43,7 @@ def test_radiant_floor():
                     "thermal_zone_names": zone_names,
                     "system_name": "Radiant Floor",
                     "radiant_type": "Floor",
-                    "ventilation_system": "None"
+                    "ventilation_system": "None",
                 })
                 system_data = unwrap(system_resp)
 
@@ -83,7 +82,7 @@ def test_radiant_ceiling():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -95,7 +94,7 @@ def test_radiant_ceiling():
                     "thermal_zone_names": zone_names,
                     "system_name": "Radiant Ceiling",
                     "radiant_type": "Ceiling",
-                    "ventilation_system": "None"
+                    "ventilation_system": "None",
                 })
                 system_data = unwrap(system_resp)
 
@@ -126,7 +125,7 @@ def test_radiant_with_doas():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -138,7 +137,7 @@ def test_radiant_with_doas():
                     "thermal_zone_names": zone_names,
                     "system_name": "Radiant DOAS",
                     "radiant_type": "Floor",
-                    "ventilation_system": "DOAS"
+                    "ventilation_system": "DOAS",
                 })
                 system_data = unwrap(system_resp)
 
@@ -171,7 +170,7 @@ def test_radiant_without_doas():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -183,7 +182,7 @@ def test_radiant_without_doas():
                     "thermal_zone_names": zone_names,
                     "system_name": "Radiant Only",
                     "radiant_type": "Floor",
-                    "ventilation_system": "None"
+                    "ventilation_system": "None",
                 })
                 system_data = unwrap(system_resp)
 
@@ -207,7 +206,7 @@ def test_radiant_loop_temps():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -219,7 +218,7 @@ def test_radiant_loop_temps():
                     "thermal_zone_names": zone_names,
                     "system_name": "Radiant Temps",
                     "radiant_type": "Floor",
-                    "ventilation_system": "None"
+                    "ventilation_system": "None",
                 })
                 system_data = unwrap(system_resp)
 
@@ -271,7 +270,7 @@ def test_radiant_multi_zone_baseline():
                     "thermal_zone_names": zone_names,
                     "system_name": "Baseline Radiant",
                     "radiant_type": "Floor",
-                    "ventilation_system": "DOAS"
+                    "ventilation_system": "DOAS",
                 })
                 system_data = unwrap(system_resp)
 

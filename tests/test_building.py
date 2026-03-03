@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -107,7 +106,7 @@ def test_get_model_summary():
                     "materials", "constructions", "construction_sets",
                     "space_types", "people", "lights", "electric_equipment", "gas_equipment",
                     "schedule_rulesets", "schedule_constants",
-                    "air_loops", "plant_loops", "zone_hvac_equipment"
+                    "air_loops", "plant_loops", "zone_hvac_equipment",
                 ]
                 for key in expected_keys:
                     assert key in summary, f"Missing key: {key}"

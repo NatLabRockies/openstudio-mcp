@@ -5,7 +5,13 @@ from typing import Any
 
 from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import fetch_object
-from mcp_server.skills.hvac_systems import air_terminals, baseline, catalog, templates, validation
+from mcp_server.skills.hvac_systems import (
+    air_terminals,
+    baseline,
+    catalog,
+    templates,
+    validation,
+)
 
 
 def add_baseline_system(
@@ -14,7 +20,7 @@ def add_baseline_system(
     heating_fuel: str = "NaturalGas",
     cooling_fuel: str = "Electricity",
     economizer: bool = True,
-    system_name: str | None = None
+    system_name: str | None = None,
 ) -> dict[str, Any]:
     """Add ASHRAE 90.1 Appendix G baseline HVAC system.
 
@@ -36,7 +42,7 @@ def add_baseline_system(
         if system_type not in range(1, 11):
             return {
                 "ok": False,
-                "error": f"Invalid system_type: {system_type}. Must be 1-10."
+                "error": f"Invalid system_type: {system_type}. Must be 1-10.",
             }
 
         # Fetch thermal zones
@@ -46,14 +52,14 @@ def add_baseline_system(
             if zone is None:
                 return {
                     "ok": False,
-                    "error": f"Thermal zone '{zone_name}' not found"
+                    "error": f"Thermal zone '{zone_name}' not found",
                 }
             zones.append(zone)
 
         if len(zones) == 0:
             return {
                 "ok": False,
-                "error": "At least one thermal zone required"
+                "error": "At least one thermal zone required",
             }
 
         # Auto-generate name if not provided
@@ -64,48 +70,48 @@ def add_baseline_system(
         # Route to appropriate baseline system implementation
         if system_type == 1:
             result = baseline.create_baseline_system_1(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 2:
             result = baseline.create_baseline_system_2(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 3:
             result = baseline.create_baseline_system_3(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 4:
             result = baseline.create_baseline_system_4(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 5:
             result = baseline.create_baseline_system_5(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 6:
             result = baseline.create_baseline_system_6(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 7:
             result = baseline.create_baseline_system_7(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 8:
             result = baseline.create_baseline_system_8(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 9:
             result = baseline.create_baseline_system_9(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         elif system_type == 10:
             result = baseline.create_baseline_system_10(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name
+                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
         else:
             return {
                 "ok": False,
-                "error": f"System type {system_type} not yet implemented. Currently supporting systems 1-10."
+                "error": f"System type {system_type} not yet implemented. Currently supporting systems 1-10.",
             }
 
         # Validate system if creation succeeded
@@ -157,7 +163,7 @@ def get_baseline_system_info(system_type: int) -> dict[str, Any]:
 def replace_air_terminals(
     air_loop_name: str,
     terminal_type: str,
-    terminal_options: dict[str, Any] | None = None
+    terminal_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Replace air terminals on an existing air loop.
 
@@ -177,7 +183,7 @@ def replace_air_terminals(
         if air_loop is None:
             return {
                 "ok": False,
-                "error": f"Air loop '{air_loop_name}' not found"
+                "error": f"Air loop '{air_loop_name}' not found",
             }
 
         # Validate terminal type
@@ -185,7 +191,7 @@ def replace_air_terminals(
         if terminal_type not in valid_types:
             return {
                 "ok": False,
-                "error": f"Invalid terminal_type: '{terminal_type}'. Must be one of: {', '.join(valid_types)}"
+                "error": f"Invalid terminal_type: '{terminal_type}'. Must be one of: {', '.join(valid_types)}",
             }
 
         # Replace terminals
@@ -193,7 +199,7 @@ def replace_air_terminals(
             model,
             air_loop,
             terminal_type,
-            terminal_options or {}
+            terminal_options or {},
         )
 
         return result
@@ -207,7 +213,7 @@ def replace_air_terminals(
 def replace_zone_terminal(
     zone_name: str,
     terminal_type: str,
-    terminal_options: dict[str, Any] | None = None
+    terminal_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Replace the air terminal on a single zone.
 
@@ -230,11 +236,11 @@ def replace_zone_terminal(
         if terminal_type not in valid_types:
             return {
                 "ok": False,
-                "error": f"Invalid terminal_type: '{terminal_type}'. Must be one of: {', '.join(valid_types)}"
+                "error": f"Invalid terminal_type: '{terminal_type}'. Must be one of: {', '.join(valid_types)}",
             }
 
         return air_terminals.replace_zone_terminal(
-            model, zone, terminal_type, terminal_options or {}
+            model, zone, terminal_type, terminal_options or {},
         )
 
     except RuntimeError as e:
@@ -248,7 +254,9 @@ def add_doas_system(
     system_name: str = "DOAS",
     energy_recovery: bool = True,
     sensible_effectiveness: float = 0.75,
-    zone_equipment_type: str = "FanCoil"
+    zone_equipment_type: str = "FanCoil",
+    heating_fuel: str = "NaturalGas",
+    cooling_fuel: str = "Electricity",
 ) -> dict[str, Any]:
     """Add Dedicated Outdoor Air System with zone equipment.
 
@@ -258,6 +266,8 @@ def add_doas_system(
         energy_recovery: Add ERV (default True)
         sensible_effectiveness: ERV sensible effectiveness 0-1 (default 0.75)
         zone_equipment_type: FanCoil | Radiant | Chiller_Beams
+        heating_fuel: NaturalGas | Electricity | DistrictHeating
+        cooling_fuel: Electricity | DistrictCooling
 
     Returns:
         dict with ok status and system details
@@ -281,7 +291,8 @@ def add_doas_system(
         # Create DOAS system
         result = templates.create_doas_system(
             model, zones, system_name, energy_recovery,
-            sensible_effectiveness, zone_equipment_type
+            sensible_effectiveness, zone_equipment_type,
+            heating_fuel, cooling_fuel,
         )
 
         return {"ok": True, "system": result}
@@ -296,7 +307,7 @@ def add_vrf_system(
     thermal_zone_names: list[str],
     system_name: str = "VRF",
     heat_recovery: bool = True,
-    outdoor_unit_capacity_w: float | None = None
+    outdoor_unit_capacity_w: float | None = None,
 ) -> dict[str, Any]:
     """Add Variable Refrigerant Flow multi-zone heat pump system.
 
@@ -322,7 +333,7 @@ def add_vrf_system(
 
         # Create VRF system
         result = templates.create_vrf_system(
-            model, zones, system_name, heat_recovery, outdoor_unit_capacity_w
+            model, zones, system_name, heat_recovery, outdoor_unit_capacity_w,
         )
 
         return {"ok": True, "system": result}
@@ -337,7 +348,9 @@ def add_radiant_system(
     thermal_zone_names: list[str],
     system_name: str = "Radiant",
     radiant_type: str = "Floor",
-    ventilation_system: str = "DOAS"
+    ventilation_system: str = "DOAS",
+    heating_fuel: str = "NaturalGas",
+    cooling_fuel: str = "Electricity",
 ) -> dict[str, Any]:
     """Add low-temperature radiant heating/cooling system.
 
@@ -346,6 +359,8 @@ def add_radiant_system(
         system_name: Name prefix for radiant components
         radiant_type: Floor | Ceiling | Walls
         ventilation_system: DOAS | None (if None, ventilation must be added separately)
+        heating_fuel: NaturalGas | Electricity | DistrictHeating
+        cooling_fuel: Electricity | DistrictCooling
 
     Returns:
         dict with ok status and system details
@@ -373,7 +388,8 @@ def add_radiant_system(
 
         # Create radiant system
         result = templates.create_radiant_system(
-            model, zones, system_name, radiant_type, ventilation_system
+            model, zones, system_name, radiant_type, ventilation_system,
+            heating_fuel, cooling_fuel,
         )
 
         return {"ok": True, "system": result}

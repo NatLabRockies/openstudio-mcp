@@ -1,7 +1,8 @@
 # mcp_server/version.py
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 # Pin: this repo/container is expected to ship a fixed OpenStudio SDK version.
 OPENSTUDIO_SDK_VERSION = "3.11.0"

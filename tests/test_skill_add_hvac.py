@@ -7,8 +7,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 

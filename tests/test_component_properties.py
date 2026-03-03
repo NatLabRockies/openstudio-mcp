@@ -1,12 +1,11 @@
 """Integration tests for component_properties skill (Phase 5A)."""
 import asyncio
 import json
-import pytest
 
+import pytest
+from conftest import create_and_load, create_baseline_and_load, integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params, create_and_load, create_baseline_and_load
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
 

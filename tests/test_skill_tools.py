@@ -5,19 +5,14 @@ without needing Docker or OpenStudio.
 """
 from __future__ import annotations
 
-import os
 import textwrap
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from mcp_server.skills.skill_discovery.operations import (
     _parse_frontmatter,
-    list_skills_op,
     get_skill_op,
+    list_skills_op,
 )
-
 
 # --- Frontmatter parsing ---
 

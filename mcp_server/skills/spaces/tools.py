@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from mcp_server.skills.spaces.operations import (
-    list_spaces,
-    get_space_details,
-    list_thermal_zones,
-    get_thermal_zone_details,
     create_space,
     create_thermal_zone,
+    get_space_details,
+    get_thermal_zone_details,
+    list_spaces,
+    list_thermal_zones,
 )
 
 

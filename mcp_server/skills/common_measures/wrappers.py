@@ -57,11 +57,14 @@ def view_simulation_data_op(
             Defaults to surface temperatures if not specified.
         reporting_frequency: "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod"
     """
-    vars_ = variable_names or [
+    defaults = [
         "Surface Inside Face Temperature",
         "Surface Outside Face Temperature",
         "Surface Inside Face Convection Heat Transfer Coefficient",
     ]
+    vars_ = variable_names if variable_names else defaults
+    if not vars_:
+        return {"ok": False, "error": "variable_names must not be empty"}
     # Pad to 3 variables (measure expects exactly 3)
     while len(vars_) < 3:
         vars_.append(vars_[-1])
@@ -129,6 +132,10 @@ def run_qaqc_checks_op(
     }
     args: dict[str, str] = {"template": template}
     if checks:
+        valid_short = set(short_to_full.keys()) | set(all_checks)
+        unknown = [c for c in checks if c not in valid_short]
+        if unknown:
+            return {"ok": False, "error": f"Unknown check names: {unknown}. Valid: {sorted(short_to_full.keys())}"}
         enabled = {short_to_full.get(c, c) for c in checks}
         for check_name in all_checks:
             args[check_name] = str(check_name in enabled).lower()
