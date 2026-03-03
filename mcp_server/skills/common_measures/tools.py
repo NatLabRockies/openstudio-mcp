@@ -63,6 +63,7 @@ def register(mcp):
 
     @mcp.tool(name="view_simulation_data")
     def view_simulation_data_tool(
+        run_id: str = "",
         variable_names: list[str] | None = None,
         reporting_frequency: str = "Timestep",
     ):
@@ -72,6 +73,7 @@ def register(mcp):
         plotted on the model geometry. Requires a completed simulation.
 
         Args:
+            run_id: Run ID from a completed simulation (required — provides SQL results)
             variable_names: Up to 3 EnergyPlus output variable names.
                 Defaults to surface temperatures if omitted.
             reporting_frequency: "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod"
@@ -79,26 +81,29 @@ def register(mcp):
         Requires a model to be loaded and a simulation to have been run.
         """
         return view_simulation_data_op(
+            run_id=run_id or None,
             variable_names=variable_names,
             reporting_frequency=reporting_frequency,
         )
 
     @mcp.tool(name="generate_results_report")
-    def generate_results_report_tool(units: str = "IP"):
+    def generate_results_report_tool(run_id: str = "", units: str = "IP"):
         """Generate a comprehensive HTML report from simulation results.
 
         Includes building summary, annual/monthly energy, HVAC details,
         envelope, zones, economics, and more (~25 sections).
 
         Args:
+            run_id: Run ID from a completed simulation (required — provides SQL results)
             units: "IP" (imperial) or "SI" (metric)
 
         Requires a completed simulation.
         """
-        return generate_results_report_op(units=units)
+        return generate_results_report_op(run_id=run_id or None, units=units)
 
     @mcp.tool(name="run_qaqc_checks")
     def run_qaqc_checks_tool(
+        run_id: str = "",
         template: str = "90.1-2013",
         checks: list[str] | None = None,
     ):
@@ -108,6 +113,7 @@ def register(mcp):
         internal loads, envelope, schedules, and mechanical systems.
 
         Args:
+            run_id: Run ID from a completed simulation (required — provides SQL results)
             template: Target ASHRAE standard — "90.1-2013", "90.1-2016", "90.1-2019"
             checks: Which checks to enable. Defaults to all. Options:
                 "part_load_eff", "capacity", "simultaneous_htg_clg",
@@ -116,7 +122,7 @@ def register(mcp):
 
         Requires a completed simulation.
         """
-        return run_qaqc_checks_op(template=template, checks=checks)
+        return run_qaqc_checks_op(run_id=run_id or None, template=template, checks=checks)
 
     @mcp.tool(name="adjust_thermostat_setpoints")
     def adjust_thermostat_setpoints_tool(

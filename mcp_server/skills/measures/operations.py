@@ -16,9 +16,10 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE
+from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
 from mcp_server.model_manager import get_model, load_model
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
+from mcp_server.util import resolve_run_dir
 
 
 def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
@@ -87,19 +88,22 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
 def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
-    """Apply an OpenStudio model measure to the in-memory model.
+    """Apply an OpenStudio measure to the in-memory model.
 
-    Uses the OSW runner approach:
-    1. Save current model to a temp OSM
-    2. Copy measure into run dir
-    3. Build a minimal OSW with the measure step
-    4. Run `openstudio run -w temp.osw`
-    5. Reload the resulting model
+    For ModelMeasures (default): saves model → builds OSW → runs
+    `openstudio run --measures_only` → reloads model.
+
+    For ReportingMeasures (when run_id provided): copies simulation
+    artifacts (SQL, IDF) from a completed run into the measure dir,
+    then runs `openstudio run --postprocess_only` so only reporting
+    measures execute against the existing results.
 
     Args:
         measure_dir: Path to the measure directory
         arguments: Optional dict of argument_name -> value overrides
+        run_id: Optional completed simulation run_id (for reporting measures)
     """
     try:
         model = get_model()
@@ -113,9 +117,9 @@ def apply_measure(
             return {"ok": False, "error": f"No measure.rb found in {measure_dir}"}
 
         # Create temp directory for the run
-        run_id = uuid.uuid4().hex[:12]
+        measure_run_id = uuid.uuid4().hex[:12]
         runs_dir = Path(os.environ.get("MCP_RUNS_DIR", "/runs"))
-        run_dir = runs_dir / f"measure_{run_id}"
+        run_dir = runs_dir / f"measure_{measure_run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
         # Save current model to temp OSM
@@ -162,13 +166,37 @@ def apply_measure(
         osw_path = run_dir / "workflow.osw"
         osw_path.write_text(json.dumps(osw, indent=2), encoding="utf-8")
 
-        # Run openstudio with bundle flags for gem dependencies
+        # Determine run mode: --postprocess_only for reporting measures,
+        # --measures_only for model/energyplus measures
+        postprocess = False
+        if run_id:
+            try:
+                sim_dir = resolve_run_dir(RUN_ROOT, run_id)
+            except FileNotFoundError:
+                return {"ok": False, "error": f"Simulation run not found: {run_id}"}
+            sql_src = sim_dir / "run" / "eplusout.sql"
+            if not sql_src.is_file():
+                return {"ok": False, "error": f"No eplusout.sql in run {run_id} — simulation may not have completed"}
+            # Stage simulation artifacts so the reporting measure can find them.
+            # The OSW runner expects run/eplusout.sql, run/in.osm, run/in.idf
+            ep_run = run_dir / "run"
+            ep_run.mkdir(exist_ok=True)
+            shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
+            osm_src = sim_dir / "run" / "in.osm"
+            if osm_src.is_file():
+                shutil.copy2(str(osm_src), str(ep_run / "in.osm"))
+            idf_src = sim_dir / "run" / "in.idf"
+            if idf_src.is_file():
+                shutil.copy2(str(idf_src), str(ep_run / "in.idf"))
+            postprocess = True
+
+        run_flag = "--postprocess_only" if postprocess else "--measures_only"
         cmd = [
             "openstudio",
             "--bundle", OSCLI_GEMFILE,
             "--bundle_path", OSCLI_GEM_PATH,
             "--bundle_without", "native_ext",
-            "run", "--measures_only", "-w", str(osw_path),
+            "run", run_flag, "-w", str(osw_path),
         ]
         log_path = run_dir / "openstudio.log"
         with open(log_path, "w", encoding="utf-8") as log_f:
@@ -190,6 +218,15 @@ def apply_measure(
                 "ok": False,
                 "error": f"Measure run failed (exit code {proc.returncode})",
                 "log_tail": tail,
+            }
+
+        # For reporting measures, don't reload model — just return artifacts
+        if postprocess:
+            return {
+                "ok": True,
+                "measure_dir": str(measure_path),
+                "run_dir": str(run_dir),
+                "arguments_applied": measure_args,
             }
 
         # Find the output model — OpenStudio puts it in run/in.osm
