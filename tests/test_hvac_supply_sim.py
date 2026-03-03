@@ -10,6 +10,7 @@ Configurations tested:
 2. Radiant + DOAS (default fuels) — radiant HW/CHW + boiler/chiller/tower + DOAS
 3. DOAS + FanCoil (both district)  — DistrictHeating + DistrictCooling objects
 4. DOAS + Chilled Beams            — CHW-only, no HW loop
+5. DOAS + Radiant zone equip       — radiant via DOAS template branch
 """
 from __future__ import annotations
 
@@ -244,6 +245,38 @@ def test_doas_chilled_beams_simulates():
                 sys = sys_resp["system"]
                 assert sys["chilled_water_loop"] is not None
                 assert sys["hot_water_loop"] is None  # beams = CHW only
+
+                await _save_run_and_check(s, name)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 5. DOAS + Radiant zone equipment — exercises DOAS template Radiant branch
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_doas_radiant_equip_simulates():
+    """10-zone DOAS w/ radiant zone equip → EnergyPlus completes, no fatal/severe."""
+    name = f"sim_doas_rad_{uuid.uuid4().hex[:8]}"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                zone_names = await _setup_baseline(s, name)
+
+                sys_resp = unwrap(await s.call_tool("add_doas_system", {
+                    "thermal_zone_names": zone_names,
+                    "system_name": "DOAS Rad Sim",
+                    "energy_recovery": True,
+                    "zone_equipment_type": "Radiant",
+                }))
+                assert sys_resp.get("ok") is True, sys_resp
+                sys = sys_resp["system"]
+                assert sys["chilled_water_loop"] is not None
+                assert sys["hot_water_loop"] is not None
+                assert sys["condenser_water_loop"] is not None
 
                 await _save_run_and_check(s, name)
 

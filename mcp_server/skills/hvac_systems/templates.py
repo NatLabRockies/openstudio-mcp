@@ -285,6 +285,7 @@ def create_doas_system(
                     model, model.alwaysOnDiscreteSchedule(), r_htg, r_clg,
                 )
                 radiant.setName(f"{name} Radiant - {zone_name}")
+                radiant.setRadiantSurfaceType("Floors")
                 radiant.addToThermalZone(zone)
                 hw_loop.addDemandBranchForComponent(r_htg)
                 chw_loop.addDemandBranchForComponent(r_clg)
