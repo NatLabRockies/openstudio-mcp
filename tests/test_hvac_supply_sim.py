@@ -7,12 +7,9 @@ nodes, sizing failures, and other issues invisible to wiring-only tests.
 
 Configurations tested:
 1. DOAS + FanCoil (default fuels) — air + CHW + HW + condenser loops
-2. DOAS + FanCoil (both district)  — DistrictHeating + DistrictCooling objects
-3. DOAS + Chilled Beams            — CHW-only, no HW loop
-
-Note: Radiant+DOAS omitted — pre-existing cooling coil sizing failures
-("Calculation of cooling coil design UA failed") in the low-temp radiant
-template cause EnergyPlus to report severe errors.  Not a supply wiring bug.
+2. Radiant + DOAS (default fuels) — radiant HW/CHW + boiler/chiller/tower + DOAS
+3. DOAS + FanCoil (both district)  — DistrictHeating + DistrictCooling objects
+4. DOAS + Chilled Beams            — CHW-only, no HW loop
 """
 from __future__ import annotations
 
@@ -158,7 +155,40 @@ def test_doas_fancoil_simulates():
 
 
 # ---------------------------------------------------------------------------
-# 2. DOAS + FanCoil — both district (DistrictHeating + DistrictCooling)
+# 2. Radiant + DOAS — default fuels (radiant HW/CHW + boiler/chiller/tower)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_radiant_doas_simulates():
+    """10-zone radiant floor + DOAS → EnergyPlus completes, no fatal/severe."""
+    name = f"sim_rad_doas_{uuid.uuid4().hex[:8]}"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                zone_names = await _setup_baseline(s, name)
+
+                sys_resp = unwrap(await s.call_tool("add_radiant_system", {
+                    "thermal_zone_names": zone_names,
+                    "system_name": "Rad Sim",
+                    "radiant_type": "Floor",
+                    "ventilation_system": "DOAS",
+                }))
+                assert sys_resp.get("ok") is True, sys_resp
+                sys = sys_resp["system"]
+                assert sys["hot_water_loop"] is not None
+                assert sys["chilled_water_loop"] is not None
+                assert sys["condenser_water_loop"] is not None
+                assert sys["doas_loop"] is not None
+
+                await _save_run_and_check(s, name)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 3. DOAS + FanCoil — both district (DistrictHeating + DistrictCooling)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
@@ -190,7 +220,7 @@ def test_doas_district_simulates():
 
 
 # ---------------------------------------------------------------------------
-# 3. DOAS + Chilled Beams — CHW-only (chiller + condenser, no HW loop)
+# 4. DOAS + Chilled Beams — CHW-only (chiller + condenser, no HW loop)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration

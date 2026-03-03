@@ -289,6 +289,35 @@ def add_cooling_supply(
     return cw_loop
 
 
+def update_loop_setpoint_schedule(
+    model,
+    loop: openstudio.model.PlantLoop,
+    temp_c: float,
+) -> None:
+    """Replace the supply-outlet setpoint schedule with a new constant value.
+
+    Used when radiant templates override sizing temps after loop creation
+    (e.g. CHW from 6.7°C → 14.4°C for low-temp radiant).
+
+    Args:
+        model: OpenStudio model
+        loop: PlantLoop whose setpoint schedule to update
+        temp_c: New constant supply temperature in °C
+    """
+    supply_outlet = loop.supplyOutletNode()
+    for spm in supply_outlet.setpointManagers():
+        spm.remove()
+
+    schedule = openstudio.model.ScheduleRuleset(model)
+    schedule.setName(f"{loop.nameString()} Setpoint Temp")
+    schedule.defaultDaySchedule().addValue(
+        openstudio.Time(0, 24, 0, 0), temp_c,
+    )
+    new_spm = openstudio.model.SetpointManagerScheduled(model, schedule)
+    new_spm.setName(f"{loop.nameString()} Setpoint Manager")
+    new_spm.addToNode(supply_outlet)
+
+
 def _create_chw_temp_schedule(model) -> openstudio.model.ScheduleRuleset:
     """Create chilled water supply temperature schedule (44°F / 6.7°C)."""
     schedule = openstudio.model.ScheduleRuleset(model)
