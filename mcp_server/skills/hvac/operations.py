@@ -22,7 +22,7 @@ def _extract_detailed_supply_components(air_loop) -> dict[str, Any]:
         "fans": [],
         "heating_coils": [],
         "cooling_coils": [],
-        "other": []
+        "other": [],
     }
 
     for component in air_loop.supplyComponents():
@@ -30,12 +30,12 @@ def _extract_detailed_supply_components(air_loop) -> dict[str, Any]:
 
         # Extract fan details
         if "Fan" in comp_type:
-            fan_info = {"type": comp_type, "name": component.nameString() if hasattr(component, 'nameString') else "Unnamed"}
+            fan_info = {"type": comp_type, "name": component.nameString() if hasattr(component, "nameString") else "Unnamed"}
 
             # Try to get fan-specific attributes
-            if hasattr(component, 'pressureRise') and callable(component.pressureRise):
+            if hasattr(component, "pressureRise") and callable(component.pressureRise):
                 fan_info["pressure_rise_pa"] = component.pressureRise()
-            if hasattr(component, 'motorEfficiency') and callable(component.motorEfficiency):
+            if hasattr(component, "motorEfficiency") and callable(component.motorEfficiency):
                 fan_info["motor_efficiency"] = component.motorEfficiency()
 
             result["fans"].append(fan_info)
@@ -43,17 +43,17 @@ def _extract_detailed_supply_components(air_loop) -> dict[str, Any]:
         # Extract heating coil details
         # valueName() returns e.g. "OS_Coil_Heating_Gas" (underscored)
         elif "Coil_Heating" in comp_type or "CoilHeating" in comp_type:
-            coil_info = {"type": comp_type, "name": component.nameString() if hasattr(component, 'nameString') else "Unnamed"}
+            coil_info = {"type": comp_type, "name": component.nameString() if hasattr(component, "nameString") else "Unnamed"}
 
             # Try to get coil-specific attributes
-            if hasattr(component, 'fuelType') and callable(component.fuelType):
+            if hasattr(component, "fuelType") and callable(component.fuelType):
                 coil_info["fuel_type"] = component.fuelType()
 
             result["heating_coils"].append(coil_info)
 
         # Extract cooling coil details
         elif "Coil_Cooling" in comp_type or "CoilCooling" in comp_type:
-            coil_info = {"type": comp_type, "name": component.nameString() if hasattr(component, 'nameString') else "Unnamed"}
+            coil_info = {"type": comp_type, "name": component.nameString() if hasattr(component, "nameString") else "Unnamed"}
             result["cooling_coils"].append(coil_info)
 
         else:
@@ -74,7 +74,7 @@ def _extract_outdoor_air_system(air_loop) -> dict[str, Any] | None:
     result = {
         "name": oa_system.nameString(),
         "economizer_enabled": False,
-        "economizer_type": "NoEconomizer"
+        "economizer_type": "NoEconomizer",
     }
 
     # Get controller outdoor air
@@ -82,7 +82,7 @@ def _extract_outdoor_air_system(air_loop) -> dict[str, Any] | None:
         controller = oa_system.getControllerOutdoorAir()
 
         # Get economizer settings
-        if hasattr(controller, 'getEconomizerControlType'):
+        if hasattr(controller, "getEconomizerControlType"):
             econ_type = controller.getEconomizerControlType()
             result["economizer_type"] = econ_type
             result["economizer_enabled"] = (econ_type != "NoEconomizer")
@@ -101,7 +101,7 @@ def _extract_setpoint_managers(air_loop) -> list[dict[str, Any]]:
     for spm in outlet_node.setpointManagers():
         spm_info = {
             "type": spm.iddObjectType().valueName(),
-            "name": spm.nameString() if hasattr(spm, 'nameString') else "Unnamed"
+            "name": spm.nameString() if hasattr(spm, "nameString") else "Unnamed",
         }
         setpoint_mgrs.append(spm_info)
 
@@ -120,7 +120,7 @@ def _extract_air_loop(model, air_loop) -> dict[str, Any]:
     for component in air_loop.supplyComponents():
         supply_components.append({
             "type": component.iddObjectType().valueName(),
-            "name": component.nameString() if hasattr(component, 'nameString') else "Unnamed"
+            "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
         })
 
     # Extract detailed component information for validation
@@ -152,7 +152,7 @@ def _extract_plant_loop(model, plant_loop) -> dict[str, Any]:
     for component in plant_loop.supplyComponents():
         supply_components.append({
             "type": component.iddObjectType().valueName(),
-            "name": component.nameString() if hasattr(component, 'nameString') else "Unnamed"
+            "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
         })
 
     # Get demand components
@@ -160,7 +160,7 @@ def _extract_plant_loop(model, plant_loop) -> dict[str, Any]:
     for component in plant_loop.demandComponents():
         demand_components.append({
             "type": component.iddObjectType().valueName(),
-            "name": component.nameString() if hasattr(component, 'nameString') else "Unnamed"
+            "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
         })
 
     return {
@@ -182,7 +182,7 @@ def _extract_zone_hvac_component(model, component) -> dict[str, Any]:
 
     # Try to get name (not all components have nameString method)
     try:
-        if hasattr(component, 'nameString'):
+        if hasattr(component, "nameString"):
             result["name"] = component.nameString()
         else:
             result["name"] = "Unnamed"
@@ -191,7 +191,7 @@ def _extract_zone_hvac_component(model, component) -> dict[str, Any]:
 
     # Try to get thermal zone
     try:
-        if hasattr(component, 'thermalZone'):
+        if hasattr(component, "thermalZone"):
             zone_optional = component.thermalZone()
             if zone_optional.is_initialized():
                 result["thermal_zone"] = zone_optional.get().nameString()
@@ -209,7 +209,7 @@ def list_air_loops() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(air_loops),
-            "air_loops": air_loops
+            "air_loops": air_loops,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -228,7 +228,7 @@ def get_air_loop_details(air_loop_name: str) -> dict[str, Any]:
 
         return {
             "ok": True,
-            "air_loop": _extract_air_loop(model, air_loop)
+            "air_loop": _extract_air_loop(model, air_loop),
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -244,7 +244,7 @@ def list_plant_loops() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(plant_loops),
-            "plant_loops": plant_loops
+            "plant_loops": plant_loops,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -260,7 +260,7 @@ def list_zone_hvac_equipment() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(equipment),
-            "zone_hvac_equipment": equipment
+            "zone_hvac_equipment": equipment,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -335,7 +335,7 @@ def get_plant_loop_details(plant_loop_name: str) -> dict[str, Any]:
 
         for spm in supply_outlet.setpointManagers():
             # Try to get setpoint temperature
-            if hasattr(spm, 'setpointTemperature') and callable(spm.setpointTemperature):
+            if hasattr(spm, "setpointTemperature") and callable(spm.setpointTemperature):
                 temp_opt = spm.setpointTemperature()
                 if temp_opt.is_initialized():
                     setpoint_temp_c = temp_opt.get()
@@ -350,8 +350,8 @@ def get_plant_loop_details(plant_loop_name: str) -> dict[str, Any]:
                 "supply_temp_setpoint_c": setpoint_temp_c,
                 "design_loop_exit_temp_c": sizing.designLoopExitTemperature(),
                 "loop_design_delta_temp_c": sizing.loopDesignTemperatureDifference(),
-                **_extract_plant_loop(model, plant_loop)
-            }
+                **_extract_plant_loop(model, plant_loop),
+            },
         }
 
         return result
@@ -380,7 +380,7 @@ def get_zone_hvac_details(equipment_name: str) -> dict[str, Any]:
         # Find equipment by name in all zone HVAC components
         equipment = None
         for comp in model.getZoneHVACComponents():
-            if hasattr(comp, 'nameString') and comp.nameString() == equipment_name:
+            if hasattr(comp, "nameString") and comp.nameString() == equipment_name:
                 equipment = comp
                 break
 
@@ -391,13 +391,13 @@ def get_zone_hvac_details(equipment_name: str) -> dict[str, Any]:
             "ok": True,
             "equipment": {
                 "handle": str(equipment.handle()),
-                "name": equipment.nameString() if hasattr(equipment, 'nameString') else "Unnamed",
+                "name": equipment.nameString() if hasattr(equipment, "nameString") else "Unnamed",
                 "type": equipment.iddObjectType().valueName(),
-            }
+            },
         }
 
         # Try to extract thermal zone
-        if hasattr(equipment, 'thermalZone'):
+        if hasattr(equipment, "thermalZone"):
             zone_opt = equipment.thermalZone()
             if zone_opt.is_initialized():
                 result["equipment"]["thermal_zone"] = zone_opt.get().nameString()
@@ -409,15 +409,15 @@ def get_zone_hvac_details(equipment_name: str) -> dict[str, Any]:
             ptac_obj = ptac.get()
             result["equipment"]["heating_coil"] = {
                 "type": ptac_obj.heatingCoil().iddObjectType().valueName(),
-                "name": ptac_obj.heatingCoil().nameString() if hasattr(ptac_obj.heatingCoil(), 'nameString') else "Unnamed"
+                "name": ptac_obj.heatingCoil().nameString() if hasattr(ptac_obj.heatingCoil(), "nameString") else "Unnamed",
             }
             result["equipment"]["cooling_coil"] = {
                 "type": ptac_obj.coolingCoil().iddObjectType().valueName(),
-                "name": ptac_obj.coolingCoil().nameString() if hasattr(ptac_obj.coolingCoil(), 'nameString') else "Unnamed"
+                "name": ptac_obj.coolingCoil().nameString() if hasattr(ptac_obj.coolingCoil(), "nameString") else "Unnamed",
             }
             result["equipment"]["fan"] = {
                 "type": ptac_obj.supplyAirFan().iddObjectType().valueName(),
-                "name": ptac_obj.supplyAirFan().nameString() if hasattr(ptac_obj.supplyAirFan(), 'nameString') else "Unnamed"
+                "name": ptac_obj.supplyAirFan().nameString() if hasattr(ptac_obj.supplyAirFan(), "nameString") else "Unnamed",
             }
 
         # PTHP
@@ -426,15 +426,15 @@ def get_zone_hvac_details(equipment_name: str) -> dict[str, Any]:
             pthp_obj = pthp.get()
             result["equipment"]["heating_coil"] = {
                 "type": pthp_obj.heatingCoil().iddObjectType().valueName(),
-                "name": pthp_obj.heatingCoil().nameString() if hasattr(pthp_obj.heatingCoil(), 'nameString') else "Unnamed"
+                "name": pthp_obj.heatingCoil().nameString() if hasattr(pthp_obj.heatingCoil(), "nameString") else "Unnamed",
             }
             result["equipment"]["cooling_coil"] = {
                 "type": pthp_obj.coolingCoil().iddObjectType().valueName(),
-                "name": pthp_obj.coolingCoil().nameString() if hasattr(pthp_obj.coolingCoil(), 'nameString') else "Unnamed"
+                "name": pthp_obj.coolingCoil().nameString() if hasattr(pthp_obj.coolingCoil(), "nameString") else "Unnamed",
             }
             result["equipment"]["fan"] = {
                 "type": pthp_obj.supplyAirFan().iddObjectType().valueName(),
-                "name": pthp_obj.supplyAirFan().nameString() if hasattr(pthp_obj.supplyAirFan(), 'nameString') else "Unnamed"
+                "name": pthp_obj.supplyAirFan().nameString() if hasattr(pthp_obj.supplyAirFan(), "nameString") else "Unnamed",
             }
 
         # Unit Heater
@@ -443,11 +443,11 @@ def get_zone_hvac_details(equipment_name: str) -> dict[str, Any]:
             uh_obj = unit_heater.get()
             result["equipment"]["heating_coil"] = {
                 "type": uh_obj.heatingCoil().iddObjectType().valueName(),
-                "name": uh_obj.heatingCoil().nameString() if hasattr(uh_obj.heatingCoil(), 'nameString') else "Unnamed"
+                "name": uh_obj.heatingCoil().nameString() if hasattr(uh_obj.heatingCoil(), "nameString") else "Unnamed",
             }
             result["equipment"]["fan"] = {
                 "type": uh_obj.supplyAirFan().iddObjectType().valueName(),
-                "name": uh_obj.supplyAirFan().nameString() if hasattr(uh_obj.supplyAirFan(), 'nameString') else "Unnamed"
+                "name": uh_obj.supplyAirFan().nameString() if hasattr(uh_obj.supplyAirFan(), "nameString") else "Unnamed",
             }
 
         return result

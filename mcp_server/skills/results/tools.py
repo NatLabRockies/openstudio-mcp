@@ -25,7 +25,11 @@ def register(mcp):
             max_bytes: Max bytes to read (default 400KB)
             offset: Byte offset for chunked reading (default 0)
         """
-        return read_run_artifact(run_id=run_id, path=path, max_bytes=int(max_bytes or 400_000), offset=offset)
+        try:
+            mb = int(max_bytes) if max_bytes is not None else 400_000
+        except (ValueError, TypeError):
+            mb = 400_000
+        return read_run_artifact(run_id=run_id, path=path, max_bytes=mb, offset=offset)
 
     @mcp.tool(name="extract_summary_metrics")
     def extract_summary_metrics_tool(run_id: str):
@@ -113,5 +117,5 @@ def register(mcp):
             run_id=run_id, variable_name=variable_name, key_value=key_value,
             start_month=start_month, start_day=start_day,
             end_month=end_month, end_day=end_day,
-            frequency=frequency, max_points=int(max_points),
+            frequency=frequency, max_points=int(max_points or 10000),
         )

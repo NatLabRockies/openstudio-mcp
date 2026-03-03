@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
-SCHEMA = '''
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
   run_id TEXT PRIMARY KEY,
   name TEXT,
@@ -18,7 +19,12 @@ CREATE TABLE IF NOT EXISTS runs (
   exit_code INTEGER,
   error TEXT
 );
-'''
+"""
+
+ALLOWED_COLUMNS = frozenset({
+    "run_id", "name", "status", "created_at", "started_at", "ended_at",
+    "pid", "run_dir", "osw_path", "epw_path", "exit_code", "error",
+})
 
 def _db_path(run_root: Path) -> Path:
     return run_root / "run_registry.sqlite3"
@@ -32,7 +38,15 @@ def init_db(run_root: Path) -> None:
     finally:
         conn.close()
 
-def insert_run(run_root: Path, row: Dict[str, Any]) -> None:
+def _validate_columns(keys: set[str]) -> None:
+    """Raise ValueError if any column name is not in the whitelist."""
+    bad = keys - ALLOWED_COLUMNS
+    if bad:
+        raise ValueError(f"Invalid column names: {bad}")
+
+
+def insert_run(run_root: Path, row: dict[str, Any]) -> None:
+    _validate_columns(set(row.keys()))
     init_db(run_root)
     conn = sqlite3.connect(_db_path(run_root))
     try:
@@ -46,17 +60,18 @@ def insert_run(run_root: Path, row: Dict[str, Any]) -> None:
 def update_run(run_root: Path, run_id: str, **fields: Any) -> None:
     if not fields:
         return
+    _validate_columns(set(fields.keys()))
     init_db(run_root)
     conn = sqlite3.connect(_db_path(run_root))
     try:
-        sets = ",".join([f"{k}=?" for k in fields.keys()])
-        vals = list(fields.values()) + [run_id]
+        sets = ",".join([f"{k}=?" for k in fields])
+        vals = [*fields.values(), run_id]
         conn.execute(f"UPDATE runs SET {sets} WHERE run_id=?", vals)
         conn.commit()
     finally:
         conn.close()
 
-def get_run(run_root: Path, run_id: str) -> Optional[Dict[str, Any]]:
+def get_run(run_root: Path, run_id: str) -> dict[str, Any] | None:
     init_db(run_root)
     conn = sqlite3.connect(_db_path(run_root))
     conn.row_factory = sqlite3.Row

@@ -7,8 +7,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params, setup_example
+from conftest import integration_enabled, server_params, setup_example, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -51,7 +50,7 @@ def test_set_weather_file():
                 await s.initialize()
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": EPW_PATH
+                    "epw_path": EPW_PATH,
                 }))
                 assert res.get("ok") is True
                 assert res["weather_file"] is not None
@@ -75,7 +74,7 @@ def test_set_weather_file_not_found():
                 await s.initialize()
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": "/nonexistent/weather.epw"
+                    "epw_path": "/nonexistent/weather.epw",
                 }))
                 assert res.get("ok") is False
     asyncio.run(_run())

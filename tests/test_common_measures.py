@@ -9,8 +9,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params, setup_example
+from conftest import integration_enabled, server_params, setup_example, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -68,7 +67,7 @@ def test_list_common_measures_filter_reporting():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("list_common_measures", {
-                    "category": "reporting"
+                    "category": "reporting",
                 }))
                 assert res.get("ok") is True, f"Failed: {res}"
                 assert res["count"] == 2, f"Expected 2 reporting measures, got {res['count']}"
@@ -90,14 +89,14 @@ def test_list_measure_arguments_common():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 listing = unwrap(await s.call_tool("list_common_measures", {
-                    "category": "location"
+                    "category": "location",
                 }))
                 assert listing.get("ok") is True
                 loc_measures = [m for m in listing["measures"]
                                 if m["name"] == "ChangeBuildingLocation"]
                 assert len(loc_measures) == 1, "ChangeBuildingLocation not found"
                 res = unwrap(await s.call_tool("list_measure_arguments", {
-                    "measure_dir": loc_measures[0]["path"]
+                    "measure_dir": loc_measures[0]["path"],
                 }))
                 assert res.get("ok") is True, f"Failed: {res}"
                 assert len(res["arguments"]) >= 1
@@ -333,7 +332,7 @@ def test_list_common_measures_filter_visualization():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("list_common_measures", {
-                    "category": "visualization"
+                    "category": "visualization",
                 }))
                 assert res.get("ok") is True, f"Failed: {res}"
                 assert res["count"] == 2, f"Expected 2 viz measures, got {res['count']}"

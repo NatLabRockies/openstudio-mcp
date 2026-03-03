@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -46,7 +45,7 @@ def test_create_standard_opaque_material():
                     "thickness_m": 0.2,
                     "conductivity_w_m_k": 1.7,
                     "density_kg_m3": 2400.0,
-                    "specific_heat_j_kg_k": 900.0
+                    "specific_heat_j_kg_k": 900.0,
                 })
                 material_result = unwrap(material_resp)
 
@@ -110,27 +109,27 @@ def test_create_construction_from_materials():
                 # Create materials
                 mat1_resp = await session.call_tool("create_standard_opaque_material", {
                     "name": "Exterior Finish",
-                    "thickness_m": 0.01
+                    "thickness_m": 0.01,
                 })
                 assert unwrap(mat1_resp).get("ok") is True
 
                 mat2_resp = await session.call_tool("create_standard_opaque_material", {
                     "name": "Insulation",
                     "thickness_m": 0.1,
-                    "conductivity_w_m_k": 0.04
+                    "conductivity_w_m_k": 0.04,
                 })
                 assert unwrap(mat2_resp).get("ok") is True
 
                 mat3_resp = await session.call_tool("create_standard_opaque_material", {
                     "name": "Interior Finish",
-                    "thickness_m": 0.01
+                    "thickness_m": 0.01,
                 })
                 assert unwrap(mat3_resp).get("ok") is True
 
                 # Create construction
                 construction_resp = await session.call_tool("create_construction", {
                     "name": "Test Wall Construction",
-                    "material_names": ["Exterior Finish", "Insulation", "Interior Finish"]
+                    "material_names": ["Exterior Finish", "Insulation", "Interior Finish"],
                 })
                 construction_result = unwrap(construction_resp)
 
@@ -172,7 +171,7 @@ def test_create_construction_invalid_material():
                 # Try to create construction with non-existent material
                 construction_resp = await session.call_tool("create_construction", {
                     "name": "Test Construction",
-                    "material_names": ["NonexistentMaterial"]
+                    "material_names": ["NonexistentMaterial"],
                 })
                 construction_result = unwrap(construction_resp)
 
@@ -220,7 +219,7 @@ def test_assign_construction_to_surface():
                 # Assign construction to surface
                 assign_resp = await session.call_tool("assign_construction_to_surface", {
                     "surface_name": surface_name,
-                    "construction_name": construction_name
+                    "construction_name": construction_name,
                 })
                 assign_result = unwrap(assign_resp)
 
@@ -230,7 +229,7 @@ def test_assign_construction_to_surface():
 
                 # Independent query verification
                 sd = unwrap(await session.call_tool("get_surface_details", {
-                    "surface_name": surface_name
+                    "surface_name": surface_name,
                 }))
                 assert sd["surface"]["construction"] == construction_name
 
@@ -262,7 +261,7 @@ def test_assign_construction_invalid_surface():
                 # Try to assign to non-existent surface
                 assign_resp = await session.call_tool("assign_construction_to_surface", {
                     "surface_name": "NonexistentSurface",
-                    "construction_name": "Any Construction"
+                    "construction_name": "Any Construction",
                 })
                 assign_result = unwrap(assign_resp)
 
@@ -299,23 +298,23 @@ def test_end_to_end_construction_workflow():
                 await session.call_tool("create_standard_opaque_material", {
                     "name": "Brick",
                     "thickness_m": 0.1,
-                    "conductivity_w_m_k": 0.8
+                    "conductivity_w_m_k": 0.8,
                 })
                 await session.call_tool("create_standard_opaque_material", {
                     "name": "Foam Insulation",
                     "thickness_m": 0.05,
-                    "conductivity_w_m_k": 0.03
+                    "conductivity_w_m_k": 0.03,
                 })
                 await session.call_tool("create_standard_opaque_material", {
                     "name": "Gypsum",
                     "thickness_m": 0.015,
-                    "conductivity_w_m_k": 0.16
+                    "conductivity_w_m_k": 0.16,
                 })
 
                 # Step 2: Create construction
                 construction_resp = await session.call_tool("create_construction", {
                     "name": "Insulated Brick Wall",
-                    "material_names": ["Brick", "Foam Insulation", "Gypsum"]
+                    "material_names": ["Brick", "Foam Insulation", "Gypsum"],
                 })
                 construction_result = unwrap(construction_resp)
                 assert construction_result.get("ok") is True
@@ -328,7 +327,7 @@ def test_end_to_end_construction_workflow():
                 # Step 4: Assign construction to surface
                 assign_resp = await session.call_tool("assign_construction_to_surface", {
                     "surface_name": surface_name,
-                    "construction_name": "Insulated Brick Wall"
+                    "construction_name": "Insulated Brick Wall",
                 })
                 assign_result = unwrap(assign_resp)
                 assert assign_result.get("ok") is True
@@ -336,7 +335,7 @@ def test_end_to_end_construction_workflow():
 
                 # Independent query verification
                 sd = unwrap(await session.call_tool("get_surface_details", {
-                    "surface_name": surface_name
+                    "surface_name": surface_name,
                 }))
                 assert sd["surface"]["construction"] == "Insulated Brick Wall"
 

@@ -12,10 +12,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
 
@@ -33,7 +32,7 @@ def test_doas_with_erv():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -46,7 +45,7 @@ def test_doas_with_erv():
                     "system_name": "DOAS ERV Test",
                     "energy_recovery": True,
                     "sensible_effectiveness": 0.75,
-                    "zone_equipment_type": "FanCoil"
+                    "zone_equipment_type": "FanCoil",
                 })
                 system_data = unwrap(system_resp)
 
@@ -78,7 +77,7 @@ def test_doas_without_erv():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -90,7 +89,7 @@ def test_doas_without_erv():
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS No ERV",
                     "energy_recovery": False,
-                    "zone_equipment_type": "FanCoil"
+                    "zone_equipment_type": "FanCoil",
                 })
                 system_data = unwrap(system_resp)
 
@@ -119,7 +118,7 @@ def test_doas_fan_coils():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -131,7 +130,7 @@ def test_doas_fan_coils():
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS FC",
                     "energy_recovery": True,
-                    "zone_equipment_type": "FanCoil"
+                    "zone_equipment_type": "FanCoil",
                 })
                 system_data = unwrap(system_resp)
 
@@ -166,7 +165,7 @@ def test_doas_radiant():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -178,7 +177,7 @@ def test_doas_radiant():
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS Radiant",
                     "energy_recovery": True,
-                    "zone_equipment_type": "Radiant"
+                    "zone_equipment_type": "Radiant",
                 })
                 system_data = unwrap(system_resp)
 
@@ -207,7 +206,7 @@ def test_doas_chiller_beams():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -219,7 +218,7 @@ def test_doas_chiller_beams():
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS Beams",
                     "energy_recovery": True,
-                    "zone_equipment_type": "Chiller_Beams"
+                    "zone_equipment_type": "Chiller_Beams",
                 })
                 system_data = unwrap(system_resp)
 
@@ -247,7 +246,7 @@ def test_doas_oa_flow():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -259,7 +258,7 @@ def test_doas_oa_flow():
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS OA Test",
                     "energy_recovery": True,
-                    "zone_equipment_type": "FanCoil"
+                    "zone_equipment_type": "FanCoil",
                 })
                 system_data = unwrap(system_resp)
 
@@ -309,7 +308,7 @@ def test_doas_multi_zone_baseline():
                     "system_name": "Baseline DOAS",
                     "energy_recovery": True,
                     "sensible_effectiveness": 0.75,
-                    "zone_equipment_type": "FanCoil"
+                    "zone_equipment_type": "FanCoil",
                 })
                 system_data = unwrap(system_resp)
 
@@ -323,7 +322,7 @@ def test_doas_multi_zone_baseline():
                 air_loops_data = unwrap(air_loops_resp)
                 doas_loop = next(
                     (lp for lp in air_loops_data["air_loops"] if "Baseline DOAS" in lp["name"]),
-                    None
+                    None,
                 )
                 assert doas_loop is not None
                 assert doas_loop["num_thermal_zones"] == 10

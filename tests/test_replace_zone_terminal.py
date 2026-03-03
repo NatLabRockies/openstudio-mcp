@@ -1,11 +1,10 @@
 """Integration tests for replace_zone_terminal."""
 import asyncio
-import pytest
 
+import pytest
+from conftest import create_and_load, create_baseline_and_load, integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-
-from conftest import unwrap, integration_enabled, server_params, create_and_load, create_baseline_and_load
 
 pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration disabled")
 
@@ -25,14 +24,14 @@ def test_replace_single_zone():
                 sr = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV System"
+                    "system_name": "VAV System",
                 })
                 assert unwrap(sr).get("ok") is True
 
                 # Replace single zone terminal
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": zone_names[0],
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 rd = unwrap(rr)
                 print("replace result:", rd)
@@ -45,7 +44,7 @@ def test_replace_single_zone():
 
                 # Independent query verification
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV System"
+                    "air_loop_name": "VAV System",
                 }))
                 assert ald.get("ok") is True
 
@@ -67,12 +66,12 @@ def test_zone_not_on_air_loop():
                 await session.call_tool("create_space", {"name": "Unconnected Space"})
                 await session.call_tool("create_thermal_zone", {
                     "name": "Unconnected Zone",
-                    "space_names": ["Unconnected Space"]
+                    "space_names": ["Unconnected Space"],
                 })
 
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": "Unconnected Zone",
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 rd = unwrap(rr)
                 print("no-loop result:", rd)
@@ -94,7 +93,7 @@ def test_zone_not_found():
 
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": "Nonexistent Zone",
-                    "terminal_type": "VAV_Reheat"
+                    "terminal_type": "VAV_Reheat",
                 })
                 rd = unwrap(rr)
                 print("not-found result:", rd)
@@ -116,7 +115,7 @@ def test_invalid_terminal_type():
 
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": zone_names[0],
-                    "terminal_type": "InvalidType"
+                    "terminal_type": "InvalidType",
                 })
                 rd = unwrap(rr)
                 print("invalid-type result:", rd)
@@ -140,14 +139,14 @@ def test_hw_terminal_no_loop():
                 sr = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "PFP System"
+                    "system_name": "PFP System",
                 })
                 assert unwrap(sr).get("ok") is True
 
                 # Try VAV_Reheat — needs HW loop which System 6 doesn't have
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": zone_names[0],
-                    "terminal_type": "VAV_Reheat"
+                    "terminal_type": "VAV_Reheat",
                 })
                 rd = unwrap(rr)
                 print("no-hw result:", rd)
@@ -173,14 +172,14 @@ def test_replace_single_zone_baseline():
                 sr = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 assert unwrap(sr).get("ok") is True
 
                 # Replace first zone to PFP_Electric
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": zone_names[0],
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 rd = unwrap(rr)
                 print("baseline single replace:", rd)
@@ -190,7 +189,7 @@ def test_replace_single_zone_baseline():
                 assert rd["zone"]["new_terminal_type"] == "PFP_Electric"
 
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV"
+                    "air_loop_name": "Central VAV",
                 }))
                 assert ald.get("ok") is True
                 assert ald["air_loop"]["num_thermal_zones"] == 10
@@ -211,7 +210,7 @@ def test_mixed_terminals_baseline():
                 sr = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 assert unwrap(sr).get("ok") is True
 
@@ -223,7 +222,7 @@ def test_mixed_terminals_baseline():
                 for cz in core_zones:
                     rr = await session.call_tool("replace_zone_terminal", {
                         "zone_name": cz,
-                        "terminal_type": "VAV_NoReheat"
+                        "terminal_type": "VAV_NoReheat",
                     })
                     rd = unwrap(rr)
                     print(f"mixed replace {cz}:", rd)
@@ -232,7 +231,7 @@ def test_mixed_terminals_baseline():
 
                 # Verify all zones still connected
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV"
+                    "air_loop_name": "Central VAV",
                 }))
                 assert set(ald["air_loop"]["thermal_zones"]) == set(zone_names)
 
@@ -252,20 +251,20 @@ def test_replace_preserves_other_zones_baseline():
                 sr = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 assert unwrap(sr).get("ok") is True
 
                 # Replace only the first zone
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": zone_names[0],
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 assert unwrap(rr).get("ok") is True
 
                 # Check air loop still has all zones
                 alr = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV"
+                    "air_loop_name": "Central VAV",
                 })
                 ald = unwrap(alr)
                 print("air loop after replace:", ald)
@@ -291,7 +290,7 @@ def test_gradual_retrofit_baseline():
                 sr = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 assert unwrap(sr).get("ok") is True
 
@@ -304,7 +303,7 @@ def test_gradual_retrofit_baseline():
                 for zn, tt in replacements:
                     rr = await session.call_tool("replace_zone_terminal", {
                         "zone_name": zn,
-                        "terminal_type": tt
+                        "terminal_type": tt,
                     })
                     rd = unwrap(rr)
                     print(f"retrofit {zn} -> {tt}:", rd)
@@ -327,7 +326,7 @@ def test_replace_to_pfp_baseline():
                 sr = await session.call_tool("add_baseline_system", {
                     "system_type": 7,
                     "thermal_zone_names": zone_names,
-                    "system_name": "Central VAV"
+                    "system_name": "Central VAV",
                 })
                 assert unwrap(sr).get("ok") is True
 
@@ -338,7 +337,7 @@ def test_replace_to_pfp_baseline():
 
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": target,
-                    "terminal_type": "PFP_Electric"
+                    "terminal_type": "PFP_Electric",
                 })
                 rd = unwrap(rr)
                 print(f"pfp replace {target}:", rd)
@@ -348,7 +347,7 @@ def test_replace_to_pfp_baseline():
                 assert "PFP" in rd["zone"]["new_terminal_name"]
 
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "Central VAV"
+                    "air_loop_name": "Central VAV",
                 }))
                 assert ald.get("ok") is True
 

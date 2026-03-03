@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -87,7 +86,7 @@ def test_add_air_loop_with_zones():
                 # Add air loop with zones
                 air_loop_resp = await session.call_tool("add_air_loop", {
                     "name": "New VAV System",
-                    "thermal_zone_names": zone_names
+                    "thermal_zone_names": zone_names,
                 })
                 air_loop_result = unwrap(air_loop_resp)
 
@@ -126,14 +125,14 @@ def test_add_air_loop_verify_zone_connection():
 
                 zone_resp = await session.call_tool("create_thermal_zone", {
                     "name": "Test Zone",
-                    "space_names": ["Test Space"]
+                    "space_names": ["Test Space"],
                 })
                 assert unwrap(zone_resp).get("ok") is True
 
                 # Add air loop with the zone
                 air_loop_resp = await session.call_tool("add_air_loop", {
                     "name": "Test VAV",
-                    "thermal_zone_names": ["Test Zone"]
+                    "thermal_zone_names": ["Test Zone"],
                 })
                 air_loop_result = unwrap(air_loop_resp)
                 assert air_loop_result.get("ok") is True
@@ -194,7 +193,7 @@ def test_add_air_loop_invalid_zone():
                 # Add air loop with invalid zone
                 air_loop_resp = await session.call_tool("add_air_loop", {
                     "name": "New VAV System",
-                    "thermal_zone_names": ["NonexistentZone"]
+                    "thermal_zone_names": ["NonexistentZone"],
                 })
                 air_loop_result = unwrap(air_loop_resp)
 

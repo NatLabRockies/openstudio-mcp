@@ -1,10 +1,10 @@
 """Validation tests for ASHRAE baseline systems 5-6 (Packaged VAV)."""
 import asyncio
+
 import pytest
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
-from conftest import unwrap, integration_enabled, server_params
-
 
 # ============================================================================
 # SYSTEM 5: Packaged VAV w/ Reheat - Plant Loop + Terminals (11 tests)
@@ -24,7 +24,7 @@ def test_system_5_hot_water_loop():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -34,7 +34,7 @@ def test_system_5_hot_water_loop():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
                 system_data = unwrap(system_resp)
 
@@ -44,7 +44,7 @@ def test_system_5_hot_water_loop():
                 # Get plant loop details
                 hw_loop_name = system_data["system"]["hot_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": hw_loop_name
+                    "plant_loop_name": hw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -69,7 +69,7 @@ def test_system_5_boiler_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -80,13 +80,13 @@ def test_system_5_boiler_present():
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
                     "heating_fuel": "NaturalGas",
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
                 system_data = unwrap(system_resp)
 
                 hw_loop_name = system_data["system"]["hot_water_loop"]
                 loop_resp = await session.call_tool("get_plant_loop_details", {
-                    "plant_loop_name": hw_loop_name
+                    "plant_loop_name": hw_loop_name,
                 })
                 loop_data = unwrap(loop_resp)
 
@@ -115,7 +115,7 @@ def test_system_5_vav_terminals():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -125,7 +125,7 @@ def test_system_5_vav_terminals():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
                 system_data = unwrap(system_resp)
 
@@ -150,7 +150,7 @@ def test_system_5_dx_cooling():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -160,7 +160,7 @@ def test_system_5_dx_cooling():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
                 system_data = unwrap(system_resp)
 
@@ -183,7 +183,7 @@ def test_system_5_variable_fan():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -193,11 +193,11 @@ def test_system_5_variable_fan():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV Reheat"
+                    "air_loop_name": "VAV Reheat",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -223,7 +223,7 @@ def test_system_5_economizer_enabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -234,11 +234,11 @@ def test_system_5_economizer_enabled():
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
                     "economizer": True,
-                    "system_name": "VAV Econ"
+                    "system_name": "VAV Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV Econ"
+                    "air_loop_name": "VAV Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -264,7 +264,7 @@ def test_system_5_economizer_disabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -275,11 +275,11 @@ def test_system_5_economizer_disabled():
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
                     "economizer": False,
-                    "system_name": "VAV No Econ"
+                    "system_name": "VAV No Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV No Econ"
+                    "air_loop_name": "VAV No Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -305,7 +305,7 @@ def test_system_5_outdoor_air_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -315,11 +315,11 @@ def test_system_5_outdoor_air_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV Reheat"
+                    "air_loop_name": "VAV Reheat",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -344,7 +344,7 @@ def test_system_5_setpoint_managers():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -354,11 +354,11 @@ def test_system_5_setpoint_managers():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV Reheat"
+                    "air_loop_name": "VAV Reheat",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -384,7 +384,7 @@ def test_system_5_reheat_coils():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -394,7 +394,7 @@ def test_system_5_reheat_coils():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
                 system_data = unwrap(system_resp)
 
@@ -420,7 +420,7 @@ def test_system_5_heating_coils():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -430,11 +430,11 @@ def test_system_5_heating_coils():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 5,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV Reheat"
+                    "system_name": "VAV Reheat",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV Reheat"
+                    "air_loop_name": "VAV Reheat",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -465,7 +465,7 @@ def test_system_6_pfp_terminals():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -475,7 +475,7 @@ def test_system_6_pfp_terminals():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -502,7 +502,7 @@ def test_system_6_electric_reheat():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -512,7 +512,7 @@ def test_system_6_electric_reheat():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -538,7 +538,7 @@ def test_system_6_dx_cooling():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -548,7 +548,7 @@ def test_system_6_dx_cooling():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
                 system_data = unwrap(system_resp)
 
@@ -571,7 +571,7 @@ def test_system_6_variable_fan():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -581,11 +581,11 @@ def test_system_6_variable_fan():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV PFP"
+                    "air_loop_name": "VAV PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -612,7 +612,7 @@ def test_system_6_economizer_enabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -623,11 +623,11 @@ def test_system_6_economizer_enabled():
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
                     "economizer": True,
-                    "system_name": "VAV PFP Econ"
+                    "system_name": "VAV PFP Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV PFP Econ"
+                    "air_loop_name": "VAV PFP Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -653,7 +653,7 @@ def test_system_6_economizer_disabled():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -664,11 +664,11 @@ def test_system_6_economizer_disabled():
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
                     "economizer": False,
-                    "system_name": "VAV PFP No Econ"
+                    "system_name": "VAV PFP No Econ",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV PFP No Econ"
+                    "air_loop_name": "VAV PFP No Econ",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -694,7 +694,7 @@ def test_system_6_outdoor_air_present():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -704,11 +704,11 @@ def test_system_6_outdoor_air_present():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV PFP"
+                    "air_loop_name": "VAV PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -733,7 +733,7 @@ def test_system_6_setpoint_managers():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -743,11 +743,11 @@ def test_system_6_setpoint_managers():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV PFP"
+                    "air_loop_name": "VAV PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -773,7 +773,7 @@ def test_system_6_preheat_coil():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -783,11 +783,11 @@ def test_system_6_preheat_coil():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV PFP"
+                    "air_loop_name": "VAV PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 
@@ -813,7 +813,7 @@ def test_system_6_cooling_coil():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {
-                    "osm_path": create_data["osm_path"]
+                    "osm_path": create_data["osm_path"],
                 })
 
                 zones_resp = await session.call_tool("list_thermal_zones", {})
@@ -823,11 +823,11 @@ def test_system_6_cooling_coil():
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 6,
                     "thermal_zone_names": zone_names,
-                    "system_name": "VAV PFP"
+                    "system_name": "VAV PFP",
                 })
 
                 air_loop_resp = await session.call_tool("get_air_loop_details", {
-                    "air_loop_name": "VAV PFP"
+                    "air_loop_name": "VAV PFP",
                 })
                 air_loop_data = unwrap(air_loop_resp)
 

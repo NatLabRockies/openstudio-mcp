@@ -1,0 +1,50 @@
+# Ruff config for code review — report only, no auto-fix
+# Run: ruff check mcp_server/
+
+# Don't auto-fix — review findings first
+fix = false
+line-length = 120
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes (unused imports, undefined names)
+    "B",    # flake8-bugbear (common bugs, design problems)
+    "SIM",  # flake8-simplify (simplifiable constructs)
+    "UP",   # pyupgrade (Python version upgrades)
+    "RET",  # flake8-return (unnecessary return statements)
+    "PTH",  # flake8-use-pathlib (os.path → pathlib)
+    "I",    # isort (import sorting)
+    "A",    # flake8-builtins (shadowing builtins)
+    "C4",   # flake8-comprehensions
+    "PIE",  # flake8-pie (misc good practices)
+    "RUF",  # ruff-specific rules
+    "S",    # flake8-bandit (security)
+    "BLE",  # flake8-blind-except
+    "T10",  # flake8-debugger
+    "PLE",  # pylint errors
+    "PLW",  # pylint warnings
+    "PLC",  # pylint conventions
+    "ISC",  # flake8-implicit-str-concat
+    "PGH",  # pygrep-hooks (type: ignore)
+    "TID",  # flake8-tidy-imports
+    "ARG",  # flake8-unused-arguments
+    "PT",   # flake8-pytest-style
+    "COM",  # flake8-commas (trailing commas)
+    "Q",    # flake8-quotes (quote style)
+    "DTZ",  # flake8-datetimez (timezone-aware datetimes)
+    "EXE",  # flake8-executable (shebangs)
+    "ICN",  # flake8-import-conventions
+    "NPY",  # numpy-specific rules
+    "PD",   # pandas-vet
+]
+
+[lint.per-file-ignores]
+# Tests can have broader exceptions
+# Tests: allow assert (S101), broad except (BLE001), unused vars from unpacking (F841),
+# ambiguous var names like `l` (E741), composite assertions (PT018), deferred imports (PLC0415)
+"tests/**" = ["B", "SIM", "S101", "BLE001", "F841", "E741", "PT018", "PLC0415", "S110", "ARG001", "ARG002"]
+# Broad except + try-except-pass is intentional OpenStudio SWIG pattern — fix incrementally per findings.md
+# Deferred imports (PLC0415) avoid load-time failures; global state (PLW0603) is intentional in model_manager
+# ARG001: _extract_*(model, obj) and baseline system signatures require unused args for interface contracts
+"mcp_server/**" = ["BLE001", "S110", "S112", "PLC0415", "PLW0603", "ARG001", "ARG002"]

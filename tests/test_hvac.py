@@ -4,7 +4,6 @@ import os
 import uuid
 
 import pytest
-
 from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client

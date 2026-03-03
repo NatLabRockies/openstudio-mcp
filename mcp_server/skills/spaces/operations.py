@@ -63,7 +63,7 @@ def _extract_thermal_zone(model, zone) -> dict[str, Any]:
     for equip in zone.equipment():
         equipment_list.append({
             "type": equip.iddObjectType().valueName(),
-            "name": equip.nameString()
+            "name": equip.nameString(),
         })
 
     # Get air loop if connected
@@ -94,7 +94,7 @@ def list_spaces() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(spaces),
-            "spaces": spaces
+            "spaces": spaces,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -113,7 +113,7 @@ def get_space_details(space_name: str) -> dict[str, Any]:
 
         return {
             "ok": True,
-            "space": _extract_space(model, space)
+            "space": _extract_space(model, space),
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -129,7 +129,7 @@ def list_thermal_zones() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(zones),
-            "thermal_zones": zones
+            "thermal_zones": zones,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -148,7 +148,7 @@ def get_thermal_zone_details(zone_name: str) -> dict[str, Any]:
 
         return {
             "ok": True,
-            "thermal_zone": _extract_thermal_zone(model, zone)
+            "thermal_zone": _extract_thermal_zone(model, zone),
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

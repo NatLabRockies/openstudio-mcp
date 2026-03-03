@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from mcp_server.skills.simulation_outputs.operations import (
-    add_output_variable,
     add_output_meter,
+    add_output_variable,
 )
 
 

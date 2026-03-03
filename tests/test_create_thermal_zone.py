@@ -3,7 +3,6 @@ import os
 import uuid
 
 import pytest
-
 from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
@@ -87,7 +86,7 @@ def test_create_thermal_zone_with_spaces():
                 # Create thermal zone with spaces
                 zone_resp = await session.call_tool("create_thermal_zone", {
                     "name": "New Zone",
-                    "space_names": space_names
+                    "space_names": space_names,
                 })
                 zone_result = unwrap(zone_resp)
 
@@ -96,7 +95,7 @@ def test_create_thermal_zone_with_spaces():
 
                 # Independent query verification
                 sd = unwrap(await session.call_tool("get_space_details", {
-                    "space_name": space_names[0]
+                    "space_name": space_names[0],
                 }))
                 assert sd["space"]["thermal_zone"] == "New Zone"
 
@@ -133,7 +132,7 @@ def test_create_thermal_zone_verify_space_assignment():
                 # Create thermal zone with the space
                 zone_resp = await session.call_tool("create_thermal_zone", {
                     "name": "Test Zone",
-                    "space_names": ["Test Space"]
+                    "space_names": ["Test Space"],
                 })
                 zone_result = unwrap(zone_resp)
                 assert zone_result.get("ok") is True
@@ -194,7 +193,7 @@ def test_create_thermal_zone_invalid_space():
                 # Create thermal zone with invalid space
                 zone_resp = await session.call_tool("create_thermal_zone", {
                     "name": "New Zone",
-                    "space_names": ["NonexistentSpace"]
+                    "space_names": ["NonexistentSpace"],
                 })
                 zone_result = unwrap(zone_resp)
 

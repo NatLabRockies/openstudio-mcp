@@ -6,8 +6,7 @@ import asyncio
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params, setup_example
+from conftest import integration_enabled, server_params, setup_example, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -43,7 +42,7 @@ def test_rename_space():
                 old_name = spaces["spaces"][0]["name"]
                 # Rename
                 res = unwrap(await s.call_tool("rename_object", {
-                    "object_name": old_name, "new_name": "Renamed Space"
+                    "object_name": old_name, "new_name": "Renamed Space",
                 }))
                 assert res.get("ok") is True
                 assert res["old_name"] == old_name
@@ -67,7 +66,7 @@ def test_rename_thermal_zone():
                 zones = unwrap(await s.call_tool("list_thermal_zones", {}))
                 old_name = zones["thermal_zones"][0]["name"]
                 res = unwrap(await s.call_tool("rename_object", {
-                    "object_name": old_name, "new_name": "Renamed Zone"
+                    "object_name": old_name, "new_name": "Renamed Zone",
                 }))
                 assert res.get("ok") is True
                 assert res["type"] == "ThermalZone"
@@ -98,7 +97,7 @@ def test_delete_space():
                 count_before = spaces_before["count"]
                 # Delete
                 res = unwrap(await s.call_tool("delete_object", {
-                    "object_name": "ToDelete"
+                    "object_name": "ToDelete",
                 }))
                 assert res.get("ok") is True
                 assert res["type"] == "Space"
@@ -119,7 +118,7 @@ def test_delete_nonexistent():
                 await s.initialize()
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("delete_object", {
-                    "object_name": "DoesNotExist123"
+                    "object_name": "DoesNotExist123",
                 }))
                 assert res.get("ok") is False
                 assert "not found" in res["error"]
@@ -139,7 +138,7 @@ def test_list_objects_by_type():
                 await s.initialize()
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "Space"
+                    "object_type": "Space",
                 }))
                 assert res.get("ok") is True
                 assert res["type"] == "Space"
@@ -159,7 +158,7 @@ def test_list_objects_invalid_type():
                 await s.initialize()
                 await setup_example(s, _unique())
                 res = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "FakeType"
+                    "object_type": "FakeType",
                 }))
                 assert res.get("ok") is False
                 assert "Unsupported" in res["error"]
@@ -180,18 +179,18 @@ def test_delete_boiler():
                 # System 7 has boiler
                 await _setup_baseline(s, _unique(), ashrae_sys_num="07")
                 boilers = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "BoilerHotWater"
+                    "object_type": "BoilerHotWater",
                 }))
                 assert boilers.get("ok") is True and boilers["count"] > 0
                 boiler_name = boilers["objects"][0]["name"]
                 res = unwrap(await s.call_tool("delete_object", {
-                    "object_name": boiler_name, "object_type": "BoilerHotWater"
+                    "object_name": boiler_name, "object_type": "BoilerHotWater",
                 }))
                 assert res.get("ok") is True
 
                 # Independent query verification
                 boilers2 = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "BoilerHotWater"
+                    "object_type": "BoilerHotWater",
                 }))
                 assert boilers2["count"] < boilers["count"]
     asyncio.run(_run())
@@ -211,7 +210,7 @@ def test_rename_air_loop():
                 assert loops.get("ok") is True and loops["count"] > 0
                 old = loops["air_loops"][0]["name"]
                 res = unwrap(await s.call_tool("rename_object", {
-                    "object_name": old, "new_name": "My AHU"
+                    "object_name": old, "new_name": "My AHU",
                 }))
                 assert res.get("ok") is True
                 assert res["type"] == "AirLoopHVAC"
@@ -236,10 +235,10 @@ def test_delete_with_type_hint():
                 await setup_example(s, _unique())
                 # Create a schedule to delete
                 unwrap(await s.call_tool("create_schedule_ruleset", {
-                    "name": "TempSched", "schedule_type": "Fractional", "default_value": 1.0
+                    "name": "TempSched", "schedule_type": "Fractional", "default_value": 1.0,
                 }))
                 res = unwrap(await s.call_tool("delete_object", {
-                    "object_name": "TempSched", "object_type": "ScheduleRuleset"
+                    "object_name": "TempSched", "object_type": "ScheduleRuleset",
                 }))
                 assert res.get("ok") is True
                 assert res["type"] == "ScheduleRuleset"
@@ -263,10 +262,10 @@ def test_rename_schedule():
                 await setup_example(s, _unique())
                 # Create a schedule to rename
                 unwrap(await s.call_tool("create_schedule_ruleset", {
-                    "name": "OldSched", "schedule_type": "Fractional", "default_value": 1.0
+                    "name": "OldSched", "schedule_type": "Fractional", "default_value": 1.0,
                 }))
                 res = unwrap(await s.call_tool("rename_object", {
-                    "object_name": "OldSched", "new_name": "NewSched"
+                    "object_name": "OldSched", "new_name": "NewSched",
                 }))
                 assert res.get("ok") is True
                 assert res["new_name"] == "NewSched"

@@ -64,7 +64,7 @@ def list_surfaces() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(surfaces),
-            "surfaces": surfaces
+            "surfaces": surfaces,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -83,7 +83,7 @@ def get_surface_details(surface_name: str) -> dict[str, Any]:
 
         return {
             "ok": True,
-            "surface": _extract_surface(model, surface)
+            "surface": _extract_surface(model, surface),
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -99,7 +99,7 @@ def list_subsurfaces() -> dict[str, Any]:
         return {
             "ok": True,
             "count": len(subsurfaces),
-            "subsurfaces": subsurfaces
+            "subsurfaces": subsurfaces,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -228,7 +228,7 @@ def create_space_from_floor_print(
         with suppress_openstudio_warnings():
             # fromFloorPrint returns an Optional<Space>
             opt_space = openstudio.model.Space.fromFloorPrint(
-                poly, floor_to_ceiling_height, model
+                poly, floor_to_ceiling_height, model,
             )
             if not opt_space.is_initialized():
                 return {"ok": False, "error": "Failed to create space from floor print"}

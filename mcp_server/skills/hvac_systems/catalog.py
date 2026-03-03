@@ -10,7 +10,7 @@ BASELINE_SYSTEMS = {
         "heating": "Electric Resistance",
         "cooling": "DX",
         "distribution": "Zone Equipment",
-        "typical_use": "Low-rise residential, motels"
+        "typical_use": "Low-rise residential, motels",
     },
     2: {
         "name": "PTHP",
@@ -19,7 +19,7 @@ BASELINE_SYSTEMS = {
         "heating": "Heat Pump",
         "cooling": "Heat Pump",
         "distribution": "Zone Equipment",
-        "typical_use": "Low-rise residential, motels"
+        "typical_use": "Low-rise residential, motels",
     },
     3: {
         "name": "PSZ-AC",
@@ -28,7 +28,7 @@ BASELINE_SYSTEMS = {
         "heating": "Gas Furnace",
         "cooling": "DX",
         "distribution": "Packaged Rooftop Unit",
-        "typical_use": "Small commercial, retail"
+        "typical_use": "Small commercial, retail",
     },
     4: {
         "name": "PSZ-HP",
@@ -37,7 +37,7 @@ BASELINE_SYSTEMS = {
         "heating": "Heat Pump",
         "cooling": "Heat Pump",
         "distribution": "Packaged Rooftop Unit",
-        "typical_use": "Small commercial, retail"
+        "typical_use": "Small commercial, retail",
     },
     5: {
         "name": "Packaged VAV w/ Reheat",
@@ -46,7 +46,7 @@ BASELINE_SYSTEMS = {
         "heating": "Hot Water Reheat",
         "cooling": "DX",
         "distribution": "VAV Air Loop",
-        "typical_use": "Mid-size commercial, office buildings"
+        "typical_use": "Mid-size commercial, office buildings",
     },
     6: {
         "name": "Packaged VAV w/ PFP",
@@ -55,7 +55,7 @@ BASELINE_SYSTEMS = {
         "heating": "Electric Reheat in PFP Boxes",
         "cooling": "DX",
         "distribution": "VAV Air Loop",
-        "typical_use": "Mid-size commercial, office buildings"
+        "typical_use": "Mid-size commercial, office buildings",
     },
     7: {
         "name": "VAV w/ Reheat",
@@ -64,7 +64,7 @@ BASELINE_SYSTEMS = {
         "heating": "Hot Water Reheat",
         "cooling": "Chilled Water",
         "distribution": "VAV Air Loop",
-        "typical_use": "Large commercial, high-rise office"
+        "typical_use": "Large commercial, high-rise office",
     },
     8: {
         "name": "VAV w/ PFP",
@@ -73,7 +73,7 @@ BASELINE_SYSTEMS = {
         "heating": "Electric Reheat in PFP Boxes",
         "cooling": "Chilled Water",
         "distribution": "VAV Air Loop",
-        "typical_use": "Large commercial, high-rise office"
+        "typical_use": "Large commercial, high-rise office",
     },
     9: {
         "name": "Heating & Ventilation (Gas)",
@@ -82,7 +82,7 @@ BASELINE_SYSTEMS = {
         "heating": "Gas Unit Heaters",
         "cooling": "None",
         "distribution": "Zone Equipment",
-        "typical_use": "Warehouses, storage, unconditioned spaces"
+        "typical_use": "Warehouses, storage, unconditioned spaces",
     },
     10: {
         "name": "Heating & Ventilation (Electric)",
@@ -91,8 +91,8 @@ BASELINE_SYSTEMS = {
         "heating": "Electric Unit Heaters",
         "cooling": "None",
         "distribution": "Zone Equipment",
-        "typical_use": "Warehouses, storage, unconditioned spaces"
-    }
+        "typical_use": "Warehouses, storage, unconditioned spaces",
+    },
 }
 
 # Modern HVAC System Templates
@@ -105,7 +105,7 @@ MODERN_TEMPLATES = {
         "cooling": "DX Precool + Zone Equipment",
         "distribution": "DOAS Air Loop + Zone Equipment",
         "typical_use": "High-performance buildings, labs, hospitals",
-        "components": ["DOAS loop", "ERV", "Zone equipment (FC/Radiant/Beams)", "CHW/HW loops"]
+        "components": ["DOAS loop", "ERV", "Zone equipment (FC/Radiant/Beams)", "CHW/HW loops"],
     },
     "VRF": {
         "name": "VRF",
@@ -115,7 +115,7 @@ MODERN_TEMPLATES = {
         "cooling": "Heat Pump",
         "distribution": "VRF Outdoor Unit + Zone Terminals",
         "typical_use": "Commercial buildings, hotels, schools",
-        "components": ["VRF outdoor unit", "VRF zone terminals"]
+        "components": ["VRF outdoor unit", "VRF zone terminals"],
     },
     "Radiant": {
         "name": "Radiant",
@@ -125,8 +125,8 @@ MODERN_TEMPLATES = {
         "cooling": "Low-Temp Chilled Water (58°F)",
         "distribution": "Radiant Surfaces (Floor/Ceiling/Walls) + Optional DOAS",
         "typical_use": "High comfort zones, net-zero buildings",
-        "components": ["Radiant surfaces", "Low-temp CHW/HW loops", "Optional DOAS"]
-    }
+        "components": ["Radiant surfaces", "Low-temp CHW/HW loops", "Optional DOAS"],
+    },
 }
 
 
@@ -151,7 +151,7 @@ def list_all_templates() -> dict:
             "category": "baseline",
             "system_type": k,
             "name": v["name"],
-            "description": v["description"]
+            "description": v["description"],
         }
         for k, v in BASELINE_SYSTEMS.items()
     ]
@@ -160,7 +160,7 @@ def list_all_templates() -> dict:
         {
             "category": "modern",
             "name": k,
-            "description": v["description"]
+            "description": v["description"],
         }
         for k, v in MODERN_TEMPLATES.items()
     ]
@@ -169,5 +169,5 @@ def list_all_templates() -> dict:
         "ok": True,
         "baseline_systems": baseline,
         "modern_templates": modern,
-        "total_count": len(baseline) + len(modern)
+        "total_count": len(baseline) + len(modern),
     }

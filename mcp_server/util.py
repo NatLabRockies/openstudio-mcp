@@ -1,7 +1,9 @@
 from __future__ import annotations
-from pathlib import Path
+
 import json
 import shutil
+from pathlib import Path
+
 
 def safe_read_text(path: Path, max_bytes: int = 200_000) -> str:
     data = safe_read_bytes(path, max_bytes=max_bytes)

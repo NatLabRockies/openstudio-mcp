@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 import psutil
 
-from mcp_server.config import RUN_ROOT, LOG_TAIL_DEFAULT
+from mcp_server.config import LOG_TAIL_DEFAULT, RUN_ROOT
 from mcp_server.util import resolve_run_dir
 
 # Where the MCP server stores runs inside the container
@@ -259,17 +259,22 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
         # In case OSW lived outside src_dir copy (unlikely), copy explicitly
         shutil.copy2(src_osw, staged_osw)
 
-    # Load staged OSW and ensure referenced seed file is present (even if ../something.osm)
+    # Load staged OSW and ensure referenced seed file is present.
+    # Always stage the seed directly into run_dir (flatten any ../ refs)
+    # and rewrite the OSW pointer so OpenStudio finds it.
     osw = _load_json(staged_osw)
     seed_rel = osw.get("seed_file")
     if seed_rel:
         seed_src = (src_dir / seed_rel).resolve()
-        # If it exists in source, ensure it exists in staged run dir in same relative location
         if seed_src.exists():
-            seed_dst = (run_dir / seed_rel).resolve()
-            seed_dst.parent.mkdir(parents=True, exist_ok=True)
+            # Flatten: use just the filename, always inside run_dir
+            seed_dst = run_dir / Path(seed_rel).name
             if not seed_dst.exists():
                 shutil.copy2(seed_src, seed_dst)
+            # Rewrite OSW to point at the flattened location
+            if seed_rel != Path(seed_rel).name:
+                osw["seed_file"] = Path(seed_rel).name
+                _dump_json(staged_osw, osw)
 
     # If an EPW is provided, stage it into files/ and rewrite weather_file to match
     staged_epw: Path | None = None
@@ -365,7 +370,7 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
     if status != "success" and rec.status != "cancelled":
         status = "failed"
 
-    rec.status = status  # type: ignore
+    rec.status = status  # type: ignore[assignment]
     rec.ended_at = rec.ended_at or _now()
     rec.exit_code = exit_code if exit_code is not None else rec.exit_code
     rec.error = err or rec.error
@@ -405,7 +410,10 @@ def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "open
     if not rec:
         return {"ok": False, "error": f"Unknown run_id: {run_id}"}
 
-    tail_lines = int(tail or DEFAULT_LOG_TAIL)
+    try:
+        tail_lines = int(tail) if tail is not None else DEFAULT_LOG_TAIL
+    except (ValueError, TypeError):
+        tail_lines = DEFAULT_LOG_TAIL
 
     if stream == "openstudio":
         path = rec.run_dir / "openstudio.log"
@@ -454,7 +462,7 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
                             "name": c.name,
                             "is_dir": c.is_dir(),
                             "size": c.stat().st_size if c.is_file() else None,
-                        }
+                        },
                     )
                 except Exception:
                     continue

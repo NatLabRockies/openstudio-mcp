@@ -6,13 +6,13 @@ import re
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from mcp_server.config import RUN_ROOT
 from mcp_server.util import resolve_run_dir, safe_read_text
 
 
-def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Optional[Path]:
+def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Path | None:
     """Find the first existing file from a list of relative path candidates."""
     for rel in rel_candidates:
         p = run_dir / rel
@@ -36,7 +36,7 @@ def _extract_total_site_energy_from_sql(sql_path: Path) -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
     try:
         cur = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='TabularDataWithStrings'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='TabularDataWithStrings'",
         )
         if not cur.fetchone():
             return {"ok": False, "reason": "missing_tabular_table"}
@@ -112,7 +112,7 @@ def _extract_total_site_energy_from_html(html_path: Path) -> dict[str, Any]:
     return {"ok": True, "value": val, "units": units}
 
 
-def _to_kbtu(value: float, units: Optional[str]) -> Optional[float]:
+def _to_kbtu(value: float, units: str | None) -> float | None:
     """Convert common EnergyPlus site-energy units to kBtu (best-effort)."""
     if not units:
         return None
@@ -160,7 +160,10 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
     eui = None
     if sql_path and sql_path.suffix.lower() == ".sql":
         try:
-            from mcp_server.skills.results.sql_extract import extract_unmet_hours, extract_eui  # type: ignore
+            from mcp_server.skills.results.sql_extract import (  # type: ignore[import-not-found]
+                extract_eui,
+                extract_unmet_hours,
+            )
 
             unmet = extract_unmet_hours(sql_path)
             eui = extract_eui(sql_path)
@@ -220,7 +223,7 @@ def read_run_artifact(
     except FileNotFoundError:
         return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
 
-    if path.startswith("/") or path.startswith("\\"):
+    if path.startswith(("/", "\\")):
         return {"ok": False, "error": "invalid_path", "message": "path must be relative to run_dir"}
 
     full = (run_dir / path).resolve()
@@ -274,7 +277,7 @@ def read_run_artifact(
 # Tier 1 + Tier 2: SQL extraction wrappers
 # ---------------------------------------------------------------------------
 
-def _resolve_sql(run_id: str) -> tuple[Optional[Path], Optional[dict]]:
+def _resolve_sql(run_id: str) -> tuple[Path | None, dict | None]:
     """Resolve run_dir and find eplusout.sql. Returns (sql_path, error_dict)."""
     try:
         run_dir = resolve_run_dir(RUN_ROOT, run_id)
@@ -322,7 +325,7 @@ def extract_zone_summary_op(run_id: str) -> dict[str, Any]:
     return extract_zone_summary(sql_path)
 
 
-def extract_component_sizing_op(run_id: str, component_type: Optional[str] = None) -> dict[str, Any]:
+def extract_component_sizing_op(run_id: str, component_type: str | None = None) -> dict[str, Any]:
     """Extract autosized component values."""
     from mcp_server.skills.results.sql_extract import extract_component_sizing
     sql_path, err = _resolve_sql(run_id)
@@ -335,11 +338,11 @@ def query_timeseries_op(
     run_id: str,
     variable_name: str,
     key_value: str = "*",
-    start_month: Optional[int] = None,
-    start_day: Optional[int] = None,
-    end_month: Optional[int] = None,
-    end_day: Optional[int] = None,
-    frequency: Optional[str] = None,
+    start_month: int | None = None,
+    start_day: int | None = None,
+    end_month: int | None = None,
+    end_day: int | None = None,
+    frequency: str | None = None,
     max_points: int = 10000,
 ) -> dict[str, Any]:
     """Query time-series data for a specific variable."""
@@ -361,12 +364,14 @@ def copy_run_artifact(run_id: str, path: str, destination: str = "/runs/exports"
     The destination is on the same bind-mounted volume, so the file is
     directly accessible on the host filesystem.
     """
+    from mcp_server.config import is_path_allowed
+
     try:
         run_dir = resolve_run_dir(RUN_ROOT, run_id)
     except FileNotFoundError:
         return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
 
-    if path.startswith("/") or path.startswith("\\"):
+    if path.startswith(("/", "\\")):
         return {"ok": False, "error": "invalid_path", "message": "path must be relative to run_dir"}
 
     full = (run_dir / path).resolve()
@@ -377,6 +382,11 @@ def copy_run_artifact(run_id: str, path: str, destination: str = "/runs/exports"
         return {"ok": False, "error": "not_found", "message": f"Missing file: {path}", "run_id": run_id}
 
     dest_dir = Path(destination)
+    if not is_path_allowed(dest_dir):
+        return {
+            "ok": False, "error": "invalid_destination",
+            "message": f"Destination not in allowed roots: {destination}",
+        }
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_file = dest_dir / full.name
 

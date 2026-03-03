@@ -2,16 +2,22 @@
 from __future__ import annotations
 
 from mcp_server.skills.loads.operations import (
-    list_people_loads,
-    list_lighting_loads,
+    create_electric_equipment as create_electric_equipment_op,
+)
+from mcp_server.skills.loads.operations import (
+    create_gas_equipment as create_gas_equipment_op,
+)
+from mcp_server.skills.loads.operations import (
+    create_infiltration as create_infiltration_op,
+)
+from mcp_server.skills.loads.operations import (
+    create_lights_definition,
+    create_people_definition,
     list_electric_equipment,
     list_gas_equipment,
     list_infiltration,
-    create_people_definition,
-    create_lights_definition,
-    create_electric_equipment as create_electric_equipment_op,
-    create_gas_equipment as create_gas_equipment_op,
-    create_infiltration as create_infiltration_op,
+    list_lighting_loads,
+    list_people_loads,
 )
 
 

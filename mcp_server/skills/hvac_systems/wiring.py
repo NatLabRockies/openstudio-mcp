@@ -7,7 +7,7 @@ import openstudio
 def add_outdoor_air_system(
     model,
     air_loop,
-    economizer: bool = False
+    economizer: bool = False,
 ) -> openstudio.model.AirLoopHVACOutdoorAirSystem | None:
     """Add outdoor air system to air loop with optional economizer.
 
@@ -37,7 +37,7 @@ def add_outdoor_air_system(
 def create_setpoint_manager_single_zone_reheat(
     model,
     zone,
-    node
+    node,
 ) -> openstudio.model.SetpointManagerSingleZoneReheat:
     """Create single zone reheat setpoint manager for PSZ systems.
 
@@ -60,7 +60,7 @@ def create_setpoint_manager_single_zone_reheat(
 def create_chilled_water_loop(
     model,
     name: str,
-    cooling_fuel: str = "Electricity"
+    cooling_fuel: str = "Electricity",
 ) -> openstudio.model.PlantLoop:
     """Create standard chilled water loop for central systems.
 
@@ -83,7 +83,7 @@ def create_chilled_water_loop(
 
     # Setpoint manager
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_chw_temp_schedule(model)
+        model, _create_chw_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Setpoint Manager")
     setpoint_mgr.addToNode(loop.supplyOutletNode())
@@ -99,7 +99,7 @@ def create_chilled_water_loop(
 def create_hot_water_loop(
     model,
     name: str,
-    heating_fuel: str = "NaturalGas"
+    heating_fuel: str = "NaturalGas",
 ) -> openstudio.model.PlantLoop:
     """Create standard hot water loop for central systems.
 
@@ -122,7 +122,7 @@ def create_hot_water_loop(
 
     # Setpoint manager
     setpoint_mgr = openstudio.model.SetpointManagerScheduled(
-        model, _create_hw_temp_schedule(model)
+        model, _create_hw_temp_schedule(model),
     )
     setpoint_mgr.setName(f"{name} Setpoint Manager")
     setpoint_mgr.addToNode(loop.supplyOutletNode())
@@ -137,7 +137,7 @@ def create_hot_water_loop(
 
 def create_condenser_water_loop(
     model,
-    name: str
+    name: str,
 ) -> openstudio.model.PlantLoop:
     """Create condenser water loop for chiller heat rejection.
 
@@ -177,7 +177,7 @@ def add_chiller_to_loops(
     model,
     chw_loop: openstudio.model.PlantLoop,
     cw_loop: openstudio.model.PlantLoop,
-    chiller_type: str = "ElectricEIR"
+    chiller_type: str = "ElectricEIR",
 ):
     """Add chiller to chilled water and condenser loops.
 
@@ -205,18 +205,24 @@ def add_chiller_to_loops(
 def add_boiler_to_loop(
     model,
     hw_loop: openstudio.model.PlantLoop,
-    heating_fuel: str = "NaturalGas"
+    heating_fuel: str = "NaturalGas",
 ):
     """Add boiler to hot water loop.
 
     Args:
         model: OpenStudio model
         hw_loop: Hot water plant loop
-        heating_fuel: "NaturalGas" or "Electricity"
+        heating_fuel: "NaturalGas", "Electricity", or "DistrictHeating"
 
     Returns:
-        Boiler object
+        Boiler or DistrictHeating object
     """
+    if heating_fuel == "DistrictHeating":
+        district = openstudio.model.DistrictHeating(model)
+        district.setName(f"{hw_loop.nameString()} District Heating")
+        hw_loop.addSupplyBranchForComponent(district)
+        return district
+
     if heating_fuel == "NaturalGas":
         boiler = openstudio.model.BoilerHotWater(model)
         boiler.setName(f"{hw_loop.nameString()} Gas Boiler")
@@ -234,7 +240,7 @@ def add_boiler_to_loop(
 
 def add_cooling_tower_to_loop(
     model,
-    cw_loop: openstudio.model.PlantLoop
+    cw_loop: openstudio.model.PlantLoop,
 ):
     """Add cooling tower to condenser water loop.
 
@@ -252,6 +258,64 @@ def add_cooling_tower_to_loop(
     cw_loop.addSupplyBranchForComponent(tower)
 
     return tower
+
+
+def add_cooling_supply(
+    model,
+    chw_loop: openstudio.model.PlantLoop,
+    cooling_fuel: str = "Electricity",
+    name_prefix: str = "",
+) -> openstudio.model.PlantLoop | None:
+    """Add chiller+condenser+tower OR district cooling to a CHW loop.
+
+    Args:
+        model: OpenStudio model
+        chw_loop: Chilled water plant loop
+        cooling_fuel: "Electricity" or "DistrictCooling"
+        name_prefix: Name prefix for condenser loop
+
+    Returns:
+        Condenser water PlantLoop (or None for district cooling)
+    """
+    if cooling_fuel == "DistrictCooling":
+        district = openstudio.model.DistrictCooling(model)
+        district.setName(f"{chw_loop.nameString()} District Cooling")
+        chw_loop.addSupplyBranchForComponent(district)
+        return None  # no condenser loop needed
+
+    cw_loop = create_condenser_water_loop(model, f"{name_prefix} Condenser Loop".strip())
+    add_chiller_to_loops(model, chw_loop, cw_loop)
+    add_cooling_tower_to_loop(model, cw_loop)
+    return cw_loop
+
+
+def update_loop_setpoint_schedule(
+    model,
+    loop: openstudio.model.PlantLoop,
+    temp_c: float,
+) -> None:
+    """Replace the supply-outlet setpoint schedule with a new constant value.
+
+    Used when radiant templates override sizing temps after loop creation
+    (e.g. CHW from 6.7°C → 14.4°C for low-temp radiant).
+
+    Args:
+        model: OpenStudio model
+        loop: PlantLoop whose setpoint schedule to update
+        temp_c: New constant supply temperature in °C
+    """
+    supply_outlet = loop.supplyOutletNode()
+    for spm in supply_outlet.setpointManagers():
+        spm.remove()
+
+    schedule = openstudio.model.ScheduleRuleset(model)
+    schedule.setName(f"{loop.nameString()} Setpoint Temp")
+    schedule.defaultDaySchedule().addValue(
+        openstudio.Time(0, 24, 0, 0), temp_c,
+    )
+    new_spm = openstudio.model.SetpointManagerScheduled(model, schedule)
+    new_spm.setName(f"{loop.nameString()} Setpoint Manager")
+    new_spm.addToNode(supply_outlet)
 
 
 def _create_chw_temp_schedule(model) -> openstudio.model.ScheduleRuleset:

@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -41,7 +40,7 @@ def test_add_output_meter_default():
 
                 # Add output meter
                 meter_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Electricity:Facility"
+                    "meter_name": "Electricity:Facility",
                 })
                 meter_result = unwrap(meter_resp)
 
@@ -77,7 +76,7 @@ def test_add_output_meter_monthly():
                 # Add output meter with monthly reporting
                 meter_resp = await session.call_tool("add_output_meter", {
                     "meter_name": "Gas:Facility",
-                    "reporting_frequency": "Monthly"
+                    "reporting_frequency": "Monthly",
                 })
                 meter_result = unwrap(meter_resp)
 
@@ -100,7 +99,7 @@ def test_add_output_meter_no_model_loaded():
 
                 # Try to add output meter without loading model
                 meter_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Electricity:Facility"
+                    "meter_name": "Electricity:Facility",
                 })
                 meter_result = unwrap(meter_resp)
 
@@ -135,14 +134,14 @@ def test_add_multiple_output_meters():
 
                 # Add electricity meter
                 elec_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Electricity:Facility"
+                    "meter_name": "Electricity:Facility",
                 })
                 elec_result = unwrap(elec_resp)
                 assert elec_result.get("ok") is True
 
                 # Add gas meter
                 gas_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Gas:Facility"
+                    "meter_name": "Gas:Facility",
                 })
                 gas_result = unwrap(gas_resp)
                 assert gas_result.get("ok") is True
@@ -177,14 +176,14 @@ def test_add_heating_cooling_meters():
 
                 # Add heating electricity meter
                 heating_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Heating:Electricity"
+                    "meter_name": "Heating:Electricity",
                 })
                 heating_result = unwrap(heating_resp)
                 assert heating_result.get("ok") is True
 
                 # Add cooling electricity meter
                 cooling_resp = await session.call_tool("add_output_meter", {
-                    "meter_name": "Cooling:Electricity"
+                    "meter_name": "Cooling:Electricity",
                 })
                 cooling_result = unwrap(cooling_resp)
                 assert cooling_result.get("ok") is True

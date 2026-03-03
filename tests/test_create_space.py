@@ -3,8 +3,7 @@ import os
 import uuid
 
 import pytest
-
-from conftest import unwrap, integration_enabled, server_params
+from conftest import integration_enabled, server_params, unwrap
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -88,7 +87,7 @@ def test_create_space_with_building_story():
                 # Create space with building story
                 space_resp = await session.call_tool("create_space", {
                     "name": "New Office",
-                    "building_story_name": story_name
+                    "building_story_name": story_name,
                 })
                 space_result = unwrap(space_resp)
 
@@ -97,7 +96,7 @@ def test_create_space_with_building_story():
 
                 # Independent query verification
                 sd = unwrap(await session.call_tool("get_space_details", {
-                    "space_name": "New Office"
+                    "space_name": "New Office",
                 }))
                 assert sd["space"]["building_story"] == story_name
 
@@ -136,7 +135,7 @@ def test_create_space_with_space_type():
                 # Create space with space type
                 space_resp = await session.call_tool("create_space", {
                     "name": "New Office",
-                    "space_type_name": space_type_name
+                    "space_type_name": space_type_name,
                 })
                 space_result = unwrap(space_resp)
 
@@ -145,7 +144,7 @@ def test_create_space_with_space_type():
 
                 # Independent query verification
                 sd = unwrap(await session.call_tool("get_space_details", {
-                    "space_name": "New Office"
+                    "space_name": "New Office",
                 }))
                 assert sd["space"]["space_type"] == space_type_name
 
@@ -199,7 +198,7 @@ def test_create_space_invalid_building_story():
                 # Create space with invalid building story
                 space_resp = await session.call_tool("create_space", {
                     "name": "New Office",
-                    "building_story_name": "NonexistentStory"
+                    "building_story_name": "NonexistentStory",
                 })
                 space_result = unwrap(space_resp)
 
