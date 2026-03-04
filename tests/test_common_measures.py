@@ -9,7 +9,14 @@ import asyncio
 import uuid
 
 import pytest
-from conftest import integration_enabled, server_params, setup_example, unwrap
+from conftest import (
+    EPW_PATH,
+    integration_enabled,
+    poll_until_done,
+    server_params,
+    setup_example,
+    unwrap,
+)
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -640,5 +647,90 @@ def test_set_adiabatic_boundaries():
                 assert len(after_adiabatic) > 0, (
                     "No surfaces set to Adiabatic after set_adiabatic_boundaries"
                 )
+
+    asyncio.run(_run())
+
+
+# ===================================================================
+# End-to-end post-simulation tests (QAQC + results report)
+# ===================================================================
+
+
+# --- Test 21: run_qaqc_checks and generate_results_report after simulation ---
+@pytest.mark.integration
+def test_qaqc_post_sim():
+    """Full pipeline: baseline → weather → sim → run_qaqc_checks + generate_results_report."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("qaqc_sim")
+
+                # Create baseline model
+                await _setup_baseline(s, name)
+
+                # Set weather + design days
+                wr = unwrap(await s.call_tool("set_weather_file", {
+                    "epw_path": EPW_PATH,
+                }))
+                assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
+
+                dd1 = unwrap(await s.call_tool("add_design_day", {
+                    "name": "Heating 99.6%",
+                    "day_type": "WinterDesignDay",
+                    "month": 1, "day": 21,
+                    "dry_bulb_max_c": -20.6,
+                    "dry_bulb_range_c": 0.0,
+                }))
+                assert dd1.get("ok") is True
+
+                dd2 = unwrap(await s.call_tool("add_design_day", {
+                    "name": "Cooling .4%",
+                    "day_type": "SummerDesignDay",
+                    "month": 7, "day": 21,
+                    "dry_bulb_max_c": 33.3,
+                    "dry_bulb_range_c": 10.7,
+                }))
+                assert dd2.get("ok") is True
+
+                # Save + run simulation
+                save_path = f"/runs/{name}_weather.osm"
+                sr = unwrap(await s.call_tool("save_osm_model", {
+                    "save_path": save_path,
+                }))
+                assert sr.get("ok") is True
+
+                sim = unwrap(await s.call_tool("run_simulation", {
+                    "osm_path": save_path,
+                    "epw_path": EPW_PATH,
+                }))
+                assert sim.get("ok") is True, sim
+                run_id = sim["run_id"]
+
+                # Poll until done
+                status = await poll_until_done(s, run_id)
+                state = status["run"]["status"]
+                assert state == "success", f"Simulation {state}: {status}"
+
+                # generate_results_report (reporting measure — needs SQL from sim)
+                report = unwrap(await s.call_tool("generate_results_report", {
+                    "run_id": run_id,
+                }))
+                assert report.get("ok") is True, f"generate_results_report failed: {report}"
+
+                # run_qaqc_checks (reporting measure — needs SQL + climate zone)
+                qaqc = unwrap(await s.call_tool("run_qaqc_checks", {
+                    "run_id": run_id,
+                }))
+                assert qaqc.get("ok") is True, f"run_qaqc_checks failed: {qaqc}"
+
+                # view_simulation_data (reporting measure — needs SQL)
+                view = unwrap(await s.call_tool("view_simulation_data", {
+                    "run_id": run_id,
+                }))
+                assert view.get("ok") is True, f"view_simulation_data failed: {view}"
 
     asyncio.run(_run())

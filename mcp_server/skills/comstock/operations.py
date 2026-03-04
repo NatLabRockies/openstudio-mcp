@@ -183,14 +183,16 @@ def create_typical_building(
             if not st.standardsSpaceType().is_initialized():
                 # Default space type for the building type
                 st.setStandardsSpaceType("WholeBuilding")
-        # Set climate zone on model if specified and not already set.
+        # Set climate zone on model — always override any existing value.
         # The measure's infiltration step reads it from the model object.
+        # set_weather_file may have set a numeric-only zone (e.g. "2")
+        # from EPW estimation; the explicit arg here (e.g. "2A") is more
+        # authoritative and avoids openstudio-standards pump sizing bugs.
         if climate_zone != "Lookup From Model":
             czs = model.getClimateZones()
-            if len(czs.getClimateZones("ASHRAE")) == 0:
-                # Parse "ASHRAE 169-2013-4A" → "4A"
-                cz_value = climate_zone.rsplit("-", maxsplit=1)[-1] if "-" in climate_zone else climate_zone
-                czs.setClimateZone("ASHRAE", cz_value)
+            # Parse "ASHRAE 169-2013-4A" → "4A"
+            cz_value = climate_zone.rsplit("-", maxsplit=1)[-1] if "-" in climate_zone else climate_zone
+            czs.setClimateZone("ASHRAE", cz_value)
     except RuntimeError as e:
         return {"ok": False, "error": f"Failed to prepare model: {e}"}
 
@@ -219,7 +221,11 @@ def create_typical_building(
         else:
             arguments[measure_name] = str(val)
 
-    result = apply_measure(measure_dir=str(measure_path), arguments=arguments)
+    # ComStock measures use openstudio-standards from the CLI's built-in gems.
+    # The bundled gems (--bundle) load a different standards version that has
+    # a pump sizing bug, so skip the bundle for ComStock measures.
+    result = apply_measure(measure_dir=str(measure_path), arguments=arguments,
+                           use_bundle=False)
 
     # Enhance the response with context about what was applied
     if result.get("ok"):
