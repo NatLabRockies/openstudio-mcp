@@ -41,7 +41,6 @@ def register(mcp):
 
         Returns categorized list of ~79 measures. Use paths with
         list_measure_arguments and apply_measure for direct access.
-        Does not require a model to be loaded.
         """
         return list_common_measures(category=category)
 
@@ -49,74 +48,60 @@ def register(mcp):
 
     @mcp.tool(name="view_model")
     def view_model_tool(geometry_diagnostics: bool = False):
-        """Generate a 3D Three.js HTML viewer of the current model geometry.
-
-        Creates an interactive HTML file in /runs/ that can be opened in a
-        browser. Shows all surfaces, subsurfaces, and shading in 3D.
+        """Generate 3D HTML viewer of model geometry.
 
         Args:
             geometry_diagnostics: Enable surface/space convexity checks (slower)
-
-        Requires a model to be loaded.
         """
         return view_model_op(geometry_diagnostics=geometry_diagnostics)
 
     @mcp.tool(name="view_simulation_data")
     def view_simulation_data_tool(
+        run_id: str = "",
         variable_names: list[str] | None = None,
         reporting_frequency: str = "Timestep",
     ):
-        """Generate a 3D viewer with simulation data overlaid on model surfaces.
-
-        Creates an interactive HTML file showing up to 3 output variables
-        plotted on the model geometry. Requires a completed simulation.
+        """Generate 3D HTML viewer with simulation data overlaid.
 
         Args:
+            run_id: Run ID from a completed simulation (required — provides SQL results)
             variable_names: Up to 3 EnergyPlus output variable names.
                 Defaults to surface temperatures if omitted.
-            reporting_frequency: "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod"
-
-        Requires a model to be loaded and a simulation to have been run.
+            reporting_frequency: "Timestep" or "Hourly"
         """
         return view_simulation_data_op(
+            run_id=run_id or None,
             variable_names=variable_names,
             reporting_frequency=reporting_frequency,
         )
 
     @mcp.tool(name="generate_results_report")
-    def generate_results_report_tool(units: str = "IP"):
-        """Generate a comprehensive HTML report from simulation results.
-
-        Includes building summary, annual/monthly energy, HVAC details,
-        envelope, zones, economics, and more (~25 sections).
+    def generate_results_report_tool(run_id: str = "", units: str = "IP"):
+        """Generate comprehensive HTML report from simulation results (~25 sections).
 
         Args:
+            run_id: Run ID from a completed simulation (required — provides SQL results)
             units: "IP" (imperial) or "SI" (metric)
-
-        Requires a completed simulation.
         """
-        return generate_results_report_op(units=units)
+        return generate_results_report_op(run_id=run_id or None, units=units)
 
     @mcp.tool(name="run_qaqc_checks")
     def run_qaqc_checks_tool(
+        run_id: str = "",
         template: str = "90.1-2013",
         checks: list[str] | None = None,
     ):
-        """Run ASHRAE baseline QA/QC checks on simulation results.
-
-        Compares model against standard targets for efficiency, capacity,
-        internal loads, envelope, schedules, and mechanical systems.
+        """Run ASHRAE QA/QC checks on simulation results.
 
         Args:
+            run_id: Run ID from a completed simulation (required — provides SQL results)
             template: Target ASHRAE standard — "90.1-2013", "90.1-2016", "90.1-2019"
             checks: Which checks to enable. Defaults to all. Options:
                 "part_load_eff", "capacity", "simultaneous_htg_clg",
                 "internal_loads", "schedules", "envelope", "dhw",
                 "mech_efficiency", "mech_type", "supply_air_temp"
-
-        Requires a completed simulation.
         """
-        return run_qaqc_checks_op(template=template, checks=checks)
+        return run_qaqc_checks_op(run_id=run_id or None, template=template, checks=checks)
 
     @mcp.tool(name="adjust_thermostat_setpoints")
     def adjust_thermostat_setpoints_tool(
@@ -124,18 +109,12 @@ def register(mcp):
         heating_offset_f: float = 0.0,
         alter_design_days: bool = False,
     ):
-        """Shift all thermostat setpoints by specified degree offsets.
-
-        Clones schedules so originals are not mutated. Positive cooling_offset
-        raises setpoint (saves cooling energy); negative heating_offset lowers
-        setpoint (saves heating energy).
+        """Shift all thermostat setpoints by degree offsets. Clones schedules.
 
         Args:
             cooling_offset_f: Degrees F to raise cooling setpoint
             heating_offset_f: Degrees F to shift heating setpoint
             alter_design_days: Also shift design day schedules
-
-        Requires a model to be loaded.
         """
         return adjust_thermostat_setpoints_op(
             cooling_offset_f=cooling_offset_f,
@@ -151,15 +130,10 @@ def register(mcp):
     ):
         """Replace all exterior window constructions with a named construction.
 
-        Applies to all exterior windows (excludes skylights and adiabatic).
-        The construction must already exist in the model.
-
         Args:
             construction_name: Name of the window construction to apply
             fixed_windows: Replace fixed windows
             operable_windows: Replace operable windows
-
-        Requires a model to be loaded.
         """
         return replace_window_constructions_op(
             construction_name=construction_name,
@@ -169,13 +143,7 @@ def register(mcp):
 
     @mcp.tool(name="enable_ideal_air_loads")
     def enable_ideal_air_loads_tool():
-        """Enable ideal air loads on all thermal zones.
-
-        Disconnects existing HVAC. Useful for quick sizing studies
-        or load calculations without detailed HVAC modeling.
-
-        Requires a model to be loaded.
-        """
+        """Enable ideal air loads on all zones. Disconnects existing HVAC."""
         return enable_ideal_air_loads_op()
 
     @mcp.tool(name="clean_unused_objects")
@@ -186,11 +154,7 @@ def register(mcp):
         constructions: bool = True,
         curves: bool = True,
     ):
-        """Remove orphan objects and unused resources from the model.
-
-        Removes orphaned load instances, surfaces without spaces, and
-        optionally purges unused space types, schedules, constructions,
-        load definitions, and performance curves.
+        """Remove orphan objects and unused resources.
 
         Args:
             space_types: Remove unused space types
@@ -198,8 +162,6 @@ def register(mcp):
             schedules: Remove unused schedules
             constructions: Remove unused constructions and materials
             curves: Remove unused performance curves
-
-        Requires a model to be loaded.
         """
         return clean_unused_objects_op(
             space_types=space_types,
@@ -211,16 +173,10 @@ def register(mcp):
 
     @mcp.tool(name="inject_idf")
     def inject_idf_tool(idf_path: str = ""):
-        """Inject raw IDF objects from an external file into the model.
-
-        Objects are added to the EnergyPlus workspace before simulation.
-        Best for adding new objects; modifying forward-translated objects
-        may cause conflicts.
+        """Inject raw IDF objects from file into model.
 
         Args:
             idf_path: Path to the IDF file containing objects to inject
-
-        Requires a model to be loaded.
         """
         return inject_idf_op(idf_path=idf_path)
 
@@ -229,16 +185,11 @@ def register(mcp):
         weather_file: str = "",
         climate_zone: str = "Lookup From Stat File",
     ):
-        """Change building location by setting weather file and climate zone.
-
-        Sets the weather file and ASHRAE/CEC climate zone. Also looks up
-        the .stat file for design day data if available.
+        """Set weather file and ASHRAE climate zone.
 
         Args:
             weather_file: EPW weather file name
             climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto
-
-        Requires a model to be loaded.
         """
         return change_building_location_op(
             weather_file=weather_file,

@@ -6,6 +6,8 @@ Complementary to OSW-level epw_path override in simulation/operations.py.
 """
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 import openstudio
@@ -13,6 +15,69 @@ import openstudio
 from mcp_server.config import is_path_allowed
 from mcp_server.model_manager import get_model
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
+
+
+def _parse_climate_zone_from_stat(stat_path: Path) -> str | None:
+    """Extract ASHRAE climate zone from a .stat file (e.g. "5A", "2B").
+
+    Looks for line like:
+      - Climate type "5A" (ASHRAE Standard 196-2006 Climate Zone)**
+    """
+    try:
+        text = stat_path.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r'Climate type "([^"]+)" \(ASHRAE Standards?', text)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def _estimate_climate_zone_from_epw(epw_path: Path) -> str | None:
+    """Estimate ASHRAE 169 climate zone number from EPW hourly dry-bulb temps.
+
+    Computes HDD18°C and CDD10°C from the 8760 hourly values (column 6)
+    and applies the ASHRAE 169 threshold table. Returns the numeric zone
+    only (no A/B/C moisture suffix — that requires precipitation data).
+    """
+    try:
+        import csv
+
+        temps: list[float] = []
+        with open(epw_path, encoding="utf-8", errors="replace") as f:
+            # Skip 8 header lines
+            for _ in range(8):
+                next(f)
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) > 6:
+                    temps.append(float(row[6]))
+
+        if len(temps) < 8760:
+            return None
+
+        hdd18 = sum(max(18.0 - t, 0.0) for t in temps) / 24.0
+        cdd10 = sum(max(t - 10.0, 0.0) for t in temps) / 24.0
+
+        if cdd10 > 5000:
+            return "1"
+        if cdd10 > 3500:
+            return "2"
+        if cdd10 > 2500:
+            return "3"
+        if hdd18 <= 2000:
+            return "3"  # 3C (marine)
+        if hdd18 <= 3000:
+            return "4"
+        if hdd18 <= 4000:
+            return "5"
+        if hdd18 <= 5000:
+            return "6"
+        if hdd18 <= 7000:
+            return "7"
+        return "8"
+    except Exception:
+        return None
 
 
 def get_weather_info() -> dict[str, Any]:
@@ -57,12 +122,13 @@ def get_weather_info() -> dict[str, Any]:
 def set_weather_file(epw_path: str) -> dict[str, Any]:
     """Attach an EPW weather file to the in-memory model.
 
+    Also updates the ASHRAE climate zone if a .stat file exists
+    alongside the EPW (same directory, same basename).
+
     Args:
         epw_path: Absolute path to an EPW file
     """
     try:
-        from pathlib import Path
-
         p = Path(epw_path)
         if not is_path_allowed(p):
             return {"ok": False, "error": f"EPW path not in allowed roots: {epw_path}"}
@@ -76,8 +142,26 @@ def set_weather_file(epw_path: str) -> dict[str, Any]:
         # Attach to model
         openstudio.model.WeatherFile.setWeatherFile(model, epw)
 
+        # Update ASHRAE climate zone: prefer .stat file, fall back to
+        # HDD/CDD estimation from EPW hourly dry-bulb temperatures
+        cz = None
+        stat_path = p.with_suffix(".stat")
+        if stat_path.is_file():
+            cz = _parse_climate_zone_from_stat(stat_path)
+        if not cz:
+            cz = _estimate_climate_zone_from_epw(p)
+        if cz:
+            czs = model.getClimateZones()
+            czs.setClimateZone("ASHRAE", cz)
+
         # Read back to confirm
-        return get_weather_info()
+        result = get_weather_info()
+        # Include climate zone in response if set
+        czs = model.getClimateZones()
+        ashrae_czs = czs.getClimateZones("ASHRAE")
+        if len(ashrae_czs) > 0:
+            result["climate_zone"] = ashrae_czs[0].value()
+        return result
 
     except RuntimeError as e:
         err_str = str(e)

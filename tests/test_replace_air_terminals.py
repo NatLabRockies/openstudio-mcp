@@ -402,3 +402,104 @@ def test_replace_multiple_times():
                     assert "NoReheat" in t["type"]
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_replace_to_four_pipe_beam():
+    """Replace DOAS+FCU terminals with FourPipeBeam; verify beam type + loop connections."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                name = "test_replace_4pb"
+
+                # Create and load model
+                create_resp = await session.call_tool("create_example_osm", {"name": name})
+                create_data = unwrap(create_resp)
+                load_resp = await session.call_tool("load_osm_model", {
+                    "osm_path": create_data["osm_path"],
+                })
+
+                # Get zones
+                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_data = unwrap(zones_resp)
+                zone_names = [z["name"] for z in zones_data["thermal_zones"]]
+
+                # Add DOAS with FanCoil (creates CHW + HW loops)
+                system_resp = await session.call_tool("add_doas_system", {
+                    "thermal_zone_names": zone_names,
+                    "system_name": "DOAS FC",
+                    "zone_equipment_type": "FanCoil",
+                })
+                system_data = unwrap(system_resp)
+                assert system_data.get("ok") is True
+                doas_loop_name = system_data["system"]["doas_loop"]
+
+                # Replace DOAS terminals with FourPipeBeam
+                replace_resp = await session.call_tool("replace_air_terminals", {
+                    "air_loop_name": doas_loop_name,
+                    "terminal_type": "FourPipeBeam",
+                })
+                replace_data = unwrap(replace_resp)
+
+                assert replace_data.get("ok") is True
+                assert replace_data["air_loop"]["terminals_replaced"] == len(zone_names)
+                assert replace_data["air_loop"]["new_terminal_type"] == "FourPipeBeam"
+
+                # Verify via air loop detail query
+                ald = unwrap(await session.call_tool("get_air_loop_details", {
+                    "air_loop_name": doas_loop_name,
+                }))
+                for t in ald["air_loop"].get("terminals", []):
+                    assert "FourPipeBeam" in t["type"]
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_replace_four_pipe_beam_no_loops():
+    """FourPipeBeam on model without CHW/HW loops should error."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                name = "test_replace_4pb_no_loops"
+
+                # Create and load model
+                create_resp = await session.call_tool("create_example_osm", {"name": name})
+                create_data = unwrap(create_resp)
+                load_resp = await session.call_tool("load_osm_model", {
+                    "osm_path": create_data["osm_path"],
+                })
+
+                # Get zones
+                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_data = unwrap(zones_resp)
+                zone_names = [z["name"] for z in zones_data["thermal_zones"]]
+
+                # Add System 3 (no HW/CHW loop, just packaged rooftop)
+                system_resp = await session.call_tool("add_baseline_system", {
+                    "system_type": 3,
+                    "thermal_zone_names": zone_names[:1],
+                    "system_name": "PSZ System",
+                })
+                system_data = unwrap(system_resp)
+                assert system_data.get("ok") is True
+
+                # Try to replace with FourPipeBeam (needs CHW + HW loops)
+                replace_resp = await session.call_tool("replace_air_terminals", {
+                    "air_loop_name": "PSZ System",
+                    "terminal_type": "FourPipeBeam",
+                })
+                replace_data = unwrap(replace_resp)
+
+                assert replace_data.get("ok") is False
+                assert "chilled water" in replace_data["error"].lower() or "hot water" in replace_data["error"].lower()
+
+    asyncio.run(_run())

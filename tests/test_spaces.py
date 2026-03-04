@@ -101,7 +101,7 @@ def test_thermal_zones_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                zr = await session.call_tool("list_thermal_zones", {})
+                zr = await session.call_tool("list_thermal_zones", {"detailed": True})
                 zd = unwrap(zr)
                 print("baseline zones:", zd)
                 assert zd.get("ok") is True
@@ -136,7 +136,7 @@ def test_list_thermal_zones():
                 assert load_result.get("ok") is True
 
                 # List zones
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"detailed": True})
                 zones_result = unwrap(zones_resp)
 
                 assert isinstance(zones_result, dict)

@@ -14,39 +14,26 @@ from mcp_server.skills.model_management.operations import (
 def register(mcp):
     @mcp.tool(name="load_osm_model")
     def load_osm_model_tool(osm_path: str, version_translate: bool = True):
-        """Load an OSM file and set it as the current model for all query tools.
-
-        Once loaded, you can use other tools like list_spaces, get_building_info,
-        list_thermal_zones, etc. to query the model without passing the path each time.
+        """Load an OSM and set as current model for query tools.
 
         Args:
             osm_path: Path to the OSM file to load (absolute or relative)
             version_translate: Use VersionTranslator to upgrade older OSM files (default True)
-
-        Returns:
-            Dict with ok=True and model summary (spaces, zones, building name) on success
         """
         return load_osm_model(osm_path=osm_path, version_translate=version_translate)
 
     @mcp.tool(name="save_osm_model")
     def save_osm_model_tool(save_path: str | None = None):
-        """Save the currently loaded model to disk.
+        """Save loaded model to disk.
 
         Args:
             save_path: Optional path to save to. If not provided, saves to original load path.
-
-        Returns:
-            Dict with ok=True and saved path on success
         """
         return save_osm_model(save_path=save_path)
 
     @mcp.tool(name="create_example_osm")
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):
-        """Create the built-in OpenStudio example model and save it as an OSM.
-
-        This is intended as a zero-input demo for Claude Desktop / MCP clients.
-        The model is written under /runs by default so it is persisted via the /runs mount.
-        """
+        """Create built-in OpenStudio example model (auto-loads into memory)."""
         return create_example_osm(name=name, out_dir=out_dir)
 
     @mcp.tool(name="create_baseline_osm")
@@ -58,10 +45,7 @@ def register(mcp):
         ashrae_sys_num: str | None = None,
         wwr: float | None = None,
     ):
-        """Create a baseline 10-zone, 2-story commercial building model.
-
-        Produces a perimeter+core zoned building with detailed schedules, loads,
-        constructions, and thermostats. Optionally adds ASHRAE HVAC and windows.
+        """Create baseline 10-zone commercial building (auto-loads into memory).
 
         Args:
             name: Model name (used for output directory)
@@ -82,17 +66,11 @@ def register(mcp):
 
     @mcp.tool(name="list_files")
     def list_files_tool(directory: str | None = None, pattern: str = "*"):
-        """List files in the mounted directories (/inputs and /runs).
-
-        Use this to discover what OSM models, EPW weather files, and simulation
-        outputs are available. Scans both /inputs and /runs by default.
+        """List files in /inputs and /runs.
 
         Args:
             directory: Specific directory to list (e.g. "/inputs", "/runs"). If omitted, scans both.
             pattern: Glob pattern to filter (e.g. "*.epw", "*.osm"). Default "*" returns all files.
-
-        Returns:
-            Dict with file list including name, path, size, and extension.
         """
         return list_files(directory=directory, pattern=pattern)
 

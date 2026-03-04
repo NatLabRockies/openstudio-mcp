@@ -12,6 +12,7 @@ from mcp_server.skills.hvac_systems import (
     templates,
     validation,
 )
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def add_baseline_system(
@@ -68,51 +69,53 @@ def add_baseline_system(
             system_name = f"{system_info['system']['name']} HVAC"
 
         # Route to appropriate baseline system implementation
-        if system_type == 1:
-            result = baseline.create_baseline_system_1(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 2:
-            result = baseline.create_baseline_system_2(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 3:
-            result = baseline.create_baseline_system_3(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 4:
-            result = baseline.create_baseline_system_4(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 5:
-            result = baseline.create_baseline_system_5(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 6:
-            result = baseline.create_baseline_system_6(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 7:
-            result = baseline.create_baseline_system_7(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 8:
-            result = baseline.create_baseline_system_8(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 9:
-            result = baseline.create_baseline_system_9(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 10:
-            result = baseline.create_baseline_system_10(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        else:
-            return {
-                "ok": False,
-                "error": f"System type {system_type} not yet implemented. Currently supporting systems 1-10.",
-            }
+        # Suppress SWIG stdout warnings that corrupt MCP JSON-RPC stream
+        with suppress_openstudio_warnings():
+            if system_type == 1:
+                result = baseline.create_baseline_system_1(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 2:
+                result = baseline.create_baseline_system_2(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 3:
+                result = baseline.create_baseline_system_3(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 4:
+                result = baseline.create_baseline_system_4(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 5:
+                result = baseline.create_baseline_system_5(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 6:
+                result = baseline.create_baseline_system_6(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 7:
+                result = baseline.create_baseline_system_7(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 8:
+                result = baseline.create_baseline_system_8(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 9:
+                result = baseline.create_baseline_system_9(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            elif system_type == 10:
+                result = baseline.create_baseline_system_10(
+                    model, zones, heating_fuel, cooling_fuel, economizer, system_name,
+                )
+            else:
+                return {
+                    "ok": False,
+                    "error": f"System type {system_type} not yet implemented. Currently supporting systems 1-10.",
+                }
 
         # Validate system if creation succeeded
         if result.get("ok"):
@@ -187,20 +190,21 @@ def replace_air_terminals(
             }
 
         # Validate terminal type
-        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV"]
+        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV", "FourPipeBeam"]
         if terminal_type not in valid_types:
             return {
                 "ok": False,
                 "error": f"Invalid terminal_type: '{terminal_type}'. Must be one of: {', '.join(valid_types)}",
             }
 
-        # Replace terminals
-        result = air_terminals.replace_terminals(
-            model,
-            air_loop,
-            terminal_type,
-            terminal_options or {},
-        )
+        # Replace terminals (suppress SWIG stdout warnings)
+        with suppress_openstudio_warnings():
+            result = air_terminals.replace_terminals(
+                model,
+                air_loop,
+                terminal_type,
+                terminal_options or {},
+            )
 
         return result
 
@@ -232,16 +236,17 @@ def replace_zone_terminal(
         if zone is None:
             return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
 
-        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV"]
+        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV", "FourPipeBeam"]
         if terminal_type not in valid_types:
             return {
                 "ok": False,
                 "error": f"Invalid terminal_type: '{terminal_type}'. Must be one of: {', '.join(valid_types)}",
             }
 
-        return air_terminals.replace_zone_terminal(
-            model, zone, terminal_type, terminal_options or {},
-        )
+        with suppress_openstudio_warnings():
+            return air_terminals.replace_zone_terminal(
+                model, zone, terminal_type, terminal_options or {},
+            )
 
     except RuntimeError as e:
         return {"ok": False, "error": f"Runtime error: {e}"}
@@ -265,7 +270,7 @@ def add_doas_system(
         system_name: Name prefix for DOAS components
         energy_recovery: Add ERV (default True)
         sensible_effectiveness: ERV sensible effectiveness 0-1 (default 0.75)
-        zone_equipment_type: FanCoil | Radiant | Chiller_Beams
+        zone_equipment_type: FanCoil | Radiant | ChilledBeams | FourPipeBeam
         heating_fuel: NaturalGas | Electricity | DistrictHeating
         cooling_fuel: Electricity | DistrictCooling
 
@@ -284,16 +289,17 @@ def add_doas_system(
             zones.append(zone)
 
         # Validate zone_equipment_type
-        valid_types = ["FanCoil", "Radiant", "Chiller_Beams"]
+        valid_types = ["FanCoil", "Radiant", "ChilledBeams", "FourPipeBeam"]
         if zone_equipment_type not in valid_types:
             return {"ok": False, "error": f"Invalid zone_equipment_type: '{zone_equipment_type}'"}
 
-        # Create DOAS system
-        result = templates.create_doas_system(
-            model, zones, system_name, energy_recovery,
-            sensible_effectiveness, zone_equipment_type,
-            heating_fuel, cooling_fuel,
-        )
+        # Create DOAS system (suppress SWIG stdout warnings)
+        with suppress_openstudio_warnings():
+            result = templates.create_doas_system(
+                model, zones, system_name, energy_recovery,
+                sensible_effectiveness, zone_equipment_type,
+                heating_fuel, cooling_fuel,
+            )
 
         return {"ok": True, "system": result}
 
@@ -331,10 +337,11 @@ def add_vrf_system(
                 return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
             zones.append(zone)
 
-        # Create VRF system
-        result = templates.create_vrf_system(
-            model, zones, system_name, heat_recovery, outdoor_unit_capacity_w,
-        )
+        # Create VRF system (suppress SWIG stdout warnings)
+        with suppress_openstudio_warnings():
+            result = templates.create_vrf_system(
+                model, zones, system_name, heat_recovery, outdoor_unit_capacity_w,
+            )
 
         return {"ok": True, "system": result}
 
@@ -386,11 +393,12 @@ def add_radiant_system(
         if ventilation_system not in valid_vent:
             return {"ok": False, "error": f"Invalid ventilation_system: '{ventilation_system}'"}
 
-        # Create radiant system
-        result = templates.create_radiant_system(
-            model, zones, system_name, radiant_type, ventilation_system,
-            heating_fuel, cooling_fuel,
-        )
+        # Create radiant system (suppress SWIG stdout warnings)
+        with suppress_openstudio_warnings():
+            result = templates.create_radiant_system(
+                model, zones, system_name, radiant_type, ventilation_system,
+                heating_fuel, cooling_fuel,
+            )
 
         return {"ok": True, "system": result}
 

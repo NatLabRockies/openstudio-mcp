@@ -71,6 +71,8 @@ def replace_terminals(
                 result = _create_pfp_hw_terminal(model, air_loop, zone, options)
             elif terminal_type == "CAV":
                 result = _create_cav_terminal(model, air_loop, zone, options)
+            elif terminal_type == "FourPipeBeam":
+                result = _create_four_pipe_beam_terminal(model, air_loop, zone, options)
             else:
                 return {
                     "ok": False,
@@ -144,6 +146,12 @@ def _get_zones_and_terminals(air_loop) -> list[dict[str, Any]]:
                 elif equip.to_AirTerminalSingleDuctConstantVolumeNoReheat().is_initialized():
                     terminal = equip.to_AirTerminalSingleDuctConstantVolumeNoReheat().get()
                     terminal_type = "AirTerminalSingleDuctConstantVolumeNoReheat"
+                elif equip.to_AirTerminalSingleDuctConstantVolumeFourPipeBeam().is_initialized():
+                    terminal = equip.to_AirTerminalSingleDuctConstantVolumeFourPipeBeam().get()
+                    terminal_type = "AirTerminalSingleDuctConstantVolumeFourPipeBeam"
+                elif equip.to_AirTerminalSingleDuctConstantVolumeCooledBeam().is_initialized():
+                    terminal = equip.to_AirTerminalSingleDuctConstantVolumeCooledBeam().get()
+                    terminal_type = "AirTerminalSingleDuctConstantVolumeCooledBeam"
 
                 if terminal is not None:
                     # Verify this terminal belongs to the air loop we're modifying
@@ -409,6 +417,7 @@ def replace_zone_terminal(
             "PFP_Electric": _create_pfp_electric_terminal,
             "PFP_HotWater": _create_pfp_hw_terminal,
             "CAV": _create_cav_terminal,
+            "FourPipeBeam": _create_four_pipe_beam_terminal,
         }
         creator = creators.get(terminal_type)
         if creator is None:
@@ -446,6 +455,8 @@ def _try_cast_terminal(equip):
         ("to_AirTerminalSingleDuctParallelPIUReheat", "AirTerminalSingleDuctParallelPIUReheat"),
         ("to_AirTerminalSingleDuctUncontrolled", "AirTerminalSingleDuctUncontrolled"),
         ("to_AirTerminalSingleDuctConstantVolumeNoReheat", "AirTerminalSingleDuctConstantVolumeNoReheat"),
+        ("to_AirTerminalSingleDuctConstantVolumeFourPipeBeam", "AirTerminalSingleDuctConstantVolumeFourPipeBeam"),
+        ("to_AirTerminalSingleDuctConstantVolumeCooledBeam", "AirTerminalSingleDuctConstantVolumeCooledBeam"),
     ]
     for method_name, type_name in casts:
         opt = getattr(equip, method_name)()
@@ -468,3 +479,79 @@ def _find_hot_water_loop(model) -> openstudio.model.PlantLoop | None:
         if sizing.loopType() == "Heating":
             return loop
     return None
+
+
+def _find_chilled_water_loop(model) -> openstudio.model.PlantLoop | None:
+    """Find first chilled water plant loop in model.
+
+    Searches for a cooling plant loop to supply chilled water coils.
+    Returns the first cooling loop found (models typically have one CHW loop).
+
+    Returns:
+        PlantLoop with loopType="Cooling", or None if no CHW loop exists
+    """
+    for loop in model.getPlantLoops():
+        sizing = loop.sizingPlant()
+        if sizing.loopType() == "Cooling":
+            return loop
+    return None
+
+
+def _create_four_pipe_beam_terminal(
+    model,
+    air_loop,
+    zone,
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    """Create 4-pipe active chilled beam terminal.
+
+    Four-pipe beams provide both heating and cooling via hydronic coils
+    integrated into the air terminal. Requires both CHW and HW plant loops.
+
+    Args:
+        model: OpenStudio model
+        air_loop: AirLoopHVAC to connect terminal to
+        zone: ThermalZone to serve
+        options: Configuration dict (unused currently)
+
+    Returns:
+        dict with ok=True and terminal object, or ok=False and error message
+    """
+    try:
+        chw_loop = _find_chilled_water_loop(model)
+        if chw_loop is None:
+            return {
+                "ok": False,
+                "error": "FourPipeBeam requires a chilled water plant loop. None found in model.",
+            }
+
+        hw_loop = _find_hot_water_loop(model)
+        if hw_loop is None:
+            return {
+                "ok": False,
+                "error": "FourPipeBeam requires a hot water plant loop. None found in model.",
+            }
+
+        # Create cooling coil and connect to CHW loop
+        cc = openstudio.model.CoilCoolingFourPipeBeam(model)
+        cc.setName(f"{zone.nameString()} 4P Beam Clg Coil")
+        chw_loop.addDemandBranchForComponent(cc)
+
+        # Create heating coil and connect to HW loop
+        hc = openstudio.model.CoilHeatingFourPipeBeam(model)
+        hc.setName(f"{zone.nameString()} 4P Beam Htg Coil")
+        hw_loop.addDemandBranchForComponent(hc)
+
+        # Create 4-pipe beam terminal with both coils
+        terminal = openstudio.model.AirTerminalSingleDuctConstantVolumeFourPipeBeam(
+            model, cc, hc,
+        )
+        terminal.setName(f"{zone.nameString()} FourPipeBeam Terminal")
+
+        # Connect terminal to air loop and zone
+        air_loop.addBranchForZone(zone, terminal.to_StraightComponent())
+
+        return {"ok": True, "terminal": terminal}
+
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to create four pipe beam terminal: {e}"}

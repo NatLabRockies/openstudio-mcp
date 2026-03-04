@@ -54,7 +54,7 @@ contributors unfamiliar with OpenStudio to understand and adapt.
 | `simulation_outputs` | `add_output_variable`, `add_output_meter` | Phase 3 |
 | `hvac_systems` | `add_baseline_system`, `list_baseline_systems`, `get_baseline_system_info`, `replace_air_terminals`, `replace_zone_terminal`, `add_doas_system`, `add_vrf_system`, `add_radiant_system` | Phase 4 |
 | `component_properties` | `list_hvac_components`, `get_component_properties`, `set_component_properties`, `set_economizer_properties`, `set_sizing_properties`, `set_setpoint_manager_properties` | Phase 5 |
-| `loop_operations` | `add_supply_equipment`, `remove_supply_equipment`, `add_zone_equipment`, `remove_zone_equipment` | Phase 5 |
+| `loop_operations` | `add_supply_equipment`, `remove_supply_equipment`, `add_zone_equipment`, `remove_zone_equipment`, `remove_all_zone_equipment` | Phase 5 |
 | `object_management` | `delete_object`, `rename_object`, `list_model_objects` | Phase 6B |
 | `weather` | `get_weather_info`, `set_weather_file`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period` | Phase 6C |
 | `measures` | `list_measure_arguments`, `apply_measure` | Phase 6D |
@@ -62,7 +62,7 @@ contributors unfamiliar with OpenStudio to understand and adapt.
 | `common_measures` | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `inject_idf`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8 |
 | `skill_discovery` | `list_skills`, `get_skill` | — |
 
-**Total: 22 skills, 126 MCP tools, ~260 integration tests**
+**Total: 22 skills, 127 MCP tools, ~260 integration tests**
 
 ## Model Query Pattern
 ```python
@@ -148,7 +148,7 @@ roughly balanced (~200s each). See shard comments in the workflow for current ba
 - **OpenStudio CLI:** `openstudio run -w <osw>` (simulation), `openstudio run --measures_only -w <osw>` (measure execution)
 - **openstudio-resources** — HVAC wiring patterns, baseline model geometry
   - https://github.com/NatLabRockies/OpenStudio-resources/tree/develop/model/simulationtests
-  - Key files: baseline_sys*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, lib/baseline_model.py
+  - Key files: baseline_sys*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, airterminal_fourpipebeam.py, airterminal_cooledbeam.py, lib/baseline_model.py
 - **ComStock measures** (~61 bundled) — standards-based templates for typical buildings
   - https://github.com/NatLabRockies/ComStock (tag: `2025-3`, installed at `/opt/comstock-measures`)
 

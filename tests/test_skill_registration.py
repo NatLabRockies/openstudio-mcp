@@ -80,6 +80,7 @@ EXPECTED_TOOLS = {
     "remove_supply_equipment",
     "add_zone_equipment",
     "remove_zone_equipment",
+    "remove_all_zone_equipment",
     # Phase 6A: Load Creation
     "create_people_definition",
     "create_lights_definition",

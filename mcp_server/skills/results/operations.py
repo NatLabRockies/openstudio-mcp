@@ -27,71 +27,44 @@ def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Path | Non
 
 
 def _extract_total_site_energy_from_sql(sql_path: Path) -> dict[str, Any]:
-    """Best-effort extraction of Total Site Energy from EnergyPlus SQL.
-
-    EnergyPlus stores tabular reports in TabularDataWithStrings. Column/row names vary slightly
-    across versions and report configurations, so we search flexibly.
-    """
+    """Extract Total Site Energy (GJ) from EnergyPlus SQL via precise query."""
     conn = sqlite3.connect(str(sql_path))
     conn.row_factory = sqlite3.Row
     try:
+        # TabularDataWithStrings may be a VIEW — don't filter by type='table'
         cur = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='TabularDataWithStrings'",
+            "SELECT name FROM sqlite_master WHERE name='TabularDataWithStrings'",
         )
         if not cur.fetchone():
             return {"ok": False, "reason": "missing_tabular_table"}
 
-        q = """
-        SELECT *
-        FROM TabularDataWithStrings
-        WHERE
-          (lower(TableName) LIKE '%site%' AND lower(TableName) LIKE '%energy%')
-          AND (lower(RowName) LIKE '%total site energy%')
-        LIMIT 10
-        """
-        rows = conn.execute(q).fetchall()
-        if not rows:
-            q2 = """
-            SELECT *
+        row = conn.execute("""
+            SELECT Value, Units, ReportName, TableName, RowName, ColumnName
             FROM TabularDataWithStrings
-            WHERE lower(RowName) LIKE '%total site energy%'
-            LIMIT 10
-            """
-            rows = conn.execute(q2).fetchall()
+            WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
+              AND TableName = 'Site and Source Energy'
+              AND RowName = 'Total Site Energy'
+              AND ColumnName = 'Total Energy'
+            LIMIT 1
+        """).fetchone()
 
-        if not rows:
+        if not row:
             return {"ok": False, "reason": "not_found"}
 
-        def score(r: sqlite3.Row) -> int:
-            """Rank candidate rows by relevance to total site energy."""
-            s = 0
-            if (r["TableName"] or "").lower().find("site") >= 0:
-                s += 3
-            if (r["ReportName"] or "").lower().find("annual") >= 0:
-                s += 1
-            if (r["Units"] or "").strip():
-                s += 1
-            if re.search(r"[-+]?\d+(\.\d+)?", (r["Value"] or "")):
-                s += 2
-            return s
-
-        best = sorted(rows, key=score, reverse=True)[0]
-        value_str = (best["Value"] or "").strip()
-        units = (best["Units"] or "").strip() or None
-
+        value_str = (row["Value"] or "").strip()
+        units = (row["Units"] or "").strip() or None
         m = re.search(r"[-+]?\d+(?:\.\d+)?", value_str.replace(",", ""))
         if not m:
             return {"ok": False, "reason": "non_numeric_value", "value": value_str, "units": units}
 
-        val = float(m.group(0))
         return {
             "ok": True,
-            "value": val,
+            "value": float(m.group(0)),
             "units": units,
-            "report_name": best["ReportName"],
-            "table_name": best["TableName"],
-            "row_name": best["RowName"],
-            "column_name": best["ColumnName"],
+            "report_name": row["ReportName"],
+            "table_name": row["TableName"],
+            "row_name": row["RowName"],
+            "column_name": row["ColumnName"],
         }
     finally:
         conn.close()
@@ -130,7 +103,7 @@ def _to_kbtu(value: float, units: str | None) -> float | None:
     return None
 
 
-def extract_summary_metrics(run_id: str) -> dict[str, Any]:
+def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str, Any]:
     """Extract headline metrics from a completed run (restart-safe)."""
     try:
         run_dir = resolve_run_dir(RUN_ROOT, run_id)
@@ -183,6 +156,22 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
         )
         total_site_detail = {k: v for k, v in total_site.items() if k not in ("ok",)}
 
+    metrics: dict[str, Any] = {
+        "total_site_energy": {
+            "value": total_site_value,
+            "units": total_site_units,
+            "kbtu": total_site_kbtu,
+            "source": total_site_src if total_site_value is not None else None,
+            "detail": total_site_detail,
+        },
+        "unmet_hours_heating": unmet.get("heating") if isinstance(unmet, dict) else None,
+        "unmet_hours_cooling": unmet.get("cooling") if isinstance(unmet, dict) else None,
+        "eui": (eui.get("computed_eui") if isinstance(eui, dict) else None),
+        "eui_units": (eui.get("computed_eui_units") if isinstance(eui, dict) else None),
+    }
+    if include_raw:
+        metrics["raw"] = {"unmet": unmet, "eui": eui}
+
     return {
         "ok": True,
         "run_id": run_id,
@@ -191,20 +180,7 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
             "sql": str(sql_path) if sql_path else None,
             "html": str(html_path) if html_path else None,
         },
-        "metrics": {
-            "total_site_energy": {
-                "value": total_site_value,
-                "units": total_site_units,
-                "kbtu": total_site_kbtu,
-                "source": total_site_src if total_site_value is not None else None,
-                "detail": total_site_detail,
-            },
-            "unmet_hours_heating": unmet.get("heating") if isinstance(unmet, dict) else None,
-            "unmet_hours_cooling": unmet.get("cooling") if isinstance(unmet, dict) else None,
-            "eui": (eui.get("computed_eui") if isinstance(eui, dict) else None),
-            "eui_units": (eui.get("computed_eui_units") if isinstance(eui, dict) else None),
-            "raw": {"unmet": unmet, "eui": eui},
-        },
+        "metrics": metrics,
     }
 
 

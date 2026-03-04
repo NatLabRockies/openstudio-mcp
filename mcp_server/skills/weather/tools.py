@@ -15,14 +15,7 @@ from mcp_server.skills.weather.operations import (
 def register(mcp):
     @mcp.tool(name="get_weather_info")
     def get_weather_info_tool():
-        """Get weather file information from the loaded model.
-
-        Returns city, state, country, latitude, longitude, timezone,
-        elevation, and EPW file URL if a weather file is attached.
-
-        Returns null weather_file if no weather file is set.
-        Requires a model to be loaded via load_osm_model_tool first.
-        """
+        """Get weather file info (city, lat/lon, elevation, EPW URL)."""
         return get_weather_info()
 
     @mcp.tool(name="set_weather_file")
@@ -32,11 +25,6 @@ def register(mcp):
         Args:
             epw_path: Absolute path to an EPW file
 
-        Sets the WeatherFile object on the model so it persists when
-        saved via save_osm_model_tool. This is complementary to the
-        run_osw_tool epw_path parameter which overrides at run time.
-
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return set_weather_file(epw_path=epw_path)
 
@@ -67,9 +55,6 @@ def register(mcp):
             wind_speed_ms: Wind speed in m/s
             barometric_pressure_pa: Barometric pressure in Pa
 
-        Used for HVAC sizing calculations. Typically add one heating
-        and one cooling design day.
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return add_design_day(
             name=name, day_type=day_type, month=month, day=day,
@@ -80,13 +65,7 @@ def register(mcp):
 
     @mcp.tool(name="get_simulation_control")
     def get_simulation_control_tool():
-        """Get SimulationControl flags and Timestep from the loaded model.
-
-        Returns do_zone_sizing, do_system_sizing, do_plant_sizing,
-        run_for_sizing_periods, run_for_weather_file, timesteps_per_hour.
-
-        Requires a model to be loaded via load_osm_model first.
-        """
+        """Get SimulationControl flags and timestep."""
         return get_simulation_control()
 
     @mcp.tool(name="set_simulation_control")
@@ -108,8 +87,6 @@ def register(mcp):
             run_for_weather_file: Run simulation for weather file run periods
             timesteps_per_hour: Number of timesteps per hour (1,2,3,4,5,6,10,12,15,20,30,60)
 
-        All parameters are optional — only provided values are changed.
-        Requires a model to be loaded via load_osm_model first.
         """
         return set_simulation_control(
             do_zone_sizing=do_zone_sizing,
@@ -122,12 +99,7 @@ def register(mcp):
 
     @mcp.tool(name="get_run_period")
     def get_run_period_tool():
-        """Get the RunPeriod from the loaded model.
-
-        Returns name, begin_month, begin_day, end_month, end_day.
-
-        Requires a model to be loaded via load_osm_model first.
-        """
+        """Get RunPeriod begin/end dates."""
         return get_run_period()
 
     @mcp.tool(name="set_run_period")
@@ -147,9 +119,6 @@ def register(mcp):
             end_day: End day of month (1-31)
             name: Optional run period name
 
-        Also auto-enables runSimulationforWeatherFileRunPeriods so the
-        period is used during simulation.
-        Requires a model to be loaded via load_osm_model first.
         """
         return set_run_period(
             begin_month=begin_month, begin_day=begin_day,

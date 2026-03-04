@@ -17,14 +17,8 @@ def register(mcp: FastMCP) -> None:
     def list_hvac_components_tool(category: str | None = None) -> str:
         """List all HVAC components in the model with name, type, and category.
 
-        Scans the model for known component types (coils, chillers, boilers,
-        fans, pumps, cooling towers) and returns their names and categories.
-
         Args:
             category: Optional filter — "coil", "plant", "fan", or "pump"
-
-        Returns:
-            JSON with component list
         """
         return json.dumps(operations.list_hvac_components(category), indent=2)
 
@@ -32,14 +26,8 @@ def register(mcp: FastMCP) -> None:
     def get_component_properties_tool(component_name: str) -> str:
         """Get all readable properties for a named HVAC component.
 
-        Looks up the component by name across all registered types and returns
-        current property values with units.
-
         Args:
             component_name: Exact name of the HVAC component
-
-        Returns:
-            JSON with property names, values, units, and types
         """
         return json.dumps(operations.get_component_properties(component_name), indent=2)
 
@@ -47,16 +35,10 @@ def register(mcp: FastMCP) -> None:
     def set_component_properties_tool(component_name: str, properties: str) -> str:
         """Set one or more properties on a named HVAC component.
 
-        Finds the component by name, validates property names against the
-        registry, and applies changes. Returns old and new values.
-
         Args:
             component_name: Exact name of the HVAC component
             properties: JSON string of property_name: value pairs,
                 e.g. '{"reference_cop": 6.0, "nominal_capacity_w": 50000}'
-
-        Returns:
-            JSON with old/new values for each changed property
         """
         try:
             props = json.loads(properties) if isinstance(properties, str) else properties
@@ -79,9 +61,6 @@ def register(mcp: FastMCP) -> None:
         Args:
             air_loop_name: Name of the air loop
             properties: JSON string of property: value pairs
-
-        Returns:
-            JSON with old/new values
         """
         try:
             props = json.loads(properties) if isinstance(properties, str) else properties
@@ -101,9 +80,6 @@ def register(mcp: FastMCP) -> None:
         Args:
             loop_name: Name of the plant loop
             properties: JSON string of property: value pairs
-
-        Returns:
-            JSON with old/new values
         """
         try:
             props = json.loads(properties) if isinstance(properties, str) else properties
@@ -125,9 +101,6 @@ def register(mcp: FastMCP) -> None:
         Args:
             setpoint_name: Name of the setpoint manager
             properties: JSON string of property: value pairs
-
-        Returns:
-            JSON with old/new values
         """
         try:
             props = json.loads(properties) if isinstance(properties, str) else properties

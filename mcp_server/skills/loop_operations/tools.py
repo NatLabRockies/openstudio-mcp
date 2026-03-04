@@ -106,10 +106,24 @@ def register(mcp: FastMCP) -> None:
         Args:
             zone_name: Name of the thermal zone
             equipment_name: Exact name of the equipment to remove
-
-        Returns:
-            JSON with removal result
         """
         return json.dumps(operations.remove_zone_equipment(
             zone_name, equipment_name,
         ), indent=2)
+
+    @mcp.tool(name="remove_all_zone_equipment")
+    def remove_all_zone_equipment_tool(zone_names: str) -> str:
+        """Remove ALL equipment from multiple thermal zones in one call.
+
+        Use instead of calling remove_zone_equipment repeatedly.
+
+        Args:
+            zone_names: JSON array of zone names, e.g. '["Zone1", "Zone2"]'
+        """
+        try:
+            names = json.loads(zone_names) if isinstance(zone_names, str) else zone_names
+            if not isinstance(names, list):
+                return json.dumps({"ok": False, "error": "zone_names must be a JSON array of strings"})
+        except json.JSONDecodeError as e:
+            return json.dumps({"ok": False, "error": f"Invalid JSON: {e}"})
+        return json.dumps(operations.remove_all_zone_equipment(names), indent=2)

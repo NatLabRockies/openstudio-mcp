@@ -108,12 +108,21 @@ def _extract_setpoint_managers(air_loop) -> list[dict[str, Any]]:
     return setpoint_mgrs
 
 
-def _extract_air_loop(model, air_loop) -> dict[str, Any]:
-    """Extract air loop HVAC attributes to dict with detailed component info."""
-    # Get thermal zones served
-    thermal_zones = []
-    for zone in air_loop.thermalZones():
-        thermal_zones.append(zone.nameString())
+def _extract_air_loop(model, air_loop, detailed: bool = True) -> dict[str, Any]:
+    """Extract air loop HVAC attributes to dict.
+
+    When detailed=False, returns only name and num_thermal_zones.
+    """
+    num_zones = len(air_loop.thermalZones())
+    result = {
+        "name": air_loop.nameString(),
+        "num_thermal_zones": num_zones,
+    }
+    if not detailed:
+        return result
+
+    # Get thermal zone names
+    thermal_zones = [zone.nameString() for zone in air_loop.thermalZones()]
 
     # Get basic supply components
     supply_components = []
@@ -123,54 +132,45 @@ def _extract_air_loop(model, air_loop) -> dict[str, Any]:
             "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
         })
 
-    # Extract detailed component information for validation
-    detailed_components = _extract_detailed_supply_components(air_loop)
-
-    # Extract outdoor air system details
-    oa_system_details = _extract_outdoor_air_system(air_loop)
-
-    # Extract setpoint managers
-    setpoint_managers = _extract_setpoint_managers(air_loop)
-
-    return {
+    result.update({
         "handle": str(air_loop.handle()),
-        "name": air_loop.nameString(),
-        "num_thermal_zones": len(thermal_zones),
         "thermal_zones": thermal_zones,
         "num_supply_components": len(supply_components),
-        "supply_components": supply_components[:10],  # Basic list (backward compat)
-        "detailed_components": detailed_components,  # NEW: Detailed component info
-        "outdoor_air_system": oa_system_details,  # NEW: OA system details
-        "setpoint_managers": setpoint_managers,  # NEW: Setpoint manager info
-    }
+        "supply_components": supply_components[:10],
+        "detailed_components": _extract_detailed_supply_components(air_loop),
+        "outdoor_air_system": _extract_outdoor_air_system(air_loop),
+        "setpoint_managers": _extract_setpoint_managers(air_loop),
+    })
+    return result
 
 
-def _extract_plant_loop(model, plant_loop) -> dict[str, Any]:
-    """Extract plant loop attributes to dict."""
-    # Get supply components
-    supply_components = []
-    for component in plant_loop.supplyComponents():
-        supply_components.append({
-            "type": component.iddObjectType().valueName(),
-            "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
-        })
+def _extract_plant_loop(model, plant_loop, detailed: bool = True) -> dict[str, Any]:
+    """Extract plant loop attributes to dict.
 
-    # Get demand components
-    demand_components = []
-    for component in plant_loop.demandComponents():
-        demand_components.append({
-            "type": component.iddObjectType().valueName(),
-            "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
-        })
-
-    return {
-        "handle": str(plant_loop.handle()),
+    When detailed=False, returns only name + component counts.
+    """
+    supply_components = list(plant_loop.supplyComponents())
+    demand_components = list(plant_loop.demandComponents())
+    result = {
         "name": plant_loop.nameString(),
         "num_supply_components": len(supply_components),
-        "supply_components": supply_components[:10],  # Limit to first 10
         "num_demand_components": len(demand_components),
-        "demand_components": demand_components[:10],  # Limit to first 10
     }
+    if not detailed:
+        return result
+
+    result.update({
+        "handle": str(plant_loop.handle()),
+        "supply_components": [
+            {"type": c.iddObjectType().valueName(), "name": c.nameString() if hasattr(c, "nameString") else "Unnamed"}
+            for c in supply_components[:10]
+        ],
+        "demand_components": [
+            {"type": c.iddObjectType().valueName(), "name": c.nameString() if hasattr(c, "nameString") else "Unnamed"}
+            for c in demand_components[:10]
+        ],
+    })
+    return result
 
 
 def _extract_zone_hvac_component(model, component) -> dict[str, Any]:
@@ -201,11 +201,11 @@ def _extract_zone_hvac_component(model, component) -> dict[str, Any]:
     return result
 
 
-def list_air_loops() -> dict[str, Any]:
+def list_air_loops(detailed: bool = False) -> dict[str, Any]:
     """List all air loop HVAC systems in the model."""
     try:
         model = get_model()
-        air_loops = list_all_as_dicts(model, "getAirLoopHVACs", _extract_air_loop)
+        air_loops = list_all_as_dicts(model, "getAirLoopHVACs", _extract_air_loop, detailed=detailed)
         return {
             "ok": True,
             "count": len(air_loops),
@@ -236,11 +236,11 @@ def get_air_loop_details(air_loop_name: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to get air loop details: {e}"}
 
 
-def list_plant_loops() -> dict[str, Any]:
+def list_plant_loops(detailed: bool = False) -> dict[str, Any]:
     """List all plant loops in the model."""
     try:
         model = get_model()
-        plant_loops = list_all_as_dicts(model, "getPlantLoops", _extract_plant_loop)
+        plant_loops = list_all_as_dicts(model, "getPlantLoops", _extract_plant_loop, detailed=detailed)
         return {
             "ok": True,
             "count": len(plant_loops),
@@ -350,7 +350,7 @@ def get_plant_loop_details(plant_loop_name: str) -> dict[str, Any]:
                 "supply_temp_setpoint_c": setpoint_temp_c,
                 "design_loop_exit_temp_c": sizing.designLoopExitTemperature(),
                 "loop_design_delta_temp_c": sizing.loopDesignTemperatureDifference(),
-                **_extract_plant_loop(model, plant_loop),
+                **_extract_plant_loop(model, plant_loop, detailed=True),
             },
         }
 

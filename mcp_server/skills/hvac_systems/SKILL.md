@@ -230,6 +230,21 @@ Validation results included in tool response under `"validation"` key.
 - Economizer parameter only applies to central systems (3-8)
 - Fuel parameters validated against system type capabilities
 
+## DOAS Zone Equipment Types
+
+| Type | Description | Plant Loops Required |
+|------|-------------|---------------------|
+| `FanCoil` | 4-pipe fan coil units (heating + cooling) | CHW + HW |
+| `Radiant` | Low-temp radiant panels (floor/ceiling) | CHW + HW |
+| `ChilledBeams` | Passive/active chilled beams (cooling only) | CHW only |
+| `FourPipeBeam` | 4-pipe active chilled beams (heating + cooling) | CHW + HW |
+
+## API Reference
+
+- OpenStudio SDK: https://openstudio-sdk-documentation.s3.amazonaws.com/index.html
+- HVAC wiring patterns: https://github.com/NatLabRockies/OpenStudio-resources/tree/develop/model/simulationtests
+  - Key files: airterminal_fourpipebeam.py, airterminal_cooledbeam.py, baseline_sys*.py
+
 ## See Also
 
 - `hvac/` skill — Query existing air loops, plant loops, zone equipment

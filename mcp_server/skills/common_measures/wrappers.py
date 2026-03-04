@@ -13,18 +13,41 @@ from typing import Any
 from mcp_server.skills.measures.operations import apply_measure
 
 
+def _ensure_climate_zone() -> None:
+    """Set a default ASHRAE climate zone on the model if none is set.
+
+    Reporting measures (generic_qaqc, openstudio_results) crash with nil
+    errors when the model has no climate zone.  This is a safety net for
+    models that skip set_weather_file / change_building_location.
+    """
+    try:
+        from mcp_server.model_manager import get_model
+        from mcp_server.stdout_suppression import suppress_openstudio_warnings
+        with suppress_openstudio_warnings():
+            model = get_model()
+            czs = model.getClimateZones()
+            if len(czs.getClimateZones("ASHRAE")) == 0:
+                czs.setClimateZone("ASHRAE", "5A")
+    except RuntimeError:
+        pass  # no model loaded yet
+
+
 def _measure_path(measure_name: str) -> Path:
     """Resolve path to a bundled common measure."""
     base = Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures"))
     return base / measure_name
 
 
-def _run(measure_name: str, arguments: dict[str, str] | None = None) -> dict[str, Any]:
+def _run(
+    measure_name: str,
+    arguments: dict[str, str] | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
     """Run a common measure with optional arguments."""
     path = _measure_path(measure_name)
     if not path.is_dir():
         return {"ok": False, "error": f"Measure not found: {path}"}
-    return apply_measure(measure_dir=str(path), arguments=arguments)
+    return apply_measure(measure_dir=str(path), arguments=arguments, run_id=run_id)
 
 
 # --- 1. view_model: 3D geometry viewer ---
@@ -47,6 +70,7 @@ def view_model_op(geometry_diagnostics: bool = False) -> dict[str, Any]:
 def view_simulation_data_op(
     variable_names: list[str] | None = None,
     reporting_frequency: str = "Timestep",
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Generate a Three.js HTML viewer with simulation data overlaid on surfaces.
 
@@ -56,6 +80,7 @@ def view_simulation_data_op(
         variable_names: Up to 3 EnergyPlus output variable names to visualize.
             Defaults to surface temperatures if not specified.
         reporting_frequency: "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod"
+        run_id: Completed simulation run_id (provides SQL results)
     """
     defaults = [
         "Surface Inside Face Temperature",
@@ -68,19 +93,23 @@ def view_simulation_data_op(
     # Pad to 3 variables (measure expects exactly 3)
     while len(vars_) < 3:
         vars_.append(vars_[-1])
+    # file_source is Choice: "Last OSM" or "Last IDF"
+    # reporting_frequency is Choice: "Timestep" or "Hourly"
+    freq = reporting_frequency if reporting_frequency in ("Timestep", "Hourly") else "Hourly"
+    _ensure_climate_zone()
     return _run("view_data", {
-        "model_source": "After Measure",
-        "reporting_frequency": reporting_frequency,
-        "variable_name_1": vars_[0],
-        "variable_name_2": vars_[1],
-        "variable_name_3": vars_[2],
+        "file_source": "Last OSM",
+        "reporting_frequency": freq,
+        "variable1_name": vars_[0],
+        "variable2_name": vars_[1],
+        "variable3_name": vars_[2],
         "use_geometry_diagnostics": "false",
-    })
+    }, run_id=run_id)
 
 
 # --- 3. generate_results_report: comprehensive HTML report ---
 
-def generate_results_report_op(units: str = "IP") -> dict[str, Any]:
+def generate_results_report_op(units: str = "IP", run_id: str | None = None) -> dict[str, Any]:
     """Generate a comprehensive HTML report from simulation results.
 
     Includes building summary, energy use, HVAC, envelope, zones, and more.
@@ -88,8 +117,10 @@ def generate_results_report_op(units: str = "IP") -> dict[str, Any]:
 
     Args:
         units: "IP" (imperial) or "SI" (metric)
+        run_id: Completed simulation run_id (provides SQL results)
     """
-    return _run("openstudio_results", {"units": units})
+    _ensure_climate_zone()
+    return _run("openstudio_results", {"units": units}, run_id=run_id)
 
 
 # --- 4. run_qaqc_checks: ASHRAE QA/QC ---
@@ -97,6 +128,7 @@ def generate_results_report_op(units: str = "IP") -> dict[str, Any]:
 def run_qaqc_checks_op(
     template: str = "90.1-2013",
     checks: list[str] | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Run ASHRAE baseline QA/QC checks on simulation results.
 
@@ -109,6 +141,7 @@ def run_qaqc_checks_op(
             "part_load_eff", "capacity", "simultaneous_htg_clg",
             "internal_loads", "schedules", "envelope", "dhw",
             "mech_efficiency", "mech_type", "supply_air_temp"
+        run_id: Completed simulation run_id (provides SQL results)
     """
     all_checks = [
         "check_mech_sys_part_load_eff", "check_mech_sys_capacity",
@@ -142,7 +175,8 @@ def run_qaqc_checks_op(
     else:
         for check_name in all_checks:
             args[check_name] = "true"
-    return _run("generic_qaqc", args)
+    _ensure_climate_zone()
+    return _run("generic_qaqc", args, run_id=run_id)
 
 
 # --- 5. adjust_thermostat_setpoints ---

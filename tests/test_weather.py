@@ -5,6 +5,7 @@ EPW files at tests/assets/SEB_model/SEB4_baseboard/files/.
 """
 import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import integration_enabled, server_params, setup_example, unwrap
@@ -18,6 +19,32 @@ def _unique(prefix: str = "pytest_weather") -> str:
 
 # EPW path — inside the container, the repo is at /repo
 EPW_PATH = "/repo/tests/assets/SEB_model/SEB4_baseboard/files/SRRL_2012AMY_60min.epw"
+
+# Golden CO EPW — available on host and in container
+GOLDEN_EPW = "/repo/tests/assets/USA_CO_Golden-NREL.724666_TMY3.epw"
+
+
+# ---- Unit tests for climate zone estimation (no Docker needed) ----
+
+
+def test_estimate_climate_zone_golden_co():
+    """Golden CO EPW should estimate ASHRAE zone 5 (officially 5B)."""
+    from mcp_server.skills.weather.operations import _estimate_climate_zone_from_epw
+
+    epw = Path(__file__).parent / "assets" / "USA_CO_Golden-NREL.724666_TMY3.epw"
+    if not epw.exists():
+        pytest.skip("Golden CO EPW not in test assets")
+    cz = _estimate_climate_zone_from_epw(epw)
+    assert cz == "5", f"Expected zone 5, got {cz}"
+
+
+def test_estimate_climate_zone_bad_file(tmp_path):
+    """Non-EPW file should return None, not crash."""
+    from mcp_server.skills.weather.operations import _estimate_climate_zone_from_epw
+
+    bad = tmp_path / "bad.epw"
+    bad.write_text("not,an,epw\n" * 20)
+    assert _estimate_climate_zone_from_epw(bad) is None
 
 
 # ---- Weather info tests ----
@@ -100,6 +127,28 @@ def test_get_weather_info_after_set():
                 assert "longitude" in wf
                 # SRRL is in Golden, CO — lat ~39.7
                 assert 39.0 < wf["latitude"] < 40.5
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_set_weather_file_sets_climate_zone():
+    """set_weather_file with no .stat file should estimate climate zone from EPW."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("set_weather_file", {
+                    "epw_path": GOLDEN_EPW,
+                }))
+                assert res.get("ok") is True
+                # Golden CO is ASHRAE 5B — numeric fallback returns "5"
+                assert res.get("climate_zone") == "5", (
+                    f"Expected climate_zone='5', got {res.get('climate_zone')}"
+                )
     asyncio.run(_run())
 
 
