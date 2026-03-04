@@ -18,17 +18,6 @@ def register(mcp):
             key_value: Specific object name or "*" for all objects (default: "*")
             reporting_frequency: "Detailed", "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod" (default: "Hourly")
 
-        Output variables extract specific simulation results for objects in the
-        model. Common examples:
-        - "Zone Mean Air Temperature" - zone temperatures
-        - "Surface Outside Face Temperature" - surface temps
-        - "Zone Air System Sensible Heating Rate" - heating loads
-
-        Results appear in the SQL output file after simulation.
-
-        Use save_osm_model_tool to persist changes before running simulation.
-
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return add_output_variable(variable_name=variable_name, key_value=key_value,
                                   reporting_frequency=reporting_frequency)
@@ -41,16 +30,5 @@ def register(mcp):
             meter_name: EnergyPlus meter name (e.g., "Electricity:Facility", "Gas:Facility")
             reporting_frequency: "Detailed", "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod" (default: "Hourly")
 
-        Output meters aggregate energy use across categories. Common examples:
-        - "Electricity:Facility" - total electricity consumption
-        - "Gas:Facility" - total gas consumption
-        - "Heating:Electricity" - electric heating energy
-        - "Cooling:Electricity" - electric cooling energy
-
-        Results appear in the SQL output file and meter CSV files after simulation.
-
-        Use save_osm_model_tool to persist changes before running simulation.
-
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return add_output_meter(meter_name=meter_name, reporting_frequency=reporting_frequency)

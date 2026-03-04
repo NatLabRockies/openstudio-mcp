@@ -103,7 +103,7 @@ def _to_kbtu(value: float, units: str | None) -> float | None:
     return None
 
 
-def extract_summary_metrics(run_id: str) -> dict[str, Any]:
+def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str, Any]:
     """Extract headline metrics from a completed run (restart-safe)."""
     try:
         run_dir = resolve_run_dir(RUN_ROOT, run_id)
@@ -156,6 +156,22 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
         )
         total_site_detail = {k: v for k, v in total_site.items() if k not in ("ok",)}
 
+    metrics: dict[str, Any] = {
+        "total_site_energy": {
+            "value": total_site_value,
+            "units": total_site_units,
+            "kbtu": total_site_kbtu,
+            "source": total_site_src if total_site_value is not None else None,
+            "detail": total_site_detail,
+        },
+        "unmet_hours_heating": unmet.get("heating") if isinstance(unmet, dict) else None,
+        "unmet_hours_cooling": unmet.get("cooling") if isinstance(unmet, dict) else None,
+        "eui": (eui.get("computed_eui") if isinstance(eui, dict) else None),
+        "eui_units": (eui.get("computed_eui_units") if isinstance(eui, dict) else None),
+    }
+    if include_raw:
+        metrics["raw"] = {"unmet": unmet, "eui": eui}
+
     return {
         "ok": True,
         "run_id": run_id,
@@ -164,20 +180,7 @@ def extract_summary_metrics(run_id: str) -> dict[str, Any]:
             "sql": str(sql_path) if sql_path else None,
             "html": str(html_path) if html_path else None,
         },
-        "metrics": {
-            "total_site_energy": {
-                "value": total_site_value,
-                "units": total_site_units,
-                "kbtu": total_site_kbtu,
-                "source": total_site_src if total_site_value is not None else None,
-                "detail": total_site_detail,
-            },
-            "unmet_hours_heating": unmet.get("heating") if isinstance(unmet, dict) else None,
-            "unmet_hours_cooling": unmet.get("cooling") if isinstance(unmet, dict) else None,
-            "eui": (eui.get("computed_eui") if isinstance(eui, dict) else None),
-            "eui_units": (eui.get("computed_eui_units") if isinstance(eui, dict) else None),
-            "raw": {"unmet": unmet, "eui": eui},
-        },
+        "metrics": metrics,
     }
 
 

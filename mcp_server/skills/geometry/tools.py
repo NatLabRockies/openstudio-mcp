@@ -15,22 +15,13 @@ from mcp_server.skills.geometry.operations import (
 
 def register(mcp):
     @mcp.tool(name="list_surfaces")
-    def list_surfaces_tool():
-        """List all surfaces in the currently loaded model.
+    def list_surfaces_tool(detailed: bool = False):
+        """List all surfaces. Brief: name, type, area, space. Use get_surface_details for full info.
 
-        Returns array of surface objects with:
-        - Name, type (Wall, RoofCeiling, Floor)
-        - Boundary condition (Outdoors, Ground, Adiabatic, Surface)
-        - Sun and wind exposure
-        - Construction assignment
-        - Associated space
-        - Gross and net area
-        - Orientation (azimuth and tilt)
-        - Number of vertices and subsurfaces
-
-        Requires a model to be loaded via load_osm_model_tool first.
+        Args:
+            detailed: Return all fields (boundary conditions, construction, orientation, vertices, subsurfaces)
         """
-        return list_surfaces()
+        return list_surfaces(detailed=detailed)
 
     @mcp.tool(name="get_surface_details")
     def get_surface_details_tool(surface_name: str):
@@ -38,28 +29,12 @@ def register(mcp):
 
         Args:
             surface_name: Name of the surface to retrieve
-
-        Returns detailed surface attributes including geometry,
-        construction, boundary conditions, and orientation.
-
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return get_surface_details(surface_name=surface_name)
 
     @mcp.tool(name="list_subsurfaces")
     def list_subsurfaces_tool():
-        """List all subsurfaces (windows/doors) in the currently loaded model.
-
-        Returns array of subsurface objects with:
-        - Name, type (FixedWindow, OperableWindow, Door, etc.)
-        - Construction assignment
-        - Parent surface
-        - Multiplier
-        - Gross area
-        - Number of vertices
-
-        Requires a model to be loaded via load_osm_model_tool first.
-        """
+        """List all subsurfaces (windows/doors) in the model."""
         return list_subsurfaces()
 
     @mcp.tool(name="create_surface")
@@ -79,7 +54,6 @@ def register(mcp):
             surface_type: "Wall", "Floor", or "RoofCeiling" (auto-detected from tilt if omitted)
             outside_boundary_condition: "Outdoors", "Ground", or "Surface" (default "Outdoors")
 
-        Requires a model to be loaded via load_osm_model first.
         """
         return create_surface(
             name=name, vertices=vertices, space_name=space_name,
@@ -102,7 +76,6 @@ def register(mcp):
             parent_surface_name: Name of existing parent surface
             subsurface_type: "FixedWindow", "OperableWindow", "Door", or "GlassDoor"
 
-        Requires a model to be loaded via load_osm_model first.
         """
         return create_subsurface(
             name=name, vertices=vertices,
@@ -131,7 +104,6 @@ def register(mcp):
             building_story_name: Optional existing building story to assign
             thermal_zone_name: Optional existing thermal zone to assign
 
-        Requires a model to be loaded via load_osm_model first.
         """
         return create_space_from_floor_print(
             name=name, floor_vertices=floor_vertices,
@@ -142,16 +114,7 @@ def register(mcp):
 
     @mcp.tool(name="match_surfaces")
     def match_surfaces_tool():
-        """Intersect and match surfaces across all spaces in the model.
-
-        Finds shared walls between adjacent spaces and sets them as
-        interior "Surface" boundaries pointing to each other. Essential
-        after creating multiple adjacent spaces — without this, shared
-        walls are treated as exterior "Outdoors" boundaries.
-
-        Calls intersectSurfaces() then matchSurfaces() on all spaces.
-        Requires a model to be loaded via load_osm_model first.
-        """
+        """Intersect and match surfaces across all spaces, setting shared walls as interior boundaries."""
         return match_surfaces()
 
     @mcp.tool(name="set_window_to_wall_ratio")
@@ -162,15 +125,11 @@ def register(mcp):
     ):
         """Add a centered window to a wall surface by glazing ratio.
 
-        Much easier than specifying vertex coordinates — just provide
-        the desired window-to-wall ratio (e.g. 0.4 for 40% glazing).
-
         Args:
             surface_name: Name of the wall surface
             ratio: Window-to-wall ratio (0.0 to 1.0)
             sill_height_m: Sill height above floor in meters (default 0.9m)
 
-        Requires a model to be loaded via load_osm_model first.
         """
         return set_window_to_wall_ratio(
             surface_name=surface_name, ratio=ratio,

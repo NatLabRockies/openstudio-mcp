@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 126 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
+**22 skills &bull; 127 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
 
 ---
 
@@ -33,7 +33,7 @@ The server handles all the OpenStudio/EnergyPlus complexity behind MCP tool call
 ### Step 1: Clone & Build
 
 ```bash
-git clone https://github.com/yourusername/openstudio-mcp.git
+git clone https://github.com/NatLabRockies/openstudio-mcp.git
 cd openstudio-mcp
 docker build -t openstudio-mcp:dev -f docker/Dockerfile .
 ```
@@ -72,7 +72,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 126 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 127 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -84,7 +84,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 124 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 127 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Other MCP Hosts
 
@@ -122,7 +122,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (126 total)
+## Skills & Tools (127 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |
@@ -275,13 +275,14 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `set_sizing_properties` | Modify plant loop sizing (exit temp, delta-T) |
 | `set_setpoint_manager_properties` | Modify setpoint manager min/max temps |
 
-### Loop Operations (4 tools)
+### Loop Operations (5 tools)
 | Tool | Description |
 |------|-------------|
 | `add_supply_equipment` | Add boiler/chiller/tower to plant loop supply |
 | `remove_supply_equipment` | Remove equipment from plant loop supply |
 | `add_zone_equipment` | Add baseboard/unit heater to thermal zone |
 | `remove_zone_equipment` | Remove equipment from thermal zone |
+| `remove_all_zone_equipment` | Batch-remove ALL equipment from multiple zones |
 
 ### Object Management (3 tools)
 | Tool | Description |

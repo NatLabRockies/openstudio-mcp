@@ -13,20 +13,24 @@ from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
 
 
-def _extract_space(model, space) -> dict[str, Any]:
+def _extract_space(model, space, detailed: bool = True) -> dict[str, Any]:
     """Extract space attributes to dict.
 
-    Fields mirror OpenStudio-Toolkit's get_space_object_as_dict().
+    When detailed=False, returns only name, floor_area_m2, thermal_zone.
     """
-    return {
-        "handle": str(space.handle()),
+    result = {
         "name": space.nameString(),
-        "space_type": optional_name(space.spaceType()),
+        "floor_area_m2": float(space.floorArea()),
         "thermal_zone": optional_name(space.thermalZone()),
+    }
+    if not detailed:
+        return result
+    result.update({
+        "handle": str(space.handle()),
+        "space_type": optional_name(space.spaceType()),
         "building_story": optional_name(space.buildingStory()),
         "default_construction_set": optional_name(space.defaultConstructionSet()),
         "default_schedule_set": optional_name(space.defaultScheduleSet()),
-        "floor_area_m2": float(space.floorArea()),
         "volume_m3": float(space.volume()),
         "ceiling_height_m": float(space.ceilingHeight()),
         "direction_of_relative_north_deg": float(space.directionofRelativeNorth()),
@@ -39,14 +43,24 @@ def _extract_space(model, space) -> dict[str, Any]:
         "num_lights": len(space.lights()),
         "num_electric_equipment": len(space.electricEquipment()),
         "num_gas_equipment": len(space.gasEquipment()),
-    }
+    })
+    return result
 
 
-def _extract_thermal_zone(model, zone) -> dict[str, Any]:
+def _extract_thermal_zone(model, zone, detailed: bool = True) -> dict[str, Any]:
     """Extract thermal zone attributes to dict.
 
-    Fields mirror OpenStudio-Toolkit's get_thermal_zone_object_as_dict().
+    When detailed=False, returns only name, floor_area_m2, num_equipment.
     """
+    num_equipment = len(zone.equipment())
+    result = {
+        "name": zone.nameString(),
+        "floor_area_m2": float(zone.floorArea()),
+        "num_equipment": num_equipment,
+    }
+    if not detailed:
+        return result
+
     # Get thermostat info
     thermostat_name = None
     heating_setpoint_schedule = None
@@ -71,26 +85,24 @@ def _extract_thermal_zone(model, zone) -> dict[str, Any]:
     if zone.airLoopHVAC().is_initialized():
         air_loop_name = zone.airLoopHVAC().get().nameString()
 
-    return {
+    result.update({
         "handle": str(zone.handle()),
-        "name": zone.nameString(),
         "multiplier": int(zone.multiplier()),
-        "floor_area_m2": float(zone.floorArea()),
         "num_spaces": len(zone.spaces()),
         "thermostat": thermostat_name,
         "heating_setpoint_schedule": heating_setpoint_schedule,
         "cooling_setpoint_schedule": cooling_setpoint_schedule,
         "air_loop_hvac": air_loop_name,
         "equipment": equipment_list,
-        "num_equipment": len(equipment_list),
-    }
+    })
+    return result
 
 
-def list_spaces() -> dict[str, Any]:
+def list_spaces(detailed: bool = False) -> dict[str, Any]:
     """List all spaces in the model."""
     try:
         model = get_model()
-        spaces = list_all_as_dicts(model, "getSpaces", _extract_space)
+        spaces = list_all_as_dicts(model, "getSpaces", _extract_space, detailed=detailed)
         return {
             "ok": True,
             "count": len(spaces),
@@ -121,11 +133,11 @@ def get_space_details(space_name: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to get space details: {e}"}
 
 
-def list_thermal_zones() -> dict[str, Any]:
+def list_thermal_zones(detailed: bool = False) -> dict[str, Any]:
     """List all thermal zones in the model."""
     try:
         model = get_model()
-        zones = list_all_as_dicts(model, "getThermalZones", _extract_thermal_zone)
+        zones = list_all_as_dicts(model, "getThermalZones", _extract_thermal_zone, detailed=detailed)
         return {
             "ok": True,
             "count": len(zones),

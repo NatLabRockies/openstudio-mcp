@@ -15,28 +15,33 @@ from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_nam
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
-def _extract_surface(model, surface) -> dict[str, Any]:
+def _extract_surface(model, surface, detailed: bool = True) -> dict[str, Any]:
     """Extract surface attributes to dict.
 
-    Fields mirror OpenStudio-Toolkit's get_surface_object_as_dict().
+    When detailed=False, returns only name, surface_type, gross_area_m2, space.
     """
-    return {
-        "handle": str(surface.handle()),
+    result = {
         "name": surface.nameString(),
         "surface_type": surface.surfaceType(),
+        "gross_area_m2": float(surface.grossArea()),
+        "space": optional_name(surface.space()),
+    }
+    if not detailed:
+        return result
+    result.update({
+        "handle": str(surface.handle()),
         "outside_boundary_condition": surface.outsideBoundaryCondition(),
         "sun_exposure": surface.sunExposure(),
         "wind_exposure": surface.windExposure(),
         "construction": optional_name(surface.construction()),
-        "space": optional_name(surface.space()),
         "adjacent_surface": optional_name(surface.adjacentSurface()),
-        "gross_area_m2": float(surface.grossArea()),
         "net_area_m2": float(surface.netArea()),
-        "azimuth_deg": float(surface.azimuth()) * 180.0 / 3.14159,  # Convert radians to degrees
+        "azimuth_deg": float(surface.azimuth()) * 180.0 / 3.14159,
         "tilt_deg": float(surface.tilt()) * 180.0 / 3.14159,
         "num_vertices": len(surface.vertices()),
         "num_subsurfaces": len(surface.subSurfaces()),
-    }
+    })
+    return result
 
 
 def _extract_subsurface(model, subsurface) -> dict[str, Any]:
@@ -56,11 +61,11 @@ def _extract_subsurface(model, subsurface) -> dict[str, Any]:
     }
 
 
-def list_surfaces() -> dict[str, Any]:
+def list_surfaces(detailed: bool = False) -> dict[str, Any]:
     """List all surfaces in the model."""
     try:
         model = get_model()
-        surfaces = list_all_as_dicts(model, "getSurfaces", _extract_surface)
+        surfaces = list_all_as_dicts(model, "getSurfaces", _extract_surface, detailed=detailed)
         return {
             "ok": True,
             "count": len(surfaces),

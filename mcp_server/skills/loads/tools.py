@@ -24,91 +24,27 @@ from mcp_server.skills.loads.operations import (
 def register(mcp):
     @mcp.tool(name="list_people_loads")
     def list_people_loads_tool():
-        """List all people (occupancy) loads in the currently loaded model.
-
-        Returns array of people objects with:
-        - Name, handle, space
-        - Number of people (or density metrics)
-        - Activity level schedule
-        - Number of people schedule
-        - Multiplier
-
-        People loads represent occupants and their heat gain, moisture
-        generation, and ventilation requirements.
-
-        Requires a model to be loaded via load_osm_model_tool first.
-        """
+        """List all people (occupancy) loads in the model."""
         return list_people_loads()
 
     @mcp.tool(name="list_lighting_loads")
     def list_lighting_loads_tool():
-        """List all lighting loads in the currently loaded model.
-
-        Returns array of lights objects with:
-        - Name, handle, space
-        - Lighting level (W or W/m² or W/person)
-        - Schedule
-        - Multiplier
-        - Radiant/visible/return air fractions
-
-        Lighting loads represent interior lighting fixtures and their
-        heat gain to the space.
-
-        Requires a model to be loaded via load_osm_model_tool first.
-        """
+        """List all lighting loads in the model."""
         return list_lighting_loads()
 
     @mcp.tool(name="list_electric_equipment")
     def list_electric_equipment_tool():
-        """List all electric equipment (plug loads) in the currently loaded model.
-
-        Returns array of electric equipment objects with:
-        - Name, handle, space
-        - Design level (W or W/m² or W/person)
-        - Schedule
-        - Multiplier
-        - Latent/radiant/lost fractions
-
-        Electric equipment represents plug loads like computers, printers,
-        appliances, etc.
-
-        Requires a model to be loaded via load_osm_model_tool first.
-        """
+        """List all electric equipment (plug loads) in the model."""
         return list_electric_equipment()
 
     @mcp.tool(name="list_gas_equipment")
     def list_gas_equipment_tool():
-        """List all gas equipment in the currently loaded model.
-
-        Returns array of gas equipment objects with:
-        - Name, handle, space
-        - Design level (W or W/m² or W/person)
-        - Schedule
-        - Multiplier
-        - Latent/radiant/lost fractions
-
-        Gas equipment represents gas-fired appliances like stoves, ovens,
-        water heaters (non-HVAC).
-
-        Requires a model to be loaded via load_osm_model_tool first.
-        """
+        """List all gas equipment loads in the model."""
         return list_gas_equipment()
 
     @mcp.tool(name="list_infiltration")
     def list_infiltration_tool():
-        """List all infiltration objects in the currently loaded model.
-
-        Returns array of infiltration objects with:
-        - Name, handle, space
-        - Design flow rate (m³/s or flow/area or ACH)
-        - Schedule
-        - Coefficient terms for wind/temperature correlation
-
-        Infiltration represents uncontrolled air leakage through cracks
-        and openings in the building envelope.
-
-        Requires a model to be loaded via load_osm_model_tool first.
-        """
+        """List all infiltration objects in the model."""
         return list_infiltration()
 
     # --- Creation tools ---
@@ -129,9 +65,6 @@ def register(mcp):
             people_per_area: People per m² of floor area (use this OR num_people)
             num_people: Absolute number of people (use this OR people_per_area)
             schedule_name: Optional ScheduleRuleset for occupancy fraction
-
-        Exactly one sizing method (people_per_area or num_people) required.
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_people_definition(
             name=name, space_name=space_name,
@@ -155,9 +88,6 @@ def register(mcp):
             watts_per_area: Lighting power density in W/m² (use this OR lighting_level_w)
             lighting_level_w: Absolute lighting power in W (use this OR watts_per_area)
             schedule_name: Optional ScheduleRuleset for lighting fraction
-
-        Exactly one sizing method (watts_per_area or lighting_level_w) required.
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_lights_definition(
             name=name, space_name=space_name,
@@ -181,9 +111,6 @@ def register(mcp):
             watts_per_area: Equipment power density in W/m² (use this OR design_level_w)
             design_level_w: Absolute equipment power in W (use this OR watts_per_area)
             schedule_name: Optional ScheduleRuleset for equipment fraction
-
-        Exactly one sizing method (watts_per_area or design_level_w) required.
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_electric_equipment_op(
             name=name, space_name=space_name,
@@ -207,9 +134,6 @@ def register(mcp):
             watts_per_area: Gas equipment power density in W/m² (use this OR design_level_w)
             design_level_w: Absolute gas equipment power in W (use this OR watts_per_area)
             schedule_name: Optional ScheduleRuleset for equipment fraction
-
-        Exactly one sizing method (watts_per_area or design_level_w) required.
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_gas_equipment_op(
             name=name, space_name=space_name,
@@ -233,9 +157,6 @@ def register(mcp):
             flow_per_exterior_surface_area: Flow rate per exterior surface area in m³/s·m²
             ach: Air changes per hour
             schedule_name: Optional ScheduleRuleset for infiltration fraction
-
-        Exactly one sizing method (flow_per_exterior_surface_area or ach) required.
-        Requires a model to be loaded via load_osm_model_tool first.
         """
         return create_infiltration_op(
             name=name, space_name=space_name,

@@ -231,3 +231,41 @@ def remove_zone_equipment(zone_name: str, equipment_name: str) -> dict:
         "removed": equipment_name,
         "zone": zone_name,
     }
+
+
+def remove_all_zone_equipment(zone_names: list[str]) -> dict:
+    """Remove ALL equipment from listed thermal zones in one call."""
+    try:
+        model = get_model()
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+
+    results: list[dict] = []
+    total_removed = 0
+
+    for zone_name in zone_names:
+        zone = fetch_object(model, "ThermalZone", name=zone_name)
+        if zone is None:
+            results.append({"zone": zone_name, "error": "not found", "removed": []})
+            continue
+
+        removed_names = []
+        equipment_list = list(zone.equipment())
+        for equip in equipment_list:
+            name = equip.nameString() if hasattr(equip, "nameString") else str(equip.name())
+            try:
+                equip.remove()
+                removed_names.append(name)
+            except Exception as e:
+                results.append({"zone": zone_name, "error": f"Failed to remove {name}: {e}", "removed": removed_names})
+                break
+        else:
+            results.append({"zone": zone_name, "removed": removed_names, "count": len(removed_names)})
+            total_removed += len(removed_names)
+
+    return {
+        "ok": True,
+        "total_removed": total_removed,
+        "zones_processed": len(zone_names),
+        "details": results,
+    }

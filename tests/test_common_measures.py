@@ -639,7 +639,7 @@ def test_set_adiabatic_boundaries():
                 assert res.get("ok") is True, f"Failed: {res}"
 
                 # After: verify some surfaces changed to adiabatic
-                after_surfs = unwrap(await s.call_tool("list_surfaces", {}))
+                after_surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
                 after_adiabatic = [
                     sf for sf in after_surfs["surfaces"]
                     if sf.get("outside_boundary_condition") == "Adiabatic"

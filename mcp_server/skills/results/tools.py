@@ -32,9 +32,14 @@ def register(mcp):
         return read_run_artifact(run_id=run_id, path=path, max_bytes=mb, offset=offset)
 
     @mcp.tool(name="extract_summary_metrics")
-    def extract_summary_metrics_tool(run_id: str):
-        """Extract summary metrics (EUI + unmet hours) from outputs."""
-        return extract_summary_metrics(run_id)
+    def extract_summary_metrics_tool(run_id: str, include_raw: bool = False):
+        """Extract summary metrics (EUI + unmet hours) from outputs.
+
+        Args:
+            run_id: Run identifier
+            include_raw: Include full raw extraction dicts (default False)
+        """
+        return extract_summary_metrics(run_id, include_raw=include_raw)
 
     @mcp.tool(name="copy_run_artifact")
     def copy_run_artifact_tool(run_id: str, path: str, destination: str = "/runs/exports"):

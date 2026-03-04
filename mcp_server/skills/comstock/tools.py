@@ -16,11 +16,6 @@ def register(mcp):
             category: Optional filter — "baseline", "upgrade", "setup", "other",
                       or omit for all measures
 
-        Returns categorized list of ~61 measures with names, descriptions,
-        paths, and argument counts. Use paths with list_measure_arguments
-        and apply_measure for full control.
-
-        Does not require a model to be loaded.
         """
         return list_comstock_measures(category=category)
 
@@ -47,9 +42,6 @@ def register(mcp):
         to a model that already has geometry and space types assigned.
         Wraps the ComStock create_typical_building_from_model measure.
 
-        Automatically sets standardsBuildingType on the building and space types
-        if not already set, using the building_type parameter.
-
         Args:
             template: ASHRAE standard — "90.1-2019", "90.1-2016", "90.1-2013", etc.
             building_type: DOE prototype type — "SmallOffice", "LargeOffice",
@@ -68,8 +60,6 @@ def register(mcp):
             add_thermostat: Add thermostat schedules
             remove_objects: Remove existing HVAC/loads before adding new ones
 
-        Requires a model to be loaded via load_osm_model first.
-        The model should have geometry (spaces with surfaces).
         """
         return create_typical_building(
             template=template,
