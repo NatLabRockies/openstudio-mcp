@@ -35,8 +35,11 @@ DEFAULT_EPW_2012 = os.environ.get(
 )
 
 # Expected values (override if OpenStudio/E+ versions change results)
-EXPECTED_2013_EUI = float(os.environ.get("EXPECTED_2013_EUI", "0.08220719519609203"))
-EXPECTED_2012_EUI = float(os.environ.get("EXPECTED_2012_EUI", "0.0822079882501734"))
+# Old values (0.082) were wrong — fuzzy SQL picked up the per-area MJ/m² column
+# instead of computing total_energy_GJ / building_area_m².
+# SEB4 baseboard: area=82.21 m², energy=154.15 GJ (2013), 141.05 GJ (2012)
+EXPECTED_2013_EUI = float(os.environ.get("EXPECTED_2013_EUI", "1.8750760248144998"))
+EXPECTED_2012_EUI = float(os.environ.get("EXPECTED_2012_EUI", "1.715728013623647"))
 EXPECTED_2012_TOTAL_SITE_ENERGY = float(os.environ.get("EXPECTED_2012_TOTAL_SITE_ENERGY", "141.05"))
 
 # Tolerances (defaults intentionally lenient; tighten once stable)

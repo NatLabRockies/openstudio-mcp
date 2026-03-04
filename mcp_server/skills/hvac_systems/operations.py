@@ -187,7 +187,7 @@ def replace_air_terminals(
             }
 
         # Validate terminal type
-        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV"]
+        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV", "FourPipeBeam"]
         if terminal_type not in valid_types:
             return {
                 "ok": False,
@@ -232,7 +232,7 @@ def replace_zone_terminal(
         if zone is None:
             return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
 
-        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV"]
+        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV", "FourPipeBeam"]
         if terminal_type not in valid_types:
             return {
                 "ok": False,
@@ -265,7 +265,7 @@ def add_doas_system(
         system_name: Name prefix for DOAS components
         energy_recovery: Add ERV (default True)
         sensible_effectiveness: ERV sensible effectiveness 0-1 (default 0.75)
-        zone_equipment_type: FanCoil | Radiant | Chiller_Beams
+        zone_equipment_type: FanCoil | Radiant | ChilledBeams | FourPipeBeam
         heating_fuel: NaturalGas | Electricity | DistrictHeating
         cooling_fuel: Electricity | DistrictCooling
 
@@ -284,7 +284,7 @@ def add_doas_system(
             zones.append(zone)
 
         # Validate zone_equipment_type
-        valid_types = ["FanCoil", "Radiant", "Chiller_Beams"]
+        valid_types = ["FanCoil", "Radiant", "ChilledBeams", "FourPipeBeam"]
         if zone_equipment_type not in valid_types:
             return {"ok": False, "error": f"Invalid zone_equipment_type: '{zone_equipment_type}'"}
 

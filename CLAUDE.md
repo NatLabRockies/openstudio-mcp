@@ -148,7 +148,7 @@ roughly balanced (~200s each). See shard comments in the workflow for current ba
 - **OpenStudio CLI:** `openstudio run -w <osw>` (simulation), `openstudio run --measures_only -w <osw>` (measure execution)
 - **openstudio-resources** — HVAC wiring patterns, baseline model geometry
   - https://github.com/NatLabRockies/OpenStudio-resources/tree/develop/model/simulationtests
-  - Key files: baseline_sys*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, lib/baseline_model.py
+  - Key files: baseline_sys*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, airterminal_fourpipebeam.py, airterminal_cooledbeam.py, lib/baseline_model.py
 - **ComStock measures** (~61 bundled) — standards-based templates for typical buildings
   - https://github.com/NatLabRockies/ComStock (tag: `2025-3`, installed at `/opt/comstock-measures`)
 

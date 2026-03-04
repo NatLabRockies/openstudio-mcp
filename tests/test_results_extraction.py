@@ -245,6 +245,105 @@ class TestExampleWorkflow:
         assert all(pt["month"] == 1 for pt in ts["data"])
 
 
+# ---------------------------------------------------------------------------
+# Regression: extract_eui — must return GJ total, not MJ/m2 per-area column
+# ---------------------------------------------------------------------------
+
+class TestExtractEui:
+    def test_total_site_energy_value(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["total_site_energy"] == pytest.approx(6965.32, abs=0.1)
+
+    def test_building_area(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["total_building_area"] == pytest.approx(10000.0, abs=1.0)
+
+    def test_computed_eui(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["computed_eui"] == pytest.approx(0.696532, rel=1e-3)
+
+    def test_units_are_gj(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["total_site_energy_units"] == "GJ"
+
+    def test_decoy_column_ignored(self, sql_path, tmp_path):
+        """ColumnName='Area' filter must prevent LIMIT 1 from picking a decoy col."""
+        import shutil, sqlite3
+        decoy_sql = tmp_path / "decoy.sql"
+        shutil.copy(sql_path, decoy_sql)
+        conn = sqlite3.connect(str(decoy_sql))
+        # TabularDataWithStrings is a view over TabularData + Strings.
+        # Insert a decoy via the underlying tables.
+        # First, find existing StringIndex values for reuse
+        row = conn.execute(
+            "SELECT ReportNameIndex, ReportForStringIndex, TableNameIndex, RowNameIndex, UnitsIndex "
+            "FROM TabularData td "
+            "JOIN Strings cn ON cn.StringIndex = td.ColumnNameIndex "
+            "JOIN Strings tn ON tn.StringIndex = td.TableNameIndex "
+            "WHERE cn.Value = 'Area' AND tn.Value = 'Building Area' "
+            "LIMIT 1"
+        ).fetchone()
+        # Add a new string for the bogus column name (Strings has 3 cols: index, type, value)
+        max_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0]
+        bogus_idx = max_idx + 1
+        # StringTypeIndex=5 is the ColumnName type (same as existing ColumnName entries)
+        col_type = conn.execute(
+            "SELECT StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.ColumnNameIndex = s.StringIndex "
+            "LIMIT 1"
+        ).fetchone()[0]
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'BogusColumn')", (bogus_idx, col_type))
+        # Insert decoy row reusing existing indexes but with bogus ColumnName
+        conn.execute(
+            "INSERT INTO TabularData "
+            "(ReportNameIndex, ReportForStringIndex, TableNameIndex, RowNameIndex, "
+            "ColumnNameIndex, UnitsIndex, SimulationIndex, RowId, ColumnId, Value) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1, 0, 0, '99.0')",
+            (row[0], row[1], row[2], row[3], bogus_idx, row[4]),
+        )
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(decoy_sql)
+        # Must still return the real 10000 m², not the decoy 99.0
+        assert result["total_building_area"] == pytest.approx(10000.0, abs=1.0)
+
+
+# ---------------------------------------------------------------------------
+# Regression: extract_unmet_hours — must not return None/None
+# ---------------------------------------------------------------------------
+
+class TestExtractUnmetHours:
+    def test_heating(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_unmet_hours
+        result = extract_unmet_hours(sql_path)
+        assert result["heating"] == pytest.approx(1808.33, abs=0.1)
+
+    def test_cooling(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_unmet_hours
+        result = extract_unmet_hours(sql_path)
+        assert result["cooling"] == pytest.approx(0.0, abs=0.1)
+
+
+# ---------------------------------------------------------------------------
+# Regression: _extract_total_site_energy_from_sql — must return GJ, col=Total Energy
+# ---------------------------------------------------------------------------
+
+class TestExtractTotalSiteEnergy:
+    def test_returns_gj(self, sql_path):
+        from mcp_server.skills.results.operations import _extract_total_site_energy_from_sql
+        result = _extract_total_site_energy_from_sql(sql_path)
+        assert result["ok"] is True
+        assert result["value"] == pytest.approx(6965.32, abs=0.1)
+        assert result["column_name"] == "Total Energy"
+        assert result["units"] == "GJ"
+
+
 class TestEndUseConversionFactor:
     """C-3 regression: GJ→kBtu factor must be 947.817, not 947817.12."""
 
