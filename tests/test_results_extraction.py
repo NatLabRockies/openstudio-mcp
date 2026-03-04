@@ -245,6 +245,62 @@ class TestExampleWorkflow:
         assert all(pt["month"] == 1 for pt in ts["data"])
 
 
+# ---------------------------------------------------------------------------
+# Regression: extract_eui — must return GJ total, not MJ/m2 per-area column
+# ---------------------------------------------------------------------------
+
+class TestExtractEui:
+    def test_total_site_energy_value(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["total_site_energy"] == pytest.approx(6965.32, abs=0.1)
+
+    def test_building_area(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["total_building_area"] == pytest.approx(10000.0, abs=1.0)
+
+    def test_computed_eui(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["computed_eui"] == pytest.approx(0.696532, rel=1e-3)
+
+    def test_units_are_gj(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(sql_path)
+        assert result["total_site_energy_units"] == "GJ"
+
+
+# ---------------------------------------------------------------------------
+# Regression: extract_unmet_hours — must not return None/None
+# ---------------------------------------------------------------------------
+
+class TestExtractUnmetHours:
+    def test_heating(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_unmet_hours
+        result = extract_unmet_hours(sql_path)
+        assert result["heating"] == pytest.approx(1808.33, abs=0.1)
+
+    def test_cooling(self, sql_path):
+        from mcp_server.skills.results.sql_extract import extract_unmet_hours
+        result = extract_unmet_hours(sql_path)
+        assert result["cooling"] == pytest.approx(0.0, abs=0.1)
+
+
+# ---------------------------------------------------------------------------
+# Regression: _extract_total_site_energy_from_sql — must return GJ, col=Total Energy
+# ---------------------------------------------------------------------------
+
+class TestExtractTotalSiteEnergy:
+    def test_returns_gj(self, sql_path):
+        from mcp_server.skills.results.operations import _extract_total_site_energy_from_sql
+        result = _extract_total_site_energy_from_sql(sql_path)
+        assert result["ok"] is True
+        assert result["value"] == pytest.approx(6965.32, abs=0.1)
+        assert result["column_name"] == "Total Energy"
+        assert result["units"] == "GJ"
+
+
 class TestEndUseConversionFactor:
     """C-3 regression: GJ→kBtu factor must be 947.817, not 947817.12."""
 

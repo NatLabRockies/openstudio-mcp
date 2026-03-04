@@ -21,57 +21,61 @@ def _try_float(s: Any) -> float | None:
 def extract_unmet_hours(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
+        # ColumnName is always "Facility"; keywords are in RowName
         rows = _q(conn, """
-            SELECT ReportName, TableName, RowName, ColumnName, Value
+            SELECT RowName, Value
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%AnnualBuildingUtilityPerformanceSummary%'
-              AND TableName LIKE '%Comfort%Setpoint%Not Met%'
+            WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
+              AND TableName = 'Comfort and Setpoint Not Met Summary'
+              AND ColumnName = 'Facility'
         """)
         heating = None
         cooling = None
         for r in rows:
-            col = (r["ColumnName"] or "").lower()
+            row = (r["RowName"] or "").lower()
             val = _try_float(r["Value"])
             if val is None:
                 continue
-            if heating is None and ("heating" in col) and ("occupied" in col):
+            if heating is None and "heating" in row and "occupied" in row:
                 heating = val
-            if cooling is None and ("cooling" in col) and ("occupied" in col):
+            if cooling is None and "cooling" in row and "occupied" in row:
                 cooling = val
-        return {"heating": heating, "cooling": cooling, "source": "TabularDataWithStrings/Comfort and Setpoint Not Met Summary"}
+        return {
+            "heating": heating, "cooling": cooling,
+            "source": "TabularDataWithStrings/Comfort and Setpoint Not Met Summary",
+        }
     finally:
         conn.close()
 
 def extract_eui(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
-        rows = _q(conn, """
-            SELECT ReportName, TableName, RowName, ColumnName, Value, Units
+        # Get building area from the "Building Area" table (units: m2)
+        area_rows = _q(conn, """
+            SELECT Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%AnnualBuildingUtilityPerformanceSummary%'
+            WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
+              AND TableName = 'Building Area'
+              AND RowName = 'Total Building Area'
+            LIMIT 1
         """)
-        total_site = None
-        total_site_units = None
-        area = None
-        area_units = None
+        area = _try_float(area_rows[0]["Value"]) if area_rows else None
+        area_units = area_rows[0]["Units"] if area_rows else None
 
-        for r in rows:
-            table = (r["TableName"] or "").lower()
-            row = (r["RowName"] or "").lower()
-            col = (r["ColumnName"] or "").lower()
-            val = _try_float(r["Value"])
-            if val is None:
-                continue
-
-            if area is None and ("area" in row or "area" in col or "building area" in table):
-                if "total" in row or "total" in col:
-                    area = val
-                    area_units = r["Units"]
-
-            if total_site is None and ("site" in table or "site" in row or "site" in col):
-                if ("total" in row and "energy" in row) or ("total site energy" in row) or ("net site energy" in row):
-                    total_site = val
-                    total_site_units = r["Units"]
+        # Get total site energy from "Site and Source Energy" table (units: GJ)
+        # ColumnName filter needed — table has 3 cols: Total Energy (GJ),
+        # Energy Per Total Building Area (MJ/m2), Energy Per Conditioned Building Area (MJ/m2)
+        energy_rows = _q(conn, """
+            SELECT Value, Units
+            FROM TabularDataWithStrings
+            WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
+              AND TableName = 'Site and Source Energy'
+              AND RowName = 'Total Site Energy'
+              AND ColumnName = 'Total Energy'
+            LIMIT 1
+        """)
+        total_site = _try_float(energy_rows[0]["Value"]) if energy_rows else None
+        total_site_units = energy_rows[0]["Units"] if energy_rows else None
 
         eui = None
         if total_site is not None and area not in (None, 0):
@@ -101,7 +105,7 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
         rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%AnnualBuildingUtilityPerformanceSummary%'
+            WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
               AND TableName = 'End Uses'
         """)
         if not rows:
@@ -162,8 +166,8 @@ def extract_envelope_summary(sql_path: Path) -> dict:
         opaque_rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%EnvelopeSummary%'
-              AND TableName LIKE '%Opaque Exterior%'
+            WHERE ReportName = 'EnvelopeSummary'
+              AND TableName = 'Opaque Exterior'
         """)
         opaque = _pivot_rows(opaque_rows)
 
@@ -171,9 +175,8 @@ def extract_envelope_summary(sql_path: Path) -> dict:
         fen_rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%EnvelopeSummary%'
-              AND TableName LIKE '%Exterior Fenestration%'
-              AND TableName NOT LIKE '%Shaded%'
+            WHERE ReportName = 'EnvelopeSummary'
+              AND TableName = 'Exterior Fenestration'
         """)
         fenestration = _pivot_rows(fen_rows)
 
@@ -195,15 +198,15 @@ def extract_hvac_sizing(sql_path: Path) -> dict:
         zone_cool = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%HVACSizingSummary%'
-              AND TableName LIKE '%Zone Sensible Cooling%'
+            WHERE ReportName = 'HVACSizingSummary'
+              AND TableName = 'Zone Sensible Cooling'
         """)
         # Zone sensible heating
         zone_heat = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%HVACSizingSummary%'
-              AND TableName LIKE '%Zone Sensible Heating%'
+            WHERE ReportName = 'HVACSizingSummary'
+              AND TableName = 'Zone Sensible Heating'
         """)
         # Merge cooling + heating per zone
         cool_map = _pivot_rows_map(zone_cool)
@@ -224,8 +227,8 @@ def extract_hvac_sizing(sql_path: Path) -> dict:
         sys_rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%HVACSizingSummary%'
-              AND TableName LIKE '%System Design Air Flow%'
+            WHERE ReportName = 'HVACSizingSummary'
+              AND TableName = 'System Design Air Flow Rates'
         """)
         system_sizing = _pivot_rows(sys_rows, name_key="system")
 
@@ -246,8 +249,8 @@ def extract_zone_summary(sql_path: Path) -> dict:
         rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
             FROM TabularDataWithStrings
-            WHERE ReportName LIKE '%InputVerification%Results%'
-              AND TableName LIKE '%Zone Summary%'
+            WHERE ReportName = 'InputVerificationandResultsSummary'
+              AND TableName = 'Zone Summary'
         """)
         zones = _pivot_rows(rows, name_key="zone")
 
