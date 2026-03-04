@@ -27,16 +27,9 @@ RUN curl -sL https://github.com/NatLabRockies/openstudio-common-measures-gem/arc
 
 ENV COMMON_MEASURES_DIR=/opt/common-measures
 
-# Install OpenStudio bundled gems (provides openstudio-extension, openstudio-standards, etc.)
-# Pattern from https://github.com/NatLabRockies/docker-openstudio
-RUN mkdir -p /var/oscli \
-    && cp /usr/local/openstudio-${OPENSTUDIO_VERSION}/Ruby/Gemfile /var/oscli/ \
-    && cp /usr/local/openstudio-${OPENSTUDIO_VERSION}/Ruby/Gemfile.lock /var/oscli/ \
-    && cp /usr/local/openstudio-${OPENSTUDIO_VERSION}/Ruby/openstudio-gems.gemspec /var/oscli/ \
-    && gem install bundler -v 2.4.10 \
-    && cd /var/oscli \
-    && bundle _2.4.10_ install --path=gems --without=native_ext --jobs=4 --retry=3 \
-    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+# The nrel/openstudio base image already includes /var/oscli/ with bundled gems
+# (openstudio-extension, openstudio-standards, etc.). No bundle install needed.
+RUN apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /repo
 

@@ -13,6 +13,25 @@ from typing import Any
 from mcp_server.skills.measures.operations import apply_measure
 
 
+def _ensure_climate_zone() -> None:
+    """Set a default ASHRAE climate zone on the model if none is set.
+
+    Reporting measures (generic_qaqc, openstudio_results) crash with nil
+    errors when the model has no climate zone.  This is a safety net for
+    models that skip set_weather_file / change_building_location.
+    """
+    try:
+        from mcp_server.model_manager import get_model
+        from mcp_server.stdout_suppression import suppress_openstudio_warnings
+        with suppress_openstudio_warnings():
+            model = get_model()
+            czs = model.getClimateZones()
+            if len(czs.getClimateZones("ASHRAE")) == 0:
+                czs.setClimateZone("ASHRAE", "5A")
+    except RuntimeError:
+        pass  # no model loaded yet
+
+
 def _measure_path(measure_name: str) -> Path:
     """Resolve path to a bundled common measure."""
     base = Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures"))
@@ -77,6 +96,7 @@ def view_simulation_data_op(
     # file_source is Choice: "Last OSM" or "Last IDF"
     # reporting_frequency is Choice: "Timestep" or "Hourly"
     freq = reporting_frequency if reporting_frequency in ("Timestep", "Hourly") else "Hourly"
+    _ensure_climate_zone()
     return _run("view_data", {
         "file_source": "Last OSM",
         "reporting_frequency": freq,
@@ -99,6 +119,7 @@ def generate_results_report_op(units: str = "IP", run_id: str | None = None) -> 
         units: "IP" (imperial) or "SI" (metric)
         run_id: Completed simulation run_id (provides SQL results)
     """
+    _ensure_climate_zone()
     return _run("openstudio_results", {"units": units}, run_id=run_id)
 
 
@@ -154,6 +175,7 @@ def run_qaqc_checks_op(
     else:
         for check_name in all_checks:
             args[check_name] = "true"
+    _ensure_climate_zone()
     return _run("generic_qaqc", args, run_id=run_id)
 
 

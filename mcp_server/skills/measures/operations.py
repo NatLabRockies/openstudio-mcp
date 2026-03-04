@@ -89,6 +89,7 @@ def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
     run_id: str | None = None,
+    use_bundle: bool = True,
 ) -> dict[str, Any]:
     """Apply an OpenStudio measure to the in-memory model.
 
@@ -191,13 +192,12 @@ def apply_measure(
             postprocess = True
 
         run_flag = "--postprocess_only" if postprocess else "--measures_only"
-        cmd = [
-            "openstudio",
-            "--bundle", OSCLI_GEMFILE,
-            "--bundle_path", OSCLI_GEM_PATH,
-            "--bundle_without", "native_ext",
-            "run", run_flag, "-w", str(osw_path),
-        ]
+        cmd = ["openstudio"]
+        if use_bundle:
+            cmd += ["--bundle", OSCLI_GEMFILE,
+                    "--bundle_path", OSCLI_GEM_PATH,
+                    "--bundle_without", "native_ext"]
+        cmd += ["run", run_flag, "-w", str(osw_path)]
         log_path = run_dir / "openstudio.log"
         with open(log_path, "w", encoding="utf-8") as log_f:
             proc = subprocess.run(
