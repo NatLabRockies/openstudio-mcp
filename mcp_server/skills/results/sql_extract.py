@@ -21,28 +21,31 @@ def _try_float(s: Any) -> float | None:
 def extract_unmet_hours(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
-        # ColumnName is always "Facility"; keywords are in RowName
-        rows = _q(conn, """
-            SELECT RowName, Value
-            FROM TabularDataWithStrings
-            WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
-              AND TableName = 'Comfort and Setpoint Not Met Summary'
-              AND ColumnName = 'Facility'
+        # Exact-match queries against SystemSummary / Time Setpoint Not Met
+        # (matches openstudio_results reference measure)
+        heating_rows = _q(conn, """
+            SELECT Value FROM TabularDataWithStrings
+            WHERE ReportName = 'SystemSummary'
+              AND ReportForString = 'Entire Facility'
+              AND TableName = 'Time Setpoint Not Met'
+              AND RowName = 'Facility'
+              AND ColumnName = 'During Occupied Heating'
+            LIMIT 1
         """)
-        heating = None
-        cooling = None
-        for r in rows:
-            row = (r["RowName"] or "").lower()
-            val = _try_float(r["Value"])
-            if val is None:
-                continue
-            if heating is None and "heating" in row and "occupied" in row:
-                heating = val
-            if cooling is None and "cooling" in row and "occupied" in row:
-                cooling = val
+        cooling_rows = _q(conn, """
+            SELECT Value FROM TabularDataWithStrings
+            WHERE ReportName = 'SystemSummary'
+              AND ReportForString = 'Entire Facility'
+              AND TableName = 'Time Setpoint Not Met'
+              AND RowName = 'Facility'
+              AND ColumnName = 'During Occupied Cooling'
+            LIMIT 1
+        """)
+        heating = _try_float(heating_rows[0]["Value"]) if heating_rows else None
+        cooling = _try_float(cooling_rows[0]["Value"]) if cooling_rows else None
         return {
             "heating": heating, "cooling": cooling,
-            "source": "TabularDataWithStrings/Comfort and Setpoint Not Met Summary",
+            "source": "TabularDataWithStrings/SystemSummary/Time Setpoint Not Met",
         }
     finally:
         conn.close()
@@ -51,12 +54,15 @@ def extract_eui(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
         # Get building area from the "Building Area" table (units: m2)
+        # ColumnName='Area' required — without it LIMIT 1 may pick a wrong col
         area_rows = _q(conn, """
             SELECT Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
+              AND ReportForString = 'Entire Facility'
               AND TableName = 'Building Area'
               AND RowName = 'Total Building Area'
+              AND ColumnName = 'Area'
             LIMIT 1
         """)
         area = _try_float(area_rows[0]["Value"]) if area_rows else None
@@ -69,6 +75,7 @@ def extract_eui(sql_path: Path) -> dict:
             SELECT Value, Units
             FROM TabularDataWithStrings
             WHERE ReportName = 'AnnualBuildingUtilityPerformanceSummary'
+              AND ReportForString = 'Entire Facility'
               AND TableName = 'Site and Source Energy'
               AND RowName = 'Total Site Energy'
               AND ColumnName = 'Total Energy'

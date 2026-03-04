@@ -270,6 +270,49 @@ class TestExtractEui:
         result = extract_eui(sql_path)
         assert result["total_site_energy_units"] == "GJ"
 
+    def test_decoy_column_ignored(self, sql_path, tmp_path):
+        """ColumnName='Area' filter must prevent LIMIT 1 from picking a decoy col."""
+        import shutil, sqlite3
+        decoy_sql = tmp_path / "decoy.sql"
+        shutil.copy(sql_path, decoy_sql)
+        conn = sqlite3.connect(str(decoy_sql))
+        # TabularDataWithStrings is a view over TabularData + Strings.
+        # Insert a decoy via the underlying tables.
+        # First, find existing StringIndex values for reuse
+        row = conn.execute(
+            "SELECT ReportNameIndex, ReportForStringIndex, TableNameIndex, RowNameIndex, UnitsIndex "
+            "FROM TabularData td "
+            "JOIN Strings cn ON cn.StringIndex = td.ColumnNameIndex "
+            "JOIN Strings tn ON tn.StringIndex = td.TableNameIndex "
+            "WHERE cn.Value = 'Area' AND tn.Value = 'Building Area' "
+            "LIMIT 1"
+        ).fetchone()
+        # Add a new string for the bogus column name (Strings has 3 cols: index, type, value)
+        max_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0]
+        bogus_idx = max_idx + 1
+        # StringTypeIndex=5 is the ColumnName type (same as existing ColumnName entries)
+        col_type = conn.execute(
+            "SELECT StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.ColumnNameIndex = s.StringIndex "
+            "LIMIT 1"
+        ).fetchone()[0]
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'BogusColumn')", (bogus_idx, col_type))
+        # Insert decoy row reusing existing indexes but with bogus ColumnName
+        conn.execute(
+            "INSERT INTO TabularData "
+            "(ReportNameIndex, ReportForStringIndex, TableNameIndex, RowNameIndex, "
+            "ColumnNameIndex, UnitsIndex, SimulationIndex, RowId, ColumnId, Value) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1, 0, 0, '99.0')",
+            (row[0], row[1], row[2], row[3], bogus_idx, row[4]),
+        )
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(decoy_sql)
+        # Must still return the real 10000 m², not the decoy 99.0
+        assert result["total_building_area"] == pytest.approx(10000.0, abs=1.0)
+
 
 # ---------------------------------------------------------------------------
 # Regression: extract_unmet_hours — must not return None/None
