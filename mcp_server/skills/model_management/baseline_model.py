@@ -439,6 +439,12 @@ def create_baseline_model(
     if wwr is not None and wwr > 0:
         model.add_windows(wwr=wwr)
 
+    # Set default ASHRAE climate zone — required by reporting measures
+    # (e.g. generic_qaqc crashes without one). Overridden when weather is set
+    # via change_building_location or set_weather_file with a .stat file.
+    czs = model.getClimateZones()
+    czs.setClimateZone("ASHRAE", "5A")
+
     # Enable sizing calculations so autosized HVAC can run in EnergyPlus
     sim_control = model.getSimulationControl()
     sim_control.setDoZoneSizingCalculation(True)

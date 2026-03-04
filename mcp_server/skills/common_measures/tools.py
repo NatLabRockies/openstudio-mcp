@@ -76,7 +76,7 @@ def register(mcp):
             run_id: Run ID from a completed simulation (required — provides SQL results)
             variable_names: Up to 3 EnergyPlus output variable names.
                 Defaults to surface temperatures if omitted.
-            reporting_frequency: "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod"
+            reporting_frequency: "Timestep" or "Hourly"
 
         Requires a model to be loaded and a simulation to have been run.
         """

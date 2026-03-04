@@ -74,12 +74,15 @@ def view_simulation_data_op(
     # Pad to 3 variables (measure expects exactly 3)
     while len(vars_) < 3:
         vars_.append(vars_[-1])
+    # file_source is Choice: "Last OSM" or "Last IDF"
+    # reporting_frequency is Choice: "Timestep" or "Hourly"
+    freq = reporting_frequency if reporting_frequency in ("Timestep", "Hourly") else "Hourly"
     return _run("view_data", {
-        "model_source": "After Measure",
-        "reporting_frequency": reporting_frequency,
-        "variable_name_1": vars_[0],
-        "variable_name_2": vars_[1],
-        "variable_name_3": vars_[2],
+        "file_source": "Last OSM",
+        "reporting_frequency": freq,
+        "variable1_name": vars_[0],
+        "variable2_name": vars_[1],
+        "variable3_name": vars_[2],
         "use_geometry_diagnostics": "false",
     }, run_id=run_id)
 

@@ -722,18 +722,15 @@ def test_qaqc_post_sim():
                 assert report.get("ok") is True, f"generate_results_report failed: {report}"
 
                 # run_qaqc_checks (reporting measure — needs SQL + climate zone)
-                # The baseline model has no ASHRAE climate zone set, so
-                # generic_qaqc crashes on climateZones lookup. This is a
-                # known measure limitation, not an infrastructure issue.
-                # Just verify it reaches the measure (not a gem/SQL error).
                 qaqc = unwrap(await s.call_tool("run_qaqc_checks", {
                     "run_id": run_id,
                 }))
-                if not qaqc.get("ok"):
-                    # Accept failure only if it's the climate zone nil error
-                    log = qaqc.get("log_tail", "")
-                    assert "nil:NilClass" in log or "climateZone" in log.lower(), (
-                        f"run_qaqc_checks failed with unexpected error: {qaqc}"
-                    )
+                assert qaqc.get("ok") is True, f"run_qaqc_checks failed: {qaqc}"
+
+                # view_simulation_data (reporting measure — needs SQL)
+                view = unwrap(await s.call_tool("view_simulation_data", {
+                    "run_id": run_id,
+                }))
+                assert view.get("ok") is True, f"view_simulation_data failed: {view}"
 
     asyncio.run(_run())
