@@ -40,7 +40,7 @@ def test_list_air_loops():
                 assert load_result.get("ok") is True
 
                 # List air loops
-                air_loops_resp = await session.call_tool("list_air_loops", {})
+                air_loops_resp = await session.call_tool("list_air_loops", {"detailed": True})
                 air_loops_result = unwrap(air_loops_resp)
                 print("list_air_loops:", air_loops_result)
 

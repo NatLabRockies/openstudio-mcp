@@ -70,19 +70,30 @@ def list_all_as_dicts(
     model: openstudio.model.Model,
     getter_name: str,
     extract_fn: Callable,
+    detailed: bool = True,
 ) -> list[dict[str, Any]]:
     """Extract all objects of a type as a sorted list of dicts.
 
     Args:
         model: The loaded OpenStudio model
         getter_name: Model method name, e.g. "getSpaces"
-        extract_fn: Function(model, obj) -> dict
+        extract_fn: Function(model, obj) -> dict; may accept `detailed` kwarg
+        detailed: Pass through to extract_fn if it accepts it
 
     Returns:
         List of dicts, one per object, sorted by 'name' if present.
     """
+    import inspect
+
     getter = getattr(model, getter_name)
     objects = getter()
-    results = [extract_fn(model, obj) for obj in objects]
+
+    # Pass detailed kwarg only if extract_fn accepts it
+    sig = inspect.signature(extract_fn)
+    if "detailed" in sig.parameters:
+        results = [extract_fn(model, obj, detailed=detailed) for obj in objects]
+    else:
+        results = [extract_fn(model, obj) for obj in objects]
+
     results.sort(key=lambda d: d.get("name", d.get("Name", "")))
     return results

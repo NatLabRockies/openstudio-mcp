@@ -387,7 +387,7 @@ def test_match_surfaces_adjacent_spaces():
                     "floor_to_ceiling_height": 3.0,
                 }))
                 # Before matching: all walls are Outdoors
-                surfs_before = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_before = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
                 new_surfs = [sf for sf in surfs_before["surfaces"]
                              if sf["space"] in ("Left", "Right")]
                 interior_before = [sf for sf in new_surfs
@@ -400,7 +400,7 @@ def test_match_surfaces_adjacent_spaces():
                 assert res["matched_surfaces"] >= 2  # at least the shared wall pair
 
                 # After matching: shared wall should be "Surface"
-                surfs_after = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_after = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
                 new_surfs_after = [sf for sf in surfs_after["surfaces"]
                                    if sf["space"] in ("Left", "Right")]
                 interior_after = [sf for sf in new_surfs_after

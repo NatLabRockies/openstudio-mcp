@@ -581,7 +581,7 @@ def test_workflow_geometry_from_scratch():
                 assert match["matched_surfaces"] >= 2  # shared wall pair
 
                 # Step 6: List all surfaces — verify interior boundaries
-                surfs = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
                 assert surfs.get("ok") is True
                 new_surfs = [sf for sf in surfs["surfaces"]
                              if sf["space"] in ("West Office", "East Office")]
@@ -662,7 +662,7 @@ def test_workflow_fenestration_by_orientation():
                 assert lr.get("ok") is True
 
                 # Step 2: List all surfaces, filter to exterior walls
-                surfs = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
                 assert surfs.get("ok") is True
                 ext_walls = [sf for sf in surfs["surfaces"]
                              if sf["surface_type"] == "Wall"

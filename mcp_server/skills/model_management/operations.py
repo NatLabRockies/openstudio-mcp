@@ -49,11 +49,15 @@ def create_example_osm(name: str | None = None, out_dir: str | None = None) -> d
         if not osm_path.exists():
             return {"ok": False, "error": f"model.save(...) did not create expected file: {osm_path}"}
 
+        # Auto-load so query tools work immediately
+        model_manager.load_model(osm_path)
+
         return {
             "ok": True,
             "osm_path": str(osm_path),
             "out_dir": str(model_dir),
             "name": safe,
+            "model_loaded": True,
             "openstudio_version": str(openstudio.openStudioVersion()),
         }
     except Exception as e:
@@ -311,11 +315,15 @@ def create_baseline_osm(
         if not osm_path.exists():
             return {"ok": False, "error": f"model.save() did not create file: {osm_path}"}
 
+        # Auto-load so query tools work immediately
+        model_manager.load_model(osm_path)
+
         return {
             "ok": True,
             "osm_path": str(osm_path),
             "out_dir": str(model_dir),
             "name": safe,
+            "model_loaded": True,
             **info,
             "openstudio_version": str(openstudio.openStudioVersion()),
         }
