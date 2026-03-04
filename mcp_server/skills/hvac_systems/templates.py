@@ -122,7 +122,7 @@ def create_doas_system(
         name: Name prefix for DOAS components
         energy_recovery: Add ERV to DOAS loop
         sensible_effectiveness: ERV sensible effectiveness (0-1)
-        zone_equipment_type: "FanCoil" | "Radiant" | "Chiller_Beams" | "None"
+        zone_equipment_type: "FanCoil" | "Radiant" | "ChilledBeams" | "FourPipeBeam" | "None"
 
     Returns:
         dict with DOAS loop, plant loops, and zone equipment details
@@ -186,11 +186,11 @@ def create_doas_system(
     chw_loop_name = None
     hw_loop_name = None
 
-    if zone_equipment_type in ("FanCoil", "Radiant", "Chiller_Beams"):
+    if zone_equipment_type in ("FanCoil", "Radiant", "ChilledBeams", "FourPipeBeam"):
         chw_loop = wiring.create_chilled_water_loop(model, f"{name} CHW Loop")
         chw_loop_name = chw_loop.nameString()
 
-    if zone_equipment_type in ("FanCoil", "Radiant"):
+    if zone_equipment_type in ("FanCoil", "Radiant", "FourPipeBeam"):
         hw_loop = wiring.create_hot_water_loop(model, f"{name} HW Loop")
         hw_loop_name = hw_loop.nameString()
 
@@ -227,8 +227,8 @@ def create_doas_system(
     for zone in zones:
         zone_name = zone.nameString()
 
-        if zone_equipment_type == "Chiller_Beams":
-            # Chilled beam IS the DOAS air terminal (replaces uncontrolled)
+        if zone_equipment_type == "ChilledBeams":
+            # Chilled beam IS the DOAS air terminal (cooling-only, no HW)
             coil = openstudio.model.CoilCoolingCooledBeam(model)
             beam = openstudio.model.AirTerminalSingleDuctConstantVolumeCooledBeam(
                 model, model.alwaysOnDiscreteSchedule(), coil,
@@ -242,6 +242,29 @@ def create_doas_system(
                 "name": beam.nameString(),
                 "zone": zone_name,
             })
+
+        elif zone_equipment_type == "FourPipeBeam":
+            # 4-pipe beam: cooling + heating coils, both connected to plant loops
+            cc = openstudio.model.CoilCoolingFourPipeBeam(model)
+            cc.setName(f"{name} 4P Beam Clg Coil - {zone_name}")
+            chw_loop.addDemandBranchForComponent(cc)
+
+            hc = openstudio.model.CoilHeatingFourPipeBeam(model)
+            hc.setName(f"{name} 4P Beam Htg Coil - {zone_name}")
+            hw_loop.addDemandBranchForComponent(hc)
+
+            beam = openstudio.model.AirTerminalSingleDuctConstantVolumeFourPipeBeam(
+                model, cc, hc,
+            )
+            beam.setName(f"{name} 4-Pipe Beam - {zone_name}")
+            doas_loop.addBranchForZone(zone, beam.to_StraightComponent())
+
+            zone_equipment_list.append({
+                "type": "AirTerminalSingleDuctConstantVolumeFourPipeBeam",
+                "name": beam.nameString(),
+                "zone": zone_name,
+            })
+
         else:
             # Standard uncontrolled terminal for DOAS ventilation
             terminal = openstudio.model.AirTerminalSingleDuctUncontrolled(

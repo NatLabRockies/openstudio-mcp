@@ -239,7 +239,7 @@ def test_doas_chilled_beams_simulates():
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS Beam Sim",
                     "energy_recovery": True,
-                    "zone_equipment_type": "Chiller_Beams",
+                    "zone_equipment_type": "ChilledBeams",
                 }))
                 assert sys_resp.get("ok") is True, sys_resp
                 sys = sys_resp["system"]

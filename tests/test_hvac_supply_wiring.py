@@ -369,7 +369,7 @@ def test_radiant_with_doas_has_supply():
 
 @pytest.mark.integration
 def test_doas_chilled_beams_supply():
-    """DOAS Chiller_Beams: CHW loop has chiller, no HW loop."""
+    """DOAS ChilledBeams: CHW loop has chiller, no HW loop."""
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -379,7 +379,7 @@ def test_doas_chilled_beams_supply():
                 resp = await session.call_tool("add_doas_system", {
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS Beam",
-                    "zone_equipment_type": "Chiller_Beams",
+                    "zone_equipment_type": "ChilledBeams",
                 })
                 data = unwrap(resp)
                 assert data.get("ok") is True

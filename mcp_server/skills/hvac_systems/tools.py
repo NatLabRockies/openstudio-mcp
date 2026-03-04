@@ -107,6 +107,7 @@ def register(mcp: FastMCP) -> None:
                 - "PFP_Electric": Parallel fan-powered with electric reheat
                 - "PFP_HotWater": Parallel fan-powered with HW reheat (requires HW loop)
                 - "CAV": Constant air volume (uncontrolled)
+                - "FourPipeBeam": 4-pipe active chilled beam (requires CHW + HW loops)
             terminal_options: Optional configuration dict with keys:
                 - min_airflow_fraction: 0.0-1.0 (default: 0.3 for VAV, 0.5 for PFP)
                 - fan_power_w_per_cfm: Power for PFP fan boxes (optional)
@@ -142,6 +143,7 @@ def register(mcp: FastMCP) -> None:
                 - "PFP_Electric": Parallel fan-powered with electric reheat
                 - "PFP_HotWater": Parallel fan-powered with HW reheat (requires HW loop)
                 - "CAV": Constant air volume (uncontrolled)
+                - "FourPipeBeam": 4-pipe active chilled beam (requires CHW + HW loops)
             terminal_options: Optional configuration dict with keys:
                 - min_airflow_fraction: 0.0-1.0 (default: 0.3 for VAV, 0.5 for PFP)
 
@@ -181,7 +183,7 @@ def register(mcp: FastMCP) -> None:
             system_name: Name prefix for DOAS components (default "DOAS")
             energy_recovery: Add energy recovery ventilator (default True)
             sensible_effectiveness: ERV sensible effectiveness 0-1 (default 0.75)
-            zone_equipment_type: FanCoil | Radiant | Chiller_Beams (default FanCoil)
+            zone_equipment_type: FanCoil | Radiant | ChilledBeams | FourPipeBeam (default FanCoil)
             heating_fuel: NaturalGas | Electricity | DistrictHeating (default NaturalGas)
             cooling_fuel: Electricity | DistrictCooling (default Electricity)
 

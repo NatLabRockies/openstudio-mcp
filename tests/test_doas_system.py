@@ -218,17 +218,63 @@ def test_doas_chiller_beams():
                     "thermal_zone_names": zone_names,
                     "system_name": "DOAS Beams",
                     "energy_recovery": True,
-                    "zone_equipment_type": "Chiller_Beams",
+                    "zone_equipment_type": "ChilledBeams",
                 })
                 system_data = unwrap(system_resp)
 
                 assert system_data.get("ok") is True
-                assert system_data["system"]["zone_equipment_type"] == "Chiller_Beams"
+                assert system_data["system"]["zone_equipment_type"] == "ChilledBeams"
                 assert system_data["system"]["chilled_water_loop"] is not None
 
                 # Verify chilled beam equipment
                 for equip in system_data["system"]["zone_equipment"]:
                     assert equip["type"] == "AirTerminalSingleDuctConstantVolumeCooledBeam"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_doas_four_pipe_beam():
+    """Verify DOAS with 4-pipe beam zone equipment creates CHW+HW loops."""
+    async def _run():
+        sp = server_params()
+        async with stdio_client(sp) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                name = "test_doas_4pb"
+                create_resp = await session.call_tool("create_example_osm", {"name": name})
+                create_data = unwrap(create_resp)
+                load_resp = await session.call_tool("load_osm_model", {
+                    "osm_path": create_data["osm_path"],
+                })
+
+                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_data = unwrap(zones_resp)
+                zone_names = [z["name"] for z in zones_data["thermal_zones"]]
+
+                # Create DOAS with four pipe beams
+                system_resp = await session.call_tool("add_doas_system", {
+                    "thermal_zone_names": zone_names,
+                    "system_name": "DOAS 4PB",
+                    "energy_recovery": True,
+                    "zone_equipment_type": "FourPipeBeam",
+                })
+                system_data = unwrap(system_resp)
+
+                assert system_data.get("ok") is True
+                assert system_data["system"]["zone_equipment_type"] == "FourPipeBeam"
+                assert system_data["system"]["chilled_water_loop"] is not None
+                assert system_data["system"]["hot_water_loop"] is not None
+
+                # Verify four pipe beam equipment
+                for equip in system_data["system"]["zone_equipment"]:
+                    assert equip["type"] == "AirTerminalSingleDuctConstantVolumeFourPipeBeam"
+
+                # Verify plant loops created (CHW + HW + condenser)
+                plr = await session.call_tool("list_plant_loops", {})
+                pld = unwrap(plr)
+                assert pld["count"] >= 2  # CHW + HW loops
 
     asyncio.run(_run())
 

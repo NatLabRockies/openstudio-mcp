@@ -313,6 +313,41 @@ def test_gradual_retrofit_baseline():
     asyncio.run(_run())
 
 
+def test_replace_single_zone_four_pipe_beam():
+    """Replace single zone terminal to FourPipeBeam on DOAS+FCU model."""
+    async def _run():
+        sp = server_params()
+        async with stdio_client(sp) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                zone_names = await create_and_load(session, "rzt_4pb")
+
+                # Add DOAS with FanCoil (creates CHW + HW loops)
+                sr = await session.call_tool("add_doas_system", {
+                    "thermal_zone_names": zone_names,
+                    "system_name": "DOAS FC",
+                    "zone_equipment_type": "FanCoil",
+                })
+                sys_data = unwrap(sr)
+                assert sys_data.get("ok") is True
+                doas_loop_name = sys_data["system"]["doas_loop"]
+
+                # Replace single zone terminal to FourPipeBeam
+                rr = await session.call_tool("replace_zone_terminal", {
+                    "zone_name": zone_names[0],
+                    "terminal_type": "FourPipeBeam",
+                })
+                rd = unwrap(rr)
+                print("4pb replace result:", rd)
+
+                assert rd.get("ok") is True
+                assert rd["zone"]["name"] == zone_names[0]
+                assert rd["zone"]["new_terminal_type"] == "FourPipeBeam"
+                assert "FourPipeBeam" in rd["zone"]["new_terminal_name"]
+
+    asyncio.run(_run())
+
+
 def test_replace_to_pfp_baseline():
     """Replace perimeter zone to PFP_Electric on System 7."""
     async def _run():
