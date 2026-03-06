@@ -1,51 +1,37 @@
-# Plan: Agent Effectiveness — Remaining Nice-to-Haves
+# Plan: Agent Effectiveness — Complete
 
-All core work completed in commits `8b253fc`, `cbc0283`, `77818fa` on `optimize` branch.
+All work completed on `optimize` branch.
 
-## Completed Summary
+## Completed
 
-| Item | Status |
+| Item | Commit |
 |---|---|
-| Phase 1A: Dedup tool-workflows (189→95 lines) | Done |
-| Phase 1B: Cross-ref new-building → openstudio-patterns | Done |
-| Phase 1C: Audit all SKILL.md files, remove context:fork | Done |
-| Phase 1D: Trim CLAUDE.md API reference | Done |
-| Phase 1E: Eval scenarios for 8 skills | Done |
-| Phase 2A: CLAUDE.md "Use MCP Tools" instruction | Done |
-| Phase 2B: MCP server `instructions` field | Done |
-| Phase 2C: Guardrail language in create_*_osm descriptions | Done |
-| Phase 2D: Strengthen list_skills/get_skill descriptions | Done |
+| Phase 1A: Dedup tool-workflows (189→95 lines) | `8b253fc` |
+| Phase 1B: Cross-ref new-building → openstudio-patterns | `8b253fc` |
+| Phase 1C: Audit all SKILL.md files, remove context:fork | `8b253fc` |
+| Phase 1D: Trim CLAUDE.md API reference | `8b253fc` |
+| Phase 1E: Eval scenarios for 8 skills | `cbc0283` |
+| Phase 2A: CLAUDE.md "Use MCP Tools" instruction | `8b253fc` |
+| Phase 2B: MCP server `instructions` field | `8b253fc` |
+| Phase 2C: Guardrail language in create_*_osm descriptions | `8b253fc` |
+| Phase 2D: Strengthen list_skills/get_skill descriptions | `8b253fc` |
 | Phase 2E: Debug checklist (Docker verification) | All green |
-| Phase 3: Troubleshoot skill | Done |
-| End-to-end test (claude.ai) | Passed — agent called get_skill("new-building") first |
-| EUI unit fix: report MJ/m2 + kBtu/ft2 | Done |
-| conditioned_floor_area_m2: compute from model (zones w/ thermostats) | Done |
-| run_qaqc_checks: clear error + hint when no run_id | Done |
+| Phase 3: Troubleshoot skill | `8b253fc` |
+| EUI unit fix: report MJ/m2 + kBtu/ft2 | `77818fa` |
+| conditioned_floor_area_m2: compute from model | `f537294` |
+| run_qaqc_checks: clear error + hint when no run_id | `f537294` |
+| get_run_artifacts: filesystem fallback for measure runs | `eb9f429` |
+| report_path + report_size_bytes in viewer responses | `eb9f429` |
+| user_message in copy_run_artifact + viewer responses | pending |
+| End-to-end test #1 (claude.ai) | Passed |
+| End-to-end test #2 (claude.ai) | Passed — all fixes verified |
 
-## Nice-to-Haves
+## Resolved Issues
 
-### 1. Known gotchas in tool descriptions
+- `create_baseline_osm` intermittent `model_loaded` — confirmed working in both test sessions, stale from pre-v0.4.0
 
-Add domain-specific hints to tool descriptions where agents commonly make mistakes:
-- `add_baseline_system`: "system_type is 1-10 (use list_baseline_systems to see options)"
-- `set_weather_file`: "does not auto-load design days — call add_design_day separately"
-- `run_simulation`: "requires weather file and design days to be set first"
+## Remaining Nice-to-Haves
 
-### 2. Token count measurement
-
-Measure total SKILL.md chars loaded in a multi-skill session before vs after dedup.
-Rough estimate: ~1,076 total lines before → ~860 after (~20% reduction).
-
-### 3. `check_tool_coverage` tool (revisit if needed)
-
-If agents still reinvent tools despite guardrails, add a tool that checks whether
-an equivalent MCP tool exists before the agent writes code. Deferred — guardrails
-working in initial testing.
-
-## Possible Issues (needs local testing)
-
-### 4. `create_baseline_osm` intermittent `model_loaded`
-
-Session export lists this as intermittent but current code always returns
-`model_loaded: True`. May be stale from pre-v0.4.0. Needs local testing
-to confirm whether it still occurs.
+1. **Known gotchas in tool descriptions** — add hints like "system_type is 1-10", "set_weather_file does not auto-load design days"
+2. **Token count measurement** — measure SKILL.md chars before vs after dedup (~20% est.)
+3. **`check_tool_coverage` tool** — deferred, guardrails working in testing

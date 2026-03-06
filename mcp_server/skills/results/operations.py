@@ -374,4 +374,7 @@ def copy_run_artifact(run_id: str, path: str, destination: str = "/runs/exports"
         "source": str(full),
         "destination": str(dest_file),
         "size_bytes": dest_file.stat().st_size,
+        "user_message": (
+            f"File exported. On the host machine, open: runs/exports/{full.name}"
+        ),
     }

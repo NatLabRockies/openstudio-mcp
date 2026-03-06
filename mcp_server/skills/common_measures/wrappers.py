@@ -69,6 +69,10 @@ def view_model_op(geometry_diagnostics: bool = False) -> dict[str, Any]:
         if report.is_file():
             result["report_path"] = str(report)
             result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = (
+                "Report generated. Use copy_run_artifact to export, "
+                "then find it on the host at runs/exports/view_model_report.html"
+            )
     return result
 
 
@@ -117,6 +121,10 @@ def view_simulation_data_op(
         if report.is_file():
             result["report_path"] = str(report)
             result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = (
+                "Report generated. Use copy_run_artifact to export, "
+                "then find it on the host at runs/exports/view_data_report.html"
+            )
     return result
 
 
@@ -139,6 +147,10 @@ def generate_results_report_op(units: str = "IP", run_id: str | None = None) -> 
         if report.is_file():
             result["report_path"] = str(report)
             result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = (
+                "Report generated. Use copy_run_artifact to export, "
+                "then find it on the host at runs/exports/openstudio_results_report.html"
+            )
     return result
 
 
