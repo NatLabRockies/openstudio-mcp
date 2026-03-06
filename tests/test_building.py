@@ -238,7 +238,12 @@ def test_conditioned_floor_area_with_hvac():
 
 @pytest.mark.integration
 def test_conditioned_floor_area_no_hvac():
-    """Conditioned floor area should be 0 when no HVAC / no thermostats."""
+    """Conditioned floor area with baseline model (no HVAC system).
+
+    create_baseline_osm always adds thermostats for sizing readiness,
+    even without ashrae_sys_num. So conditioned area should equal total
+    floor area (thermostats present on all zones).
+    """
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -248,7 +253,6 @@ def test_conditioned_floor_area_no_hvac():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                # Baseline without HVAC = no thermostats
                 cr = await session.call_tool("create_baseline_osm", {
                     "name": name, "num_floors": 1,
                 })
@@ -262,8 +266,10 @@ def test_conditioned_floor_area_no_hvac():
                 assert bd.get("ok") is True, bd
                 b = bd["building"]
                 assert b["floor_area_m2"] > 0
-                assert b["conditioned_floor_area_m2"] == 0.0, \
-                    f"Expected 0 without thermostats, got {b['conditioned_floor_area_m2']}"
+                # Baseline always adds thermostats → conditioned = total
+                assert b["conditioned_floor_area_m2"] == pytest.approx(
+                    b["floor_area_m2"], rel=0.01,
+                ), f"conditioned={b['conditioned_floor_area_m2']}, total={b['floor_area_m2']}"
 
     asyncio.run(_run())
 
