@@ -84,17 +84,23 @@ def extract_eui(sql_path: Path) -> dict:
         total_site = _try_float(energy_rows[0]["Value"]) if energy_rows else None
         total_site_units = energy_rows[0]["Units"] if energy_rows else None
 
-        eui = None
+        eui_gj_m2 = None
+        eui_mj_m2 = None
+        eui_kbtu_ft2 = None
         if total_site is not None and area not in (None, 0):
-            eui = total_site / area
+            eui_gj_m2 = total_site / area  # GJ / m²
+            eui_mj_m2 = eui_gj_m2 * 1000.0  # MJ / m²
+            eui_kbtu_ft2 = eui_gj_m2 * 947.817 / 10.7639  # kBtu / ft²
 
         return {
             "total_site_energy": total_site,
             "total_site_energy_units": total_site_units,
             "total_building_area": area,
             "total_building_area_units": area_units,
-            "computed_eui": eui,
-            "computed_eui_units": f"{total_site_units}/{area_units}" if (total_site_units and area_units) else None,
+            "computed_eui": eui_gj_m2,
+            "computed_eui_units": "GJ/m2",
+            "eui_MJ_m2": eui_mj_m2,
+            "eui_kBtu_ft2": eui_kbtu_ft2,
             "source": "TabularDataWithStrings/AnnualBuildingUtilityPerformanceSummary",
         }
     finally:

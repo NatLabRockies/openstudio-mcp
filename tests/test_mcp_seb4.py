@@ -38,8 +38,9 @@ DEFAULT_EPW_2012 = os.environ.get(
 # Old values (0.082) were wrong — fuzzy SQL picked up the per-area MJ/m² column
 # instead of computing total_energy_GJ / building_area_m².
 # SEB4 baseboard: area=82.21 m², energy=154.15 GJ (2013), 141.05 GJ (2012)
-EXPECTED_2013_EUI = float(os.environ.get("EXPECTED_2013_EUI", "1.8750760248144998"))
-EXPECTED_2012_EUI = float(os.environ.get("EXPECTED_2012_EUI", "1.715728013623647"))
+# EUI in MJ/m² (converted from GJ/m² * 1000)
+EXPECTED_2013_EUI = float(os.environ.get("EXPECTED_2013_EUI", "1875.0760248144998"))
+EXPECTED_2012_EUI = float(os.environ.get("EXPECTED_2012_EUI", "1715.728013623647"))
 EXPECTED_2012_TOTAL_SITE_ENERGY = float(os.environ.get("EXPECTED_2012_TOTAL_SITE_ENERGY", "141.05"))
 
 # Tolerances (defaults intentionally lenient; tighten once stable)
@@ -116,15 +117,15 @@ async def _call_tool(session: ClientSession, name: str, args: dict, timeout: flo
 
 
 def _parse_metrics(metrics_payload: Any) -> tuple[float | None, float | None, str | None]:
-    """Returns (eui, total_site_energy_value, eui_units)."""
+    """Returns (eui_MJ_m2, total_site_energy_value, eui_units)."""
     if not isinstance(metrics_payload, dict):
         return None, None, None
     m = metrics_payload.get("metrics")
     if not isinstance(m, dict):
         return None, None, None
 
-    eui = m.get("eui")
-    eui_units = m.get("eui_units")
+    eui = m.get("eui_MJ_m2")
+    eui_units = "MJ/m2" if eui is not None else None
 
     tse = m.get("total_site_energy")
     tse_val = None
@@ -154,16 +155,16 @@ def _format_metrics(metrics: Any) -> str:
     units = total.get("units")
     kbtu = total.get("kbtu")
     src = total.get("source")
-    eui = m.get("eui")
-    eui_units = m.get("eui_units")
+    eui_mj = m.get("eui_MJ_m2")
+    eui_ip = m.get("eui_kBtu_ft2")
     uh_h = m.get("unmet_hours_heating")
     uh_c = m.get("unmet_hours_cooling")
 
     parts = []
     if val is not None:
         parts.append(f"Total Site Energy: {val} {units or ''} (kbtu={kbtu}) src={src}")
-    if eui is not None:
-        parts.append(f"EUI: {eui} {eui_units or ''}".rstrip())
+    if eui_mj is not None:
+        parts.append(f"EUI: {eui_mj} MJ/m2 ({eui_ip} kBtu/ft2)")
     if uh_h is not None or uh_c is not None:
         parts.append(f"Unmet Hours (H/C): {uh_h}/{uh_c}")
 

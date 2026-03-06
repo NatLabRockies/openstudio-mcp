@@ -22,9 +22,11 @@ def register(mcp):
     def set_weather_file_tool(epw_path: str):
         """Attach an EPW weather file to the loaded model.
 
+        Does NOT add design days — call add_design_day() separately or
+        the simulation will have no sizing data.
+
         Args:
             epw_path: Absolute path to an EPW file
-
         """
         return set_weather_file(epw_path=epw_path)
 

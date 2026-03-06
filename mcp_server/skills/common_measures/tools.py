@@ -91,7 +91,8 @@ def register(mcp):
         template: str = "90.1-2013",
         checks: list[str] | None = None,
     ):
-        """Run ASHRAE QA/QC checks on simulation results.
+        """Run ASHRAE QA/QC checks on simulation results. Requires a completed
+        simulation — call run_simulation first, then pass its run_id here.
 
         Args:
             run_id: Run ID from a completed simulation (required — provides SQL results)
@@ -101,7 +102,13 @@ def register(mcp):
                 "internal_loads", "schedules", "envelope", "dhw",
                 "mech_efficiency", "mech_type", "supply_air_temp"
         """
-        return run_qaqc_checks_op(run_id=run_id or None, template=template, checks=checks)
+        if not run_id:
+            return {
+                "ok": False,
+                "error": "run_id is required — run a simulation first, then pass its run_id here",
+                "hint": "Call run_simulation() first, wait for completion, then call run_qaqc_checks(run_id=...)",
+            }
+        return run_qaqc_checks_op(run_id=run_id, template=template, checks=checks)
 
     @mcp.tool(name="adjust_thermostat_setpoints")
     def adjust_thermostat_setpoints_tool(

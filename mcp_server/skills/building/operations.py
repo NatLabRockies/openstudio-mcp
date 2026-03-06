@@ -20,6 +20,24 @@ def _safe_float(value) -> float | None:
     return v
 
 
+def _compute_conditioned_floor_area(model) -> float:
+    """Compute conditioned floor area from model objects (no simulation needed).
+
+    A thermal zone is considered conditioned if it has a thermostat
+    (ThermostatSetpointDualSetpoint). Sums floor area of all spaces
+    in conditioned zones.
+    """
+    total = 0.0
+    for zone in model.getThermalZones():
+        # Check if zone has a dual-setpoint thermostat assigned
+        if not zone.thermostatSetpointDualSetpoint().is_initialized():
+            continue
+        # Sum floor area of all spaces in this conditioned zone
+        for space in zone.spaces():
+            total += space.floorArea()
+    return total
+
+
 def _extract_building_info(model, building) -> dict[str, Any]:
     """Extract building attributes to dict.
 
@@ -50,7 +68,7 @@ def _extract_building_info(model, building) -> dict[str, Any]:
         "default_construction_set": optional_name(default_construction_set),
         "default_schedule_set": optional_name(default_schedule_set),
         "floor_area_m2": float(building.floorArea()),
-        "conditioned_floor_area_m2": float(building.conditionedFloorArea()),
+        "conditioned_floor_area_m2": _compute_conditioned_floor_area(model),
         "exterior_surface_area_m2": float(building.exteriorSurfaceArea()),
         "exterior_wall_area_m2": float(building.exteriorWallArea()),
         "air_volume_m3": float(building.airVolume()),
@@ -124,7 +142,7 @@ def get_model_summary() -> dict[str, Any]:
         summary = {
             "building_name": building.nameString(),
             "floor_area_m2": float(building.floorArea()),
-            "conditioned_floor_area_m2": float(building.conditionedFloorArea()),
+            "conditioned_floor_area_m2": _compute_conditioned_floor_area(model),
 
             # Spaces and zones
             "spaces": len(model.getSpaces()),

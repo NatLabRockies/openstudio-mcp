@@ -33,7 +33,8 @@ def register(mcp):
 
     @mcp.tool(name="create_example_osm")
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):
-        """Create built-in OpenStudio example model (auto-loads into memory)."""
+        """Create built-in OpenStudio example model (auto-loads into memory).
+        Use this tool to create models. Do not write raw IDF/OSM files."""
         return create_example_osm(name=name, out_dir=out_dir)
 
     @mcp.tool(name="create_baseline_osm")
@@ -46,6 +47,7 @@ def register(mcp):
         wwr: float | None = None,
     ):
         """Create baseline 10-zone commercial building (auto-loads into memory).
+        Use this tool to create models. Do not write raw IDF/OSM files.
 
         Args:
             name: Model name (used for output directory)

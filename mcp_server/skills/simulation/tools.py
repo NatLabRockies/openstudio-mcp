@@ -55,12 +55,12 @@ def register(mcp):
     ):
         """Run an EnergyPlus simulation from an OSM model file.
 
-        Creates a minimal OSW workflow automatically and starts the simulation.
-        This is the simplest way to run a simulation — just provide an OSM path
-        and optionally an EPW weather file.
+        Requires a weather file (EPW) and design days to be set on the model
+        first, or pass epw_path here. Without design days, HVAC sizing will fail.
 
-        Use `get_run_status_tool` to poll for completion, then
-        `extract_summary_metrics_tool` to get results.
+        Creates a minimal OSW workflow automatically and starts the simulation.
+        Use get_run_status() to poll for completion, then
+        extract_summary_metrics() to get results.
         """
         return run_simulation(osm_path=osm_path, epw_path=epw_path, name=name)
 

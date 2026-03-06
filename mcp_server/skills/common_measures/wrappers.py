@@ -60,9 +60,20 @@ def view_model_op(geometry_diagnostics: bool = False) -> dict[str, Any]:
     Args:
         geometry_diagnostics: Enable surface/space convexity checks (slower)
     """
-    return _run("view_model", {
+    result = _run("view_model", {
         "use_geometry_diagnostics": str(geometry_diagnostics).lower(),
     })
+    # Add output file path so agents know where the report is
+    if result.get("ok") and result.get("run_dir"):
+        report = Path(result["run_dir"]) / "reports" / "view_model_report.html"
+        if report.is_file():
+            result["report_path"] = str(report)
+            result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = (
+                "Report generated. Use copy_run_artifact to export, "
+                "then find it on the host at runs/exports/view_model_report.html"
+            )
+    return result
 
 
 # --- 2. view_simulation_data: post-sim 3D data visualization ---
@@ -97,7 +108,7 @@ def view_simulation_data_op(
     # reporting_frequency is Choice: "Timestep" or "Hourly"
     freq = reporting_frequency if reporting_frequency in ("Timestep", "Hourly") else "Hourly"
     _ensure_climate_zone()
-    return _run("view_data", {
+    result = _run("view_data", {
         "file_source": "Last OSM",
         "reporting_frequency": freq,
         "variable1_name": vars_[0],
@@ -105,6 +116,16 @@ def view_simulation_data_op(
         "variable3_name": vars_[2],
         "use_geometry_diagnostics": "false",
     }, run_id=run_id)
+    if result.get("ok") and result.get("run_dir"):
+        report = Path(result["run_dir"]) / "reports" / "view_data_report.html"
+        if report.is_file():
+            result["report_path"] = str(report)
+            result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = (
+                "Report generated. Use copy_run_artifact to export, "
+                "then find it on the host at runs/exports/view_data_report.html"
+            )
+    return result
 
 
 # --- 3. generate_results_report: comprehensive HTML report ---
@@ -120,7 +141,17 @@ def generate_results_report_op(units: str = "IP", run_id: str | None = None) -> 
         run_id: Completed simulation run_id (provides SQL results)
     """
     _ensure_climate_zone()
-    return _run("openstudio_results", {"units": units}, run_id=run_id)
+    result = _run("openstudio_results", {"units": units}, run_id=run_id)
+    if result.get("ok") and result.get("run_dir"):
+        report = Path(result["run_dir"]) / "reports" / "openstudio_results_report.html"
+        if report.is_file():
+            result["report_path"] = str(report)
+            result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = (
+                "Report generated. Use copy_run_artifact to export, "
+                "then find it on the host at runs/exports/openstudio_results_report.html"
+            )
+    return result
 
 
 # --- 4. run_qaqc_checks: ASHRAE QA/QC ---

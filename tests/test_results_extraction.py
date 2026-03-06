@@ -264,6 +264,8 @@ class TestExtractEui:
         from mcp_server.skills.results.sql_extract import extract_eui
         result = extract_eui(sql_path)
         assert result["computed_eui"] == pytest.approx(0.696532, rel=1e-3)
+        assert result["eui_MJ_m2"] == pytest.approx(696.532, rel=1e-3)
+        assert result["eui_kBtu_ft2"] == pytest.approx(61.34, rel=1e-2)
 
     def test_units_are_gj(self, sql_path):
         from mcp_server.skills.results.sql_extract import extract_eui
