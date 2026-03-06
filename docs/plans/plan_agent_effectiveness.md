@@ -32,6 +32,5 @@ All work completed on `optimize` branch.
 
 ## Remaining Nice-to-Haves
 
-1. **Known gotchas in tool descriptions** — add hints like "system_type is 1-10", "set_weather_file does not auto-load design days"
 2. **Token count measurement** — measure SKILL.md chars before vs after dedup (~20% est.)
 3. **`check_tool_coverage` tool** — deferred, guardrails working in testing

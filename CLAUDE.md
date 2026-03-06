@@ -42,8 +42,6 @@ Always use openstudio-mcp tools for BEM tasks:
 | Phase 7 | 📋 FUTURE | Advanced creation (geometry, space type wizard) |
 | Phase 8 | ✅ COMPLETE | Bundle common-measures-gem (20 measures, 11 tools: reporting, thermostat, envelope, PV, visualization) |
 
-→ Batch details: [`docs/phase_history.md`](docs/phase_history.md) | Phase 8 plan: [`docs/plan_common_measures.md`](docs/plan_common_measures.md)
-
 ## Current Skills
 | Skill | Tools | Phase |
 |-------|-------|-------|

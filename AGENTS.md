@@ -50,6 +50,5 @@ These SDK behaviors are intentional — do NOT flag them as bugs:
   Silent fallback to default fuel is known, not a current bug.
 
 ## Output Format
-Use `docs/review_schema.json` for structured findings.
 Severity: critical > high > medium > low.
 Always include a reason — not just "bad practice" but why it matters here.
