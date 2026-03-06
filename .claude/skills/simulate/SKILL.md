@@ -2,8 +2,6 @@
 name: simulate
 description: Run EnergyPlus simulation and extract results in one step. Use when user says "simulate", "run simulation", or "run the model".
 disable-model-invocation: true
-context: fork
-agent: general-purpose
 ---
 
 # Simulate Current Model

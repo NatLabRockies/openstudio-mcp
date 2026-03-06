@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Create a Complete Building Model
 
+> Build order reference: see `openstudio-patterns` for the object dependency graph.
+
 Guide the user through creating a full building energy model step by step.
 
 ## Information to Gather

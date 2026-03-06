@@ -10,11 +10,10 @@ from mcp_server.skills.skill_discovery.operations import (
 def register(mcp):
     @mcp.tool(name="list_skills")
     def list_skills_tool():
-        """List available workflow guides for common tasks like creating
-        buildings, running simulations, and analyzing results.
-
-        Call this when you need guidance on multi-step workflows or
-        don't know which tools to use for a task.
+        """IMPORTANT: Call this FIRST before starting any multi-step building
+        energy modeling workflow. Lists step-by-step guides for creating
+        buildings, adding HVAC, running simulations, extracting results,
+        and QA/QC. Each guide specifies the exact tool sequence to follow.
 
         Returns skill names and descriptions. Use get_skill(name) to
         get step-by-step instructions for a specific workflow.
@@ -23,13 +22,13 @@ def register(mcp):
 
     @mcp.tool(name="get_skill")
     def get_skill_tool(name: str):
-        """Get step-by-step workflow instructions for a specific task.
-
-        Returns tool names, sequences, and domain guidance. Call this
-        before starting a complex multi-tool workflow.
+        """Get step-by-step instructions for a workflow including exact tool
+        names, parameter values, and execution order. Call before starting
+        complex tasks like creating a building, adding HVAC systems, or
+        running simulations. Returns the proven tool sequence to avoid errors.
 
         Args:
             name: Skill name from list_skills (e.g. "simulate",
-                  "new-building", "retrofit")
+                  "new-building", "retrofit", "add-hvac", "qaqc")
         """
         return get_skill_op(name)

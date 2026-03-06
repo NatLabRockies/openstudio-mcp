@@ -2,8 +2,6 @@
 name: energy-report
 description: Generate comprehensive energy analysis report from simulation results. Use when user asks for "energy report", "full results", or "detailed analysis".
 disable-model-invocation: true
-context: fork
-agent: general-purpose
 ---
 
 # Comprehensive Energy Report

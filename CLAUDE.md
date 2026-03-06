@@ -8,6 +8,14 @@ that other building energy simulation engines (EnergyPlus, TRNSYS, DOE-2, etc.)
 can use as a template. Code must be explicit, well-commented, and easy for
 contributors unfamiliar with OpenStudio to understand and adapt.
 
+## Critical: Use MCP Tools — Do Not Reinvent
+Always use openstudio-mcp tools for BEM tasks:
+- Never generate raw IDF files
+- OSM files are created/modified only through MCP tools (create_baseline_osm, create_example_osm, etc.)
+- Never write Python/Ruby scripts to parse SQL results, create visualizations, build HVAC wiring, or extract data — equivalent MCP tools already exist (extract_*, query_timeseries, view_model, view_simulation_data, add_baseline_system, etc.)
+- If a task genuinely cannot be done with existing tools, ASK THE USER before writing any code or scripts
+- For workflow guidance, run: `list_skills()` or `get_skill("new-building")`
+
 ## Architecture
 
 ## Skills Pattern
@@ -148,7 +156,6 @@ roughly balanced (~200s each). See shard comments in the workflow for current ba
 - **OpenStudio CLI:** `openstudio run -w <osw>` (simulation), `openstudio run --measures_only -w <osw>` (measure execution)
 - **openstudio-resources** — HVAC wiring patterns, baseline model geometry
   - https://github.com/NatLabRockies/OpenStudio-resources/tree/develop/model/simulationtests
-  - Key files: baseline_sys*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, airterminal_fourpipebeam.py, airterminal_cooledbeam.py, lib/baseline_model.py
 - **ComStock measures** (~61 bundled) — standards-based templates for typical buildings
   - https://github.com/NatLabRockies/ComStock (tag: `2025-3`, installed at `/opt/comstock-measures`)
 
