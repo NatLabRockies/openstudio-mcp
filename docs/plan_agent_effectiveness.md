@@ -1,6 +1,6 @@
 # Plan: Agent Effectiveness — Remaining Nice-to-Haves
 
-All core work completed in commits `8b253fc` and `cbc0283` on `optimize` branch.
+All core work completed in commits `8b253fc`, `cbc0283`, `77818fa` on `optimize` branch.
 
 ## Completed Summary
 
@@ -19,6 +19,8 @@ All core work completed in commits `8b253fc` and `cbc0283` on `optimize` branch.
 | Phase 3: Troubleshoot skill | Done |
 | End-to-end test (claude.ai) | Passed — agent called get_skill("new-building") first |
 | EUI unit fix: report MJ/m2 + kBtu/ft2 | Done |
+| conditioned_floor_area_m2: compute from model (zones w/ thermostats) | Done |
+| run_qaqc_checks: clear error + hint when no run_id | Done |
 
 ## Nice-to-Haves
 
@@ -34,16 +36,16 @@ Add domain-specific hints to tool descriptions where agents commonly make mistak
 Measure total SKILL.md chars loaded in a multi-skill session before vs after dedup.
 Rough estimate: ~1,076 total lines before → ~860 after (~20% reduction).
 
-### 3. `conditioned_floor_area_m2` clarity
-
-OpenStudio SDK returns 0.0 pre-simulation (requires EnergyPlus SQL output).
-Options:
-- Add note to `get_model_summary` response: `"note": "requires simulation to compute"`
-- Compute from zone data pre-sim as fallback
-
-### 4. `check_tool_coverage` tool (revisit if needed)
+### 3. `check_tool_coverage` tool (revisit if needed)
 
 If agents still reinvent tools despite guardrails, add a tool that checks whether
 an equivalent MCP tool exists before the agent writes code. Deferred — guardrails
 working in initial testing.
 
+## Possible Issues (needs local testing)
+
+### 4. `create_baseline_osm` intermittent `model_loaded`
+
+Session export lists this as intermittent but current code always returns
+`model_loaded: True`. May be stale from pre-v0.4.0. Needs local testing
+to confirm whether it still occurs.
