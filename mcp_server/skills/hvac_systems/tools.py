@@ -25,9 +25,10 @@ def register(mcp: FastMCP) -> None:
         """Add ASHRAE 90.1 Appendix G baseline HVAC system.
 
         Systems 1-10: PTAC, PTHP, PSZ-AC, PSZ-HP, PkgVAV Reheat/PFP, VAV Reheat/PFP, Gas/Elec UnitHtrs.
+        Call list_baseline_systems() to see all options with descriptions.
 
         Args:
-            system_type: ASHRAE baseline system type (1-10)
+            system_type: ASHRAE baseline system type (1-10). Call list_baseline_systems() to see options.
             thermal_zone_names: List of thermal zone names to serve
             heating_fuel: NaturalGas | Electricity | DistrictHeating
             cooling_fuel: Electricity | DistrictCooling
