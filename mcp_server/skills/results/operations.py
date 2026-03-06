@@ -166,8 +166,8 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
         },
         "unmet_hours_heating": unmet.get("heating") if isinstance(unmet, dict) else None,
         "unmet_hours_cooling": unmet.get("cooling") if isinstance(unmet, dict) else None,
-        "eui": (eui.get("computed_eui") if isinstance(eui, dict) else None),
-        "eui_units": (eui.get("computed_eui_units") if isinstance(eui, dict) else None),
+        "eui_MJ_m2": (eui.get("eui_MJ_m2") if isinstance(eui, dict) else None),
+        "eui_kBtu_ft2": (eui.get("eui_kBtu_ft2") if isinstance(eui, dict) else None),
     }
     if include_raw:
         metrics["raw"] = {"unmet": unmet, "eui": eui}
