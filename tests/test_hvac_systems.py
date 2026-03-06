@@ -235,6 +235,50 @@ def test_add_baseline_system_3_psz_ac():
     asyncio.run(_run())
 
 
+def test_add_baseline_system_json_string_zones():
+    """Test that thermal_zone_names works when passed as a JSON string.
+
+    Some MCP clients (including Claude Code) may serialize array parameters
+    as JSON strings rather than native arrays. The _parse_str_list helper
+    in tools.py handles this coercion.
+    """
+    import json
+    name = "test_json_string_zones"
+
+    async def _run():
+        sp = server_params()
+
+        async with stdio_client(sp) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                create_resp = await session.call_tool("create_example_osm", {"name": name})
+                create_data = unwrap(create_resp)
+                assert create_data.get("ok") is True
+
+                load_resp = await session.call_tool("load_osm_model", {
+                    "osm_path": create_data["osm_path"],
+                })
+                assert unwrap(load_resp).get("ok") is True
+
+                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
+
+                # Pass thermal_zone_names as a JSON-encoded string instead of list
+                system_resp = await session.call_tool("add_baseline_system", {
+                    "system_type": 3,
+                    "thermal_zone_names": json.dumps([zone_name]),
+                })
+                system_data = unwrap(system_resp)
+
+                assert system_data.get("ok") is True, (
+                    f"JSON-string zone names failed: {system_data.get('error')}"
+                )
+                assert system_data["system"]["zones_served"] == 1
+
+    asyncio.run(_run())
+
+
 def test_add_baseline_system_error_no_model():
     """Test error when adding system without loaded model."""
     async def _run():
