@@ -2,596 +2,394 @@
 
 ## Problem
 
-openstudio-mcp exposes 100+ tools to LLM agents, but today's CI only tests the tools in isolation (unit/integration tests). There's no automated way to verify that an LLM agent, given a natural language prompt, actually uses the right tools in the right order and produces a valid building energy model. We saw this failure firsthand: given "create a 10-zone office with DOAS + fan coils," the agent bypassed all MCP tools and started writing raw IDF by hand.
+openstudio-mcp exposes 127 tools to LLM agents, but CI only tests tools in isolation. No automated way to verify that an LLM agent, given a natural language prompt, uses the right tools in the right order and produces a valid model. We saw this failure firsthand: agent bypassed all MCP tools and wrote raw IDF by hand.
 
-We need CI tests that send real prompts to real LLMs and verify the agent behaves correctly when connected to openstudio-mcp.
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────┐
-│  GitHub Actions Runner                              │
-│                                                     │
-│  ┌──────────────┐    ┌───────────────────────────┐  │
-│  │  Test Harness │───▶│  LLM Agent (Copilot CLI  │  │
-│  │  (pytest)     │    │  or Copilot SDK)          │  │
-│  └──────┬───────┘    └──────────┬────────────────┘  │
-│         │                       │                    │
-│         │ assertions            │ MCP tool calls     │
-│         ▼                       ▼                    │
-│  ┌──────────────┐    ┌───────────────────────────┐  │
-│  │  Eval Logic   │◀──│  openstudio-mcp server    │  │
-│  │  (tool trace, │    │  (Docker container)       │  │
-│  │   model check)│    └───────────────────────────┘  │
-│  └──────────────┘                                    │
-└─────────────────────────────────────────────────────┘
-```
+We need CI tests that send real prompts to Claude, connected to a real openstudio-mcp server, and verify the agent behaves correctly end-to-end.
 
 ---
 
-## CI Kill Switch & Cost Controls
+## Architecture
 
-LLM tests consume real money (premium requests or API tokens). The test suite must be easy to disable at any level without code changes.
-
-### Repository Variable: `LLM_TESTS_ENABLED`
-
-A single GitHub Actions **repository variable** controls whether LLM tests run in CI. Default: `"true"`. Set to `"false"` to disable all LLM tests immediately — no PR required, no deploy, instant effect.
-
-```yaml
-jobs:
-  llm-integration:
-    # Kill switch: set LLM_TESTS_ENABLED to "false" in repo variables to disable
-    if: vars.LLM_TESTS_ENABLED != 'false'
-    runs-on: ubuntu-latest
-    ...
+```
+┌───────────────────────────────────────────────────────┐
+│  Test Harness (pytest)                                │
+│                                                       │
+│  ┌──────────────┐     ┌───────────────────────────┐   │
+│  │ Claude API    │◀───▶│  Anthropic SDK (tool_use) │   │
+│  │ (claude-sonnet│     │  agentic loop             │   │
+│  │  -4-5, etc.)  │     └──────────┬────────────────┘   │
+│  └──────────────┘                │                    │
+│                                  │ tool calls         │
+│                                  ▼                    │
+│  ┌──────────────┐     ┌───────────────────────────┐   │
+│  │ Assertions    │◀────│  openstudio-mcp server    │   │
+│  │ (tool trace,  │     │  (Docker, stdio transport)│   │
+│  │  model state) │     └───────────────────────────┘   │
+│  └──────────────┘                                     │
+└───────────────────────────────────────────────────────┘
 ```
 
-### Granular Controls
+**Key:** The test harness IS the agent. It:
+1. Spawns openstudio-mcp in Docker via stdio (same as existing integration tests)
+2. Fetches tool definitions from the MCP server
+3. Converts them to Anthropic tool format
+4. Sends the user prompt to Claude API
+5. When Claude returns `tool_use`, executes the call against the MCP server
+6. Feeds the result back to Claude
+7. Repeats until Claude stops calling tools
+8. Asserts on the tool call trace and model state
 
-Additional repository variables for finer control:
+This reuses our existing test infrastructure (`server_params()`, `stdio_client`, `unwrap()`) — we just add Claude as the "brain" driving tool calls instead of hardcoded test logic.
 
-| Variable | Default | Effect |
-|---|---|---|
-| `LLM_TESTS_ENABLED` | `"true"` | Master kill switch. `"false"` skips all LLM jobs. |
-| `LLM_TESTS_E2E_ENABLED` | `"true"` | `"false"` skips expensive E2E tests, runs only tool-selection tests. |
-| `LLM_TESTS_MAX_PROMPTS` | `"20"` | Hard cap on prompts per CI run. Harness stops after this many. |
-| `LLM_TESTS_MODELS` | `"claude-sonnet-4.5"` | Comma-separated model list. Reduce to 1 model to cut costs. |
+---
 
-### In the Test Harness
+## What We Already Have
+
+| Asset | Status |
+|---|---|
+| `tests/eval_tool_selection.py` — keyword-based tool matching (60 cases) | Done, no LLM |
+| 8 `eval.md` files — should/should-not trigger tables per skill | Done |
+| Manual claude.ai tests — 2 sessions, all passing | Done |
+| Agent guardrails — MCP instructions, tool descriptions, skill dedup | Done |
+| Integration test infra — conftest helpers, Docker stdio transport | Done |
+
+---
+
+## Agent Loop Implementation
+
+The core is a minimal agent loop that drives Claude through a multi-turn conversation with tool execution:
 
 ```python
-# tests/llm/conftest.py
-import os
-import pytest
-
-MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "20"))
-_prompt_count = 0
-
-def check_budget():
-    global _prompt_count
-    _prompt_count += 1
-    if _prompt_count > MAX_PROMPTS:
-        pytest.skip(f"LLM prompt budget exhausted ({MAX_PROMPTS} max)")
-
-@pytest.fixture(autouse=True)
-def llm_budget_guard():
-    check_budget()
-
-def skip_if_no_llm():
-    """Decorator/marker for LLM tests"""
-    return pytest.mark.skipif(
-        os.environ.get("LLM_TESTS_ENABLED", "true").lower() == "false",
-        reason="LLM tests disabled (LLM_TESTS_ENABLED=false)"
-    )
-```
-
-### Emergency Shutoff
-
-If premium requests are burning too fast mid-run:
-1. **Cancel the workflow run** in the GitHub Actions UI (immediate)
-2. **Set `LLM_TESTS_ENABLED` to `"false"`** in Settings → Variables → Actions (prevents future runs)
-3. The `timeout-minutes: 30` on the job is a backstop — no run can exceed 30 min
-
----
-
-## Running LLM Tests Locally
-
-Developers should be able to run the same LLM test suite on their own machine without CI. This is essential for iterating on tool descriptions, skills, and prompts before pushing to the repo.
-
-### Prerequisites
-
-1. **openstudio-mcp running locally** (Docker or native):
-   ```bash
-   # Docker (matches CI)
-   docker run -d -p 8000:8000 ghcr.io/natlabrokies/openstudio-mcp:latest
-
-   # Or if developing locally
-   cd /path/to/openstudio-mcp && python -m openstudio_mcp
-   ```
-
-2. **LLM backend** — at least one of:
-   - **Copilot CLI** installed and authenticated (`npm install -g @github/copilot && copilot /login`)
-   - **Anthropic API key** set as `ANTHROPIC_API_KEY` env var
-   - **OpenAI API key** set as `OPENAI_API_KEY` env var
-
-### Running Tests
-
-```bash
-# Run all LLM tests against default backend (auto-detects Copilot CLI → Anthropic → OpenAI)
-pytest tests/llm/ -v
-
-# Run only tool-selection smoke tests (fast, cheap)
-pytest tests/llm/ -v -m "tool_selection"
-
-# Run against a specific backend
-LLM_BACKEND=anthropic pytest tests/llm/ -v
-LLM_BACKEND=copilot-cli pytest tests/llm/ -v
-LLM_BACKEND=openai pytest tests/llm/ -v
-
-# Run against a specific model
-LLM_MODEL=claude-haiku-4.5 pytest tests/llm/ -v
-
-# Limit prompt budget (useful for quick iteration)
-LLM_TESTS_MAX_PROMPTS=3 pytest tests/llm/ -v
-
-# Skip E2E tests (no simulation, just tool selection)
-pytest tests/llm/ -v -m "not e2e"
-
-# Disable LLM tests entirely (same flag as CI)
-LLM_TESTS_ENABLED=false pytest tests/llm/ -v
-```
-
-### Backend Auto-Detection
-
-The test harness auto-detects which LLM backend to use based on what's available, unless overridden:
-
-```python
-# tests/llm/backends.py
-import shutil
-import os
-
-def detect_backend() -> str:
-    """Auto-detect available LLM backend. Priority order:
-    1. LLM_BACKEND env var (explicit override)
-    2. Copilot CLI (if installed and authenticated)
-    3. Anthropic API (if ANTHROPIC_API_KEY set)
-    4. OpenAI API (if OPENAI_API_KEY set)
-    """
-    override = os.environ.get("LLM_BACKEND")
-    if override:
-        return override
-
-    # Check Copilot CLI
-    if shutil.which("copilot"):
-        return "copilot-cli"
-
-    # Check API keys
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return "anthropic"
-    if os.environ.get("OPENAI_API_KEY"):
-        return "openai"
-
-    raise RuntimeError(
-        "No LLM backend available. Install Copilot CLI, "
-        "or set ANTHROPIC_API_KEY or OPENAI_API_KEY."
-    )
-```
-
-### Local vs CI: Same Tests, Same Assertions
-
-The test definitions (prompts, expected tools, assertions) are identical in both environments. Only the backend and MCP server URL differ:
-
-| Setting | CI | Local |
-|---|---|---|
-| MCP server URL | `http://openstudio-mcp:8000/mcp` (service container) | `http://localhost:8000/mcp` (Docker or native) |
-| LLM backend | Copilot CLI (PAT auth) | Auto-detected (Copilot CLI, Anthropic, or OpenAI) |
-| Budget control | `vars.LLM_TESTS_MAX_PROMPTS` | `LLM_TESTS_MAX_PROMPTS` env var |
-| Kill switch | `vars.LLM_TESTS_ENABLED` | `LLM_TESTS_ENABLED` env var |
-
-```python
-# tests/llm/conftest.py
-import os
-
-MCP_SERVER_URL = os.environ.get(
-    "OPENSTUDIO_MCP_URL",
-    "http://localhost:8000/mcp"
-)
-```
-
-### Developer Workflow
-
-Typical iteration loop when improving tool descriptions or skills:
-
-```
-1. Start openstudio-mcp locally
-2. Edit a tool description or skill file
-3. Run: LLM_TESTS_MAX_PROMPTS=1 pytest tests/llm/test_tool_selection.py::test_create_building -v -s
-4. See if the LLM picks the right tool → if not, refine and re-run
-5. Once passing locally, push and let CI validate
-```
-
-### Cost Awareness for Local Runs
-
-The harness prints a summary after each run:
-
-```
-═══ LLM Test Summary ═══
-Backend:         anthropic (claude-sonnet-4.5)
-Prompts sent:    5 / 20 budget
-Est. cost:       ~$0.03 (input) + ~$0.08 (output)
-Pass:            4
-Fail:            1 (test_create_building_guardrail)
-Soft warnings:   1
-═════════════════════════
-```
-
----
-
-## Option 1: GitHub Copilot CLI in GitHub Actions (Recommended Starting Point)
-
-### How It Works
-
-Copilot CLI has a **programmatic mode** (`copilot -p "PROMPT"`) designed for CI/CD. It runs non-interactively, prints output to stdout, and exits. GitHub officially documents this pattern for Actions automation.
-
-### Authentication
-
-- Create a **fine-grained PAT** with the "Copilot Requests" permission
-- Store as `COPILOT_GITHUB_TOKEN` in repository secrets
-- Each prompt consumes one premium request from the subscription
-
-### Workflow Skeleton
-
-```yaml
-name: LLM Integration Tests
-on:
-  # Run on demand + weekly to catch regressions
-  workflow_dispatch:
-    inputs:
-      max_prompts:
-        description: 'Max prompts to send (cost control)'
-        default: '20'
-        type: string
-      models:
-        description: 'Comma-separated model list'
-        default: 'claude-sonnet-4.5'
-        type: string
-  schedule:
-    - cron: '0 6 * * 1'  # Monday 6am UTC
-  # Optionally on PR to skills/ or tool descriptions
-  pull_request:
-    paths:
-      - '.claude/skills/**'
-      - 'src/openstudio_mcp/tools/**'
-
-jobs:
-  llm-integration:
-    # Master kill switch — set to "false" in Settings → Variables → Actions
-    if: vars.LLM_TESTS_ENABLED != 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    services:
-      openstudio-mcp:
-        image: ghcr.io/natlabrokies/openstudio-mcp:latest
-        ports:
-          - 8000:8000
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-
-      - name: Install Copilot CLI
-        run: npm install -g @github/copilot
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install test dependencies
-        run: pip install -r tests/llm/requirements.txt
-
-      - name: Run LLM prompt tests
-        env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
-          LLM_BACKEND: copilot-cli
-          LLM_TESTS_ENABLED: "true"
-          LLM_TESTS_E2E_ENABLED: ${{ vars.LLM_TESTS_E2E_ENABLED || 'true' }}
-          LLM_TESTS_MAX_PROMPTS: ${{ inputs.max_prompts || vars.LLM_TESTS_MAX_PROMPTS || '20' }}
-          LLM_TESTS_MODELS: ${{ inputs.models || vars.LLM_TESTS_MODELS || 'claude-sonnet-4.5' }}
-          OPENSTUDIO_MCP_URL: "http://localhost:8000/mcp"
-        run: |
-          pytest tests/llm/ -v --tb=short
-```
-
-### Key Considerations
-
-- **Cost**: Each prompt = 1 premium request. Budget ~5-10 prompts per CI run.
-- **Non-determinism**: LLMs are probabilistic. Tests must assert on *structural* outcomes (did it call the right tools?) not exact text.
-- **Latency**: Each prompt takes 30-120s. Keep the test suite small and focused.
-- **MCP connectivity**: Copilot CLI supports custom MCP servers. Configure `~/.copilot/mcp-config.json` to point at the local openstudio-mcp container.
-
-### Copilot CLI + MCP Server Configuration
-
-```json
-{
-  "servers": {
-    "openstudio-mcp": {
-      "type": "http",
-      "url": "http://localhost:8000/mcp"
-    }
-  }
-}
-```
-
-Or use the `--mcp-config` flag with `copilot -p`.
-
----
-
-## Option 2: GitHub Copilot SDK (Programmatic, More Control)
-
-### How It Works
-
-The **Copilot SDK** (`github/copilot-sdk`) is a programmatic interface to the Copilot agent runtime. Available in Python, TypeScript, Go, and .NET (currently in Technical Preview). It talks to Copilot CLI in server mode over JSON-RPC.
-
-### Why This May Be Better for Testing
-
-- **Structured output**: You get the full conversation history including tool calls, not just stdout text
-- **MCP integration**: Native support for connecting MCP servers to sessions
-- **Session control**: Create sessions, send prompts, inspect responses programmatically
-- **Model selection**: Switch models per test (`claude-sonnet-4.5`, `gpt-5`, etc.)
-
-### Python Example
-
-```python
-import asyncio
-from copilot import CopilotClient
-
-async def test_doas_fancoil_workflow():
-    client = CopilotClient()
-    await client.start()
-
-    session = await client.create_session({
-        "model": "claude-sonnet-4.5",
-        "mcp_servers": {
-            "openstudio-mcp": {
-                "type": "http",
-                "url": "http://localhost:8000/mcp",
-                "tools": ["*"],
-            }
-        },
-    })
-
-    response = await session.send_and_wait({
-        "prompt": (
-            "Create a 10-zone office building with a DOAS + fan coil system. "
-            "Set chilled water to 44F and hot water to 140F."
-        )
-    })
-
-    # Extract tool calls from response
-    content = response.data.content
-    tool_calls = [
-        block for block in content
-        if block.get("type") == "mcp_tool_use"
-    ]
-    tool_names = [tc["name"] for tc in tool_calls]
-
-    # Assertions: did the agent use the right tools?
-    assert "create_baseline_osm" in tool_names, \
-        "Agent should use create_baseline_osm, not write raw IDF"
-    assert "add_doas_system" in tool_names, \
-        "Agent should use add_doas_system for DOAS + fan coils"
-    assert not any("write" in name for name in tool_names
-                    if "idf" in str(tool_calls)), \
-        "Agent should NOT write raw IDF files"
-
-    await client.stop()
-
-asyncio.run(test_doas_fancoil_workflow())
-```
-
-### Availability Note
-
-The Copilot SDK is in **Technical Preview** as of Feb 2026. API surface may change. The CLI approach (Option 1) is GA and more stable for CI today.
-
----
-
-## Option 3: Direct LLM API Calls (Model-Agnostic)
-
-### How It Works
-
-Skip Copilot entirely. Call the Anthropic or OpenAI API directly, providing openstudio-mcp tools as function/tool definitions in the API request. This gives maximum control but requires more setup.
-
-### When to Use
-
-- Testing specific models (Claude, GPT-4, etc.) head-to-head
-- Testing tool descriptions in isolation (does the model pick the right tool given this description?)
-- When Copilot's mediation layer adds unwanted complexity
-
-### Sketch
-
-```python
+# tests/llm/agent_loop.py
 import anthropic
+from mcp import ClientSession
 
-client = anthropic.Anthropic()
+async def run_agent(
+    session: ClientSession,       # MCP connection to openstudio-mcp
+    prompt: str,                  # User's natural language request
+    model: str = "claude-sonnet-4-5-20250929",
+    max_turns: int = 25,
+) -> AgentResult:
+    """Run Claude as an agent connected to openstudio-mcp.
 
-# Load tool definitions from openstudio-mcp
-tools = load_mcp_tool_definitions("http://localhost:8000/mcp")
+    Returns AgentResult with full tool call trace and final response.
+    """
+    client = anthropic.Anthropic()
 
-response = client.messages.create(
-    model="claude-sonnet-4-5-20250929",
-    max_tokens=4096,
-    tools=tools,
-    messages=[{
-        "role": "user",
-        "content": "Create a 10-zone office with DOAS + fan coils, 44F CHW, 140F HHW"
-    }]
-)
+    # Get tool definitions from MCP server, convert to Anthropic format
+    mcp_tools = await session.list_tools()
+    tools = [mcp_tool_to_anthropic(t) for t in mcp_tools.tools]
 
-# Check which tools the model wanted to call
-tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+    messages = [{"role": "user", "content": prompt}]
+    tool_trace = []  # Record every tool call for assertions
+
+    for turn in range(max_turns):
+        response = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            tools=tools,
+            messages=messages,
+        )
+
+        # If no tool_use blocks, agent is done
+        tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+        if not tool_use_blocks:
+            break
+
+        # Execute each tool call against the real MCP server
+        messages.append({"role": "assistant", "content": response.content})
+        tool_results = []
+        for block in tool_use_blocks:
+            mcp_result = await session.call_tool(block.name, block.input)
+            result_text = unwrap_to_text(mcp_result)
+            tool_trace.append({
+                "tool": block.name,
+                "input": block.input,
+                "output": result_text,
+                "turn": turn,
+            })
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": result_text,
+            })
+        messages.append({"role": "user", "content": tool_results})
+
+    return AgentResult(
+        tool_trace=tool_trace,
+        final_response=response,
+        messages=messages,
+        turns=turn + 1,
+    )
 ```
 
-### Trade-offs
+### Test Structure
 
-| | Copilot CLI | Copilot SDK | Direct API |
-|---|---|---|---|
-| Setup effort | Low | Medium | Medium |
-| MCP integration | Built-in | Built-in | Manual |
-| Tool call visibility | Limited (stdout) | Full structured | Full structured |
-| Model choice | Copilot-mediated | Copilot-mediated | Any model directly |
-| Cost model | Premium requests | Premium requests | API tokens |
-| Stability | GA | Tech Preview | Stable |
-| NLR licensing | Covered by GH Enterprise | Covered by GH Enterprise | Separate API contract |
+```python
+# tests/llm/test_workflows.py
+@pytest.mark.llm
+def test_create_5zone_vav():
+    """Agent should use MCP tools to create a 5-zone office with VAV."""
+    if not llm_enabled():
+        pytest.skip("Set LLM_TESTS_ENABLED=1 and ANTHROPIC_API_KEY")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                result = await run_agent(
+                    session,
+                    "Create a 5-zone office building with VAV reheat",
+                )
+
+                tools_called = [t["tool"] for t in result.tool_trace]
+
+                # Must use MCP tools, not write raw files
+                assert "create_baseline_osm" in tools_called or \
+                       "create_example_osm" in tools_called
+                assert "add_baseline_system" in tools_called or \
+                       any("ashrae_sys_num" in str(t["input"]) for t in result.tool_trace)
+
+                # Should query skill first
+                assert tools_called[0] in ("get_skill", "list_skills")
+
+                # Model should have 5 zones
+                summary = await session.call_tool("get_model_summary", {})
+                s = unwrap(summary)
+                assert s["summary"]["thermal_zones"] == 5
+
+    asyncio.run(_run())
+```
 
 ---
 
-## Test Design Patterns
+## Test Categories
 
-### Pattern 1: Tool Selection Tests (Fast, Cheap)
+### Tier 1: Tool Selection (fast, cheap — ~$0.01/test)
 
-Verify the LLM picks the right tools given a prompt. Don't actually execute the tools.
+Send a single prompt, check which tool Claude picks first. No tool execution needed — just check the first `tool_use` block.
 
 ```python
-TOOL_SELECTION_TESTS = [
+TOOL_SELECTION_CASES = [
+    ("Create a 10-zone office building", ["create_baseline_osm"]),
+    ("Add DOAS with fan coils to all zones", ["add_doas_system"]),
+    ("Run a simulation and show me the EUI", ["run_simulation"]),
+    ("What's the building floor area?", ["get_building_info", "get_model_summary"]),
+    ("Show me a 3D view of the model", ["view_model"]),
+]
+```
+
+These can run WITHOUT the MCP server — just pass tool definitions to the API and check the response. Cheapest possible LLM test.
+
+### Tier 2: Multi-Step Workflows (moderate — ~$0.10/test)
+
+Full agent loop with tool execution. Verify the tool call sequence and final model state. No simulation (fast).
+
+```python
+WORKFLOW_CASES = [
     {
-        "prompt": "Create a 10-zone office building",
-        "expected_tools": ["create_baseline_osm"],
-        "forbidden_patterns": ["write.*idf", "create_file"],
-        "description": "Agent should use MCP tools, not generate raw files"
+        "prompt": "Create a 5-zone office with VAV reheat",
+        "required_tools": ["create_baseline_osm", "add_baseline_system"],
+        "forbidden_tools": [],
+        "model_checks": {"thermal_zones": 5, "air_loops": 1},
     },
     {
-        "prompt": "Add DOAS with fan coils to all zones",
-        "expected_tools": ["add_doas_system"],
-        "expected_params": {"zone_equipment_type": "FanCoil"},
-    },
-    {
-        "prompt": "Set chilled water supply temp to 44F",
-        "expected_tools": ["set_component_properties"],
-        # 44F = 6.67C
-        "param_check": lambda params: abs(float(params.get("value", 0)) - 6.67) < 0.5,
-    },
-    {
-        "prompt": "Run a simulation and show me the EUI",
-        "expected_tools": ["run_simulation", "extract_summary_metrics"],
+        "prompt": "Create a building and set the weather to Chicago",
+        "required_tools": ["create_baseline_osm", "set_weather_file"],
+        "model_checks": {},
     },
 ]
 ```
 
-### Pattern 2: End-to-End Workflow Tests (Slower, Higher Value)
+### Tier 3: End-to-End Simulation (expensive — ~$0.50/test, ~5min)
 
-Send a complex prompt through the full stack: LLM → MCP server → OpenStudio → EnergyPlus.
+Full workflow including simulation. Run sparingly.
 
 ```python
-E2E_TESTS = [
+E2E_CASES = [
     {
         "prompt": (
-            "Create a 10-zone office building in Golden, CO with ASHRAE System 7 "
-            "VAV with reheat. Run a simulation and report the EUI."
+            "Create a 5-zone office in Golden CO with System 7 VAV reheat. "
+            "Run a simulation and report the EUI."
         ),
-        "assertions": [
-            tool_was_called("create_baseline_osm"),
-            tool_was_called("change_building_location"),
-            tool_was_called("run_simulation"),
-            tool_was_called("extract_summary_metrics"),
-            simulation_completed_successfully(),
-            eui_in_range(50, 200),  # kBtu/ft2, sanity check
+        "required_tools": [
+            "create_baseline_osm", "add_baseline_system",
+            "set_weather_file", "run_simulation", "extract_summary_metrics",
         ],
-        "timeout": 600,  # 10 min for full sim
+        "assertions": [
+            simulation_succeeded(),
+            eui_in_range(50, 300),  # kBtu/ft2 sanity check
+        ],
+        "timeout": 600,
     },
 ]
 ```
 
-### Pattern 3: Guardrail Regression Tests
+### Tier 4: Guardrail Regression
 
-Specifically test that the agent does NOT do the wrong thing.
+Verify the agent does NOT bypass MCP tools.
 
 ```python
-GUARDRAIL_TESTS = [
+GUARDRAIL_CASES = [
     {
         "prompt": "Create a simple office building model",
         "forbidden_behaviors": [
-            writes_raw_idf_file(),
-            writes_raw_osm_file(),
-            uses_bash_to_run_energyplus(),
-            ignores_mcp_tools(),
+            agent_wrote_raw_idf(),
+            agent_wrote_raw_osm(),
+            agent_used_bash_for_energyplus(),
         ],
     },
 ]
 ```
+
+---
+
+## eval.md Integration
+
+The 8 existing `eval.md` files have should-trigger/should-not-trigger tables:
+
+```markdown
+## Should trigger
+| Query | Expected tools | Critical params |
+|---|---|---|
+| "Create a 5-zone office" | create_baseline_osm | ashrae_sys_num present |
+
+## Should NOT trigger
+| Query | Why |
+|---|---|
+| "What spaces are in the model?" | Query — use list_spaces |
+```
+
+These can be auto-parsed into Tier 1 test cases:
+
+```python
+def load_eval_cases() -> list[dict]:
+    """Parse eval.md files into test cases."""
+    cases = []
+    for eval_md in Path(".claude/skills").rglob("eval.md"):
+        skill_name = eval_md.parent.name
+        # parse should-trigger table rows into tool selection cases
+        # parse should-not-trigger rows into guardrail cases
+        ...
+    return cases
+```
+
+---
+
+## Cost Controls
+
+### Kill Switch
+
+```python
+# tests/llm/conftest.py
+def llm_enabled() -> bool:
+    return (
+        os.environ.get("LLM_TESTS_ENABLED", "").lower() in ("1", "true")
+        and os.environ.get("ANTHROPIC_API_KEY")
+    )
+```
+
+### Budget Tracking
+
+```python
+MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "20"))
+_prompt_count = 0
+
+@pytest.fixture(autouse=True)
+def llm_budget_guard():
+    global _prompt_count
+    _prompt_count += 1
+    if _prompt_count > MAX_PROMPTS:
+        pytest.skip(f"Budget exhausted ({MAX_PROMPTS} max)")
+```
+
+### CI Configuration
+
+```yaml
+jobs:
+  llm-tests:
+    if: vars.LLM_TESTS_ENABLED != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LLM_TESTS_ENABLED: "true"
+      LLM_TESTS_MAX_PROMPTS: ${{ vars.LLM_TESTS_MAX_PROMPTS || '20' }}
+      RUN_OPENSTUDIO_INTEGRATION: "1"
+      MCP_SERVER_CMD: "openstudio-mcp"
+```
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLM_TESTS_ENABLED` | (unset) | Set to `1` to enable LLM tests |
+| `ANTHROPIC_API_KEY` | (required) | Claude API key |
+| `LLM_TESTS_MAX_PROMPTS` | `20` | Hard cap on API calls per run |
+| `LLM_TESTS_MODEL` | `claude-sonnet-4-5-20250929` | Model to test with |
+| `LLM_TESTS_TIER` | `all` | `1`, `2`, `3`, or `all` |
+
+### Estimated Costs
+
+| Run Type | Tests | Est. Cost | Est. Time |
+|---|---|---|---|
+| Tier 1 only (tool selection) | 15-20 | ~$0.20 | ~2 min |
+| Tier 1 + 2 (workflows) | 25-30 | ~$1.50 | ~10 min |
+| Full suite (all tiers) | 35-40 | ~$5.00 | ~30 min |
 
 ---
 
 ## Handling Non-Determinism
 
-LLM outputs vary between runs. Strategies:
+LLM outputs vary between runs:
 
-1. **Structural assertions only**: Check tool names and parameter ranges, not exact text or order.
-2. **Retry with budget**: Run each test up to 3 times. Pass if 2/3 succeed.
-3. **Soft vs hard failures**: Tool selection = hard fail. Parameter exact values = soft warning.
-4. **Snapshot baselining**: Record a "golden run" and flag significant deviations.
-5. **Multiple models**: Run the same prompts against 2-3 models. If all fail the same test, it's likely a tool description issue, not model variance.
-
----
-
-## CI Budget & Scheduling
-
-| Run Type | Trigger | Prompts | Est. Cost | Est. Time |
-|---|---|---|---|---|
-| Smoke test | PR to skills/tools | 3-5 tool selection tests | 3-5 premium requests | ~5 min |
-| Weekly regression | Scheduled (Monday) | 10-15 tool selection + 2-3 E2E | 15-20 premium requests | ~30 min |
-| Full suite | Manual / release | All tests + multi-model | 30-50 premium requests | ~60 min |
+1. **Structural assertions** — check tool names and param ranges, not exact text or order
+2. **Retry with budget** — run flaky tests up to 3 times, pass if 2/3 succeed
+3. **Soft vs hard failures** — tool selection = hard fail, parameter exact values = soft warning
+4. **Required vs acceptable** — `required_tools` must all appear; order is flexible unless specified
+5. **Multiple models** — same prompts against Sonnet + Haiku; if both fail, it's a tool description issue
 
 ---
 
 ## Implementation Roadmap
 
-### Phase 1: Proof of Concept (1-2 weeks)
-- [ ] Set up Copilot CLI in a GitHub Actions workflow with `if: vars.LLM_TESTS_ENABLED != 'false'` kill switch
-- [ ] Create PAT with Copilot Requests permission, store in repo secrets
-- [ ] Add `LLM_TESTS_ENABLED`, `LLM_TESTS_MAX_PROMPTS` as repo variables
-- [ ] Write 3 tool-selection smoke tests (create building, add HVAC, run sim)
-- [ ] Configure MCP server connection in CI
-- [ ] Validate the guardrail test: "does the agent bypass MCP tools?"
-- [ ] **Validate local dev workflow**: developer runs same tests with `ANTHROPIC_API_KEY` or Copilot CLI
-- [ ] Document findings on non-determinism and latency
+### Phase 1: Agent Loop + Smoke Tests
 
-### Phase 2: Test Harness (2-3 weeks)
-- [ ] Build `tests/llm/` framework with test definitions (YAML or Python)
-- [ ] Implement assertion library (tool_was_called, param_in_range, etc.)
-- [ ] Implement backend auto-detection (Copilot CLI → Anthropic → OpenAI)
-- [ ] Implement prompt budget tracking with summary output
-- [ ] Add retry logic and soft/hard failure classification
-- [ ] Evaluate Copilot SDK (Python) as alternative to CLI stdout parsing
-- [ ] Set up weekly scheduled run
-- [ ] Add `workflow_dispatch` inputs for on-demand cost overrides (max_prompts, models)
+- [ ] Create `tests/llm/` directory structure
+- [ ] Implement `agent_loop.py` — MCP tool → Anthropic format converter, agentic loop
+- [ ] Implement `conftest.py` — `llm_enabled()`, budget guard, model selection
+- [ ] Write 3 Tier 1 tests (tool selection, no execution)
+- [ ] Write 2 Tier 2 tests (create building, add HVAC — with execution)
+- [ ] Write 1 guardrail test (agent must not write raw IDF)
+- [ ] Run locally, document findings on latency and non-determinism
 
-### Phase 3: Expand Coverage (ongoing)
-- [ ] Add E2E workflow tests (full create → simulate → report) gated by `LLM_TESTS_E2E_ENABLED`
-- [ ] Add multi-model comparison tests (Claude Opus/Sonnet/Haiku + GPT on same prompts)
-- [ ] Test skill effectiveness (does adding a skill change agent behavior?)
-- [ ] Use `.claude/skills/<name>/eval.md` scenarios as test inputs — each has should-trigger / should-not-trigger tables with expected tools
-- [ ] Build automated eval runner from eval.md files (extend `tests/eval_tool_selection.py` pattern)
-- [ ] Add direct API tests (Anthropic API) for tool description optimization
-- [ ] Integrate results into PR comments / dashboard
-- [ ] Add contributor docs: "How to run LLM tests locally" in CONTRIBUTING.md
+### Phase 2: eval.md Integration + CI
 
-### Phase 4: Advanced (future)
-- [ ] A/B test tool descriptions (which description leads to better tool selection?)
-- [ ] Benchmark new openstudio-mcp releases against a fixed prompt suite
-- [ ] Evaluate `recommend_workflow` tool by measuring if agents follow its suggestions
-- [ ] Share framework with EnergyPlus-MCP and openstudio-standards-mcp teams
+- [ ] Build eval.md parser → auto-generate Tier 1 test cases from 8 skill evals
+- [ ] Add CI workflow (separate from main CI, `workflow_dispatch` + weekly schedule)
+- [ ] Add budget tracking with summary output
+- [ ] Add retry logic for flaky tests
+- [ ] Store `ANTHROPIC_API_KEY` in repo secrets
+
+### Phase 3: E2E + Multi-Model
+
+- [ ] Add Tier 3 E2E tests (simulate + extract results)
+- [ ] Add multi-model comparison (Sonnet vs Haiku vs Opus on same prompts)
+- [ ] Integrate results into PR comments
+- [ ] A/B test tool descriptions (which wording leads to better selection?)
+
+### Phase 4: Advanced
+
+- [ ] Benchmark new releases against fixed prompt suite
+- [ ] Share framework with other MCP server projects
+- [ ] Add OpenAI/Gemini backends for cross-model testing
 
 ---
 
 ## Open Questions
 
-1. **NLR Copilot licensing**: Does the NLR GitHub Enterprise plan include Copilot Business/Enterprise with CLI access? Need to confirm premium request budget.
-2. **Docker-in-Docker**: The CI runner needs to run the openstudio-mcp Docker container. GitHub Actions `services:` should handle this, but need to test MCP HTTP connectivity between the runner and the service container.
-3. **Copilot CLI + custom MCP**: The docs show MCP server configuration, but real-world testing with a local HTTP MCP server in CI needs validation. This is the highest-risk unknown.
-4. **API key alternative**: If Copilot CLI + MCP is too brittle in CI, falling back to direct Anthropic API calls with tool definitions extracted from openstudio-mcp may be simpler and more reliable.
-5. **Test result persistence**: Should we store golden-run tool traces in the repo for comparison, or regenerate baselines periodically?
+1. **MCP → Anthropic tool format conversion** — MCP uses JSON Schema `inputSchema`, Anthropic uses `input_schema`. Should be a straightforward mapping but needs validation for edge cases (nested objects, arrays, enums).
+2. **System prompt** — should we include the MCP `instructions` field as a system prompt in the API call to match real-world behavior? Probably yes.
+3. **Token limits** — 127 tools × ~200 tokens each = ~25K tokens of tool definitions per API call. Within limits but significant. May want to filter to relevant tools per test.
+4. **Model selection for CI** — Sonnet is the best cost/quality tradeoff. Haiku for cheap smoke tests. Opus for high-fidelity E2E.
