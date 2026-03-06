@@ -202,3 +202,35 @@ def test_create_thermal_zone_invalid_space():
                 assert "not found" in zone_result["error"]
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_thermal_zone_json_string_spaces():
+    """Test create_thermal_zone accepts space_names as JSON string."""
+    import json
+
+    name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                create_resp = await session.call_tool("create_example_osm", {"name": name})
+                create_data = unwrap(create_resp)
+                await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
+
+                spaces_resp = await session.call_tool("list_spaces", {})
+                space_name = unwrap(spaces_resp)["spaces"][0]["name"]
+
+                zone_resp = await session.call_tool("create_thermal_zone", {
+                    "name": "JSON Test Zone",
+                    "space_names": json.dumps([space_name]),
+                })
+                zone_result = unwrap(zone_resp)
+
+                assert zone_result.get("ok") is True, (
+                    f"JSON-string space_names failed: {zone_result.get('error')}"
+                )
+
+    asyncio.run(_run())

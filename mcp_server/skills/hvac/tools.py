@@ -1,6 +1,7 @@
 """MCP tool definitions for HVAC systems."""
 from __future__ import annotations
 
+from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.hvac.operations import (
     add_air_loop,
     get_air_loop_details,
@@ -46,7 +47,7 @@ def register(mcp):
         return list_zone_hvac_equipment()
 
     @mcp.tool(name="add_air_loop")
-    def add_air_loop_tool(name: str, thermal_zone_names: list[str] | None = None):
+    def add_air_loop_tool(name: str, thermal_zone_names: list[str] | str | None = None):
         """Add a new air loop HVAC system to the loaded OpenStudio model.
 
         Args:
@@ -54,7 +55,7 @@ def register(mcp):
             thermal_zone_names: Optional list of thermal zone names to serve
 
         """
-        return add_air_loop(name=name, thermal_zone_names=thermal_zone_names)
+        return add_air_loop(name=name, thermal_zone_names=parse_str_list(thermal_zone_names))
 
     @mcp.tool(name="get_plant_loop_details")
     def get_plant_loop_details_tool(plant_loop_name: str):

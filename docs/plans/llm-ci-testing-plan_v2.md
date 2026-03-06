@@ -437,6 +437,33 @@ LLM outputs vary between runs:
 - [x] Build eval.md parser → 26 Tier 1 test cases from 8 skill evals (2 wildcard filtered)
 - [x] Add retry logic — pytest hook retries failed LLM tests up to N times (LLM_TESTS_RETRIES env)
 
+### Phase 2.5: JSON-String List Parameter Fix
+
+Some MCP clients (including Claude Code) serialize array parameters as JSON
+strings (`"[\"zone1\"]"`) instead of native JSON arrays (`["zone1"]`). Pydantic
+rejects these at validation time before the tool function runs.
+
+**Fix pattern:** Change `list[str]` → `Union[list[str], str]` in tool signature,
+then call `_parse_str_list(value)` in the tool body to coerce strings to lists.
+
+**Status:** Fixed for `add_baseline_system` only. 8 more tool params need the
+same fix. Move `_parse_str_list` to a shared helper (e.g. `osm_helpers.py`).
+
+| Tool | Param | Skill | Status |
+|---|---|---|---|
+| `add_baseline_system` | `thermal_zone_names` | hvac_systems | ✅ Fixed |
+| `add_doas_system` | `thermal_zone_names` | hvac_systems | ✅ Fixed |
+| `add_vrf_system` | `thermal_zone_names` | hvac_systems | ✅ Fixed |
+| `add_radiant_system` | `thermal_zone_names` | hvac_systems | ✅ Fixed |
+| `add_air_loop` | `thermal_zone_names` | hvac | ✅ Fixed |
+| `create_construction` | `material_names` | constructions | ✅ Fixed |
+| `create_thermal_zone` | `space_names` | spaces | ✅ Fixed |
+| `view_simulation_data` | `variable_names` | common_measures | ✅ Fixed |
+| `run_qaqc_checks` | `checks` | common_measures | ✅ Fixed |
+
+All 9 tools fixed. `parse_str_list()` moved to `osm_helpers.py` as shared helper.
+9 integration tests added (all passing), one per tool.
+
 ### Phase 3: E2E + Multi-Model
 
 - [ ] Add Tier 3 E2E tests (simulate + extract results)
@@ -447,7 +474,7 @@ LLM outputs vary between runs:
 
 ## Open Questions
 
-1. **`--output-format json` schema** — need to validate the exact JSON structure Claude Code emits, especially how tool_use blocks appear. Run a test and inspect.
-2. **MCP tool name prefixing** — Claude Code prefixes MCP tools as `mcp__<server>__<tool>`. Need to confirm prefix matches our config key ("openstudio").
+1. ~~**`--output-format json` schema**~~ — RESOLVED: `json` only returns final result; use `stream-json --verbose` for tool_use blocks.
+2. ~~**MCP tool name prefixing**~~ — RESOLVED: prefix is `mcp__openstudio__<tool>`, matching config key.
 3. **Concurrent invocations** — can we run multiple `claude -p` in parallel? Each spawns its own Docker container via MCP config, so state isolation should work.
-4. **`--allowedTools` granularity** — can we use wildcards like `mcp__openstudio__*` to restrict to only MCP tools? Need to test.
+4. ~~**`--allowedTools` granularity**~~ — RESOLVED: `mcp__openstudio__*` wildcard works.

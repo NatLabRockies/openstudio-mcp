@@ -1,6 +1,7 @@
 """MCP tool definitions for common measures (openstudio-common-measures-gem)."""
 from __future__ import annotations
 
+from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.common_measures.operations import list_common_measures
 from mcp_server.skills.common_measures.wrappers import (
     # Tier 2
@@ -58,7 +59,7 @@ def register(mcp):
     @mcp.tool(name="view_simulation_data")
     def view_simulation_data_tool(
         run_id: str = "",
-        variable_names: list[str] | None = None,
+        variable_names: list[str] | str | None = None,
         reporting_frequency: str = "Timestep",
     ):
         """Generate 3D HTML viewer with simulation data overlaid.
@@ -71,7 +72,7 @@ def register(mcp):
         """
         return view_simulation_data_op(
             run_id=run_id or None,
-            variable_names=variable_names,
+            variable_names=parse_str_list(variable_names),
             reporting_frequency=reporting_frequency,
         )
 
@@ -89,7 +90,7 @@ def register(mcp):
     def run_qaqc_checks_tool(
         run_id: str = "",
         template: str = "90.1-2013",
-        checks: list[str] | None = None,
+        checks: list[str] | str | None = None,
     ):
         """Run ASHRAE QA/QC checks on simulation results. Requires a completed
         simulation — call run_simulation first, then pass its run_id here.
@@ -108,7 +109,7 @@ def register(mcp):
                 "error": "run_id is required — run a simulation first, then pass its run_id here",
                 "hint": "Call run_simulation() first, wait for completion, then call run_qaqc_checks(run_id=...)",
             }
-        return run_qaqc_checks_op(run_id=run_id, template=template, checks=checks)
+        return run_qaqc_checks_op(run_id=run_id, template=template, checks=parse_str_list(checks))
 
     @mcp.tool(name="adjust_thermostat_setpoints")
     def adjust_thermostat_setpoints_tool(

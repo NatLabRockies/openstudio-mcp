@@ -734,3 +734,64 @@ def test_qaqc_post_sim():
                 assert view.get("ok") is True, f"view_simulation_data failed: {view}"
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_qaqc_json_string_checks():
+    """Test run_qaqc_checks accepts checks param as JSON string.
+
+    We don't need a completed sim — passing empty run_id returns an expected
+    error AFTER Pydantic validation. If checks were rejected by Pydantic,
+    we'd get a validation error instead.
+    """
+    import json
+
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+
+                resp = await s.call_tool("run_qaqc_checks", {
+                    "run_id": "",
+                    "checks": json.dumps(["envelope", "schedules"]),
+                })
+                result = unwrap(resp)
+
+                # Expected: run_id required error (not a Pydantic validation error)
+                assert result.get("ok") is False
+                assert "run_id" in result.get("error", "")
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_view_simulation_data_json_string_variables():
+    """Test view_simulation_data accepts variable_names as JSON string.
+
+    Similar to qaqc test — no sim needed, just verifying Pydantic accepts
+    the JSON string format. The tool will fail because no run_id, but that's
+    expected and proves coercion worked.
+    """
+    import json
+
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+
+                resp = await s.call_tool("view_simulation_data", {
+                    "run_id": "",
+                    "variable_names": json.dumps(["Zone Mean Air Temperature"]),
+                })
+                result = unwrap(resp)
+
+                # Expected: fails because no run_id/SQL, not because of Pydantic
+                assert result.get("ok") is False
+
+    asyncio.run(_run())

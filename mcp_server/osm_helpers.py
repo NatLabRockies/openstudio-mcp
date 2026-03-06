@@ -5,10 +5,25 @@ but returns plain dicts (no pandas dependency).
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
 import openstudio
+
+
+def parse_str_list(value: list | str | None) -> list[str] | None:
+    """Coerce a JSON-string-encoded list to a Python list.
+
+    Some MCP clients serialize array parameters as JSON strings rather than
+    native JSON arrays. This helper handles both cases. Returns None for None
+    input (for optional list params).
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return json.loads(value)
+    return list(value)
 
 
 def optional_name(os_optional) -> str | None:
