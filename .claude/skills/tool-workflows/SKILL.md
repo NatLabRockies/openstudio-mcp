@@ -54,6 +54,7 @@ create_electric_equipment(
 
 User must provide an EPW file in the docker-mounted input directory.
 `change_building_location` sets weather, design days (from DDY), and climate zone in one call.
+The EPW must have companion `.stat` and `.ddy` files alongside it (same directory, same base filename).
 
 ```
 list_files()                              # find available weather files

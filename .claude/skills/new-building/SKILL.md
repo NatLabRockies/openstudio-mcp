@@ -38,6 +38,7 @@ Step 2 — Weather + design days + climate zone (MUST come AFTER bar):
 change_building_location(weather_file="/inputs/<city>.epw")
 ```
 This sets the EPW, loads design days from the DDY file, and sets the ASHRAE climate zone.
+The EPW must have companion `.stat` and `.ddy` files alongside it (same base filename).
 
 Step 3 — Typical building (adds constructions, loads, HVAC, schedules):
 ```

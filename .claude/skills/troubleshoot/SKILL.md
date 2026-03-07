@@ -21,6 +21,7 @@ get_run_logs(run_id=..., log_type="stderr")
 |---|---|---|
 | `No weather file` | Missing or wrong EPW path | `change_building_location(weather_file="/inputs/...")` |
 | `No SizingPeriod` | Missing design days | `change_building_location` (loads DDY automatically) |
+| `Could not find the stat file` | EPW missing companion .stat/.ddy | EPW needs .stat + .ddy files alongside with same base filename |
 | `Node not connected` | Broken HVAC loop | Check with `get_air_loop_details` / `get_plant_loop_details` |
 | `Surface has no vertices` | Bad geometry | Check `list_surfaces()` for degenerate surfaces |
 | `Zone has no surfaces` | Empty thermal zone | Zone needs spaces with geometry assigned |

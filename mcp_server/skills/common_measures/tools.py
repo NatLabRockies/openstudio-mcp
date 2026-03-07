@@ -202,8 +202,14 @@ def register(mcp):
         Design days are required for HVAC sizing. Use this tool whenever
         setting the location/weather for a building model.
 
+        IMPORTANT: The EPW file must have companion .stat and .ddy files in
+        the same directory with the same base filename. For example, if the
+        EPW is "Boston.epw", then "Boston.stat" and "Boston.ddy" must also
+        exist. The measure will fail if these are missing.
+
         Args:
-            weather_file: EPW weather file path (absolute path to .epw file)
+            weather_file: EPW weather file path (absolute path to .epw file).
+                Must have companion .stat and .ddy files alongside it.
             climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto
         """
         return change_building_location_op(
