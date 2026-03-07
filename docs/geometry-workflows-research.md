@@ -435,15 +435,12 @@ district-scale, not single-building). But the patterns are useful:
 
 **Tool 2: `create_typical_building`** (existing, no changes)
 
-**Tool 3: `create_new_building`** (convenience, chains measures)
-- Merges args from create_bar + create_typical into one call
-- Calls `change_building_location` (already wrapped in common_measures) if
-  `weather_file` provided (sets weather + climate zone). Uses common-measures
-  version at `/opt/common-measures/ChangeBuildingLocation/` — NOT the ComStock
-  version which has different args (grid_region, soil_conductivity).
-- `weather_file` is optional. If omitted, `climate_zone` must be passed
-  explicitly to create_bar (or user sets it later before create_typical).
-- Flow: empty model → [ChangeBuildingLocation] → create_bar → create_typical
+**Tool 3: `create_new_building`** (convenience, chains tools)
+- Chains: empty model -> create_bar -> set_weather_file (SDK) ->
+  _add_design_days_from_epw (DDY loader) -> create_typical
+- Weather set AFTER bar (apply_measure save/reload breaks relative EPW paths)
+- Design days loaded from DDY file alongside EPW (fallback: generic summer/winter)
+- Climate zone estimated from EPW; appends "A" if moisture designator missing
 - Single tool for "I want a building from scratch"
 
 **Also (cleanup):**
@@ -453,15 +450,16 @@ district-scale, not single-building). But the patterns are useful:
 - [x] Updated tool catalog resource with new tools
 - [x] Update CLAUDE.md tool counts
 
-**Integration tests:**
-- create_bar standalone (verify spaces, zones, surfaces, space types)
-- create_bar → create_typical chain (verify HVAC, constructions, loads)
-- create_new_building end-to-end with weather file
-- Multiple building types (SmallOffice, LargeOffice, RetailStandalone)
-- Phase B preview: load SDDC Office seed.osm → create thermal zones (Python SDK)
-  → create_typical_building → verify HVAC/loads populated on FloorspaceJS geometry
-  (tests/assets/sddc_office/seed.osm already has 44 spaces, 328 surfaces,
-  12 space types with standardsBuildingType=Office, zero zones/HVAC)
+**Integration tests (9 total in `tests/test_bar_building.py`, CI shard 2):**
+1. `test_create_bar_building_default` — SmallOffice defaults
+2. `test_create_bar_building_large_office` — LargeOffice 3 stories
+3. `test_create_bar_building_retail` — RetailStandalone
+4. `test_bar_then_typical_chain` — bar -> weather -> design days -> typical
+5. `test_create_new_building_with_weather` — one-call with EPW
+6. `test_create_new_building_medium_office` — MediumOffice 3 stories
+7. `test_sddc_office_seed_loads` — verify SDDC seed.osm loads (44 spaces, 0 zones)
+8. `test_import_floorspacejs` — import SDDC floorplan.json
+9. `test_floorspacejs_to_typical` — import -> weather -> typical = complete model
 
 ### Phase B: FloorspaceJS Import -- COMPLETE
 
