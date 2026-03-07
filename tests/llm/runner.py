@@ -94,6 +94,43 @@ class ClaudeResult:
     def num_turns(self) -> int:
         return self.result.get("num_turns", 0)
 
+    @property
+    def duration_ms(self) -> int:
+        return self.result.get("duration_ms", 0)
+
+    @property
+    def input_tokens(self) -> int:
+        usage = self.result.get("usage", {})
+        return usage.get("input_tokens", 0)
+
+    @property
+    def output_tokens(self) -> int:
+        usage = self.result.get("usage", {})
+        return usage.get("output_tokens", 0)
+
+    @property
+    def cache_read_tokens(self) -> int:
+        usage = self.result.get("usage", {})
+        return usage.get("cache_read_input_tokens", 0)
+
+    @property
+    def stats(self) -> dict:
+        """Summary stats for benchmarking."""
+        return {
+            "num_turns": self.num_turns,
+            "cost_usd": self.cost_usd,
+            "duration_ms": self.duration_ms,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "tool_calls": self.tool_names,
+            "num_tool_calls": len(self.tool_names),
+        }
+
+
+# Last result from run_claude — used by conftest benchmark tracking
+_last_result: ClaudeResult | None = None
+
 
 def run_claude(
     prompt: str,
@@ -109,6 +146,7 @@ def run_claude(
     ToolSearch calls (deferred tool loading) consume turns, so max_turns
     should be set generously (default 5 for simple queries).
     """
+    global _last_result
     model = model or os.environ.get("LLM_TESTS_MODEL", "sonnet")
     mcp_config = _write_mcp_config()
 
@@ -143,6 +181,7 @@ def run_claude(
         # Mark as error so tests can assert on it
         parsed.result["is_error"] = True
         parsed.result["result"] = f"Timed out after {timeout}s"
+        _last_result = parsed
         return parsed
 
     if result.returncode != 0:
@@ -151,7 +190,8 @@ def run_claude(
             f"stderr: {result.stderr[:2000]}",
         )
 
-    return _parse_stream_json(result.stdout)
+    _last_result = _parse_stream_json(result.stdout)
+    return _last_result
 
 
 def _parse_stream_json(raw: str) -> ClaudeResult:
