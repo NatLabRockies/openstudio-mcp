@@ -287,3 +287,32 @@ def test_radiant_multi_zone_baseline():
                 assert any("Low-Temp CHW" in lp["name"] for lp in loops_data["plant_loops"])
 
     asyncio.run(_run())
+
+
+def test_radiant_json_string_zones():
+    """Test add_radiant_system accepts thermal_zone_names as JSON string."""
+    import json
+
+    async def _run():
+        sp = server_params()
+        async with stdio_client(sp) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                create_resp = await session.call_tool("create_example_osm", {"name": "test_radiant_json"})
+                create_data = unwrap(create_resp)
+                await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
+
+                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
+
+                system_resp = await session.call_tool("add_radiant_system", {
+                    "thermal_zone_names": json.dumps([zone_name]),
+                })
+                system_data = unwrap(system_resp)
+
+                assert system_data.get("ok") is True, (
+                    f"JSON-string zone names failed: {system_data.get('error')}"
+                )
+
+    asyncio.run(_run())

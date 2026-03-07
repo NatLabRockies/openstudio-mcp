@@ -312,3 +312,34 @@ def test_hvac_tools_without_loaded_model():
                 assert "no model loaded" in air_loops_result["error"].lower()
 
     asyncio.run(_run())
+
+
+def test_add_air_loop_json_string_zones():
+    """Test add_air_loop accepts thermal_zone_names as JSON string."""
+    import json
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                create_resp = await session.call_tool("create_example_osm",
+                                                     {"name": "test_airloop_json"})
+                create_data = unwrap(create_resp)
+                await session.call_tool("load_osm_model",
+                                        {"osm_path": create_data["osm_path"]})
+
+                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
+
+                loop_resp = await session.call_tool("add_air_loop", {
+                    "name": "JSON Test Loop",
+                    "thermal_zone_names": json.dumps([zone_name]),
+                })
+                loop_data = unwrap(loop_resp)
+
+                assert loop_data.get("ok") is True, (
+                    f"JSON-string zone names failed: {loop_data.get('error')}"
+                )
+
+    asyncio.run(_run())

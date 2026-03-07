@@ -374,3 +374,32 @@ def test_doas_multi_zone_baseline():
                 assert doas_loop["num_thermal_zones"] == 10
 
     asyncio.run(_run())
+
+
+def test_doas_json_string_zones():
+    """Test add_doas_system accepts thermal_zone_names as JSON string."""
+    import json
+
+    async def _run():
+        sp = server_params()
+        async with stdio_client(sp) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                create_resp = await session.call_tool("create_example_osm", {"name": "test_doas_json"})
+                create_data = unwrap(create_resp)
+                await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
+
+                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
+
+                system_resp = await session.call_tool("add_doas_system", {
+                    "thermal_zone_names": json.dumps([zone_name]),
+                })
+                system_data = unwrap(system_resp)
+
+                assert system_data.get("ok") is True, (
+                    f"JSON-string zone names failed: {system_data.get('error')}"
+                )
+
+    asyncio.run(_run())

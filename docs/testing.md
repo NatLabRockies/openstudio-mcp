@@ -483,3 +483,116 @@ def test_my_tool_happy_path():
 - Use conftest helpers (`create_and_load`, `create_baseline_and_load`) for common setup
 - Test both happy path AND error cases (no model loaded, invalid args)
 - Add the test file to the lightest CI shard in `ci.yml`
+
+---
+
+## LLM Agent Tests (`tests/llm/`)
+
+End-to-end tests that send natural language prompts to a real LLM (via Claude Code CLI), connected to a real openstudio-mcp server, and verify the agent uses the right tools. These run **locally only** — not in CI.
+
+### Why
+
+Integration tests verify tools work in isolation. LLM tests verify an agent, given a natural language prompt, discovers and uses the correct tools in the correct order. This catches failures like the agent bypassing MCP tools to write raw IDF files by hand.
+
+### Architecture
+
+```
+pytest  -->  claude -p "prompt" --mcp-config mcp.json
+                  |
+                  v
+             Claude Code CLI (the agent)
+                  |
+                  v
+             openstudio-mcp Docker container (stdio)
+```
+
+The test harness:
+1. Writes a temporary MCP config pointing at the Docker server
+2. Runs `claude -p "prompt" --output-format stream-json --verbose --mcp-config mcp.json`
+3. Parses the NDJSON stream for tool_use blocks
+4. Asserts on tool names, parameters, and optionally final response text
+
+### Prerequisites
+
+- **Claude Code CLI** (`claude`) installed and authenticated (Claude Max subscription — no API charges)
+- **Docker** with `openstudio-mcp:dev` image built
+- **`LLM_TESTS_ENABLED=1`** environment variable
+
+### Running
+
+```bash
+# All LLM tests (~46 tests, ~15 min)
+LLM_TESTS_ENABLED=1 pytest tests/llm/ -v
+
+# Specific tier only
+LLM_TESTS_ENABLED=1 LLM_TESTS_TIER=1 pytest tests/llm/ -v
+
+# Different model
+LLM_TESTS_ENABLED=1 LLM_TESTS_MODEL=haiku pytest tests/llm/ -v
+```
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LLM_TESTS_ENABLED` | (unset) | Set to `1` to enable LLM tests |
+| `LLM_TESTS_MAX_PROMPTS` | `50` | Hard cap on Claude invocations per run |
+| `LLM_TESTS_MODEL` | `sonnet` | Model: `sonnet`, `haiku`, or `opus` |
+| `LLM_TESTS_TIER` | `all` | `1`, `2`, `3`, `4`, or `all` |
+| `LLM_TESTS_RETRIES` | `2` | Retry count for non-deterministic failures |
+| `LLM_TESTS_RUNS_DIR` | `/tmp/llm-test-runs` | Host path for Docker `/runs` mount |
+
+### Test Tiers
+
+| Tier | Tests | Description | ~Time |
+|------|-------|-------------|-------|
+| **1: Tool Selection** | ~41 | Single prompt, check which tool is called first | ~10 min |
+| **2: Workflows** | 2 | Multi-step (create building + add HVAC, create + weather) | ~4 min |
+| **3: E2E** | — | Full simulate + extract results (future) | — |
+| **4: Guardrails** | 3 | Agent must NOT bypass MCP (no raw IDF, no scripts) | ~2 min |
+
+### Test Structure
+
+**Tier 1** tests are parametrized from two sources:
+- `TOOL_SELECTION_CASES` in `test_tool_selection.py` — hand-curated prompts
+- `eval.md` files in `.claude/skills/*/eval.md` — auto-parsed via `test_eval_tool_selection.py`
+
+```python
+TOOL_SELECTION_CASES = [
+    ("Create a 10-zone office building", ["create_baseline_osm"]),
+    ("Add DOAS with fan coils", ["add_doas_system"]),
+    ("Show me a 3D view", ["view_model"]),
+]
+
+@pytest.mark.parametrize("prompt,expected", TOOL_SELECTION_CASES)
+def test_tool_selection(prompt, expected):
+    output = run_claude(prompt, timeout=90)
+    tool_names = extract_tool_names(output)
+    first = _first_non_skill_tool(tool_names)
+    assert first in expected
+```
+
+**Tier 4** (guardrail) tests verify the agent doesn't use `Write`, `Bash`, or `Edit` tools when asked to create a building — it must use MCP tools.
+
+### Retry Logic
+
+LLM outputs are non-deterministic. The conftest implements a custom `pytest_runtest_protocol` hook that retries failed LLM tests up to `LLM_TESTS_RETRIES` times. If any attempt passes, the test is reported as passed. Each retry consumes a prompt from the budget.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `tests/llm/runner.py` | `run_claude()`, `extract_tool_calls()`, MCP config generation |
+| `tests/llm/conftest.py` | Guards, budget, retry hook, shared model paths |
+| `tests/llm/test_tool_selection.py` | Tier 1 — hand-curated tool selection cases |
+| `tests/llm/test_eval_tool_selection.py` | Tier 1 — auto-parsed from eval.md files |
+| `tests/llm/test_workflows.py` | Tier 2 — multi-step workflows |
+| `tests/llm/test_guardrails.py` | Tier 4 — agent must not bypass MCP |
+
+### Known Behaviors
+
+- **ToolSearch consumes 1-3 turns** — Claude Code uses deferred tool loading, so the agent spends turns discovering MCP tools before calling them. Don't set `--max-turns` too low.
+- **Context-gathering is normal** — the agent often calls `get_model_summary`, `list_spaces`, etc. before the target tool. Assert "tool appears anywhere", not "tool is first call".
+- **Action tools need model state** — prompts like "add VRF" fail if no model exists. Tier 1 tests should target query/info tools; action tests belong in Tier 2 with model creation in the prompt.
+- **`stream-json` + `--verbose` required** — `--output-format json` only returns the final text result; `stream-json --verbose` includes tool_use blocks.
+- **`CLAUDECODE` env var must be stripped** — nested `claude -p` subprocess calls fail if the parent session's `CLAUDECODE` env var is inherited.
