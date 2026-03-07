@@ -52,6 +52,11 @@ TOOL_SELECTION_CASES = [
     # Explicit tool name in prompt to test direct tool invocation
     ("check the model for issues using run_qaqc_checks",
      ["run_qaqc_checks", "inspect_osm_summary"]),
+    # Geometry query tools
+    ("list the subsurfaces (windows and doors)",
+     ["list_subsurfaces"]),
+    ("show me surface details for the south wall",
+     ["get_surface_details", "list_surfaces"]),
 ]
 
 # Cases that don't need a model loaded — tests tool discovery and server info
@@ -60,6 +65,11 @@ NO_MODEL_CASES = [
      ["get_server_status"]),
     ("List available skills",
      ["list_skills"]),
+    # Geometry creation tools (no model needed — they create one)
+    ("Create a small office building using create_new_building",
+     ["create_new_building"]),
+    ("Create bar geometry for a retail building using create_bar_building",
+     ["create_bar_building"]),
 ]
 
 

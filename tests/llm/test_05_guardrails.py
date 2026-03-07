@@ -39,7 +39,8 @@ BYPASS_TOOLS = {"Write", "Bash", "Edit", "NotebookEdit"}
 
 # Valid MCP tools for model creation — agent must use one of these
 CREATION_TOOLS = {"create_baseline_osm", "create_example_osm",
-                  "create_typical_building"}
+                  "create_typical_building", "create_bar_building",
+                  "create_new_building", "import_floorspacejs"}
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 

@@ -119,6 +119,31 @@ WORKFLOW_CASES = [
         "required_tools": ["load_osm_model", "run_qaqc_checks"],
         "timeout": 120,
     },
+    {
+        # Create bar building — tests geometry creation from scratch
+        "id": "create_bar_office",
+        "prompt": (
+            "Create a SmallOffice bar building using create_bar_building "
+            "with 2 stories and 20000 sqft. Then list the spaces. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["create_bar_building"],
+        "any_of": ["list_spaces", "get_model_summary"],
+        "timeout": 120,
+    },
+    {
+        # One-call new building — tests convenience tool
+        "id": "create_new_building",
+        "prompt": (
+            "Create a complete MediumOffice building using create_new_building "
+            "with 3 stories and 50000 sqft. Use the weather file at "
+            "/opt/comstock-measures/create_typical_building_from_model"
+            "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["create_new_building"],
+        "timeout": 180,
+    },
 ]
 
 
