@@ -6,109 +6,104 @@ disable-model-invocation: true
 
 # Create a Complete Building Model
 
-> Build order reference: see `openstudio-patterns` for the object dependency graph.
+Three workflows, from simplest to most customizable:
 
-Guide the user through creating a full building energy model step by step.
+## Workflow A: One-Call (Recommended)
 
-## Information to Gather
-
-Ask the user for:
-- **Building type:** office, retail, school, hospital, warehouse, residential
-- **Size:** approximate floor area, number of floors
-- **Geometry:** rectangular footprint dimensions, or custom floor plan
-- **Climate/location:** city or climate zone
-- **HVAC preference:** baseline system, or specific type
-- **Weather file location:** EPW/DDY file path in docker-mounted directory
-
-## Steps
-
-### 1. Create Base Model
+`create_new_building` does everything — geometry, loads, HVAC, weather, design days:
 ```
-create_example_osm(name="<building_name>")
-load_osm_model(osm_path=<path>)
+create_new_building(
+    building_type="SmallOffice",
+    total_bldg_floor_area=10000,
+    num_stories_above_grade=1,
+    weather_file="/inputs/<city>.epw",
+    template="90.1-2019")
 ```
+Ready to simulate immediately.
 
-Or for a pre-configured baseline with HVAC:
-```
-create_baseline_osm(name="<building_name>", ashrae_sys_num="<NN>")
-load_osm_model(osm_path=<path>)
-```
+## Workflow B: Bar + Typical (More Control)
 
-### 2. Geometry
-Create thermal zones first, then extrude floor plans:
+Step 1 — Bar geometry (creates spaces, zones, surfaces):
 ```
-create_thermal_zone(name="Zone 1")
-create_space_from_floor_print(
-    name="Space 1",
-    floor_vertices=[[0,0],[20,0],[20,15],[0,15]],
-    floor_to_ceiling_height=3.0,
-    thermal_zone_name="Zone 1")
+create_bar_building(
+    building_type="SmallOffice",
+    total_bldg_floor_area=10000,
+    num_stories_above_grade=1,
+    template="90.1-2019",
+    climate_zone="4A")
 ```
 
-For multi-zone buildings, create adjacent spaces and match shared walls:
+Step 2 — Weather (MUST come AFTER bar, which saves/reloads model):
 ```
-match_surfaces()
-```
-
-### 3. Glazing
-```
-set_window_to_wall_ratio(surface_name="South Wall", ratio=0.4)
+set_weather_file(epw_path="/inputs/<city>.epw")
 ```
 
-### 4. Envelope
+Step 3 — Design days (required for HVAC autosizing):
 ```
-create_standard_opaque_material(name="Insulation", thickness_m=0.089,
-    conductivity_w_m_k=0.04, density_kg_m3=30, specific_heat_j_kg_k=1000)
-create_construction(name="Ext Wall", material_names=["Brick", "Insulation", "Gypsum"])
-assign_construction_to_surface(surface_name="South Wall", construction_name="Ext Wall")
-```
-
-### 5. Schedules
-```
-create_schedule_ruleset(name="Occupancy", schedule_type="Fractional", default_value=0.5)
-```
-
-### 6. Internal Loads
-```
-create_people_definition(name="People", space_name="Space 1",
-    people_per_area=0.059, schedule_name="Occupancy")
-create_lights_definition(name="Lights", space_name="Space 1", watts_per_area=10.76)
-create_electric_equipment(name="Plugs", space_name="Space 1", watts_per_area=1.076)
-```
-
-### 7. HVAC
-```
-add_baseline_system(system_type=3,
-    thermal_zone_names=["Zone 1"], heating_fuel="NaturalGas")
-```
-
-### 8. Weather
-Ask user for EPW file location in the docker-mounted input directory:
-```
-list_files()
-set_weather_file(epw_path="/inputs/<file>.epw")
 add_design_day(name="Htg 99.6%", day_type="WinterDesignDay",
-    month=1, day=21, dry_bulb_max_c=-20.6, dry_bulb_range_c=0.0)
+    month=1, day=21, dry_bulb_max_c=-20.6, dry_bulb_range_c=0.0,
+    humidity_type="WetBulb", humidity_value=-25.0)
 add_design_day(name="Clg 0.4%", day_type="SummerDesignDay",
-    month=7, day=21, dry_bulb_max_c=33.3, dry_bulb_range_c=10.7)
+    month=7, day=21, dry_bulb_max_c=33.3, dry_bulb_range_c=10.7,
+    humidity_type="WetBulb", humidity_value=23.8)
 ```
 
-### 9. Simulate
+Step 4 — Typical building (adds constructions, loads, HVAC, schedules):
 ```
-save_osm_model(save_path="/runs/<building_name>.osm")
-run_simulation(osm_path="/runs/<building_name>.osm", epw_path="/inputs/<file>.epw")
+create_typical_building(
+    climate_zone="ASHRAE 169-2013-4A",
+    building_type="SmallOffice")
+```
+
+## Workflow C: FloorspaceJS Custom Geometry
+
+For buildings with custom floor plans drawn in FloorspaceJS editor
+(https://nrel.github.io/floorspace.js/):
+
+Step 1 — Import geometry:
+```
+import_floorspacejs(
+    floorplan_path="/inputs/floorplan.json",
+    building_type="SmallOffice")
+```
+Creates spaces, zones with thermostats, surfaces, and runs matching.
+
+Step 2 — Weather + design days (same as Workflow B steps 2-3)
+
+Step 3 — Typical building (same as Workflow B step 4)
+
+## Manual Workflow (Advanced)
+
+For fully custom buildings not matching DOE prototypes:
+
+1. `create_example_osm(name="<name>")` or `create_baseline_osm(name="<name>")`
+2. Create geometry with `create_space_from_floor_print` + `match_surfaces`
+3. Add glazing with `set_window_to_wall_ratio`
+4. Create materials/constructions/loads manually
+5. Add HVAC with `add_baseline_system`
+6. Set weather + design days
+7. Simulate
+
+## Simulation
+
+After any workflow:
+```
+save_osm_model(save_path="/runs/<name>.osm")
+run_simulation(osm_path="/runs/<name>.osm", epw_path="/inputs/<city>.epw")
 get_run_status(run_id=<id>)
 extract_summary_metrics(run_id=<id>)
 ```
 
-## Shortcut: Typical Building
+## Information to Gather
 
-For standards-based buildings with full loads/HVAC/schedules, use ComStock:
-```
-create_example_osm(name="<building_name>")
-load_osm_model(osm_path=<path>)
-# ... create geometry ...
-create_typical_building(template="90.1-2019", climate_zone="ASHRAE 169-2013-5A")
-```
+Ask the user for:
+- **Building type:** SmallOffice, MediumOffice, LargeOffice, RetailStandalone,
+  Warehouse, PrimarySchool, Hospital, etc.
+- **Size:** floor area in ft2, number of stories
+- **Location:** city or climate zone (for weather file + ASHRAE climate zone)
+- **Custom geometry?** If yes, ask for FloorspaceJS JSON file path
 
-This adds constructions, loads, HVAC, and schedules in one step.
+## Climate Zone Format
+
+For create_typical_building, use full format: "ASHRAE 169-2013-4A"
+For create_bar_building, short form works: "4A"
