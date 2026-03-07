@@ -68,8 +68,8 @@ Claude Code's deferred tool loading (`ToolSearch`) uses 1-3 agent turns before a
 - 3-tool chains: 300-420s (ToolSearch + measure execution)
 - Simulation chains: 600s
 
-### Prefer `change_building_location` over `set_weather_file`
-`change_building_location` sets EPW + design days (from DDY) + climate zone in one call. `set_weather_file` only sets the EPW. Using the combined tool saves a step in workflows and reduces required agent turns.
+### Use `change_building_location` for weather
+`change_building_location` sets EPW + design days (from DDY) + climate zone in one call. `set_weather_file` was removed — always use `change_building_location`.
 
 ### Debugging failures
 Check the tool call sequence in assertion errors — it reveals agent behavior:

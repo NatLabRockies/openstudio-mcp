@@ -138,7 +138,7 @@ def register(mcp):
             f"{climate_zone}.\n\n"
             "Steps:\n"
             "1. load_osm_model(osm_path=<model with geometry>)\n"
-            "2. set_weather_file(epw_path=<matching EPW>)\n"
+            "2. change_building_location(weather_file=<matching EPW>)\n"
             f'3. create_typical_building(template="{template}", '
             f'climate_zone="{climate_zone}")\n'
             "4. get_model_summary() — verify what was added\n"
@@ -353,7 +353,7 @@ def register(mcp):
                 "list_model_objects",
             ],
             "weather": [
-                "get_weather_info", "set_weather_file",
+                "get_weather_info",
                 "add_design_day", "get_simulation_control",
                 "set_simulation_control", "get_run_period",
                 "set_run_period",

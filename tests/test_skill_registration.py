@@ -93,7 +93,6 @@ EXPECTED_TOOLS = {
     "list_model_objects",
     # Phase 6C: Weather, Design Days, SimControl, RunPeriod
     "get_weather_info",
-    "set_weather_file",
     "add_design_day",
     "get_simulation_control",
     "set_simulation_control",

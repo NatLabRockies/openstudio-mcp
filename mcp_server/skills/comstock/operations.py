@@ -189,9 +189,9 @@ def create_typical_building(
                 st.setStandardsSpaceType("WholeBuilding")
         # Set climate zone on model — always override any existing value.
         # The measure's infiltration step reads it from the model object.
-        # set_weather_file may have set a numeric-only zone (e.g. "2")
-        # from EPW estimation; the explicit arg here (e.g. "2A") is more
-        # authoritative and avoids openstudio-standards pump sizing bugs.
+        # change_building_location may have set a zone from .stat file;
+        # the explicit arg here (e.g. "2A") is more authoritative and
+        # avoids openstudio-standards pump sizing bugs.
         if climate_zone != "Lookup From Model":
             czs = model.getClimateZones()
             # Parse "ASHRAE 169-2013-4A" → "4A"
@@ -259,6 +259,20 @@ _BAR_ARG_MAP = {
 }
 
 
+def _read_climate_zone_from_model() -> str | None:
+    """Read ASHRAE climate zone from the in-memory model."""
+    model = get_model()
+    czs = model.getClimateZones()
+    ashrae_czs = czs.getClimateZones("ASHRAE")
+    if len(ashrae_czs) > 0:
+        val = ashrae_czs[0].value()
+        # If just a number (e.g. "2"), add "A" (humid) as default
+        if val.isdigit():
+            return val + "A"
+        return val
+    return None
+
+
 def _expand_climate_zone(cz: str) -> str:
     """Expand short climate zone codes to full Choice values.
 
@@ -272,48 +286,6 @@ def _expand_climate_zone(cz: str) -> str:
     # Short code like "4A", "2A", "7" — expand to ASHRAE format
     return f"ASHRAE 169-2013-{cz}"
 
-
-def _add_design_days_from_epw(epw_path: str) -> None:
-    """Add summer/winter design days from the DDY file next to the EPW.
-
-    Falls back to generic design days if DDY file not found.
-    The create_typical measure needs design days for HVAC autosizing.
-    """
-    model = get_model()
-    ddy_path = Path(epw_path).with_suffix(".ddy")
-
-    if ddy_path.is_file():
-        # Load design days from DDY file
-        with suppress_openstudio_warnings():
-            ddy_model_opt = openstudio.model.Model.load(str(ddy_path))
-            if ddy_model_opt.is_initialized():
-                ddy_model = ddy_model_opt.get()
-                for dd in ddy_model.getDesignDays():
-                    dd_clone = dd.clone(model)
-                    dd_clone = dd_clone.to_DesignDay()
-                return  # DDY loaded successfully
-
-    # Fallback: add minimal summer + winter design days
-    with suppress_openstudio_warnings():
-        summer = openstudio.model.DesignDay(model)
-        summer.setName("Summer Design Day")
-        summer.setDayType("SummerDesignDay")
-        summer.setMonth(7)
-        summer.setDayOfMonth(21)
-        summer.setMaximumDryBulbTemperature(35.0)
-        summer.setDailyDryBulbTemperatureRange(10.0)
-        summer.setHumidityConditionType("WetBulb")
-        summer.setWetBulbOrDewPointAtMaximumDryBulb(25.0)
-
-        winter = openstudio.model.DesignDay(model)
-        winter.setName("Winter Design Day")
-        winter.setDayType("WinterDesignDay")
-        winter.setMonth(1)
-        winter.setDayOfMonth(21)
-        winter.setMaximumDryBulbTemperature(0.0)
-        winter.setDailyDryBulbTemperatureRange(0.0)
-        winter.setHumidityConditionType("WetBulb")
-        winter.setWetBulbOrDewPointAtMaximumDryBulb(-2.0)
 
 
 def _create_empty_model() -> Path:
@@ -525,36 +497,25 @@ def create_new_building(
 
     # Step 3: Set weather AFTER bar (apply_measure saves/reloads model,
     # which breaks relative weather file paths — set it fresh on the
-    # final model). Also add design days for HVAC autosizing.
+    # final model). ChangeBuildingLocation sets EPW + design days + climate zone.
     if weather_file:
-        from mcp_server.skills.weather.operations import set_weather_file as _set_weather
-        wr = _set_weather(epw_path=weather_file)
+        from mcp_server.skills.common_measures.wrappers import change_building_location_op
+        wr = change_building_location_op(
+            weather_file=weather_file, climate_zone=climate_zone,
+        )
         if not wr.get("ok"):
             return {
                 "ok": False,
-                "error": f"set_weather_file failed: {wr.get('error', 'unknown')}",
-                "step": "set_weather_file",
+                "error": f"change_building_location failed: {wr.get('error', 'unknown')}",
+                "step": "change_building_location",
                 "bar_result": bar_result,
             }
-        # Add design days from the .stat file (needed for HVAC autosizing)
-        _add_design_days_from_epw(weather_file)
 
     # Step 4: Apply typical building (constructions, loads, HVAC, schedules)
-    # Determine climate zone for create_typical. set_weather_file may have
-    # set just a number (e.g. "2") without moisture designator — must be
-    # a full zone like "ASHRAE 169-2013-2A" for openstudio-standards.
+    # Read climate zone from model (change_building_location already set it)
     if weather_file:
-        # Read zone that set_weather_file determined
-        cz_from_weather = wr.get("climate_zone", "")
-        if cz_from_weather and not cz_from_weather.startswith(("ASHRAE", "CEC")):
-            # If just a number (e.g. "2"), add "A" (humid) as default
-            if cz_from_weather.isdigit():
-                cz_from_weather = cz_from_weather + "A"
-            typical_cz = f"ASHRAE 169-2013-{cz_from_weather}"
-        elif cz_from_weather:
-            typical_cz = _expand_climate_zone(cz_from_weather)
-        else:
-            typical_cz = "Lookup From Model"
+        cz_from_model = _read_climate_zone_from_model()
+        typical_cz = _expand_climate_zone(cz_from_model) if cz_from_model else "Lookup From Model"
     elif climate_zone != "Lookup From Stat File":
         typical_cz = _expand_climate_zone(climate_zone)
     else:

@@ -9,7 +9,7 @@ Design:
   - Prompts include explicit tool names to minimize ambiguity
   - required_tools are ALL checked (every one must appear in the sequence)
   - any_of is used when multiple tools can achieve the same goal
-    (e.g. set_weather_file OR change_building_location for Chicago weather)
+    (e.g. change_building_location for Chicago weather)
   - Timeouts are per-case; adjust_thermostat gets 180s because applying
     measures to all zones is slow
 
@@ -65,15 +65,13 @@ WORKFLOW_CASES = [
         "timeout": 120,
     },
     {
-        # Set weather — two tools can do this (set_weather_file is native,
-        # change_building_location is a measure wrapper)
+        # Set weather + design days + climate zone via measure
         "id": "set_weather",
         "prompt": LOAD + (
-            "set the weather to Chicago using set_weather_file or "
-            "change_building_location. Use MCP tools only."
+            "set the weather to Chicago using change_building_location. "
+            "Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model"],
-        "any_of": ["set_weather_file", "change_building_location"],
+        "required_tools": ["load_osm_model", "change_building_location"],
         "timeout": 120,
     },
     {
@@ -137,8 +135,8 @@ WORKFLOW_CASES = [
         "prompt": (
             "Create a complete MediumOffice building using create_new_building "
             "with 3 stories and 50000 sqft. Use the weather file at "
-            "/opt/comstock-measures/create_typical_building_from_model"
-            "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw. "
+            "/opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
             "Use MCP tools only."
         ),
         "required_tools": ["create_new_building"],
@@ -151,8 +149,8 @@ WORKFLOW_CASES = [
             "Create a SmallOffice bar building using create_bar_building "
             "with 2 stories and 20000 sqft. "
             "After that, call change_building_location with weather_file "
-            "/opt/comstock-measures/create_typical_building_from_model"
-            "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw. "
+            "/opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
             "After that, call create_typical_building with building_type SmallOffice. "
             "Use MCP tools only."
         ),
@@ -182,8 +180,8 @@ WORKFLOW_CASES = [
             "/test-assets/sddc_office/floorplan.json "
             "using import_floorspacejs. Then call change_building_location "
             "with weather_file "
-            "/opt/comstock-measures/create_typical_building_from_model"
-            "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw. "
+            "/opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
             "Then run create_typical_building to add "
             "constructions, loads, and HVAC. Use MCP tools only."
         ),

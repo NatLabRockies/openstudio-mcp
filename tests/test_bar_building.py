@@ -15,9 +15,10 @@ def _unique(prefix: str = "pytest_bar") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
+# EPW with companion .stat + .ddy (required by ChangeBuildingLocation measure)
 COMSTOCK_EPW = (
-    "/opt/comstock-measures/create_typical_building_from_model"
-    "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw"
+    "/opt/comstock-measures/ChangeBuildingLocation"
+    "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 )
 
 
@@ -109,36 +110,11 @@ def test_bar_then_typical_chain():
                 }))
                 assert bar.get("ok") is True, f"create_bar failed: {bar}"
 
-                # Step 2: Set weather AFTER bar (apply_measure saves/reloads
-                # model which breaks relative weather file paths)
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": COMSTOCK_EPW,
+                # Step 2: Set weather + design days + climate zone AFTER bar
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": COMSTOCK_EPW,
                 }))
-                assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
-
-                # Step 2b: Add design days (needed for HVAC autosizing).
-                # In create_new_building, ChangeBuildingLocation handles this.
-                # Here we add minimal design days manually.
-                dd1 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Houston Summer 1%",
-                    "day_type": "SummerDesignDay",
-                    "month": 7, "day": 21,
-                    "dry_bulb_max_c": 35.0,
-                    "dry_bulb_range_c": 10.0,
-                    "humidity_type": "WetBulb",
-                    "humidity_value": 25.0,
-                }))
-                assert dd1.get("ok") is True, f"add_design_day summer failed: {dd1}"
-                dd2 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Houston Winter 99%",
-                    "day_type": "WinterDesignDay",
-                    "month": 1, "day": 21,
-                    "dry_bulb_max_c": 0.0,
-                    "dry_bulb_range_c": 0.0,
-                    "humidity_type": "WetBulb",
-                    "humidity_value": -2.0,
-                }))
-                assert dd2.get("ok") is True, f"add_design_day winter failed: {dd2}"
+                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
 
                 # Step 3: Apply typical
                 typical = unwrap(await s.call_tool("create_typical_building", {
@@ -294,29 +270,11 @@ def test_floorspacejs_to_typical():
                 }))
                 assert imp.get("ok") is True, f"import failed: {imp}"
 
-                # Set weather file
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": COMSTOCK_EPW,
+                # Set weather + design days + climate zone
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": COMSTOCK_EPW,
                 }))
-                assert wr.get("ok") is True, f"set_weather failed: {wr}"
-
-                # Add design days for HVAC autosizing
-                dd1 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Houston Summer 1%",
-                    "day_type": "SummerDesignDay",
-                    "month": 7, "day": 21,
-                    "dry_bulb_max_c": 35.0, "dry_bulb_range_c": 10.0,
-                    "humidity_type": "WetBulb", "humidity_value": 25.0,
-                }))
-                assert dd1.get("ok") is True
-                dd2 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Houston Winter 99%",
-                    "day_type": "WinterDesignDay",
-                    "month": 1, "day": 21,
-                    "dry_bulb_max_c": 0.0, "dry_bulb_range_c": 0.0,
-                    "humidity_type": "WetBulb", "humidity_value": -2.0,
-                }))
-                assert dd2.get("ok") is True
+                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
 
                 # Apply typical building
                 typ = unwrap(await s.call_tool("create_typical_building", {

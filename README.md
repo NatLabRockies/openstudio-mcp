@@ -295,7 +295,6 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | Tool | Description |
 |------|-------------|
 | `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
-| `set_weather_file` | Attach EPW weather file to model |
 | `add_design_day` | Add heating/cooling design day |
 | `get_simulation_control` | Read sizing flags and timesteps per hour |
 | `set_simulation_control` | Modify sizing flags and/or timestep |

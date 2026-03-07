@@ -195,7 +195,7 @@ def register(mcp):
     ):
         """Set weather file, design days, and ASHRAE climate zone in one step.
 
-        Preferred over set_weather_file because it also:
+        This tool also:
         - Removes existing design days and loads correct ones from the DDY file
         - Sets the ASHRAE climate zone (auto-detected from .stat file or explicit)
 

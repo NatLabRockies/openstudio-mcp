@@ -18,7 +18,7 @@ def _ensure_climate_zone() -> None:
 
     Reporting measures (generic_qaqc, openstudio_results) crash with nil
     errors when the model has no climate zone.  This is a safety net for
-    models that skip set_weather_file / change_building_location.
+    models that skip change_building_location.
     """
     try:
         from mcp_server.model_manager import get_model

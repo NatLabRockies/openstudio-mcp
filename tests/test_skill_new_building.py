@@ -93,23 +93,11 @@ def test_skill_new_building_workflow():
                 assert hvac.get("ok") is True
                 assert hvac["count"] > 0
 
-                # 8. Weather + design days
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": EPW_PATH,
+                # 8. Weather + design days + climate zone
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
                 }))
                 assert wr.get("ok") is True
-                dd1 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Htg 99.6%", "day_type": "WinterDesignDay",
-                    "month": 1, "day": 21,
-                    "dry_bulb_max_c": -20.6, "dry_bulb_range_c": 0.0,
-                }))
-                assert dd1.get("ok") is True
-                dd2 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Clg 0.4%", "day_type": "SummerDesignDay",
-                    "month": 7, "day": 21,
-                    "dry_bulb_max_c": 33.3, "dry_bulb_range_c": 10.7,
-                }))
-                assert dd2.get("ok") is True
 
                 # 9. Save and simulate
                 save_path = f"/runs/{name}.osm"
