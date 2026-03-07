@@ -244,3 +244,92 @@ def test_sddc_office_seed_loads():
                 assert sts["count"] >= 10, f"Expected ~12 space types: {sts['count']}"
 
     asyncio.run(_run())
+
+
+SDDC_FLOORPLAN = "/repo/tests/assets/sddc_office/floorplan.json"
+
+
+# --- Test 8: import_floorspacejs with SDDC floorplan ---
+@pytest.mark.integration
+def test_import_floorspacejs():
+    """Import SDDC Office FloorspaceJS JSON and verify geometry."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = unwrap(await s.call_tool("import_floorspacejs", {
+                    "floorplan_path": SDDC_FLOORPLAN,
+                    "building_type": "SmallOffice",
+                }))
+                assert res.get("ok") is True, f"import failed: {res}"
+                assert res["spaces"] >= 40, f"Expected ~44 spaces: {res['spaces']}"
+                assert res["surfaces"] >= 300, f"Expected ~328 surfaces: {res['surfaces']}"
+                assert res["thermal_zones"] >= 40, f"Expected zones: {res['thermal_zones']}"
+                assert res["building_stories"] >= 2, f"Expected 2 stories: {res['building_stories']}"
+                # Verify space types exist (standardsSpaceType left unset
+                # so create_typical defaults to "WholeBuilding")
+                assert len(res["space_types"]) > 0, "No space types"
+
+    asyncio.run(_run())
+
+
+# --- Test 9: import_floorspacejs → create_typical full workflow ---
+@pytest.mark.integration
+def test_floorspacejs_to_typical():
+    """Import FloorspaceJS → set weather → create_typical = complete model."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                # Import FloorspaceJS geometry
+                imp = unwrap(await s.call_tool("import_floorspacejs", {
+                    "floorplan_path": SDDC_FLOORPLAN,
+                    "building_type": "SmallOffice",
+                }))
+                assert imp.get("ok") is True, f"import failed: {imp}"
+
+                # Set weather file
+                wr = unwrap(await s.call_tool("set_weather_file", {
+                    "epw_path": COMSTOCK_EPW,
+                }))
+                assert wr.get("ok") is True, f"set_weather failed: {wr}"
+
+                # Add design days for HVAC autosizing
+                dd1 = unwrap(await s.call_tool("add_design_day", {
+                    "name": "Houston Summer 1%",
+                    "day_type": "SummerDesignDay",
+                    "month": 7, "day": 21,
+                    "dry_bulb_max_c": 35.0, "dry_bulb_range_c": 10.0,
+                    "humidity_type": "WetBulb", "humidity_value": 25.0,
+                }))
+                assert dd1.get("ok") is True
+                dd2 = unwrap(await s.call_tool("add_design_day", {
+                    "name": "Houston Winter 99%",
+                    "day_type": "WinterDesignDay",
+                    "month": 1, "day": 21,
+                    "dry_bulb_max_c": 0.0, "dry_bulb_range_c": 0.0,
+                    "humidity_type": "WetBulb", "humidity_value": -2.0,
+                }))
+                assert dd2.get("ok") is True
+
+                # Apply typical building
+                typ = unwrap(await s.call_tool("create_typical_building", {
+                    "building_type": "SmallOffice",
+                    "climate_zone": "ASHRAE 169-2013-2A",
+                }))
+                assert typ.get("ok") is True, f"create_typical failed: {typ}"
+
+                # Verify HVAC added
+                summary = unwrap(await s.call_tool("get_model_summary", {}))
+                assert summary.get("ok") is True
+                counts = summary.get("counts", summary.get("summary", {}))
+                total_hvac = counts.get("air_loops", 0) + counts.get("zone_hvac_equipment", 0)
+                assert total_hvac > 0, f"No HVAC: {counts}"
+
+    asyncio.run(_run())

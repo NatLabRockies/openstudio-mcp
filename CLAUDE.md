@@ -51,7 +51,7 @@ Always use openstudio-mcp tools for BEM tasks:
 | `results` | `extract_summary_metrics`, `read_run_artifact`, `copy_run_artifact`, `extract_end_use_breakdown`, `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`, `extract_component_sizing`, `query_timeseries` | Phase 1 + 9 |
 | `building` | `get_building_info`, `get_model_summary`, `list_building_stories` | Phase 2 |
 | `spaces` | `list_spaces`, `get_space_details`, `list_thermal_zones`, `get_thermal_zone_details`, `create_space`, `create_thermal_zone` | Phase 2 + 3 |
-| `geometry` | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio` | Phase 2 + 7 |
+| `geometry` | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio`, `import_floorspacejs` | Phase 2 + 7 |
 | `constructions` | `list_materials`, `list_constructions`, `list_construction_sets`, `create_standard_opaque_material`, `create_construction`, `assign_construction_to_surface` | Phase 2 + 3 |
 | `schedules` | `list_schedule_rulesets`, `get_schedule_details`, `create_schedule_ruleset` | Phase 2 + 3 |
 | `hvac` | `list_air_loops`, `get_air_loop_details`, `list_plant_loops`, `get_plant_loop_details`, `list_zone_hvac_equipment`, `get_zone_hvac_details`, `add_air_loop` | Phase 2 + 3 |
@@ -68,7 +68,7 @@ Always use openstudio-mcp tools for BEM tasks:
 | `common_measures` | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `inject_idf`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8 |
 | `skill_discovery` | `list_skills`, `get_skill` | — |
 
-**Total: 22 skills, 129 MCP tools, ~267 integration tests**
+**Total: 22 skills, 130 MCP tools, ~269 integration tests**
 
 ## Model Query Pattern
 ```python
