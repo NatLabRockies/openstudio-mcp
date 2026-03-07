@@ -179,6 +179,7 @@ def _parse_stream_json(raw: str) -> ClaudeResult:
 def _write_mcp_config() -> Path:
     """Write temporary MCP config for Docker stdio transport."""
     runs_dir = os.environ.get("LLM_TESTS_RUNS_DIR", "/tmp/llm-test-runs")
+    assets_dir = str(Path(__file__).resolve().parents[1] / "assets")
 
     config = {
         "mcpServers": {
@@ -187,6 +188,7 @@ def _write_mcp_config() -> Path:
                 "args": [
                     "run", "--rm", "-i",
                     "-v", f"{runs_dir}:/runs",
+                    "-v", f"{assets_dir}:/test-assets:ro",
                     "-e", "OPENSTUDIO_MCP_MODE=prod",
                     "openstudio-mcp:dev",
                     "openstudio-mcp",

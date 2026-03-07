@@ -193,10 +193,17 @@ def register(mcp):
         weather_file: str = "",
         climate_zone: str = "Lookup From Stat File",
     ):
-        """Set weather file and ASHRAE climate zone.
+        """Set weather file, design days, and ASHRAE climate zone in one step.
+
+        Preferred over set_weather_file because it also:
+        - Removes existing design days and loads correct ones from the DDY file
+        - Sets the ASHRAE climate zone (auto-detected from .stat file or explicit)
+
+        Design days are required for HVAC sizing. Use this tool whenever
+        setting the location/weather for a building model.
 
         Args:
-            weather_file: EPW weather file name
+            weather_file: EPW weather file path (absolute path to .epw file)
             climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto
         """
         return change_building_location_op(

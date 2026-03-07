@@ -33,22 +33,13 @@ create_bar_building(
     climate_zone="4A")
 ```
 
-Step 2 — Weather (MUST come AFTER bar, which saves/reloads model):
+Step 2 — Weather + design days + climate zone (MUST come AFTER bar):
 ```
-set_weather_file(epw_path="/inputs/<city>.epw")
+change_building_location(weather_file="/inputs/<city>.epw")
 ```
+This sets the EPW, loads design days from the DDY file, and sets the ASHRAE climate zone.
 
-Step 3 — Design days (required for HVAC autosizing):
-```
-add_design_day(name="Htg 99.6%", day_type="WinterDesignDay",
-    month=1, day=21, dry_bulb_max_c=-20.6, dry_bulb_range_c=0.0,
-    humidity_type="WetBulb", humidity_value=-25.0)
-add_design_day(name="Clg 0.4%", day_type="SummerDesignDay",
-    month=7, day=21, dry_bulb_max_c=33.3, dry_bulb_range_c=10.7,
-    humidity_type="WetBulb", humidity_value=23.8)
-```
-
-Step 4 — Typical building (adds constructions, loads, HVAC, schedules):
+Step 3 — Typical building (adds constructions, loads, HVAC, schedules):
 ```
 create_typical_building(
     climate_zone="ASHRAE 169-2013-4A",

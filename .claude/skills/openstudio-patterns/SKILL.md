@@ -41,7 +41,7 @@ Weather (EPW + design days, needed before simulation)
 7. **Schedules** — `create_schedule_ruleset` (needed by loads)
 8. **Loads** — `create_people_definition`, `create_lights_definition`, `create_electric_equipment`
 9. **HVAC** — `add_baseline_system` / `add_doas_system` / `add_vrf_system`
-10. **Weather** — `set_weather_file` + `add_design_day` (user provides EPW/DDY in docker-mounted dir)
+10. **Weather** — `change_building_location` (sets EPW + design days + climate zone in one call)
 11. **Simulation control** — `set_run_period`, `set_simulation_control`
 12. **Save & simulate** — `save_osm_model` → `run_simulation`
 13. **Results** — `extract_summary_metrics`, `extract_end_use_breakdown`, etc.
@@ -99,7 +99,7 @@ Weather (EPW + design days, needed before simulation)
 | `"Thermal zone 'X' not found"` | Zone name mismatch in HVAC tool | Check `list_thermal_zones` for exact names |
 | `"Material 'X' not found"` | Creating construction with nonexistent material | `create_standard_opaque_material` first |
 | `"system_type must be 1-10"` | Invalid system number | Check `list_baseline_systems` |
-| Simulation fails, no results | Missing weather file or design days | `set_weather_file` + `add_design_day` |
+| Simulation fails, no results | Missing weather file or design days | `change_building_location` (sets EPW + DDY + climate zone) |
 | EUI = 0 or unreasonable | No loads, no HVAC, or no run period | Check `inspect_osm_summary` for missing objects |
 | `"Output directory is not allowed"` | Path outside mounted volumes | Use `/runs/` for output, `/inputs/` for input files |
 

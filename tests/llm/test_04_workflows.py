@@ -144,6 +144,69 @@ WORKFLOW_CASES = [
         "required_tools": ["create_new_building"],
         "timeout": 180,
     },
+    {
+        # Bar → weather/DDY → typical chain (manual multi-step version of create_new_building)
+        "id": "bar_then_typical",
+        "prompt": (
+            "Create a SmallOffice bar building using create_bar_building "
+            "with 2 stories and 20000 sqft. "
+            "After that, call change_building_location with weather_file "
+            "/opt/comstock-measures/create_typical_building_from_model"
+            "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw. "
+            "After that, call create_typical_building with building_type SmallOffice. "
+            "Use MCP tools only."
+        ),
+        "required_tools": [
+            "create_bar_building", "change_building_location",
+            "create_typical_building",
+        ],
+        "max_turns": 25,
+        "timeout": 420,
+    },
+    {
+        # Import FloorspaceJS JSON — tests SDK reverse translator
+        "id": "import_floorspacejs",
+        "prompt": (
+            "Import the FloorspaceJS JSON file at "
+            "/test-assets/sddc_office/floorplan.json "
+            "using import_floorspacejs. Use MCP tools only."
+        ),
+        "required_tools": ["import_floorspacejs"],
+        "timeout": 120,
+    },
+    {
+        # FloorspaceJS → weather/DDY → typical full chain
+        "id": "floorspacejs_to_typical",
+        "prompt": (
+            "Import the FloorspaceJS file at "
+            "/test-assets/sddc_office/floorplan.json "
+            "using import_floorspacejs. Then call change_building_location "
+            "with weather_file "
+            "/opt/comstock-measures/create_typical_building_from_model"
+            "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw. "
+            "Then run create_typical_building to add "
+            "constructions, loads, and HVAC. Use MCP tools only."
+        ),
+        "required_tools": [
+            "import_floorspacejs", "change_building_location",
+            "create_typical_building",
+        ],
+        "max_turns": 25,
+        "timeout": 420,
+    },
+    {
+        # Manual geometry with surface matching
+        "id": "manual_geometry_match",
+        "prompt": (
+            "Create two adjacent spaces using create_space_from_floor_print. "
+            "Space 1: vertices (0,0), (10,0), (10,10), (0,10) at floor height 0. "
+            "Space 2: vertices (10,0), (20,0), (20,10), (10,10) at floor height 0. "
+            "Then run match_surfaces to find shared walls. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["create_space_from_floor_print", "match_surfaces"],
+        "timeout": 120,
+    },
 ]
 
 
@@ -165,7 +228,11 @@ def test_workflow(case):
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
 
-    result = run_claude(case["prompt"], timeout=case.get("timeout", 120))
+    result = run_claude(
+        case["prompt"],
+        timeout=case.get("timeout", 120),
+        max_turns=case.get("max_turns"),
+    )
     tool_names = result.tool_names
 
     for tool in case["required_tools"]:

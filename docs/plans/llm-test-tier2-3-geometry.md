@@ -34,53 +34,26 @@ Added cases:
 
 ---
 
-## Future Tier 2 Tests (Not Yet Implemented)
+## Tier 2 Tests (Implemented)
 
-### Bar → Typical Chain
-```python
-{
-    "id": "bar_then_typical",
-    "prompt": "Create SmallOffice bar geometry, set weather to Houston EPW, "
-              "add design days, then run create_typical_building.",
-    "required_tools": ["create_bar_building", "set_weather_file",
-                       "add_design_day", "create_typical_building"],
-    "timeout": 300,
-}
-```
+### Bar → Typical Chain ✅
+- Dropped `add_design_day` from required (too complex for LLM to parameterize)
+- Natural language prompt style works better than numbered steps
+- Needs `max_turns=25` for 3-tool chain (ToolSearch eats turns)
+- Timeout: 420s
 
-### FloorspaceJS Import
-```python
-{
-    "id": "import_floorspacejs",
-    "prompt": "Import the FloorspaceJS JSON at /repo/tests/assets/sddc_office/floorplan.json "
-              "using import_floorspacejs with building_type SmallOffice.",
-    "required_tools": ["import_floorspacejs"],
-    "timeout": 120,
-}
-```
+### FloorspaceJS Import ✅
+- Uses `/test-assets/sddc_office/floorplan.json` (Docker mount added to runner)
+- Timeout: 120s
 
-### FloorspaceJS → Typical Chain
-```python
-{
-    "id": "floorspacejs_to_typical",
-    "prompt": "Import FloorspaceJS, set weather, add design days, "
-              "then create_typical_building for a complete model.",
-    "required_tools": ["import_floorspacejs", "set_weather_file",
-                       "create_typical_building"],
-    "timeout": 300,
-}
-```
+### FloorspaceJS → Typical Chain ✅
+- `max_turns=25`, timeout 420s
+- Requires: import_floorspacejs, set_weather_file, create_typical_building
 
-### Surface Matching After Manual Geometry
-```python
-{
-    "id": "manual_geometry_match",
-    "prompt": "Create two adjacent spaces using create_space_from_floor_print, "
-              "then run match_surfaces to find shared walls.",
-    "required_tools": ["create_space_from_floor_print", "match_surfaces"],
-    "timeout": 120,
-}
-```
+### Surface Matching After Manual Geometry ✅
+- Two adjacent spaces with explicit vertex coordinates in prompt
+- Requires: create_space_from_floor_print, match_surfaces
+- Timeout: 120s
 
 ---
 
@@ -114,19 +87,18 @@ Added cases:
 
 ## Priority Order
 
-1. **Done**: Tier 1 tool selection, Tier 2 create_bar + create_new_building, Tier 4 guardrails
-2. **Next**: Tier 2 bar→typical chain, import_floorspacejs
-3. **Later**: Tier 3 E2E simulation tests (expensive, ~5min each)
-4. **Stretch**: FloorspaceJS→typical→simulate E2E
+1. **Done**: Tier 1 tool selection, Tier 2 all geometry workflows, Tier 4 guardrails
+2. **Next**: Tier 3 E2E simulation tests (expensive, ~5min each)
+3. **Stretch**: FloorspaceJS→typical→simulate E2E
 
 ## Test Count Impact
 
 | Tier | Before | After | Delta |
 |------|--------|-------|-------|
 | Tier 1 | 21 | 25 | +4 |
-| Tier 2 | 8 | 10 | +2 |
+| Tier 2 | 8 | 14 | +6 |
 | Tier 4 | 2 | 2 | 0 |
-| **Total** | ~55 | ~61 | +6 |
+| **Total** | ~55 | ~65 | +10 |
 
 ## Unresolved
 
