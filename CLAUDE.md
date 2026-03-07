@@ -64,11 +64,11 @@ Always use openstudio-mcp tools for BEM tasks:
 | `object_management` | `delete_object`, `rename_object`, `list_model_objects` | Phase 6B |
 | `weather` | `get_weather_info`, `set_weather_file`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period` | Phase 6C |
 | `measures` | `list_measure_arguments`, `apply_measure` | Phase 6D |
-| `comstock` | `list_comstock_measures`, `create_typical_building` | ComStock |
+| `comstock` | `list_comstock_measures`, `create_bar_building`, `create_typical_building`, `create_new_building` | ComStock |
 | `common_measures` | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `inject_idf`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8 |
 | `skill_discovery` | `list_skills`, `get_skill` | — |
 
-**Total: 22 skills, 127 MCP tools, ~260 integration tests**
+**Total: 22 skills, 129 MCP tools, ~267 integration tests**
 
 ## Model Query Pattern
 ```python
