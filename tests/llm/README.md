@@ -32,18 +32,19 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=0 pytest tests/llm/ -v
 | `LLM_TESTS_RETRIES` | `2` | Retry count for flaky LLM tests |
 | `LLM_TESTS_TIER` | `all` | Filter: `1`, `2`, `3`, `4`, or `all` |
 | `LLM_TESTS_MODEL` | `sonnet` | Model: `sonnet`, `haiku`, `opus` |
-| `LLM_TESTS_MAX_PROMPTS` | `50` | Hard cap on Claude invocations per run |
+| `LLM_TESTS_MAX_PROMPTS` | `100` | Hard cap on Claude invocations per run |
 | `LLM_TESTS_RUNS_DIR` | `/tmp/llm-test-runs` | Host path mounted as `/runs` in Docker |
 
 ## Test Tiers
 
 | Tier | File | Count | Time | Description |
 |------|------|-------|------|-------------|
-| 1 | `test_02_tool_selection.py` | ~14 | ~5 min | Single tool selection |
-| 2 | `test_04_workflows.py` | ~14 | ~20 min | Multi-step tool chains |
-| 3 | `test_03_eval_cases.py` | ~30 | ~15 min | Skill eval prompts |
-| 4 | `test_05_guardrails.py` | ~2 | ~3 min | Safety/refusal tests |
-| setup | `test_01_setup.py` | ~5 | ~5 min | Creates models for other tiers |
+| setup | `test_01_setup.py` | 3 | ~1 min | Creates models for other tiers |
+| 1 | `test_02_tool_selection.py` | 14 | ~5 min | Single tool selection |
+| 2 | `test_04_workflows.py` | 14 | ~10 min | Multi-step tool chains |
+| 3 | `test_03_eval_cases.py` | 27 | ~35 min | Skill eval prompts |
+| 4 | `test_05_guardrails.py` | 2 | ~3 min | Safety/refusal tests |
+| progressive | `test_06_progressive.py` | 30 | ~15 min | L1/L2/L3 specificity levels |
 
 ## Lessons Learned
 
@@ -73,9 +74,11 @@ Claude Code's deferred tool loading (`ToolSearch`) uses 1-3 agent turns before a
 
 ### Debugging failures
 Check the tool call sequence in assertion errors — it reveals agent behavior:
-- Repeated tool calls = tool is failing, agent retrying
+- Repeated `list_files` = agent searching for model file (check baseline path)
 - `list_skills`, `list_comstock_measures` = agent exploring, lost
 - Missing expected tool = ran out of turns or stopped early
+- Wrong tool called = agent found a valid alternative (check test assertions)
+- Tool called but assertion fails = test definition may be too strict
 
 ### Docker mounts
 - `/runs` — model save/load (from `LLM_TESTS_RUNS_DIR`)
@@ -84,3 +87,23 @@ Check the tool call sequence in assertion errors — it reveals agent behavior:
 
 ### Retries
 Default 2 retries handles ~80% pass-rate LLM non-determinism. Set `LLM_TESTS_RETRIES=0` when iterating on a single test to get fast feedback. Set to `1` for a quick check, `2-3` for CI-like confidence.
+
+### Benchmark reports
+After each run, benchmark data is written to `LLM_TESTS_RUNS_DIR`:
+- `benchmark.json` — raw per-test data (tokens, cost, timing, tool calls)
+- `benchmark.md` — aligned markdown tables grouped by tier + progressive analysis
+- `benchmark_history.json` — summary per run (last 50 runs)
+
+Cost figures are notional API pricing from the Claude CLI — free on Claude Max.
+
+### System prompt
+`runner.py` includes a default system prompt that tells the agent not to loop on `list_files` when `load_osm_model` fails. This was the single biggest reliability improvement (44% -> 83% pass rate). The prompt can be overridden per-test via `run_claude(system_prompt=...)`.
+
+### Progressive tests
+`test_06_progressive.py` tests 10 operations at 3 specificity levels:
+- **L1 (vague):** "Add HVAC to the building" — tests tool description keywords
+- **L2 (moderate):** "Add a VAV reheat system to all zones" — tests with context
+- **L3 (explicit):** "Add System 7 VAV reheat using add_baseline_system" — tests with tool name
+
+If L1 fails but L2/L3 pass, the tool description needs better keywords.
+If all levels fail, there's a structural issue (tool API mismatch, missing args, etc.).
