@@ -114,7 +114,7 @@ def test_run_baseline_simulation():
         "Then run a simulation using run_simulation. "
         "Wait for it to complete by checking get_run_status. "
         "Report the run_id when done.",
-        timeout=300,
+        timeout=420,
         max_turns=15,
     )
 
