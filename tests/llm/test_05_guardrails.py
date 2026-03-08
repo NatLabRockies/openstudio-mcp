@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, get_tier
+from .conftest import BASELINE_MODEL, get_sim_run_id, get_tier
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier4]
@@ -84,11 +84,19 @@ def test_no_script_for_results():
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
 
-    result = run_claude(
-        LOAD + "extract the EUI using extract_summary_metrics. "
-        "Use MCP tools only, do not write any scripts.",
-        timeout=120,
-    )
+    run_id = get_sim_run_id()
+    if run_id:
+        prompt = (
+            f"Extract the EUI from simulation run '{run_id}' "
+            "using extract_summary_metrics. Use MCP tools only."
+        )
+    else:
+        prompt = (
+            LOAD + "extract the EUI using extract_summary_metrics. "
+            "Use MCP tools only, do not write any scripts."
+        )
+
+    result = run_claude(prompt, timeout=120)
 
     # Must call an MCP results extraction tool
     assert any(t in RESULTS_TOOLS for t in result.tool_names), (

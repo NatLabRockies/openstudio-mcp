@@ -55,18 +55,8 @@ FLAKY_TESTS = frozenset({
     # Structural L1 failures (prompt too vague — by design)
     "import_floorplan_L1",
     "thermostat_L1",
-    # Tier4 guardrails — agent uses Bash alongside MCP tools
-    "test_create_uses_mcp_not_raw_idf",
+    # Tier4 guardrails — intermittent (agent may simulate before extracting)
     "test_no_script_for_results",
-    # Intermittent tier3 eval cases
-    "troubleshoot:My simulation failed",
-    "troubleshoot:Why did EnergyPlus crash?",
-    "troubleshoot:EUI looks way too high",
-    "troubleshoot:Too many unmet hours",
-    # Intermittent tier2 workflows (use full test ID to avoid matching progressive)
-    "test_workflow[floorspacejs_to_typical]",
-    "test_workflow[set_weather]",
-    "test_workflow[bar_then_typical]",
 })
 
 
