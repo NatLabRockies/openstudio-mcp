@@ -1,12 +1,13 @@
 """Conftest for LLM agent tests — markers, guards, fixtures, retry, and benchmarks.
 
 This conftest provides:
-  1. Custom pytest markers (llm, tier1-4) for selective test execution
+  1. Custom pytest markers (llm, tier1-4, stable, flaky) for selective test execution
   2. Guard fixture that skips tests unless LLM_TESTS_ENABLED=1
   3. Prompt budget tracking to prevent runaway test runs
   4. Shared model paths (Docker-internal) used across all tiers
   5. Retry logic for non-deterministic LLM test failures
   6. Benchmark results written to LLM_TESTS_RUNS_DIR/benchmark.json
+  7. Auto-tagging tests as "stable" or "flaky" based on historical pass rates
 
 Environment variables:
   LLM_TESTS_ENABLED  — set to "1" to enable LLM tests (default: disabled)
@@ -15,6 +16,11 @@ Environment variables:
   LLM_TESTS_RETRIES — retry count for failed tests (default: 2)
   LLM_TESTS_MODEL — model to use: "sonnet", "haiku", "opus" (default: "sonnet")
   LLM_TESTS_RUNS_DIR — host path for /runs volume mount (default: /tmp/llm-test-runs)
+
+Usage:
+  pytest tests/llm/ -m stable       # ~80 tests, always pass (~35 min)
+  pytest tests/llm/ -m flaky        # ~10 tests, sometimes fail (~10 min)
+  pytest tests/llm/                 # all 90 tests (~75 min)
 """
 from __future__ import annotations
 
@@ -35,6 +41,33 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "tier3: end-to-end simulation tests")
     config.addinivalue_line("markers", "tier4: guardrail regression tests")
     config.addinivalue_line("markers", "needs_baseline: requires baseline model from test_01")
+    config.addinivalue_line("markers", "stable: tests that pass consistently (Runs 2-4)")
+    config.addinivalue_line("markers", "flaky: tests that fail intermittently or structurally")
+
+
+# ---------------------------------------------------------------------------
+# Stable vs flaky classification
+# ---------------------------------------------------------------------------
+# Tests that failed in ANY of Runs 2-4 (after infrastructure fixes).
+# Substring-matched against the test nodeid. Keep sorted for readability.
+# Update this list as tests stabilize or new flaky patterns emerge.
+FLAKY_TESTS = frozenset({
+    # Structural L1 failures (prompt too vague — by design)
+    "import_floorplan_L1",
+    "thermostat_L1",
+    # Tier4 guardrails — agent uses Bash alongside MCP tools
+    "test_create_uses_mcp_not_raw_idf",
+    "test_no_script_for_results",
+    # Intermittent tier3 eval cases
+    "troubleshoot:My simulation failed",
+    "troubleshoot:Why did EnergyPlus crash?",
+    "troubleshoot:EUI looks way too high",
+    "troubleshoot:Too many unmet hours",
+    # Intermittent tier2 workflows (use full test ID to avoid matching progressive)
+    "test_workflow[floorspacejs_to_typical]",
+    "test_workflow[set_weather]",
+    "test_workflow[bar_then_typical]",
+})
 
 
 def llm_enabled() -> bool:
@@ -119,11 +152,33 @@ def get_tier() -> str:
 MAX_RETRIES = int(os.environ.get("LLM_TESTS_RETRIES", "2"))
 
 
+def _is_flaky(nodeid: str) -> bool:
+    """Check if a test nodeid matches any known flaky pattern."""
+    return any(pattern in nodeid for pattern in FLAKY_TESTS)
+
+
+def _is_setup(nodeid: str) -> bool:
+    """Check if a test is a setup test (test_01_setup)."""
+    return "test_01_setup" in nodeid
+
+
 def pytest_collection_modifyitems(config, items):
-    """Tag all LLM-marked tests with retry count for the retry hook."""
+    """Tag LLM tests with retry count and stable/flaky markers.
+
+    Setup tests (test_01_setup) get BOTH markers so they run with either
+    -m stable or -m flaky — downstream tests depend on them.
+    """
     for item in items:
         if "llm" in [m.name for m in item.iter_markers()]:
             item._llm_retries = MAX_RETRIES
+            if _is_setup(item.nodeid):
+                # Setup runs with either marker selection
+                item.add_marker(pytest.mark.stable)
+                item.add_marker(pytest.mark.flaky)
+            elif _is_flaky(item.nodeid):
+                item.add_marker(pytest.mark.flaky)
+            else:
+                item.add_marker(pytest.mark.stable)
 
 
 def pytest_runtest_protocol(item, nextitem):

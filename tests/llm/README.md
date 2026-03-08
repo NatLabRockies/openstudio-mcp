@@ -5,8 +5,14 @@ Behavioral tests that verify Claude picks the right MCP tools and chains them co
 ## Quick Start
 
 ```bash
-# Run all LLM tests (slow — ~30-45 min for full suite with retries)
+# Run all LLM tests (~75 min with retries=1)
 LLM_TESTS_ENABLED=1 pytest tests/llm/ -v
+
+# Run ONLY flaky tests (~10 tests, ~10 min) — for iterating on reliability
+LLM_TESTS_ENABLED=1 pytest tests/llm/ -m flaky -v
+
+# Run ONLY stable tests (~80 tests, ~60 min) — regression check
+LLM_TESTS_ENABLED=1 pytest tests/llm/ -m stable -v
 
 # Run a single test by ID
 LLM_TESTS_ENABLED=1 pytest "tests/llm/test_04_workflows.py::test_workflow[bar_then_typical]" -v
@@ -45,6 +51,16 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=0 pytest tests/llm/ -v
 | 3 | `test_03_eval_cases.py` | 27 | ~35 min | Skill eval prompts |
 | 4 | `test_05_guardrails.py` | 2 | ~3 min | Safety/refusal tests |
 | progressive | `test_06_progressive.py` | 30 | ~15 min | L1/L2/L3 specificity levels |
+
+## Stable vs Flaky Classification
+
+Tests are auto-tagged `stable` or `flaky` by `conftest.py` based on pass history across Runs 2-4. The `FLAKY_TESTS` set in `conftest.py` lists substring patterns matched against test nodeids.
+
+**Flaky tests (~11):** tier4 guardrails (2), troubleshoot evals (4), multi-step workflows (3), structural L1 progressive (2).
+
+**Stable tests (~79):** setup (3), all tier1 (14), most tier2 (11/14), most tier3 (23/27), all progressive L2+L3 (20), most progressive L1 (8/10).
+
+To promote a flaky test to stable: remove its pattern from `FLAKY_TESTS` in `conftest.py`.
 
 ## Lessons Learned
 
