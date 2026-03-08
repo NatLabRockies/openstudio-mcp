@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, get_tier
+from .conftest import BASELINE_MODEL, baseline_model_exists, get_tier
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
@@ -86,14 +86,17 @@ WORKFLOW_CASES = [
     },
     {
         # Adjust thermostat setpoints — applies a measure to all zones
-        # which can be slow (180s timeout). Explicit F values prevent
-        # the agent from asking clarifying questions.
+        # which can be slow (180s timeout). Uses offset language since
+        # adjust_thermostat_setpoints takes offsets, not absolute values.
+        # Also accepts replace_thermostat_schedules (valid for absolute setpoints).
         "id": "adjust_thermostat",
         "prompt": LOAD + (
             "adjust the thermostat setpoints using adjust_thermostat_setpoints. "
-            "Set heating to 70F and cooling to 75F. Use MCP tools only."
+            "Raise cooling by 2F and lower heating by 1F. Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model", "adjust_thermostat_setpoints"],
+        "required_tools": ["load_osm_model"],
+        "any_of": ["adjust_thermostat_setpoints", "replace_thermostat_schedules",
+                    "set_thermostat_schedules"],
         "timeout": 180,
     },
     {
@@ -225,6 +228,10 @@ def test_workflow(case):
     tier = get_tier()
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
+
+    # Skip if this case needs a pre-loaded model and it doesn't exist
+    if BASELINE_MODEL in case["prompt"] and not baseline_model_exists():
+        pytest.skip("Baseline model not found — run test_01_setup first")
 
     result = run_claude(
         case["prompt"],

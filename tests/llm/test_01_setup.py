@@ -5,8 +5,8 @@ They create baseline and example models and save them to /runs/ so Tier 2+
 tests can load them without redundant model creation.
 
 Model paths (Docker-internal, shared via /runs volume mount):
-  /runs/llm-test-baseline/model.osm — 10-zone baseline office
-  /runs/llm-test-example/model.osm  — example SEB model
+  /runs/examples/llm-test-baseline/baseline_model.osm — 10-zone baseline office
+  /runs/examples/llm-test-example/example_model.osm   — example SEB model
 
 Dependency chain:
   test_01_setup (create models) → test_02+ (load models)
@@ -37,19 +37,14 @@ def test_create_baseline_model():
     Tier 1+ tests that need model state.
     """
     result = run_claude(
-        "Create a baseline building named 'llm-test-baseline' using create_baseline_osm. "
-        "Then save it using save_osm_model. Use MCP tools only.",
+        "Create a baseline building named 'llm-test-baseline' using "
+        "create_baseline_osm. Use MCP tools only.",
         timeout=120,
     )
 
     tool_names = result.tool_names
     assert "create_baseline_osm" in tool_names, (
         f"create_baseline_osm not called. Tools: {tool_names}"
-    )
-
-    # save_osm_model should appear; create_baseline_osm auto-saves in some cases
-    assert "save_osm_model" in tool_names or "create_baseline_osm" in tool_names, (
-        f"Model not saved. Tools: {tool_names}"
     )
 
     assert not result.is_error, f"Claude reported error: {result.final_text}"

@@ -34,6 +34,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "tier2: multi-step workflow tests")
     config.addinivalue_line("markers", "tier3: end-to-end simulation tests")
     config.addinivalue_line("markers", "tier4: guardrail regression tests")
+    config.addinivalue_line("markers", "needs_baseline: requires baseline model from test_01")
 
 
 def llm_enabled() -> bool:
@@ -50,8 +51,17 @@ def claude_cli_available() -> bool:
 # These are Docker-internal paths (/runs/...). The host path is controlled
 # by LLM_TESTS_RUNS_DIR env var (default /tmp/llm-test-runs).
 # test_01_setup creates these models; all subsequent tests load them.
-BASELINE_MODEL = "/runs/llm-test-baseline/model.osm"
-EXAMPLE_MODEL = "/runs/llm-test-example/model.osm"
+BASELINE_MODEL = "/runs/examples/llm-test-baseline/baseline_model.osm"
+EXAMPLE_MODEL = "/runs/examples/llm-test-example/example_model.osm"
+
+# Host-side runs dir — used to verify model files exist before tests
+_RUNS_DIR = Path(os.environ.get("LLM_TESTS_RUNS_DIR", "/tmp/llm-test-runs"))
+
+
+def baseline_model_exists() -> bool:
+    """Check if the baseline model exists on the host filesystem."""
+    host_path = _RUNS_DIR / "examples" / "llm-test-baseline" / "baseline_model.osm"
+    return host_path.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +69,7 @@ EXAMPLE_MODEL = "/runs/llm-test-example/model.osm"
 # ---------------------------------------------------------------------------
 # Prevents runaway test runs from burning through too many Claude invocations.
 # Each test_* function consumes 1 prompt. Retries also consume prompts.
-MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "50"))
+MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "100"))
 _prompt_count = 0
 
 
@@ -81,6 +91,17 @@ def llm_test_guard():
     _prompt_count += 1
     if _prompt_count > MAX_PROMPTS:
         pytest.skip(f"Prompt budget exhausted ({MAX_PROMPTS} max)")
+
+
+@pytest.fixture(autouse=True)
+def _check_baseline_model(request):
+    """Skip tests that need the baseline model if it doesn't exist on disk."""
+    if "needs_baseline" in [m.name for m in request.node.iter_markers()]:
+        if not baseline_model_exists():
+            pytest.skip(
+                f"Baseline model not found at {_RUNS_DIR / 'llm-test-baseline/model.osm'}. "
+                "Run test_01_setup first."
+            )
 
 
 def get_tier() -> str:
@@ -183,6 +204,8 @@ def pytest_runtest_logreport(report):
         tier = "tier3"
     elif "test_05" in report.nodeid:
         tier = "tier4"
+    elif "test_06" in report.nodeid:
+        tier = "progressive"
 
     # Check for retry info
     attempt = 1
@@ -291,7 +314,7 @@ def pytest_sessionfinish(session, exitstatus):
     md.append(f"**Tokens:** {_fmt_tokens(total_input)} in "
               f"+ {_fmt_tokens(total_output)} out "
               f"+ {_fmt_tokens(total_cache)} cache "
-              f"| **Cost:** ${total_cost:.4f}")
+              f"| **Cost:** ${total_cost:.4f} (notional API pricing)")
     md.append("")
 
     # Tier summary table
@@ -303,7 +326,7 @@ def pytest_sessionfinish(session, exitstatus):
            f"|{'-'*8}|{'-'*8}|")
     md.append(hdr)
     md.append(sep)
-    for tier_name in ("setup", "tier1", "tier2", "tier3", "tier4"):
+    for tier_name in ("setup", "tier1", "tier2", "tier3", "tier4", "progressive"):
         if tier_name not in tiers:
             continue
         ts_ = tiers[tier_name]
@@ -318,7 +341,7 @@ def pytest_sessionfinish(session, exitstatus):
     md.append("## Detailed Results")
     md.append("")
 
-    for tier_name in ("setup", "tier1", "tier2", "tier3", "tier4"):
+    for tier_name in ("setup", "tier1", "tier2", "tier3", "tier4", "progressive"):
         tier_tests = [r for r in _benchmark_results if r["tier"] == tier_name]
         if not tier_tests:
             continue
@@ -360,6 +383,44 @@ def pytest_sessionfinish(session, exitstatus):
             md.append(_fmt_row(row))
         md.append("")
 
+    # Progressive prompt analysis (L1/L2/L3 pass rates per case)
+    progressive_tests = [r for r in _benchmark_results if r["tier"] == "progressive"]
+    if progressive_tests:
+        md.append("## Progressive Prompt Analysis")
+        md.append("")
+        md.append("Pass rates by specificity level per case:")
+        md.append("")
+        # Group by case_id (strip _L1/_L2/_L3 suffix)
+        cases: dict[str, dict[str, bool]] = {}
+        for r in progressive_tests:
+            name = _short_test_id(r["test_id"])
+            # "import_floorplan_L1" -> case="import_floorplan", level="L1"
+            parts = name.rsplit("_", 1)
+            if len(parts) == 2 and parts[1] in ("L1", "L2", "L3"):
+                case_id, level = parts
+            else:
+                continue
+            if case_id not in cases:
+                cases[case_id] = {}
+            cases[case_id][level] = r["passed"]
+
+        md.append(f"| {'Case':<20} | {'L1 (vague)':>10} | {'L2 (moderate)':>13} "
+                  f"| {'L3 (explicit)':>13} |")
+        md.append(f"|{'-'*22}|{'-'*12}|{'-'*15}|{'-'*15}|")
+        for case_id, levels in cases.items():
+            l1 = "PASS" if levels.get("L1") else "FAIL" if "L1" in levels else "-"
+            l2 = "PASS" if levels.get("L2") else "FAIL" if "L2" in levels else "-"
+            l3 = "PASS" if levels.get("L3") else "FAIL" if "L3" in levels else "-"
+            md.append(f"| {case_id:<20} | {l1:>10} | {l2:>13} | {l3:>13} |")
+        l1_pass = sum(1 for c in cases.values() if c.get("L1"))
+        l2_pass = sum(1 for c in cases.values() if c.get("L2"))
+        l3_pass = sum(1 for c in cases.values() if c.get("L3"))
+        l_total = len(cases)
+        md.append("")
+        md.append(f"**Summary:** L1={l1_pass}/{l_total} | "
+                  f"L2={l2_pass}/{l_total} | L3={l3_pass}/{l_total}")
+        md.append("")
+
     # Failed tests detail
     failed_tests = [r for r in _benchmark_results if not r["passed"]]
     if failed_tests:
@@ -395,7 +456,7 @@ def pytest_sessionfinish(session, exitstatus):
     print(f"Tokens: {_fmt_tokens(total_input)} in + "
           f"{_fmt_tokens(total_output)} out + "
           f"{_fmt_tokens(total_cache)} cache | Cost: ${total_cost:.4f}")
-    for tier_name in ("setup", "tier1", "tier2", "tier3", "tier4"):
+    for tier_name in ("setup", "tier1", "tier2", "tier3", "tier4", "progressive"):
         if tier_name not in tiers:
             continue
         ts_ = tiers[tier_name]

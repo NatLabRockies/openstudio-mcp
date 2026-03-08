@@ -73,6 +73,7 @@ NO_MODEL_CASES = [
 ]
 
 
+@pytest.mark.needs_baseline
 @pytest.mark.parametrize(("suffix", "expected"), TOOL_SELECTION_CASES,
                          ids=[c[0][:35] for c in TOOL_SELECTION_CASES])
 def test_tool_selection_with_model(suffix, expected):

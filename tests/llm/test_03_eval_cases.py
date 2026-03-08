@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, get_tier
+from .conftest import BASELINE_MODEL, baseline_model_exists, get_tier
 from .eval_parser import load_should_trigger
 from .runner import run_claude
 
@@ -119,6 +119,8 @@ def test_eval_tool_selection(case):
     # Prepend model load for skills that need model state
     prompt = case["prompt"]
     if case["skill"] in NEEDS_MODEL:
+        if not baseline_model_exists():
+            pytest.skip("Baseline model not found — run test_01_setup first")
         prompt = LOAD_PREFIX + prompt.lower()
     prompt += SUFFIX
 

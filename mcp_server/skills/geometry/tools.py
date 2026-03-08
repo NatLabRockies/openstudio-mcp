@@ -144,17 +144,19 @@ def register(mcp):
         create_zones: bool = True,
         match: bool = True,
     ):
-        """Import FloorspaceJS JSON geometry into a new model.
+        """Import a floor plan / custom geometry from FloorspaceJS JSON.
 
-        Creates spaces, surfaces, windows, building stories, and space types
-        from a FloorspaceJS JSON file. Optionally creates thermal zones and
-        runs surface matching. Sets standardsBuildingType/standardsSpaceType
+        Use this tool when a user wants to import a floor plan, import geometry,
+        load a FloorspaceJS file, or use custom geometry from the FloorspaceJS
+        editor. Creates spaces, surfaces, windows, building stories, and space
+        types from a FloorspaceJS JSON file. Optionally creates thermal zones
+        and runs surface matching. Sets standardsBuildingType/standardsSpaceType
         so create_typical_building can populate the model.
 
         Create FloorspaceJS JSON at https://nrel.github.io/floorspace.js/
 
         Args:
-            floorplan_path: Absolute path to FloorspaceJS JSON file
+            floorplan_path: Absolute path to FloorspaceJS JSON file (*.json)
             building_type: DOE prototype — "SmallOffice", "LargeOffice",
                 "RetailStandalone", "Hospital", etc. Sets standardsBuildingType.
             create_zones: Create one thermal zone per space (default True)

@@ -40,6 +40,15 @@ BUILTIN_TOOLS = frozenset({
 })
 
 
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an OpenStudio building energy modeling assistant. "
+    "Use only the MCP tools provided — never write scripts or raw files. "
+    "If load_osm_model fails because the file doesn't exist, report the "
+    "error immediately — do NOT call list_files repeatedly to search for it. "
+    "If a tool call fails, try a different approach or report the error."
+)
+
+
 class ClaudeResult:
     """Parsed result from a Claude Code CLI invocation."""
 
@@ -148,6 +157,7 @@ def run_claude(
     """
     global _last_result
     model = model or os.environ.get("LLM_TESTS_MODEL", "sonnet")
+    system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
     mcp_config = _write_mcp_config()
 
     cmd = [
@@ -159,10 +169,8 @@ def run_claude(
         "--dangerously-skip-permissions",
         "--no-session-persistence",
         "--allowedTools", allowed_tools,
+        "--system-prompt", system_prompt,
     ]
-
-    if system_prompt:
-        cmd.extend(["--system-prompt", system_prompt])
     if max_turns:
         cmd.extend(["--max-turns", str(max_turns)])
 

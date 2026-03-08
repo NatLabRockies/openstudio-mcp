@@ -23,9 +23,12 @@ def register(mcp: FastMCP) -> None:
         economizer: bool = True,
         system_name: str | None = None,
     ) -> str:
-        """Add ASHRAE 90.1 Appendix G baseline HVAC system.
+        """Add HVAC / heating and cooling system to the building.
 
-        Systems 1-10: PTAC, PTHP, PSZ-AC, PSZ-HP, PkgVAV Reheat/PFP, VAV Reheat/PFP, Gas/Elec UnitHtrs.
+        Use this tool when a user wants to add HVAC, set up heating and cooling,
+        or add an air conditioning system. Implements ASHRAE 90.1 Appendix G
+        baseline systems 1-10: PTAC, PTHP, PSZ-AC, PSZ-HP, PkgVAV Reheat/PFP,
+        VAV Reheat/PFP, Gas/Elec UnitHtrs.
         Call list_baseline_systems() to see all options with descriptions.
 
         Args:
