@@ -95,6 +95,9 @@ def register(mcp):
         """Run ASHRAE QA/QC checks on simulation results. Requires a completed
         simulation — call run_simulation first, then pass its run_id here.
 
+        For pre-simulation model validation (no run_id needed), use
+        inspect_osm_summary or get_model_summary instead.
+
         Args:
             run_id: Run ID from a completed simulation (required — provides SQL results)
             template: Target ASHRAE standard — "90.1-2013", "90.1-2016", "90.1-2019"
@@ -107,7 +110,8 @@ def register(mcp):
             return {
                 "ok": False,
                 "error": "run_id is required — run a simulation first, then pass its run_id here",
-                "hint": "Call run_simulation() first, wait for completion, then call run_qaqc_checks(run_id=...)",
+                "hint": "Call run_simulation() first, wait for completion, then call run_qaqc_checks(run_id=...). "
+                        "For pre-simulation checks, use inspect_osm_summary or get_model_summary instead.",
             }
         return run_qaqc_checks_op(run_id=run_id, template=template, checks=parse_str_list(checks))
 
@@ -193,10 +197,28 @@ def register(mcp):
         weather_file: str = "",
         climate_zone: str = "Lookup From Stat File",
     ):
-        """Set weather file and ASHRAE climate zone.
+        """Set weather file, design days, and ASHRAE climate zone in one step.
+
+        This tool also:
+        - Removes existing design days and loads correct ones from the DDY file
+        - Sets the ASHRAE climate zone (auto-detected from .stat file or explicit)
+
+        Design days are required for HVAC sizing. Use this tool whenever
+        setting the location/weather for a building model.
+
+        IMPORTANT: The EPW file must have companion .stat and .ddy files in
+        the same directory with the same base filename. For example, if the
+        EPW is "Boston.epw", then "Boston.stat" and "Boston.ddy" must also
+        exist. The measure will fail if these are missing.
+
+        Available EPW files with .stat/.ddy companions:
+          /opt/comstock-measures/ChangeBuildingLocation/tests/
+          Use list_files(directory="/opt/comstock-measures/ChangeBuildingLocation/tests",
+          pattern="*.epw") to see available weather files.
 
         Args:
-            weather_file: EPW weather file name
+            weather_file: EPW weather file path (absolute path to .epw file).
+                Must have companion .stat and .ddy files alongside it.
             climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto
         """
         return change_building_location_op(

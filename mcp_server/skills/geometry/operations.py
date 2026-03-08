@@ -1,15 +1,19 @@
-"""Geometry operations — surfaces and subsurfaces.
+"""Geometry operations — surfaces, subsurfaces, and FloorspaceJS import.
 
 Query and creation patterns adapted from openstudio-toolkit osm_objects/surfaces.py
 and osm_objects/subsurfaces.py — using direct openstudio bindings.
 Floor-print extrusion follows openstudio-resources baseline_model.py.
+FloorspaceJS import uses the SDK-native FloorspaceReverseTranslator.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import openstudio
 
+from mcp_server import model_manager
+from mcp_server.config import RUN_ROOT, is_path_allowed
 from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
@@ -366,3 +370,159 @@ def set_window_to_wall_ratio(
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to set window-to-wall ratio: {e}"}
+
+
+# ---- FloorspaceJS import ----
+
+# Mapping from DOE prototype names to openstudio-standards internal names.
+# The bar measure uses "Office" (not "SmallOffice") as standardsBuildingType
+# and "WholeBuilding - Sm Office" as standardsSpaceType.
+_STANDARDS_BUILDING_INFO: dict[str, tuple[str, str]] = {
+    # prototype → (standardsBuildingType, standardsSpaceType)
+    "SmallOffice": ("Office", "WholeBuilding - Sm Office"),
+    "MediumOffice": ("Office", "WholeBuilding - Md Office"),
+    "LargeOffice": ("Office", "WholeBuilding - Lg Office"),
+    "SmallHotel": ("SmallHotel", "WholeBuilding - Sm Hotel"),
+    "LargeHotel": ("LargeHotel", "WholeBuilding - Lg Hotel"),
+    "Warehouse": ("Warehouse", "WholeBuilding - Warehouse"),
+    "RetailStandalone": ("Retail", "WholeBuilding - Retail"),
+    "RetailStripmall": ("StripMall", "WholeBuilding - Retail"),
+    "QuickServiceRestaurant": ("QuickServiceRestaurant", "WholeBuilding - Dining"),
+    "FullServiceRestaurant": ("FullServiceRestaurant", "WholeBuilding - Dining"),
+    "Hospital": ("Hospital", "WholeBuilding - Healthcare"),
+    "Outpatient": ("Outpatient", "WholeBuilding - Healthcare"),
+    "PrimarySchool": ("PrimarySchool", "WholeBuilding"),
+    "SecondarySchool": ("SecondarySchool", "WholeBuilding"),
+}
+
+
+def import_floorspacejs(
+    floorplan_path: str,
+    building_type: str = "SmallOffice",
+    create_zones: bool = True,
+    match: bool = True,
+) -> dict[str, Any]:
+    """Import FloorspaceJS JSON geometry into the model.
+
+    Uses the SDK-native FloorspaceReverseTranslator (no Ruby measure needed).
+    Creates a new model from the FloorspaceJS JSON, then optionally creates
+    thermal zones and runs surface matching.
+
+    Sets standardsBuildingType and standardsSpaceType on each space type
+    so create_typical_building can assign constructions and loads.
+
+    Args:
+        floorplan_path: Path to FloorspaceJS JSON file
+        building_type: DOE prototype building type for standardsBuildingType
+            (e.g. "SmallOffice", "LargeOffice", "RetailStandalone")
+        create_zones: Create one thermal zone per space (default True)
+        match: Run surface intersection and matching (default True)
+    """
+    try:
+        fp = Path(floorplan_path)
+        if not fp.is_file():
+            return {"ok": False, "error": f"FloorspaceJS file not found: {floorplan_path}"}
+        if not is_path_allowed(fp):
+            return {"ok": False, "error": f"Path not allowed: {floorplan_path}"}
+
+        # Read JSON
+        json_str = fp.read_text(encoding="utf-8")
+
+        # Import via SDK FloorspaceReverseTranslator
+        with suppress_openstudio_warnings():
+            rt = openstudio.model.FloorspaceReverseTranslator()
+            model_opt = rt.modelFromFloorspace(json_str)
+
+        if not model_opt.is_initialized():
+            return {"ok": False, "error": "FloorspaceReverseTranslator failed to parse JSON"}
+
+        model = model_opt.get()
+
+        # Map DOE prototype name to openstudio-standards internal names
+        std_bldg, std_space = _STANDARDS_BUILDING_INFO.get(
+            building_type, (building_type, None),
+        )
+
+        # Set standardsBuildingType on building
+        bldg = model.getBuilding()
+        bldg.setStandardsBuildingType(std_bldg)
+
+        # Set standards fields on space types matching bar measure conventions
+        for st in model.getSpaceTypes():
+            if not st.standardsBuildingType().is_initialized():
+                st.setStandardsBuildingType(std_bldg)
+            if std_space and not st.standardsSpaceType().is_initialized():
+                st.setStandardsSpaceType(std_space)
+
+        # Create thermal zones with thermostats (one per space).
+        # create_typical_building requires "conditioned zones" — zones with
+        # thermostat heating/cooling setpoint schedules.
+        zones_created = 0
+        if create_zones:
+            # Shared schedules for all zones (create_typical replaces them)
+            htg_sch = openstudio.model.ScheduleConstant(model)
+            htg_sch.setName("Default Htg Setpoint")
+            htg_sch.setValue(21.0)
+            clg_sch = openstudio.model.ScheduleConstant(model)
+            clg_sch.setName("Default Clg Setpoint")
+            clg_sch.setValue(24.0)
+            with suppress_openstudio_warnings():
+                for space in model.getSpaces():
+                    if not space.thermalZone().is_initialized():
+                        zone = openstudio.model.ThermalZone(model)
+                        zone.setName(f"Zone {space.nameString()}")
+                        space.setThermalZone(zone)
+                        # Add thermostat so zone counts as "conditioned"
+                        tstat = openstudio.model.ThermostatSetpointDualSetpoint(model)
+                        tstat.setHeatingSetpointTemperatureSchedule(htg_sch)
+                        tstat.setCoolingSetpointTemperatureSchedule(clg_sch)
+                        zone.setThermostatSetpointDualSetpoint(tstat)
+                        zones_created += 1
+
+        # Surface matching
+        matched = 0
+        if match:
+            space_vector = openstudio.model.SpaceVector()
+            for sp in model.getSpaces():
+                space_vector.append(sp)
+            with suppress_openstudio_warnings():
+                openstudio.model.intersectSurfaces(space_vector)
+                openstudio.model.matchSurfaces(space_vector)
+            for surface in model.getSurfaces():
+                if surface.outsideBoundaryCondition() == "Surface":
+                    matched += 1
+
+        # Save model and load into model_manager
+        run_dir = RUN_ROOT / "examples" / "floorspacejs"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        osm_path = run_dir / "imported.osm"
+        with suppress_openstudio_warnings():
+            model.save(str(osm_path), True)
+        model_manager.load_model(osm_path)
+
+        # Build summary
+        space_types_info = []
+        for st in model.getSpaceTypes():
+            sst = st.standardsSpaceType()
+            space_types_info.append({
+                "name": st.nameString(),
+                "standards_space_type": sst.get() if sst.is_initialized() else None,
+            })
+
+        return {
+            "ok": True,
+            "osm_path": str(osm_path),
+            "spaces": len(model.getSpaces()),
+            "surfaces": len(model.getSurfaces()),
+            "subsurfaces": len(model.getSubSurfaces()),
+            "thermal_zones": len(model.getThermalZones()),
+            "zones_created": zones_created,
+            "matched_surfaces": matched,
+            "building_stories": len(model.getBuildingStorys()),
+            "space_types": space_types_info,
+            "building_type": building_type,
+        }
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to import FloorspaceJS: {e}"}

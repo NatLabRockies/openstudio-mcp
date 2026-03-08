@@ -52,15 +52,13 @@ create_electric_equipment(
 
 ## Set Up Weather
 
-User must provide EPW and DDY files in the docker-mounted input directory.
+User must provide an EPW file in the docker-mounted input directory.
+`change_building_location` sets weather, design days (from DDY), and climate zone in one call.
+The EPW must have companion `.stat` and `.ddy` files alongside it (same directory, same base filename).
 
 ```
 list_files()                              # find available weather files
-set_weather_file(epw_path="/inputs/Chicago.epw")
-add_design_day(name="Chicago Htg 99.6%", day_type="WinterDesignDay",
-    month=1, day=21, dry_bulb_max_c=-20.6, dry_bulb_range_c=0.0)
-add_design_day(name="Chicago Clg 0.4%", day_type="SummerDesignDay",
-    month=7, day=21, dry_bulb_max_c=33.3, dry_bulb_range_c=10.7)
+change_building_location(weather_file="/inputs/Chicago.epw")
 ```
 
 ## Tune Component Properties

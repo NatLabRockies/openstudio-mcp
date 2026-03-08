@@ -103,19 +103,9 @@ class TestRunCmdOSError:
 
 
 # ---------------------------------------------------------------------------
-# H-1: set_weather_file path validation
+# H-1: path validation (set_weather_file removed — change_building_location
+# uses apply_measure which validates paths via measure runner)
 # ---------------------------------------------------------------------------
-
-class TestWeatherPathValidation:
-    """H-1: set_weather_file rejects paths outside allowed roots."""
-
-    def test_disallowed_epw_path(self, monkeypatch):
-        from mcp_server.skills.weather import operations as weather_ops
-        # Stub is_path_allowed to always reject
-        monkeypatch.setattr("mcp_server.skills.weather.operations.is_path_allowed", lambda _p: False)
-        result = weather_ops.set_weather_file("/tmp/evil.epw")
-        assert result["ok"] is False
-        assert "allowed roots" in result["error"]
 
 
 # ---------------------------------------------------------------------------

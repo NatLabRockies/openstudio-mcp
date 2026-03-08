@@ -33,20 +33,10 @@ def test_skill_energy_report_workflow():
                     "osm_path": cr["osm_path"],
                 }))
                 assert lr.get("ok") is True
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": EPW_PATH,
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
                 }))
                 assert wr.get("ok") is True
-                for dd_args in [
-                    {"name": "Htg", "day_type": "WinterDesignDay",
-                     "month": 1, "day": 21,
-                     "dry_bulb_max_c": -20.6, "dry_bulb_range_c": 0.0},
-                    {"name": "Clg", "day_type": "SummerDesignDay",
-                     "month": 7, "day": 21,
-                     "dry_bulb_max_c": 33.3, "dry_bulb_range_c": 10.7},
-                ]:
-                    dd = unwrap(await s.call_tool("add_design_day", dd_args))
-                    assert dd.get("ok") is True
 
                 save_path = f"/runs/{name}.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {

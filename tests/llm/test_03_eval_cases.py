@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, get_tier
+from .conftest import BASELINE_MODEL, baseline_model_exists, get_sim_run_id, get_tier
 from .eval_parser import load_should_trigger
 from .runner import run_claude
 
@@ -37,6 +37,8 @@ SKIP_PROMPTS = {
     "Build me a new model from scratch",
     "Start a new building energy model",
     "What energy savings from better windows?",
+    # Prompt says "with weather" but no weather_file path — agent can't guess
+    "Create a complete building with weather",
 }
 
 # Load cases at import time; filter out wildcard tool names and skip-listed prompts
@@ -56,6 +58,19 @@ LOAD_PREFIX = (
     f"First load the model at {BASELINE_MODEL} using load_osm_model. Then "
 )
 
+def _troubleshoot_prefix() -> str:
+    """Build a prompt prefix for troubleshoot tests, including run_id if available."""
+    run_id = get_sim_run_id()
+    if run_id:
+        return (
+            f"First load the model at {BASELINE_MODEL} using load_osm_model. "
+            f"A simulation was run with run_id '{run_id}'. "
+        )
+    return (
+        f"First load the model at {BASELINE_MODEL} using load_osm_model. "
+        "A simulation was run previously. Look for simulation runs in /runs. "
+    )
+
 # Extra acceptable tools beyond what eval.md lists.
 # The agent often does context-gathering before reaching the "target" tool.
 # These represent valid agent behaviors that shouldn't count as failures.
@@ -68,10 +83,13 @@ EXTRA_EXPECTED = {
                  "get_building_info", "list_thermal_zones", "list_air_loops"],
     # inspect_osm_summary is a valid QA/QC approach alongside run_qaqc_checks
     "qaqc": ["inspect_osm_summary", "run_qaqc_checks", "get_model_summary"],
-    # Troubleshooting may involve inspecting model state, not just reading logs
+    # Troubleshooting may involve inspecting model state, not just reading logs.
+    # Agent may use list_files to discover runs, run_simulation to reproduce,
+    # or inspect_osm_summary/get_building_info for pre-sim diagnostics.
     "troubleshoot": ["get_run_status", "get_run_logs", "extract_summary_metrics",
                      "extract_component_sizing", "get_model_summary",
-                     "list_thermal_zones"],
+                     "list_thermal_zones", "list_files", "inspect_osm_summary",
+                     "get_building_info", "run_simulation"],
     # Retrofit analysis involves many intermediate steps (inspect envelope,
     # list constructions, etc.) — any of these is valid progress
     "retrofit": ["save_osm_model", "run_simulation", "extract_summary_metrics",
@@ -119,7 +137,12 @@ def test_eval_tool_selection(case):
     # Prepend model load for skills that need model state
     prompt = case["prompt"]
     if case["skill"] in NEEDS_MODEL:
-        prompt = LOAD_PREFIX + prompt.lower()
+        if not baseline_model_exists():
+            pytest.skip("Baseline model not found — run test_01_setup first")
+        if case["skill"] == "troubleshoot":
+            prompt = _troubleshoot_prefix() + prompt.lower()
+        else:
+            prompt = LOAD_PREFIX + prompt.lower()
     prompt += SUFFIX
 
     timeout = SLOW_SKILLS.get(case["skill"], 120)

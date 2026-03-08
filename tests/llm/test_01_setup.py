@@ -5,8 +5,8 @@ They create baseline and example models and save them to /runs/ so Tier 2+
 tests can load them without redundant model creation.
 
 Model paths (Docker-internal, shared via /runs volume mount):
-  /runs/llm-test-baseline/model.osm — 10-zone baseline office
-  /runs/llm-test-example/model.osm  — example SEB model
+  /runs/examples/llm-test-baseline/baseline_model.osm — 10-zone baseline office
+  /runs/examples/llm-test-example/example_model.osm   — example SEB model
 
 Dependency chain:
   test_01_setup (create models) → test_02+ (load models)
@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL
+import re
+
+from .conftest import BASELINE_MODEL, save_sim_run_id
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
@@ -37,19 +39,14 @@ def test_create_baseline_model():
     Tier 1+ tests that need model state.
     """
     result = run_claude(
-        "Create a baseline building named 'llm-test-baseline' using create_baseline_osm. "
-        "Then save it using save_osm_model. Use MCP tools only.",
+        "Create a baseline building named 'llm-test-baseline' using "
+        "create_baseline_osm. Use MCP tools only.",
         timeout=120,
     )
 
     tool_names = result.tool_names
     assert "create_baseline_osm" in tool_names, (
         f"create_baseline_osm not called. Tools: {tool_names}"
-    )
-
-    # save_osm_model should appear; create_baseline_osm auto-saves in some cases
-    assert "save_osm_model" in tool_names or "create_baseline_osm" in tool_names, (
-        f"Model not saved. Tools: {tool_names}"
     )
 
     assert not result.is_error, f"Claude reported error: {result.final_text}"
@@ -103,3 +100,46 @@ def test_load_baseline_model():
     assert "list_thermal_zones" in tool_names, (
         f"list_thermal_zones not called. Tools: {tool_names}"
     )
+
+
+def test_run_baseline_simulation():
+    """Run a simulation on the baseline model and save the run_id.
+
+    The run_id is saved to /runs/llm-test-sim-run-id.txt so troubleshoot
+    tests can reference it. The simulation output persists in /runs/sim_XXX/
+    across Docker containers (shared volume mount).
+    """
+    result = run_claude(
+        f"Load the model at {BASELINE_MODEL} using load_osm_model. "
+        "Then run a simulation using run_simulation. "
+        "Wait for it to complete by checking get_run_status. "
+        "Report the run_id when done.",
+        timeout=420,
+        max_turns=15,
+    )
+
+    tool_names = result.tool_names
+    assert "run_simulation" in tool_names, (
+        f"run_simulation not called. Tools: {tool_names}"
+    )
+
+    # Extract run_id from the tool call inputs
+    run_id = None
+    for call in result.mcp_tool_calls:
+        if call["tool"].endswith("run_simulation"):
+            # run_simulation returns the run_id
+            continue
+        if call["tool"].endswith("get_run_status"):
+            run_id = call["input"].get("run_id", "")
+            break
+
+    # Also try to extract from the final text (agent usually reports it)
+    if not run_id:
+        match = re.search(r"sim_[a-f0-9]{12}", result.final_text)
+        if match:
+            run_id = match.group(0)
+
+    if run_id:
+        save_sim_run_id(run_id)
+
+    assert not result.is_error, f"Simulation failed: {result.final_text}"

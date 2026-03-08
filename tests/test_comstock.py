@@ -23,12 +23,12 @@ async def _setup_baseline(session, model_name, set_weather=False):
     lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
     assert lr.get("ok") is True, f"load_osm_model failed: {lr}"
     if set_weather:
-        # Use bundled Houston EPW from ComStock measures
-        wr = unwrap(await session.call_tool("set_weather_file", {
-            "epw_path": "/opt/comstock-measures/create_typical_building_from_model"
-                        "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw",
+        # Boston EPW has .stat + .ddy (required by ChangeBuildingLocation)
+        wr = unwrap(await session.call_tool("change_building_location", {
+            "weather_file": "/opt/comstock-measures/ChangeBuildingLocation"
+                            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw",
         }))
-        assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
+        assert wr.get("ok") is True, f"change_building_location failed: {wr}"
 
 
 # --- Test 1: list_comstock_measures returns measures ---
@@ -130,12 +130,12 @@ def test_create_typical_building_default():
                 }))
                 assert lr.get("ok") is True, f"load_osm_model failed: {lr}"
 
-                # Set weather file with absolute path (model has relative ref)
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": "/opt/comstock-measures/create_typical_building_from_model"
-                               "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw",
+                # Set weather + design days + climate zone
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": "/opt/comstock-measures/ChangeBuildingLocation"
+                                    "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw",
                 }))
-                assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
+                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
 
                 # Apply create_typical_building
                 res = unwrap(await s.call_tool("create_typical_building", {

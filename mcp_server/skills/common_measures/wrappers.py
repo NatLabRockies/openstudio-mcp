@@ -18,7 +18,7 @@ def _ensure_climate_zone() -> None:
 
     Reporting measures (generic_qaqc, openstudio_results) crash with nil
     errors when the model has no climate zone.  This is a safety net for
-    models that skip set_weather_file / change_building_location.
+    models that skip change_building_location.
     """
     try:
         from mcp_server.model_manager import get_model
@@ -319,12 +319,14 @@ def change_building_location_op(
     weather_file: str,
     climate_zone: str = "Lookup From Stat File",
 ) -> dict[str, Any]:
-    """Change building location by setting weather file and climate zone.
+    """Change building location: sets EPW, loads DDY design days, sets climate zone.
 
-    Also looks up the .stat file for design day data if available.
+    Requires companion .stat and .ddy files alongside the EPW with the same
+    base filename (e.g. Boston.epw → Boston.stat + Boston.ddy). The measure
+    reads design days from the .ddy and climate zone from the .stat file.
 
     Args:
-        weather_file: EPW weather file name (must be accessible in file_paths)
+        weather_file: Absolute path to .epw file (must have .stat + .ddy alongside)
         climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto-detect
     """
     return _run("ChangeBuildingLocation", {

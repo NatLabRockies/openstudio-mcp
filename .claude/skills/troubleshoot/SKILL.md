@@ -19,8 +19,9 @@ get_run_logs(run_id=..., log_type="stderr")
 
 | Error pattern | Cause | Fix |
 |---|---|---|
-| `No weather file` | Missing or wrong EPW path | `set_weather_file(epw_path="/inputs/...")` |
-| `No SizingPeriod` | Missing design days | `add_design_day(...)` (need both heating + cooling) |
+| `No weather file` | Missing or wrong EPW path | `change_building_location(weather_file="/inputs/...")` |
+| `No SizingPeriod` | Missing design days | `change_building_location` (loads DDY automatically) |
+| `Could not find the stat file` | EPW missing companion .stat/.ddy | EPW needs .stat + .ddy files alongside with same base filename |
 | `Node not connected` | Broken HVAC loop | Check with `get_air_loop_details` / `get_plant_loop_details` |
 | `Surface has no vertices` | Bad geometry | Check `list_surfaces()` for degenerate surfaces |
 | `Zone has no surfaces` | Empty thermal zone | Zone needs spaces with geometry assigned |
@@ -61,7 +62,7 @@ query_timeseries(run_id=..., variable_name="Zone Mean Air Temperature",
 
 | Problem | Tool |
 |---|---|
-| Add missing weather | `set_weather_file` + `add_design_day` |
+| Add missing weather | `change_building_location` (sets EPW + DDY + climate zone) |
 | Add missing HVAC | `add_baseline_system` |
 | Remove broken objects | `clean_unused_objects` |
 | Check model completeness | `run_qaqc_checks` |

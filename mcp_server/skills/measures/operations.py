@@ -152,6 +152,20 @@ def apply_measure(
                     if epw_resolved.is_file():
                         file_paths.append(str(epw_resolved.parent))
 
+        # Also add directories of any EPW paths passed as arguments
+        # (e.g. ChangeBuildingLocation's weather_file_name argument).
+        # Set weather_file in OSW so the runner can resolve the model's
+        # weather reference even if the original EPW path is stale.
+        osw_weather_file = None
+        if arguments:
+            for v in arguments.values():
+                v_str = str(v)
+                if v_str.endswith(".epw") and Path(v_str).is_file():
+                    parent = str(Path(v_str).parent)
+                    if parent not in file_paths:
+                        file_paths.append(parent)
+                    osw_weather_file = v_str
+
         # Build minimal OSW — use relative path to local copy
         osw = {
             "seed_file": str(temp_osm),
@@ -164,6 +178,11 @@ def apply_measure(
                 },
             ],
         }
+        # If an EPW was found in arguments, set it in the OSW so the runner
+        # doesn't fail trying to resolve a stale weather reference from the model
+        if osw_weather_file:
+            osw["weather_file"] = osw_weather_file
+
         osw_path = run_dir / "workflow.osw"
         osw_path.write_text(json.dumps(osw, indent=2), encoding="utf-8")
 

@@ -302,27 +302,20 @@ def test_change_building_location():
                 await s.initialize()
                 await _setup_baseline(s, _unique("location"))
 
-                # Set weather file first so the measure can find it
-                epw = ("/opt/comstock-measures/create_typical_building_from_model"
-                       "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw")
-                wr = unwrap(await s.call_tool("set_weather_file", {"epw_path": epw}))
-                assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
-
+                epw = ("/opt/comstock-measures/ChangeBuildingLocation"
+                       "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw")
                 res = unwrap(await s.call_tool("change_building_location", {
-                    "weather_file": "USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw",
-                    "climate_zone": "ASHRAE 169-2013-2A",
+                    "weather_file": epw,
                 }))
-                # May succeed or fail depending on stat file availability
-                assert "ok" in res, f"Unexpected response: {res}"
+                assert res.get("ok") is True, f"change_building_location failed: {res}"
 
-                if res.get("ok") is True:
-                    # After: verify weather file is set on model
-                    weather = unwrap(await s.call_tool("get_weather_info", {}))
-                    assert weather.get("ok") is True, f"get_weather_info failed: {weather}"
-                    epw_url = weather.get("epw_url") or weather.get("weather_file", "")
-                    assert "Houston" in str(epw_url) or "722430" in str(epw_url), (
-                        f"Weather file not updated to Houston: {epw_url}"
-                    )
+                # Verify weather file is set on model
+                weather = unwrap(await s.call_tool("get_weather_info", {}))
+                assert weather.get("ok") is True, f"get_weather_info failed: {weather}"
+                epw_url = weather.get("epw_url") or weather.get("weather_file", "")
+                assert "Boston" in str(epw_url) or "725090" in str(epw_url), (
+                    f"Weather file not updated to Boston: {epw_url}"
+                )
 
     asyncio.run(_run())
 
@@ -672,29 +665,11 @@ def test_qaqc_post_sim():
                 # Create baseline model
                 await _setup_baseline(s, name)
 
-                # Set weather + design days
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": EPW_PATH,
+                # Set weather + design days + climate zone
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
                 }))
-                assert wr.get("ok") is True, f"set_weather_file failed: {wr}"
-
-                dd1 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Heating 99.6%",
-                    "day_type": "WinterDesignDay",
-                    "month": 1, "day": 21,
-                    "dry_bulb_max_c": -20.6,
-                    "dry_bulb_range_c": 0.0,
-                }))
-                assert dd1.get("ok") is True
-
-                dd2 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Cooling .4%",
-                    "day_type": "SummerDesignDay",
-                    "month": 7, "day": 21,
-                    "dry_bulb_max_c": 33.3,
-                    "dry_bulb_range_c": 10.7,
-                }))
-                assert dd2.get("ok") is True
+                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
 
                 # Save + run simulation
                 save_path = f"/runs/{name}_weather.osm"

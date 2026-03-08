@@ -8,7 +8,6 @@ from mcp_server.skills.weather.operations import (
     get_weather_info,
     set_run_period,
     set_simulation_control,
-    set_weather_file,
 )
 
 
@@ -17,18 +16,6 @@ def register(mcp):
     def get_weather_info_tool():
         """Get weather file info (city, lat/lon, elevation, EPW URL)."""
         return get_weather_info()
-
-    @mcp.tool(name="set_weather_file")
-    def set_weather_file_tool(epw_path: str):
-        """Attach an EPW weather file to the loaded model.
-
-        Does NOT add design days — call add_design_day() separately or
-        the simulation will have no sizing data.
-
-        Args:
-            epw_path: Absolute path to an EPW file
-        """
-        return set_weather_file(epw_path=epw_path)
 
     @mcp.tool(name="add_design_day")
     def add_design_day_tool(

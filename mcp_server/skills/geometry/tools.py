@@ -6,6 +6,7 @@ from mcp_server.skills.geometry.operations import (
     create_subsurface,
     create_surface,
     get_surface_details,
+    import_floorspacejs,
     list_subsurfaces,
     list_surfaces,
     match_surfaces,
@@ -134,4 +135,37 @@ def register(mcp):
         return set_window_to_wall_ratio(
             surface_name=surface_name, ratio=ratio,
             sill_height_m=sill_height_m,
+        )
+
+    @mcp.tool(name="import_floorspacejs")
+    def import_floorspacejs_tool(
+        floorplan_path: str,
+        building_type: str = "SmallOffice",
+        create_zones: bool = True,
+        match: bool = True,
+    ):
+        """Import a floor plan / custom geometry from FloorspaceJS JSON.
+
+        Use this tool when a user wants to import a floor plan, import geometry,
+        load a FloorspaceJS file, or use custom geometry from the FloorspaceJS
+        editor. Creates spaces, surfaces, windows, building stories, and space
+        types from a FloorspaceJS JSON file. Optionally creates thermal zones
+        and runs surface matching. Sets standardsBuildingType/standardsSpaceType
+        so create_typical_building can populate the model.
+
+        Create FloorspaceJS JSON at https://nrel.github.io/floorspace.js/
+
+        Args:
+            floorplan_path: Absolute path to FloorspaceJS JSON file (*.json)
+            building_type: DOE prototype — "SmallOffice", "LargeOffice",
+                "RetailStandalone", "Hospital", etc. Sets standardsBuildingType.
+            create_zones: Create one thermal zone per space (default True)
+            match: Run surface intersection and matching (default True)
+
+        """
+        return import_floorspacejs(
+            floorplan_path=floorplan_path,
+            building_type=building_type,
+            create_zones=create_zones,
+            match=match,
         )

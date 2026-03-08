@@ -9,7 +9,7 @@ Design:
   - Prompts include explicit tool names to minimize ambiguity
   - required_tools are ALL checked (every one must appear in the sequence)
   - any_of is used when multiple tools can achieve the same goal
-    (e.g. set_weather_file OR change_building_location for Chicago weather)
+    (e.g. change_building_location for Chicago weather)
   - Timeouts are per-case; adjust_thermostat gets 180s because applying
     measures to all zones is slow
 
@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, get_tier
+from .conftest import BASELINE_MODEL, baseline_model_exists, get_tier
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
@@ -65,15 +65,15 @@ WORKFLOW_CASES = [
         "timeout": 120,
     },
     {
-        # Set weather — two tools can do this (set_weather_file is native,
-        # change_building_location is a measure wrapper)
+        # Set weather + design days + climate zone via measure
         "id": "set_weather",
         "prompt": LOAD + (
-            "set the weather to Chicago using set_weather_file or "
-            "change_building_location. Use MCP tools only."
+            "set the weather to Boston using change_building_location "
+            "with the EPW file at /opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
+            "Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model"],
-        "any_of": ["set_weather_file", "change_building_location"],
+        "required_tools": ["load_osm_model", "change_building_location"],
         "timeout": 120,
     },
     {
@@ -88,14 +88,17 @@ WORKFLOW_CASES = [
     },
     {
         # Adjust thermostat setpoints — applies a measure to all zones
-        # which can be slow (180s timeout). Explicit F values prevent
-        # the agent from asking clarifying questions.
+        # which can be slow (180s timeout). Uses offset language since
+        # adjust_thermostat_setpoints takes offsets, not absolute values.
+        # Also accepts replace_thermostat_schedules (valid for absolute setpoints).
         "id": "adjust_thermostat",
         "prompt": LOAD + (
             "adjust the thermostat setpoints using adjust_thermostat_setpoints. "
-            "Set heating to 70F and cooling to 75F. Use MCP tools only."
+            "Raise cooling by 2F and lower heating by 1F. Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model", "adjust_thermostat_setpoints"],
+        "required_tools": ["load_osm_model"],
+        "any_of": ["adjust_thermostat_setpoints", "replace_thermostat_schedules",
+                    "set_thermostat_schedules"],
         "timeout": 180,
     },
     {
@@ -119,6 +122,97 @@ WORKFLOW_CASES = [
         "required_tools": ["load_osm_model", "run_qaqc_checks"],
         "timeout": 120,
     },
+    {
+        # Create bar building — tests geometry creation from scratch
+        "id": "create_bar_office",
+        "prompt": (
+            "Create a SmallOffice bar building using create_bar_building "
+            "with 2 stories and 20000 sqft. Then list the spaces. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["create_bar_building"],
+        "any_of": ["list_spaces", "get_model_summary"],
+        "timeout": 120,
+    },
+    {
+        # One-call new building — tests convenience tool
+        "id": "create_new_building",
+        "prompt": (
+            "Create a complete MediumOffice building using create_new_building "
+            "with 3 stories and 50000 sqft. Use the weather file at "
+            "/opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["create_new_building"],
+        "timeout": 180,
+    },
+    {
+        # Bar → weather/DDY → typical chain (manual multi-step version of create_new_building)
+        "id": "bar_then_typical",
+        "prompt": (
+            "Create a SmallOffice bar building using create_bar_building "
+            "with 2 stories and 20000 sqft. "
+            "After that, call change_building_location with weather_file "
+            "/opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
+            "After that, call create_typical_building with building_type SmallOffice. "
+            "Use MCP tools only."
+        ),
+        "required_tools": [
+            "create_bar_building", "change_building_location",
+            "create_typical_building",
+        ],
+        "max_turns": 25,
+        "timeout": 420,
+    },
+    {
+        # Import FloorspaceJS JSON — tests SDK reverse translator
+        "id": "import_floorspacejs",
+        "prompt": (
+            "Import the FloorspaceJS JSON file at "
+            "/test-assets/sddc_office/floorplan.json "
+            "using import_floorspacejs. Use MCP tools only."
+        ),
+        "required_tools": ["import_floorspacejs"],
+        "timeout": 120,
+    },
+    {
+        # FloorspaceJS → weather/DDY → typical full chain
+        "id": "floorspacejs_to_typical",
+        "prompt": (
+            "Do all 3 steps in order, do not stop early:\n"
+            "Step 1: Import the FloorspaceJS file at "
+            "/test-assets/sddc_office/floorplan.json "
+            "using import_floorspacejs.\n"
+            "Step 2: Call change_building_location "
+            "with weather_file "
+            "/opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw.\n"
+            "Step 3: Call create_typical_building to add "
+            "constructions, loads, and HVAC.\n"
+            "Use MCP tools only. Complete all 3 steps."
+        ),
+        "required_tools": [
+            "import_floorspacejs", "change_building_location",
+            "create_typical_building",
+        ],
+        "max_turns": 25,
+        "timeout": 420,
+    },
+    {
+        # Manual geometry with surface matching
+        "id": "manual_geometry_match",
+        "prompt": (
+            "Create two adjacent spaces using create_space_from_floor_print. "
+            "Space 1: vertices (0,0), (10,0), (10,10), (0,10) at floor height 0. "
+            "Space 2: vertices (10,0), (20,0), (20,10), (10,10) at floor height 0. "
+            "Then run match_surfaces to find shared walls. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["create_space_from_floor_print", "match_surfaces"],
+        "timeout": 120,
+    },
 ]
 
 
@@ -140,7 +234,15 @@ def test_workflow(case):
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
 
-    result = run_claude(case["prompt"], timeout=case.get("timeout", 120))
+    # Skip if this case needs a pre-loaded model and it doesn't exist
+    if BASELINE_MODEL in case["prompt"] and not baseline_model_exists():
+        pytest.skip("Baseline model not found — run test_01_setup first")
+
+    result = run_claude(
+        case["prompt"],
+        timeout=case.get("timeout", 120),
+        max_turns=case.get("max_turns"),
+    )
     tool_names = result.tool_names
 
     for tool in case["required_tools"]:

@@ -386,7 +386,12 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
 def get_run_status(run_id: str) -> dict[str, Any]:
     rec = _get_run_record(run_id)
     if not rec:
-        return {"ok": False, "error": f"Unknown run_id: {run_id}"}
+        return {
+            "ok": False,
+            "error": f"Unknown run_id: {run_id}",
+            "hint": "Use list_files(directory='/runs', pattern='sim_*') to find "
+                    "simulation run directories, or run_simulation() to create one.",
+        }
 
     rec = _refresh_status(rec)
     _RUNS[run_id] = rec
@@ -414,7 +419,12 @@ def get_run_status(run_id: str) -> dict[str, Any]:
 def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "openstudio") -> dict[str, Any]:
     rec = _get_run_record(run_id)
     if not rec:
-        return {"ok": False, "error": f"Unknown run_id: {run_id}"}
+        return {
+            "ok": False,
+            "error": f"Unknown run_id: {run_id}",
+            "hint": "Use list_files(directory='/runs', pattern='sim_*') to find "
+                    "simulation run directories, or run_simulation() to create one.",
+        }
 
     try:
         tail_lines = int(tail) if tail is not None else DEFAULT_LOG_TAIL

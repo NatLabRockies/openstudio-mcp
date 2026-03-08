@@ -37,15 +37,13 @@ def register(mcp):
             f"Compare ASHRAE baseline System {system_a} vs System {system_b} "
             f"for a 10-zone office in {climate_city}.\n\n"
             "Steps:\n"
-            f'1. create_baseline_osm(name="office_sys{system_a}", '
-            f'ashrae_sys_num="{system_a}")\n'
-            "2. load_osm_model(osm_path=<returned path>)\n"
-            f'3. set_weather_file(epw_path="/inputs/{climate_city}.epw")\n'
-            "4. add_design_day() — heating 99.6% and cooling 0.4%\n"
-            "5. save_osm_model() and run_simulation()\n"
-            "6. extract_summary_metrics() — note EUI and unmet hours\n"
-            f'7. Repeat steps 1-6 with ashrae_sys_num="{system_b}"\n'
-            "8. Compare EUI, heating/cooling energy, and unmet hours"
+            f'1. create_new_building(building_type="SmallOffice", '
+            f'weather_file="/inputs/{climate_city}.epw")\n'
+            f'2. add_baseline_system(system_type="{system_a}")\n'
+            "3. save_osm_model() and run_simulation()\n"
+            "4. extract_summary_metrics() — note EUI and unmet hours\n"
+            f'5. Repeat steps 1-4 with system_type="{system_b}"\n'
+            "6. Compare EUI, heating/cooling energy, and unmet hours"
         )
 
     @mcp.prompt(
@@ -90,17 +88,12 @@ def register(mcp):
             f"Create a full building model with ASHRAE System {system_type} "
             f"in {climate_city}, add loads, and simulate.\n\n"
             "Steps:\n"
-            f'1. create_baseline_osm(name="building", '
-            f'ashrae_sys_num="{system_type}")\n'
-            "2. load_osm_model(osm_path=<returned path>)\n"
-            "3. list_spaces() — find spaces for load assignment\n"
-            "4. create_people_definition(people_per_area=0.059)\n"
-            "5. create_lights_definition(watts_per_area=10.76)\n"
-            f'6. set_weather_file(epw_path="/inputs/{climate_city}.epw")\n'
-            "7. add_design_day() — heating and cooling design days\n"
-            "8. save_osm_model() and run_simulation()\n"
-            "9. Poll get_run_status() until complete\n"
-            "10. extract_summary_metrics() — review EUI and unmet hours"
+            f'1. create_new_building(building_type="SmallOffice", '
+            f'weather_file="/inputs/{climate_city}.epw")\n'
+            "2. list_spaces() — verify geometry and loads\n"
+            "3. save_osm_model() and run_simulation()\n"
+            "4. Poll get_run_status() until complete\n"
+            "5. extract_summary_metrics() — review EUI and unmet hours"
         )
 
     @mcp.prompt(
@@ -145,7 +138,7 @@ def register(mcp):
             f"{climate_zone}.\n\n"
             "Steps:\n"
             "1. load_osm_model(osm_path=<model with geometry>)\n"
-            "2. set_weather_file(epw_path=<matching EPW>)\n"
+            "2. change_building_location(weather_file=<matching EPW>)\n"
             f'3. create_typical_building(template="{template}", '
             f'climate_zone="{climate_zone}")\n'
             "4. get_model_summary() — verify what was added\n"
@@ -305,6 +298,7 @@ def register(mcp):
                 "list_subsurfaces", "create_surface",
                 "create_subsurface", "create_space_from_floor_print",
                 "match_surfaces", "set_window_to_wall_ratio",
+                "import_floorspacejs",
             ],
             "constructions": [
                 "list_materials", "list_constructions",
@@ -359,7 +353,7 @@ def register(mcp):
                 "list_model_objects",
             ],
             "weather": [
-                "get_weather_info", "set_weather_file",
+                "get_weather_info",
                 "add_design_day", "get_simulation_control",
                 "set_simulation_control", "get_run_period",
                 "set_run_period",
@@ -369,6 +363,7 @@ def register(mcp):
             ],
             "comstock": [
                 "list_comstock_measures", "create_typical_building",
+                "create_bar_building", "create_new_building",
             ],
             "common_measures": [
                 "list_common_measures", "view_model",

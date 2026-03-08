@@ -143,7 +143,7 @@ EVAL_CASES = [
     ("rename object", "rename_object"),
     # Weather
     ("get weather info", "get_weather_info"),
-    ("set weather file", "set_weather_file"),
+    ("set weather file", "change_building_location"),
     # Measures
     ("apply measure", "apply_measure"),
     ("list measure arguments", "list_measure_arguments"),

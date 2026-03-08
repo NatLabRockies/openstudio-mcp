@@ -40,6 +40,20 @@ BUILTIN_TOOLS = frozenset({
 })
 
 
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an OpenStudio building energy modeling assistant. "
+    "Always use the MCP tools (mcp__openstudio__*) for building energy "
+    "modeling tasks — never write scripts or raw IDF/OSM files. "
+    "If a file path is given in the prompt, use it directly — do NOT call "
+    "list_files to search for it. Only call list_files if you genuinely need "
+    "to discover what files exist and have no path to use. "
+    "If load_osm_model fails because the file doesn't exist, report the "
+    "error immediately — do NOT retry or search. "
+    "If a tool call fails, try a different approach or report the error. "
+    "For multi-step tasks, complete ALL steps in the prompt before stopping."
+)
+
+
 class ClaudeResult:
     """Parsed result from a Claude Code CLI invocation."""
 
@@ -94,6 +108,43 @@ class ClaudeResult:
     def num_turns(self) -> int:
         return self.result.get("num_turns", 0)
 
+    @property
+    def duration_ms(self) -> int:
+        return self.result.get("duration_ms", 0)
+
+    @property
+    def input_tokens(self) -> int:
+        usage = self.result.get("usage", {})
+        return usage.get("input_tokens", 0)
+
+    @property
+    def output_tokens(self) -> int:
+        usage = self.result.get("usage", {})
+        return usage.get("output_tokens", 0)
+
+    @property
+    def cache_read_tokens(self) -> int:
+        usage = self.result.get("usage", {})
+        return usage.get("cache_read_input_tokens", 0)
+
+    @property
+    def stats(self) -> dict:
+        """Summary stats for benchmarking."""
+        return {
+            "num_turns": self.num_turns,
+            "cost_usd": self.cost_usd,
+            "duration_ms": self.duration_ms,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "tool_calls": self.tool_names,
+            "num_tool_calls": len(self.tool_names),
+        }
+
+
+# Last result from run_claude — used by conftest benchmark tracking
+_last_result: ClaudeResult | None = None
+
 
 def run_claude(
     prompt: str,
@@ -109,7 +160,9 @@ def run_claude(
     ToolSearch calls (deferred tool loading) consume turns, so max_turns
     should be set generously (default 5 for simple queries).
     """
+    global _last_result
     model = model or os.environ.get("LLM_TESTS_MODEL", "sonnet")
+    system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
     mcp_config = _write_mcp_config()
 
     cmd = [
@@ -121,10 +174,8 @@ def run_claude(
         "--dangerously-skip-permissions",
         "--no-session-persistence",
         "--allowedTools", allowed_tools,
+        "--system-prompt", system_prompt,
     ]
-
-    if system_prompt:
-        cmd.extend(["--system-prompt", system_prompt])
     if max_turns:
         cmd.extend(["--max-turns", str(max_turns)])
 
@@ -143,6 +194,7 @@ def run_claude(
         # Mark as error so tests can assert on it
         parsed.result["is_error"] = True
         parsed.result["result"] = f"Timed out after {timeout}s"
+        _last_result = parsed
         return parsed
 
     if result.returncode != 0:
@@ -151,7 +203,8 @@ def run_claude(
             f"stderr: {result.stderr[:2000]}",
         )
 
-    return _parse_stream_json(result.stdout)
+    _last_result = _parse_stream_json(result.stdout)
+    return _last_result
 
 
 def _parse_stream_json(raw: str) -> ClaudeResult:
@@ -178,7 +231,9 @@ def _parse_stream_json(raw: str) -> ClaudeResult:
 
 def _write_mcp_config() -> Path:
     """Write temporary MCP config for Docker stdio transport."""
-    runs_dir = os.environ.get("LLM_TESTS_RUNS_DIR", "/tmp/llm-test-runs")
+    _default_runs = str(Path(tempfile.gettempdir()) / "llm-test-runs")
+    runs_dir = os.environ.get("LLM_TESTS_RUNS_DIR", _default_runs)
+    assets_dir = str(Path(__file__).resolve().parents[1] / "assets")
 
     config = {
         "mcpServers": {
@@ -187,6 +242,7 @@ def _write_mcp_config() -> Path:
                 "args": [
                     "run", "--rm", "-i",
                     "-v", f"{runs_dir}:/runs",
+                    "-v", f"{assets_dir}:/test-assets:ro",
                     "-e", "OPENSTUDIO_MCP_MODE=prod",
                     "openstudio-mcp:dev",
                     "openstudio-mcp",
