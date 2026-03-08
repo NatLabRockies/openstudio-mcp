@@ -95,6 +95,9 @@ def register(mcp):
         """Run ASHRAE QA/QC checks on simulation results. Requires a completed
         simulation — call run_simulation first, then pass its run_id here.
 
+        For pre-simulation model validation (no run_id needed), use
+        inspect_osm_summary or get_model_summary instead.
+
         Args:
             run_id: Run ID from a completed simulation (required — provides SQL results)
             template: Target ASHRAE standard — "90.1-2013", "90.1-2016", "90.1-2019"
@@ -107,7 +110,8 @@ def register(mcp):
             return {
                 "ok": False,
                 "error": "run_id is required — run a simulation first, then pass its run_id here",
-                "hint": "Call run_simulation() first, wait for completion, then call run_qaqc_checks(run_id=...)",
+                "hint": "Call run_simulation() first, wait for completion, then call run_qaqc_checks(run_id=...). "
+                        "For pre-simulation checks, use inspect_osm_summary or get_model_summary instead.",
             }
         return run_qaqc_checks_op(run_id=run_id, template=template, checks=parse_str_list(checks))
 

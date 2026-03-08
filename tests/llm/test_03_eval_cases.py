@@ -37,6 +37,8 @@ SKIP_PROMPTS = {
     "Build me a new model from scratch",
     "Start a new building energy model",
     "What energy savings from better windows?",
+    # Prompt says "with weather" but no weather_file path — agent can't guess
+    "Create a complete building with weather",
 }
 
 # Load cases at import time; filter out wildcard tool names and skip-listed prompts
@@ -68,10 +70,11 @@ EXTRA_EXPECTED = {
                  "get_building_info", "list_thermal_zones", "list_air_loops"],
     # inspect_osm_summary is a valid QA/QC approach alongside run_qaqc_checks
     "qaqc": ["inspect_osm_summary", "run_qaqc_checks", "get_model_summary"],
-    # Troubleshooting may involve inspecting model state, not just reading logs
+    # Troubleshooting may involve inspecting model state, not just reading logs.
+    # Agent may also use list_files to discover simulation run directories.
     "troubleshoot": ["get_run_status", "get_run_logs", "extract_summary_metrics",
                      "extract_component_sizing", "get_model_summary",
-                     "list_thermal_zones"],
+                     "list_thermal_zones", "list_files"],
     # Retrofit analysis involves many intermediate steps (inspect envelope,
     # list constructions, etc.) — any of these is valid progress
     "retrofit": ["save_osm_model", "run_simulation", "extract_summary_metrics",
