@@ -211,6 +211,11 @@ def register(mcp):
         EPW is "Boston.epw", then "Boston.stat" and "Boston.ddy" must also
         exist. The measure will fail if these are missing.
 
+        Available EPW files with .stat/.ddy companions:
+          /opt/comstock-measures/ChangeBuildingLocation/tests/
+          Use list_files(directory="/opt/comstock-measures/ChangeBuildingLocation/tests",
+          pattern="*.epw") to see available weather files.
+
         Args:
             weather_file: EPW weather file path (absolute path to .epw file).
                 Must have companion .stat and .ddy files alongside it.

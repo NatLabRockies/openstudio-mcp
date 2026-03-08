@@ -68,7 +68,9 @@ WORKFLOW_CASES = [
         # Set weather + design days + climate zone via measure
         "id": "set_weather",
         "prompt": LOAD + (
-            "set the weather to Chicago using change_building_location. "
+            "set the weather to Boston using change_building_location "
+            "with the EPW file at /opt/comstock-measures/ChangeBuildingLocation"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
             "Use MCP tools only."
         ),
         "required_tools": ["load_osm_model", "change_building_location"],
