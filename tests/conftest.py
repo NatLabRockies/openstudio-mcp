@@ -65,7 +65,11 @@ def server_params() -> StdioServerParameters:
 # Simulation polling
 # ---------------------------------------------------------------------------
 
-EPW_PATH = "/repo/tests/assets/SEB_model/SEB4_baseboard/files/SRRL_2012AMY_60min.epw"
+# EPW with companion .stat + .ddy (required by ChangeBuildingLocation measure)
+EPW_PATH = (
+    "/opt/comstock-measures/ChangeBuildingLocation"
+    "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+)
 POLL_SECONDS = float(os.environ.get("MCP_POLL_SECONDS", "3"))
 SIM_TIMEOUT = float(os.environ.get("MCP_SIM_TIMEOUT", str(60 * 20)))
 

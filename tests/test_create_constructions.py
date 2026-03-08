@@ -340,3 +340,42 @@ def test_end_to_end_construction_workflow():
                 assert sd["surface"]["construction"] == "Insulated Brick Wall"
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_construction_json_string_materials():
+    """Test create_construction accepts material_names as JSON string."""
+    import json
+
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
+
+    name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                create_resp = await session.call_tool("create_example_osm", {"name": name})
+                create_data = unwrap(create_resp)
+                await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
+
+                # Create a material first
+                await session.call_tool("create_standard_opaque_material", {
+                    "name": "TestMat",
+                    "thickness_m": 0.1,
+                })
+
+                # Pass material_names as JSON string
+                resp = await session.call_tool("create_construction", {
+                    "name": "JSON Test Construction",
+                    "material_names": json.dumps(["TestMat"]),
+                })
+                result = unwrap(resp)
+
+                assert result.get("ok") is True, (
+                    f"JSON-string material_names failed: {result.get('error')}"
+                )
+
+    asyncio.run(_run())

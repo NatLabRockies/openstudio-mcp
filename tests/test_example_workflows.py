@@ -50,9 +50,9 @@ def test_workflow_baseline_with_weather():
                 }))
                 assert lr.get("ok") is True
 
-                # Step 3: Set weather file
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": EPW_PATH,
+                # Step 3: Set weather + design days + climate zone
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
                 }))
                 assert wr.get("ok") is True
 
@@ -455,32 +455,13 @@ def test_workflow_full_building():
                 }))
                 assert lights.get("ok") is True
 
-                # Step 5: Set weather file
-                wf = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": EPW_PATH,
+                # Step 5: Set weather + design days + climate zone
+                wf = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
                 }))
                 assert wf.get("ok") is True
 
-                # Step 6: Add design days (required for HVAC sizing)
-                dd1 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Heating 99.6%",
-                    "day_type": "WinterDesignDay",
-                    "month": 1, "day": 21,
-                    "dry_bulb_max_c": -20.6,
-                    "dry_bulb_range_c": 0.0,
-                }))
-                assert dd1.get("ok") is True
-
-                dd2 = unwrap(await s.call_tool("add_design_day", {
-                    "name": "Cooling .4%",
-                    "day_type": "SummerDesignDay",
-                    "month": 7, "day": 21,
-                    "dry_bulb_max_c": 33.3,
-                    "dry_bulb_range_c": 10.7,
-                }))
-                assert dd2.get("ok") is True
-
-                # Step 7: Save the complete model
+                # Step 6: Save the complete model
                 save_path = f"/runs/{name}_complete.osm"
                 save = unwrap(await s.call_tool("save_osm_model", {
                     "save_path": save_path,
@@ -729,8 +710,8 @@ def test_workflow_fenestration_by_orientation():
 # ComStock bundled test assets
 COMSTOCK_TEST_OSM = "/opt/comstock-measures/create_typical_building_from_model/tests/SmallOffice.osm"
 COMSTOCK_TEST_EPW = (
-    "/opt/comstock-measures/create_typical_building_from_model"
-    "/tests/USA_TX_Houston-Bush.Intercontinental.AP.722430_TMY3.epw"
+    "/opt/comstock-measures/ChangeBuildingLocation"
+    "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 )
 
 
@@ -759,9 +740,9 @@ def test_workflow_comstock_typical_building():
                 }))
                 assert lr.get("ok") is True, lr
 
-                # Step 3: Set weather file
-                wr = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": COMSTOCK_TEST_EPW,
+                # Step 3: Set weather + design days + climate zone
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": COMSTOCK_TEST_EPW,
                 }))
                 assert wr.get("ok") is True, wr
 

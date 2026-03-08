@@ -8,6 +8,14 @@ that other building energy simulation engines (EnergyPlus, TRNSYS, DOE-2, etc.)
 can use as a template. Code must be explicit, well-commented, and easy for
 contributors unfamiliar with OpenStudio to understand and adapt.
 
+## Critical: Use MCP Tools — Do Not Reinvent
+Always use openstudio-mcp tools for BEM tasks:
+- Never generate raw IDF files
+- OSM files are created/modified only through MCP tools (create_baseline_osm, create_example_osm, etc.)
+- Never write Python/Ruby scripts to parse SQL results, create visualizations, build HVAC wiring, or extract data — equivalent MCP tools already exist (extract_*, query_timeseries, view_model, view_simulation_data, add_baseline_system, etc.)
+- If a task genuinely cannot be done with existing tools, ASK THE USER before writing any code or scripts
+- For workflow guidance, run: `list_skills()` or `get_skill("new-building")`
+
 ## Architecture
 
 ## Skills Pattern
@@ -34,8 +42,6 @@ contributors unfamiliar with OpenStudio to understand and adapt.
 | Phase 7 | 📋 FUTURE | Advanced creation (geometry, space type wizard) |
 | Phase 8 | ✅ COMPLETE | Bundle common-measures-gem (20 measures, 11 tools: reporting, thermostat, envelope, PV, visualization) |
 
-→ Batch details: [`docs/phase_history.md`](docs/phase_history.md) | Phase 8 plan: [`docs/plan_common_measures.md`](docs/plan_common_measures.md)
-
 ## Current Skills
 | Skill | Tools | Phase |
 |-------|-------|-------|
@@ -45,7 +51,7 @@ contributors unfamiliar with OpenStudio to understand and adapt.
 | `results` | `extract_summary_metrics`, `read_run_artifact`, `copy_run_artifact`, `extract_end_use_breakdown`, `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`, `extract_component_sizing`, `query_timeseries` | Phase 1 + 9 |
 | `building` | `get_building_info`, `get_model_summary`, `list_building_stories` | Phase 2 |
 | `spaces` | `list_spaces`, `get_space_details`, `list_thermal_zones`, `get_thermal_zone_details`, `create_space`, `create_thermal_zone` | Phase 2 + 3 |
-| `geometry` | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio` | Phase 2 + 7 |
+| `geometry` | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio`, `import_floorspacejs` | Phase 2 + 7 |
 | `constructions` | `list_materials`, `list_constructions`, `list_construction_sets`, `create_standard_opaque_material`, `create_construction`, `assign_construction_to_surface` | Phase 2 + 3 |
 | `schedules` | `list_schedule_rulesets`, `get_schedule_details`, `create_schedule_ruleset` | Phase 2 + 3 |
 | `hvac` | `list_air_loops`, `get_air_loop_details`, `list_plant_loops`, `get_plant_loop_details`, `list_zone_hvac_equipment`, `get_zone_hvac_details`, `add_air_loop` | Phase 2 + 3 |
@@ -56,13 +62,13 @@ contributors unfamiliar with OpenStudio to understand and adapt.
 | `component_properties` | `list_hvac_components`, `get_component_properties`, `set_component_properties`, `set_economizer_properties`, `set_sizing_properties`, `set_setpoint_manager_properties` | Phase 5 |
 | `loop_operations` | `add_supply_equipment`, `remove_supply_equipment`, `add_zone_equipment`, `remove_zone_equipment`, `remove_all_zone_equipment` | Phase 5 |
 | `object_management` | `delete_object`, `rename_object`, `list_model_objects` | Phase 6B |
-| `weather` | `get_weather_info`, `set_weather_file`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period` | Phase 6C |
+| `weather` | `get_weather_info`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period` | Phase 6C |
 | `measures` | `list_measure_arguments`, `apply_measure` | Phase 6D |
-| `comstock` | `list_comstock_measures`, `create_typical_building` | ComStock |
+| `comstock` | `list_comstock_measures`, `create_bar_building`, `create_typical_building`, `create_new_building` | ComStock |
 | `common_measures` | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `inject_idf`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8 |
 | `skill_discovery` | `list_skills`, `get_skill` | — |
 
-**Total: 22 skills, 127 MCP tools, ~260 integration tests**
+**Total: 22 skills, 129 MCP tools, ~269 integration tests**
 
 ## Model Query Pattern
 ```python
@@ -148,7 +154,6 @@ roughly balanced (~200s each). See shard comments in the workflow for current ba
 - **OpenStudio CLI:** `openstudio run -w <osw>` (simulation), `openstudio run --measures_only -w <osw>` (measure execution)
 - **openstudio-resources** — HVAC wiring patterns, baseline model geometry
   - https://github.com/NatLabRockies/OpenStudio-resources/tree/develop/model/simulationtests
-  - Key files: baseline_sys*.py, coolingtowers.py, fan_systemmodel.py, heatpump_airtowater.py, setpoint_managers.py, airterminal_fourpipebeam.py, airterminal_cooledbeam.py, lib/baseline_model.py
 - **ComStock measures** (~61 bundled) — standards-based templates for typical buildings
   - https://github.com/NatLabRockies/ComStock (tag: `2025-3`, installed at `/opt/comstock-measures`)
 

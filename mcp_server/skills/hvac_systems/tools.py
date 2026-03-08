@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.hvac_systems import operations
 
 if TYPE_CHECKING:
@@ -16,25 +17,29 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(name="add_baseline_system")
     def add_baseline_system_tool(
         system_type: int,
-        thermal_zone_names: list[str],
+        thermal_zone_names: list[str] | str,
         heating_fuel: str = "NaturalGas",
         cooling_fuel: str = "Electricity",
         economizer: bool = True,
         system_name: str | None = None,
     ) -> str:
-        """Add ASHRAE 90.1 Appendix G baseline HVAC system.
+        """Add HVAC / heating and cooling system to the building.
 
-        Systems 1-10: PTAC, PTHP, PSZ-AC, PSZ-HP, PkgVAV Reheat/PFP, VAV Reheat/PFP, Gas/Elec UnitHtrs.
+        Use this tool when a user wants to add HVAC, set up heating and cooling,
+        or add an air conditioning system. Implements ASHRAE 90.1 Appendix G
+        baseline systems 1-10: PTAC, PTHP, PSZ-AC, PSZ-HP, PkgVAV Reheat/PFP,
+        VAV Reheat/PFP, Gas/Elec UnitHtrs.
+        Call list_baseline_systems() to see all options with descriptions.
 
         Args:
-            system_type: ASHRAE baseline system type (1-10)
+            system_type: ASHRAE baseline system type (1-10). Call list_baseline_systems() to see options.
             thermal_zone_names: List of thermal zone names to serve
             heating_fuel: NaturalGas | Electricity | DistrictHeating
             cooling_fuel: Electricity | DistrictCooling
         """
         result = operations.add_baseline_system(
             system_type=system_type,
-            thermal_zone_names=thermal_zone_names,
+            thermal_zone_names=parse_str_list(thermal_zone_names),
             heating_fuel=heating_fuel,
             cooling_fuel=cooling_fuel,
             economizer=economizer,
@@ -96,7 +101,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="add_doas_system")
     def add_doas_system_tool(
-        thermal_zone_names: list[str],
+        thermal_zone_names: list[str] | str,
         system_name: str = "DOAS",
         energy_recovery: bool = True,
         sensible_effectiveness: float = 0.75,
@@ -118,7 +123,7 @@ def register(mcp: FastMCP) -> None:
             cooling_fuel: Electricity | DistrictCooling
         """
         result = operations.add_doas_system(
-            thermal_zone_names=thermal_zone_names,
+            thermal_zone_names=parse_str_list(thermal_zone_names),
             system_name=system_name,
             energy_recovery=energy_recovery,
             sensible_effectiveness=sensible_effectiveness,
@@ -130,7 +135,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="add_vrf_system")
     def add_vrf_system_tool(
-        thermal_zone_names: list[str],
+        thermal_zone_names: list[str] | str,
         system_name: str = "VRF",
         heat_recovery: bool = True,
         outdoor_unit_capacity_w: float | None = None,
@@ -146,7 +151,7 @@ def register(mcp: FastMCP) -> None:
             outdoor_unit_capacity_w: Capacity in Watts (autosize if None)
         """
         result = operations.add_vrf_system(
-            thermal_zone_names=thermal_zone_names,
+            thermal_zone_names=parse_str_list(thermal_zone_names),
             system_name=system_name,
             heat_recovery=heat_recovery,
             outdoor_unit_capacity_w=outdoor_unit_capacity_w,
@@ -155,7 +160,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="add_radiant_system")
     def add_radiant_system_tool(
-        thermal_zone_names: list[str],
+        thermal_zone_names: list[str] | str,
         system_name: str = "Radiant",
         radiant_type: str = "Floor",
         ventilation_system: str = "DOAS",
@@ -175,7 +180,7 @@ def register(mcp: FastMCP) -> None:
             cooling_fuel: Electricity | DistrictCooling
         """
         result = operations.add_radiant_system(
-            thermal_zone_names=thermal_zone_names,
+            thermal_zone_names=parse_str_list(thermal_zone_names),
             system_name=system_name,
             radiant_type=radiant_type,
             ventilation_system=ventilation_system,

@@ -1,6 +1,7 @@
 """MCP tool definitions for constructions (materials, constructions, sets)."""
 from __future__ import annotations
 
+from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.constructions.operations import (
     assign_construction_to_surface,
     create_construction,
@@ -51,7 +52,7 @@ def register(mcp):
                                               specific_heat_j_kg_k=specific_heat_j_kg_k)
 
     @mcp.tool(name="create_construction")
-    def create_construction_tool(name: str, material_names: list[str]):
+    def create_construction_tool(name: str, material_names: list[str] | str):
         """Create a layered construction from materials.
 
         Args:
@@ -59,7 +60,7 @@ def register(mcp):
             material_names: List of material names, ordered from outside to inside
 
         """
-        return create_construction(name=name, material_names=material_names)
+        return create_construction(name=name, material_names=parse_str_list(material_names))
 
     @mcp.tool(name="assign_construction_to_surface")
     def assign_construction_to_surface_tool(surface_name: str, construction_name: str):

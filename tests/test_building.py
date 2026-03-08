@@ -190,6 +190,91 @@ def test_building_info_baseline():
 
 
 @pytest.mark.integration
+def test_conditioned_floor_area_with_hvac():
+    """Conditioned floor area should equal total floor area when all zones have thermostats.
+
+    Baseline model with ashrae_sys_num adds thermostats to all zones.
+    Pre-v0.5: conditioned_floor_area_m2 returned 0.0 (SDK needs SQL).
+    Now: computed from model objects (zones with thermostats).
+    """
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
+
+    name = _unique_name("pytest_cond_area")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                # Baseline with HVAC = thermostats on all zones
+                cr = await session.call_tool("create_baseline_osm", {
+                    "name": name, "ashrae_sys_num": "03", "num_floors": 1,
+                })
+                cd = unwrap(cr)
+                assert cd.get("ok") is True, cd
+                lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+                assert unwrap(lr).get("ok") is True
+
+                br = await session.call_tool("get_building_info", {})
+                bd = unwrap(br)
+                assert bd.get("ok") is True, bd
+                b = bd["building"]
+                # All zones have thermostats → conditioned = total
+                assert b["conditioned_floor_area_m2"] == pytest.approx(
+                    b["floor_area_m2"], rel=0.01,
+                ), f"conditioned={b['conditioned_floor_area_m2']}, total={b['floor_area_m2']}"
+
+                # Also check via get_model_summary
+                sr = await session.call_tool("get_model_summary", {})
+                sd = unwrap(sr)
+                assert sd.get("ok") is True, sd
+                s = sd["summary"]
+                assert s["conditioned_floor_area_m2"] == pytest.approx(
+                    s["floor_area_m2"], rel=0.01,
+                ), f"summary conditioned={s['conditioned_floor_area_m2']}, total={s['floor_area_m2']}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_conditioned_floor_area_no_hvac():
+    """Conditioned floor area with baseline model (no HVAC system).
+
+    create_baseline_osm always adds thermostats for sizing readiness,
+    even without ashrae_sys_num. So conditioned area should equal total
+    floor area (thermostats present on all zones).
+    """
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
+
+    name = _unique_name("pytest_uncond")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                cr = await session.call_tool("create_baseline_osm", {
+                    "name": name, "num_floors": 1,
+                })
+                cd = unwrap(cr)
+                assert cd.get("ok") is True, cd
+                lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
+                assert unwrap(lr).get("ok") is True
+
+                br = await session.call_tool("get_building_info", {})
+                bd = unwrap(br)
+                assert bd.get("ok") is True, bd
+                b = bd["building"]
+                assert b["floor_area_m2"] > 0
+                # Baseline always adds thermostats → conditioned = total
+                assert b["conditioned_floor_area_m2"] == pytest.approx(
+                    b["floor_area_m2"], rel=0.01,
+                ), f"conditioned={b['conditioned_floor_area_m2']}, total={b['floor_area_m2']}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_building_stories_baseline():
     """Test building stories with 2-story baseline model."""
     if not integration_enabled():

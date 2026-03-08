@@ -67,7 +67,7 @@ jobs:
               ;;
             2)
               # common_measures (20 tests), hvac_systems, geometry, zone terminal, skill_energy_report, skill_new_building, validation sys1-4 + sys7-8
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_skill_new_building.py tests/test_hvac_validation_sys1_4.py tests/test_hvac_validation_sys7_8.py"
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_bar_building.py tests/test_skill_energy_report.py tests/test_skill_new_building.py tests/test_hvac_validation_sys1_4.py tests/test_hvac_validation_sys7_8.py"
               EXTRA_ENV=""
               ;;
             3)

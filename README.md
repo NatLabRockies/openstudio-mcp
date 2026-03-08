@@ -295,7 +295,6 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | Tool | Description |
 |------|-------------|
 | `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
-| `set_weather_file` | Attach EPW weather file to model |
 | `add_design_day` | Add heating/cooling design day |
 | `get_simulation_control` | Read sizing flags and timesteps per hour |
 | `set_simulation_control` | Modify sizing flags and/or timestep |
@@ -410,26 +409,20 @@ The component properties tools can query and modify these 15 HVAC component type
 
 ## Testing
 
-### Unit tests (no Docker)
+For the full testing guide — framework details, annotated examples, CI shards, and how to write new tests — see **[`docs/testing.md`](docs/testing.md)**.
+
+### Quick start
 
 ```bash
+# Unit tests (no Docker)
 pytest tests/test_skill_registration.py -v
-```
 
-### Integration tests (Docker)
-
-```bash
+# Integration tests (Docker)
 docker build -t openstudio-mcp:dev -f docker/Dockerfile .
 
-# Run all integration tests
 docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
   -e RUN_OPENSTUDIO_INTEGRATION=1 -e MCP_SERVER_CMD=openstudio-mcp \
   openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv -s tests/'
-
-# Run specific test file
-docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
-  -e RUN_OPENSTUDIO_INTEGRATION=1 -e MCP_SERVER_CMD=openstudio-mcp \
-  openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv -s tests/test_hvac_systems.py'
 ```
 
 ---

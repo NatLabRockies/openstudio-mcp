@@ -1,7 +1,7 @@
 """Integration tests for weather and design day tools (Phase 6C).
 
-Tests get_weather_info, set_weather_file, add_design_day.
-EPW files at tests/assets/SEB_model/SEB4_baseboard/files/.
+Tests get_weather_info, change_building_location, add_design_day.
+Uses Boston EPW from ChangeBuildingLocation measure tests (has .stat + .ddy).
 """
 import asyncio
 import uuid
@@ -17,11 +17,11 @@ def _unique(prefix: str = "pytest_weather") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
-# EPW path — inside the container, the repo is at /repo
-EPW_PATH = "/repo/tests/assets/SEB_model/SEB4_baseboard/files/SRRL_2012AMY_60min.epw"
-
-# Golden CO EPW — available on host and in container
-GOLDEN_EPW = "/repo/tests/assets/USA_CO_Golden-NREL.724666_TMY3.epw"
+# EPW with companion .stat + .ddy (required by ChangeBuildingLocation measure)
+EPW_PATH = (
+    "/opt/comstock-measures/ChangeBuildingLocation"
+    "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+)
 
 
 # ---- Unit tests for climate zone estimation (no Docker needed) ----
@@ -67,7 +67,8 @@ def test_get_weather_info_no_weather():
 
 
 @pytest.mark.integration
-def test_set_weather_file():
+def test_change_building_location():
+    """change_building_location sets weather, design days, and climate zone."""
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -76,40 +77,21 @@ def test_set_weather_file():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 await setup_example(s, _unique())
-                res = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": EPW_PATH,
+                res = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
                 }))
                 assert res.get("ok") is True
-                assert res["weather_file"] is not None
 
                 # Independent query verification
                 wi = unwrap(await s.call_tool("get_weather_info", {}))
                 assert wi.get("ok") is True
                 assert wi["weather_file"] is not None
-                assert "SRRL" in wi["weather_file"].get("path", "") or wi["weather_file"].get("latitude") is not None
-    asyncio.run(_run())
-
-
-@pytest.mark.integration
-def test_set_weather_file_not_found():
-    if not integration_enabled():
-        pytest.skip("integration disabled")
-
-    async def _run():
-        async with stdio_client(server_params()) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                await setup_example(s, _unique())
-                res = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": "/nonexistent/weather.epw",
-                }))
-                assert res.get("ok") is False
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_get_weather_info_after_set():
-    """After setting EPW, weather info should have lat/lon."""
+    """After setting location, weather info should have lat/lon."""
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -118,37 +100,17 @@ def test_get_weather_info_after_set():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 await setup_example(s, _unique())
-                unwrap(await s.call_tool("set_weather_file", {"epw_path": EPW_PATH}))
+                unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
+                }))
                 res = unwrap(await s.call_tool("get_weather_info", {}))
                 assert res.get("ok") is True
                 wf = res["weather_file"]
                 assert wf is not None
                 assert "latitude" in wf
                 assert "longitude" in wf
-                # SRRL is in Golden, CO — lat ~39.7
-                assert 39.0 < wf["latitude"] < 40.5
-    asyncio.run(_run())
-
-
-@pytest.mark.integration
-def test_set_weather_file_sets_climate_zone():
-    """set_weather_file with no .stat file should estimate climate zone from EPW."""
-    if not integration_enabled():
-        pytest.skip("integration disabled")
-
-    async def _run():
-        async with stdio_client(server_params()) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                await setup_example(s, _unique())
-                res = unwrap(await s.call_tool("set_weather_file", {
-                    "epw_path": GOLDEN_EPW,
-                }))
-                assert res.get("ok") is True
-                # Golden CO is ASHRAE 5B — numeric fallback returns "5"
-                assert res.get("climate_zone") == "5", (
-                    f"Expected climate_zone='5', got {res.get('climate_zone')}"
-                )
+                # Boston Logan — lat ~42.4
+                assert 42.0 < wf["latitude"] < 43.0
     asyncio.run(_run())
 
 

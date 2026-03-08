@@ -119,58 +119,6 @@ def get_weather_info() -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to get weather info: {e}"}
 
 
-def set_weather_file(epw_path: str) -> dict[str, Any]:
-    """Attach an EPW weather file to the in-memory model.
-
-    Also updates the ASHRAE climate zone if a .stat file exists
-    alongside the EPW (same directory, same basename).
-
-    Args:
-        epw_path: Absolute path to an EPW file
-    """
-    try:
-        p = Path(epw_path)
-        if not is_path_allowed(p):
-            return {"ok": False, "error": f"EPW path not in allowed roots: {epw_path}"}
-
-        model = get_model()
-
-        # Parse EPW
-        path_obj = openstudio.toPath(epw_path)
-        epw = openstudio.EpwFile(path_obj)
-
-        # Attach to model
-        openstudio.model.WeatherFile.setWeatherFile(model, epw)
-
-        # Update ASHRAE climate zone: prefer .stat file, fall back to
-        # HDD/CDD estimation from EPW hourly dry-bulb temperatures
-        cz = None
-        stat_path = p.with_suffix(".stat")
-        if stat_path.is_file():
-            cz = _parse_climate_zone_from_stat(stat_path)
-        if not cz:
-            cz = _estimate_climate_zone_from_epw(p)
-        if cz:
-            czs = model.getClimateZones()
-            czs.setClimateZone("ASHRAE", cz)
-
-        # Read back to confirm
-        result = get_weather_info()
-        # Include climate zone in response if set
-        czs = model.getClimateZones()
-        ashrae_czs = czs.getClimateZones("ASHRAE")
-        if len(ashrae_czs) > 0:
-            result["climate_zone"] = ashrae_czs[0].value()
-        return result
-
-    except RuntimeError as e:
-        err_str = str(e)
-        if "No such file" in err_str or "Cannot" in err_str or "not" in err_str.lower():
-            return {"ok": False, "error": f"EPW file not found: {epw_path}"}
-        return {"ok": False, "error": err_str}
-    except Exception as e:
-        return {"ok": False, "error": f"Failed to set weather file: {e}"}
-
 
 def add_design_day(
     name: str,

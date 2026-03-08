@@ -93,7 +93,6 @@ EXPECTED_TOOLS = {
     "list_model_objects",
     # Phase 6C: Weather, Design Days, SimControl, RunPeriod
     "get_weather_info",
-    "set_weather_file",
     "add_design_day",
     "get_simulation_control",
     "set_simulation_control",
@@ -102,9 +101,12 @@ EXPECTED_TOOLS = {
     # Phase 6D: Measures
     "list_measure_arguments",
     "apply_measure",
-    # ComStock
+    # ComStock + geometry workflows
     "list_comstock_measures",
     "create_typical_building",
+    "create_bar_building",
+    "create_new_building",
+    "import_floorspacejs",
     "validate_osw",
     "run_osw",
     "run_simulation",
