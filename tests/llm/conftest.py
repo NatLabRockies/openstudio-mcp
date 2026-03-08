@@ -87,8 +87,12 @@ def claude_cli_available() -> bool:
 BASELINE_MODEL = "/runs/examples/llm-test-baseline/baseline_model.osm"
 EXAMPLE_MODEL = "/runs/examples/llm-test-example/example_model.osm"
 
-# Host-side runs dir — used to verify model files exist before tests
-_RUNS_DIR = Path(os.environ.get("LLM_TESTS_RUNS_DIR", "/tmp/llm-test-runs"))
+# Host-side runs dir — used to verify model files exist before tests.
+# On Windows, Python Path("/tmp") resolves to C:\tmp, not the real temp dir.
+# Use tempfile.gettempdir() to get the correct platform-specific temp path.
+import tempfile as _tempfile
+_DEFAULT_RUNS_DIR = str(Path(_tempfile.gettempdir()) / "llm-test-runs")
+_RUNS_DIR = Path(os.environ.get("LLM_TESTS_RUNS_DIR", _DEFAULT_RUNS_DIR))
 
 
 def baseline_model_exists() -> bool:
