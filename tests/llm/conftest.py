@@ -97,6 +97,25 @@ def baseline_model_exists() -> bool:
     return host_path.exists()
 
 
+# File where test_01_setup saves the simulation run_id for troubleshoot tests
+_SIM_RUN_ID_FILE = _RUNS_DIR / "llm-test-sim-run-id.txt"
+
+# Docker-internal path to the run_id file
+SIM_RUN_ID_FILE = "/runs/llm-test-sim-run-id.txt"
+
+
+def save_sim_run_id(run_id: str) -> None:
+    """Save the simulation run_id to disk for troubleshoot tests."""
+    _SIM_RUN_ID_FILE.write_text(run_id.strip())
+
+
+def get_sim_run_id() -> str | None:
+    """Read the saved simulation run_id, or None if not available."""
+    if _SIM_RUN_ID_FILE.exists():
+        return _SIM_RUN_ID_FILE.read_text().strip() or None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Prompt budget tracking
 # ---------------------------------------------------------------------------
