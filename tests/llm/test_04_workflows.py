@@ -181,14 +181,17 @@ WORKFLOW_CASES = [
         # FloorspaceJS → weather/DDY → typical full chain
         "id": "floorspacejs_to_typical",
         "prompt": (
-            "Import the FloorspaceJS file at "
+            "Do all 3 steps in order, do not stop early:\n"
+            "Step 1: Import the FloorspaceJS file at "
             "/test-assets/sddc_office/floorplan.json "
-            "using import_floorspacejs. Then call change_building_location "
+            "using import_floorspacejs.\n"
+            "Step 2: Call change_building_location "
             "with weather_file "
             "/opt/comstock-measures/ChangeBuildingLocation"
-            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
-            "Then run create_typical_building to add "
-            "constructions, loads, and HVAC. Use MCP tools only."
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw.\n"
+            "Step 3: Call create_typical_building to add "
+            "constructions, loads, and HVAC.\n"
+            "Use MCP tools only. Complete all 3 steps."
         ),
         "required_tools": [
             "import_floorspacejs", "change_building_location",
