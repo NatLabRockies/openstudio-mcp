@@ -70,9 +70,9 @@ def register(mcp):
     def list_files_tool(directory: str | None = None, pattern: str = "*"):
         """List files in /inputs and /runs.
 
-        Only call this when you need to discover files and have no path.
-        If a file path was provided in the prompt, use it directly — do not
-        call list_files to verify it exists.
+        If a file path was given, use it directly — only call this if a file
+        operation failed and you need to discover available files. Do not call
+        repeatedly for the same problem.
 
         Args:
             directory: Specific directory to list (e.g. "/inputs", "/runs"). If omitted, scans both.
