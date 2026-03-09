@@ -101,6 +101,14 @@ Check the tool call sequence in assertion errors — it reveals agent behavior:
 - `/test-assets` (read-only) — `tests/assets/` for FloorspaceJS files etc.
 - EPW files at `/opt/comstock-measures/.../tests/*.epw` (baked into image)
 
+### Minimizing Claude Max usage
+Each test invocation loads ~27K tokens of tool definitions (129 tools). Full suite
+(90 tests) uses ~9M cache read tokens per run. To conserve weekly quota:
+- **Iterate on specific tests:** `pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
+- **Use tier filters:** `LLM_TESTS_TIER=1` for tier 1 only (14 tests, ~5 min)
+- **Full suite only for final validation** — not per-change
+- **`haiku` model** uses less quota: `LLM_TESTS_MODEL=haiku` (lower pass rate)
+
 ### Retries
 Default 2 retries handles ~80% pass-rate LLM non-determinism. Set `LLM_TESTS_RETRIES=0` when iterating on a single test to get fast feedback. Set to `1` for a quick check, `2-3` for CI-like confidence.
 
