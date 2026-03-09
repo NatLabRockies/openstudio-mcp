@@ -103,7 +103,7 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "expected": ["adjust_thermostat_setpoints", "set_thermostat_schedules",
                      "replace_thermostat_schedules"],
-        "L1": "Change the thermostat settings.",
+        "L1": "Make the building warmer in winter.",
         "L2": "Raise the cooling setpoint by 2 degrees F.",
         "L3": "Adjust the thermostat setpoints using adjust_thermostat_setpoints. "
               "Raise cooling by 2F.",

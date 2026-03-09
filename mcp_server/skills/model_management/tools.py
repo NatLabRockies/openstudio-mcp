@@ -70,6 +70,10 @@ def register(mcp):
     def list_files_tool(directory: str | None = None, pattern: str = "*"):
         """List files in /inputs and /runs.
 
+        Only call this when you need to discover files and have no path.
+        If a file path was provided in the prompt, use it directly — do not
+        call list_files to verify it exists.
+
         Args:
             directory: Specific directory to list (e.g. "/inputs", "/runs"). If omitted, scans both.
             pattern: Glob pattern to filter (e.g. "*.epw", "*.osm"). Default "*" returns all files.
