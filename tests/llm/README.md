@@ -101,6 +101,14 @@ Check the tool call sequence in assertion errors — it reveals agent behavior:
 - `/test-assets` (read-only) — `tests/assets/` for FloorspaceJS files etc.
 - EPW files at `/opt/comstock-measures/.../tests/*.epw` (baked into image)
 
+### Minimizing Claude Max usage
+Each test invocation loads ~27K tokens of tool definitions (129 tools). Full suite
+(90 tests) uses ~9M cache read tokens per run. To conserve weekly quota:
+- **Iterate on specific tests:** `pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
+- **Use tier filters:** `LLM_TESTS_TIER=1` for tier 1 only (14 tests, ~5 min)
+- **Full suite only for final validation** — not per-change
+- **`haiku` model** uses less quota: `LLM_TESTS_MODEL=haiku` (lower pass rate)
+
 ### Retries
 Default 2 retries handles ~80% pass-rate LLM non-determinism. Set `LLM_TESTS_RETRIES=0` when iterating on a single test to get fast feedback. Set to `1` for a quick check, `2-3` for CI-like confidence.
 
@@ -112,8 +120,8 @@ After each run, benchmark data is written to `LLM_TESTS_RUNS_DIR`:
 
 Cost figures are notional API pricing from the Claude CLI — free on Claude Max.
 
-### System prompt
-`runner.py` includes a default system prompt that tells the agent not to loop on `list_files` when `load_osm_model` fails. This was the single biggest reliability improvement (44% -> 83% pass rate). The prompt can be overridden per-test via `run_claude(system_prompt=...)`.
+### Anti-loop guardrails
+The MCP server's `instructions` field (server.py) and `list_files` tool description prevent the agent from looping on `list_files` calls. This was the single biggest reliability improvement (44% -> 83% pass rate). The guardrails are native to the server so all MCP clients benefit. `runner.py` has a minimal system prompt that can be overridden per-test via `run_claude(system_prompt=...)`.
 
 ### Progressive tests
 `test_06_progressive.py` tests 10 operations at 3 specificity levels:

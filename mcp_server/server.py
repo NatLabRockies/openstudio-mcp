@@ -7,12 +7,14 @@ from mcp_server.skills import register_all_skills
 mcp = FastMCP(
     "openstudio-mcp",
     instructions=(
-        "Always use openstudio-mcp tools for building energy modeling. "
-        "Never generate raw IDF files. Create/modify OSM only through MCP tools. "
-        "Never write scripts to parse results, visualize models, or wire HVAC — "
-        "equivalent MCP tools exist. If no tool exists for a task, ask the user "
-        "before writing code. "
-        "For multi-step workflows, call list_skills() first to get step-by-step guides."
+        "Building energy simulation server (OpenStudio SDK) with 129 tools for "
+        "creating, modifying, simulating, and analyzing building energy models. "
+        "Use these tools for all building energy modeling tasks — if no tool "
+        "exists for a task, ask the user before writing code. "
+        "If a file path is given, use it directly. If a file operation fails, "
+        "you may call list_files once to find the right path, then retry — "
+        "do not call list_files more than once for the same file. "
+        "For multi-step workflows, call list_skills() first."
     ),
 )
 
