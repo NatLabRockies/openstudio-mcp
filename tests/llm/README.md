@@ -112,8 +112,8 @@ After each run, benchmark data is written to `LLM_TESTS_RUNS_DIR`:
 
 Cost figures are notional API pricing from the Claude CLI — free on Claude Max.
 
-### System prompt
-`runner.py` includes a default system prompt that tells the agent not to loop on `list_files` when `load_osm_model` fails. This was the single biggest reliability improvement (44% -> 83% pass rate). The prompt can be overridden per-test via `run_claude(system_prompt=...)`.
+### Anti-loop guardrails
+The MCP server's `instructions` field (server.py) and `list_files` tool description prevent the agent from looping on `list_files` calls. This was the single biggest reliability improvement (44% -> 83% pass rate). The guardrails are native to the server so all MCP clients benefit. `runner.py` has a minimal system prompt that can be overridden per-test via `run_claude(system_prompt=...)`.
 
 ### Progressive tests
 `test_06_progressive.py` tests 10 operations at 3 specificity levels:
