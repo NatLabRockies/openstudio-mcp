@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 127 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
+**22 skills &bull; 129 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
 
 ---
 
@@ -72,7 +72,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 127 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 129 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -84,7 +84,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 127 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 129 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Other MCP Hosts
 
@@ -122,7 +122,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (127 total)
+## Skills & Tools (129 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |
@@ -136,11 +136,21 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `get_server_status` | Server health check |
 | `get_versions` | OpenStudio, EnergyPlus, Ruby versions |
 
-### Model Management (6 tools)
+### Model Creation (5 tools)
+
+Primary tools for creating building energy models. `create_new_building` is the recommended starting point for most workflows.
+
 | Tool | Description |
 |------|-------------|
-| `create_example_osm` | Create single-zone example model |
-| `create_baseline_osm` | Create 10-zone baseline with ASHRAE system 1-10 |
+| `create_new_building` | Create complete building end-to-end (geometry + weather + typical template) |
+| `create_bar_building` | Create bar building geometry from building type, floor area, and aspect ratio |
+| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry |
+| `create_example_osm` | Create minimal single-zone example (testing/demos) |
+| `create_baseline_osm` | Create 10-zone baseline with ASHRAE system 1-10 (testing/demos) |
+
+### Model Management (4 tools)
+| Tool | Description |
+|------|-------------|
 | `inspect_osm_summary` | Quick structural summary of OSM file |
 | `load_osm_model` | Load OSM into memory for querying/editing |
 | `save_osm_model` | Save in-memory model to disk |
@@ -163,7 +173,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `create_space` | Create space with optional story/space type |
 | `create_thermal_zone` | Create thermal zone, assign spaces |
 
-### Geometry (8 tools)
+### Geometry (9 tools)
 | Tool | Description |
 |------|-------------|
 | `list_surfaces` | List surfaces (walls, floors, roofs) |
@@ -174,6 +184,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `create_space_from_floor_print` | Extrude floor polygon into space with all surfaces |
 | `match_surfaces` | Intersect + match shared walls between adjacent spaces |
 | `set_window_to_wall_ratio` | Add centered window by glazing ratio (e.g. 0.4 = 40%) |
+| `import_floorspacejs` | Import custom geometry from FloorSpaceJS JSON file |
 
 ### Constructions (6 tools)
 | Tool | Description |
@@ -307,14 +318,13 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `list_measure_arguments` | List measure arguments with defaults and choices |
 | `apply_measure` | Apply OpenStudio measure to in-memory model |
 
-### ComStock Measures (2 tools)
+### ComStock Measures (1 tool)
 
-~61 bundled [ComStock](https://github.com/NREL/ComStock) measures (openstudio-standards-based templates for space types, constructions, HVAC, schedules). Pre-installed in Docker image.
+~61 bundled [ComStock](https://github.com/NREL/ComStock) measures (openstudio-standards-based templates for space types, constructions, HVAC, schedules). Pre-installed in Docker image. Creation tools that use these measures are listed in [Model Creation](#model-creation-5-tools) above.
 
 | Tool | Description |
 |------|-------------|
 | `list_comstock_measures` | List bundled measures with category filter (baseline/upgrade/setup) |
-| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry |
 
 ### Common Measures (21 tools)
 
