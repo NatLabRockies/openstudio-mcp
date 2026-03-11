@@ -55,7 +55,6 @@ def test_list_space_types():
 
                 if space_types_result["space_types"]:
                     space_type = space_types_result["space_types"][0]
-                    assert "handle" in space_type
                     assert "name" in space_type
                     assert "num_people" in space_type
                     assert "num_lights" in space_type

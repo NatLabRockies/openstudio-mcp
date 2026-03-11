@@ -54,7 +54,6 @@ def test_get_building_info():
                 assert "exterior_surface_area_m2" in building
                 assert "lighting_power_per_floor_area_w_m2" in building
                 assert "number_of_people" in building
-                assert isinstance(building["handle"], str)
 
     asyncio.run(_run())
 
@@ -154,7 +153,6 @@ def test_list_building_stories():
                 # Check story attributes
                 story = stories[0]
                 assert "name" in story
-                assert "handle" in story
                 assert "num_spaces" in story
                 assert story["num_spaces"] == 4  # Example model has 4 spaces
 

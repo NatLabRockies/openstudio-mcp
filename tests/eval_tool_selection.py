@@ -124,7 +124,7 @@ EVAL_CASES = [
     ("extract end use breakdown", "extract_end_use_breakdown"),
     ("extract envelope summary", "extract_envelope_summary"),
     ("query timeseries data", "query_timeseries"),
-    ("read run artifact", "read_run_artifact"),
+    ("read a file", "read_file"),
     # Simulation
     ("run simulation", "run_simulation"),
     ("validate OSW workflow", "validate_osw"),

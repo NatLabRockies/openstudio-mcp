@@ -53,7 +53,6 @@ def test_list_air_loops():
                 # Example model may not have air loops
                 if air_loops_result["air_loops"]:
                     air_loop = air_loops_result["air_loops"][0]
-                    assert "handle" in air_loop
                     assert "name" in air_loop
                     assert "num_thermal_zones" in air_loop
                     assert "thermal_zones" in air_loop
@@ -190,7 +189,6 @@ def test_list_plant_loops():
                 # Example model may not have plant loops
                 if plant_loops_result["plant_loops"]:
                     plant_loop = plant_loops_result["plant_loops"][0]
-                    assert "handle" in plant_loop
                     assert "name" in plant_loop
                     assert "num_supply_components" in plant_loop
                     assert "supply_components" in plant_loop
@@ -241,7 +239,6 @@ def test_list_zone_hvac_equipment():
                 # Example model may not have zone HVAC equipment
                 if zone_hvac_result["zone_hvac_equipment"]:
                     equipment = zone_hvac_result["zone_hvac_equipment"][0]
-                    assert "handle" in equipment
                     assert "type" in equipment
                     assert "name" in equipment
 

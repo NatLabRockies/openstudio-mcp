@@ -45,10 +45,14 @@ def register(mcp):
 
     @mcp.tool(name="list_model_objects")
     def list_model_objects_tool(object_type: str):
-        """List all objects of a given IddObjectType.
+        """List all objects of a given type by name.
+
+        Common types: Space, ThermalZone, AirLoopHVAC, PlantLoop,
+        BoilerHotWater, ChillerElectricEIR, CoilHeatingWater, CoilCoolingWater,
+        FanVariableVolume, PumpVariableSpeed, ScheduleRuleset, Construction,
+        People, Lights, ElectricEquipment, ZoneHVACFourPipeFanCoil.
 
         Args:
-            object_type: Type to list (e.g. "Space", "ThermalZone",
-                "BoilerHotWater", "ScheduleRuleset")
+            object_type: Type to list (see common types above)
         """
         return list_model_objects(object_type=object_type)

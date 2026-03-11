@@ -37,7 +37,7 @@ CREATION_TOOLS = {"create_baseline_osm", "create_example_osm",
 RESULTS_TOOLS = {"extract_summary_metrics", "extract_end_use_breakdown",
                  "extract_envelope_summary", "extract_hvac_sizing",
                  "extract_zone_summary", "extract_component_sizing",
-                 "query_timeseries", "read_run_artifact",
+                 "query_timeseries", "read_file",
                  "generate_results_report"}
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "

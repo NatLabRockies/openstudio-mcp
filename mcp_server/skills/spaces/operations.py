@@ -26,7 +26,6 @@ def _extract_space(model, space, detailed: bool = True) -> dict[str, Any]:
     if not detailed:
         return result
     result.update({
-        "handle": str(space.handle()),
         "space_type": optional_name(space.spaceType()),
         "building_story": optional_name(space.buildingStory()),
         "default_construction_set": optional_name(space.defaultConstructionSet()),
@@ -72,28 +71,16 @@ def _extract_thermal_zone(model, zone, detailed: bool = True) -> dict[str, Any]:
         heating_setpoint_schedule = optional_name(thermostat.heatingSetpointTemperatureSchedule())
         cooling_setpoint_schedule = optional_name(thermostat.coolingSetpointTemperatureSchedule())
 
-    # Get HVAC equipment
-    equipment_list = []
-    for equip in zone.equipment():
-        equipment_list.append({
-            "type": equip.iddObjectType().valueName(),
-            "name": equip.nameString(),
-        })
-
     # Get air loop if connected
     air_loop_name = None
     if zone.airLoopHVAC().is_initialized():
         air_loop_name = zone.airLoopHVAC().get().nameString()
 
     result.update({
-        "handle": str(zone.handle()),
-        "multiplier": int(zone.multiplier()),
-        "num_spaces": len(zone.spaces()),
         "thermostat": thermostat_name,
         "heating_setpoint_schedule": heating_setpoint_schedule,
         "cooling_setpoint_schedule": cooling_setpoint_schedule,
         "air_loop_hvac": air_loop_name,
-        "equipment": equipment_list,
     })
     return result
 

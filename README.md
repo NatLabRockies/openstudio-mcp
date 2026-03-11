@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 129 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
+**22 skills &bull; 136 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
 
 ---
 
@@ -72,7 +72,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 129 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 136 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -84,7 +84,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 129 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 136 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Other MCP Hosts
 
@@ -122,7 +122,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (129 total)
+## Skills & Tools (136 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |
@@ -249,8 +249,8 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | Tool | Description |
 |------|-------------|
 | `extract_summary_metrics` | Extract EUI, energy, unmet hours from results |
-| `read_run_artifact` | Read simulation output file contents |
-| `copy_run_artifact` | Copy large artifact to host-mounted path |
+| `read_file` | Read any file by absolute path (all mounts) |
+| `copy_file` | Copy file to host-mounted path |
 | `extract_end_use_breakdown` | Energy breakdown by end use and fuel type (IP/SI) |
 | `extract_envelope_summary` | Opaque + fenestration U-values and areas |
 | `extract_hvac_sizing` | Autosized zone and system HVAC capacities |
@@ -276,7 +276,7 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `add_vrf_system` | Add VRF multi-zone heat pump system |
 | `add_radiant_system` | Add low-temperature radiant heating/cooling |
 
-### Component Properties (6 tools)
+### Component Properties (11 tools)
 | Tool | Description |
 |------|-------------|
 | `list_hvac_components` | List all HVAC components (15 types: coils, plant, fans, pumps) |
@@ -284,13 +284,21 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `set_component_properties` | Modify properties on a named component |
 | `set_economizer_properties` | Modify OA economizer settings on air loop |
 | `set_sizing_properties` | Modify plant loop sizing (exit temp, delta-T) |
-| `set_setpoint_manager_properties` | Modify setpoint manager min/max temps |
+| `set_sizing_system_properties` | Set air loop SizingSystem properties (SAT, OA, flow methods) |
+| `get_sizing_system_properties` | Read all SizingSystem properties for air loop |
+| `set_sizing_zone_properties` | Set SizingZone properties (bulk, supports zone lists) |
+| `get_sizing_zone_properties` | Read all SizingZone properties for a zone |
+| `get_setpoint_manager_properties` | Read SPM properties (7 types supported) |
+| `set_setpoint_manager_properties` | Modify SPM properties (7 types supported) |
 
-### Loop Operations (5 tools)
+### Loop Operations (8 tools)
 | Tool | Description |
 |------|-------------|
+| `create_plant_loop` | Create plant loop with pump, bypass, and SPM |
 | `add_supply_equipment` | Add boiler/chiller/tower to plant loop supply |
 | `remove_supply_equipment` | Remove equipment from plant loop supply |
+| `add_demand_component` | Add coil/heater to plant loop demand side |
+| `remove_demand_component` | Remove component from plant loop demand |
 | `add_zone_equipment` | Add baseboard/unit heater to thermal zone |
 | `remove_zone_equipment` | Remove equipment from thermal zone |
 | `remove_all_zone_equipment` | Batch-remove ALL equipment from multiple zones |
@@ -326,7 +334,7 @@ Primary tools for creating building energy models. `create_new_building` is the 
 |------|-------------|
 | `list_comstock_measures` | List bundled measures with category filter (baseline/upgrade/setup) |
 
-### Common Measures (21 tools)
+### Common Measures (20 tools)
 
 ~79 bundled [openstudio-common-measures-gem](https://github.com/NREL/openstudio-common-measures-gem) measures (reporting, thermostats, envelope, renewables, visualization, model cleanup). Pre-installed in Docker image. 20 curated measures with 21 dedicated wrapper tools.
 
@@ -341,7 +349,6 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `replace_window_constructions` | Bulk-replace all exterior window constructions |
 | `enable_ideal_air_loads` | Enable ideal air loads on all zones (quick sizing studies) |
 | `clean_unused_objects` | Remove orphan objects and unused resources |
-| `inject_idf` | Inject raw IDF objects from external file |
 | `change_building_location` | Set weather file + climate zone + design days |
 | `set_thermostat_schedules` | Apply thermostat schedules from library |
 | `replace_thermostat_schedules` | Replace existing thermostat schedules |

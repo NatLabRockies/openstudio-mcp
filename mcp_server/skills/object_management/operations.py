@@ -44,6 +44,11 @@ MANAGED_TYPES: dict[str, str] = {
     "ElectricEquipment": "getElectricEquipments",
     "GasEquipment": "getGasEquipments",
     "SpaceInfiltrationDesignFlowRate": "getSpaceInfiltrationDesignFlowRates",
+    # Four-pipe beam / fan coil
+    "AirTerminalSingleDuctConstantVolumeFourPipeBeam": "getAirTerminalSingleDuctConstantVolumeFourPipeBeams",
+    "CoilCoolingFourPipeBeam": "getCoilCoolingFourPipeBeams",
+    "CoilHeatingFourPipeBeam": "getCoilHeatingFourPipeBeams",
+    "ZoneHVACFourPipeFanCoil": "getZoneHVACFourPipeFanCoils",
     # Constructions & materials
     "Construction": "getConstructions",
     "StandardOpaqueMaterial": "getStandardOpaqueMaterials",
@@ -167,7 +172,7 @@ def list_model_objects(object_type: str) -> dict[str, Any]:
 
         objects = getter()
         items = [
-            {"name": obj.nameString(), "handle": str(obj.handle())}
+            {"name": obj.nameString()}
             for obj in objects
         ]
         items.sort(key=lambda d: d["name"])

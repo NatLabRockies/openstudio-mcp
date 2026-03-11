@@ -53,7 +53,6 @@ def test_list_people_loads():
                 # Example model has people loads
                 if people_result["people_loads"]:
                     person = people_result["people_loads"][0]
-                    assert "handle" in person
                     assert "name" in person
                     assert "space" in person
 

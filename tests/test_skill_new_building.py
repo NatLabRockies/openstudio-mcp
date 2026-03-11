@@ -102,7 +102,7 @@ def test_skill_new_building_workflow():
                 # 9. Save and simulate
                 save_path = f"/runs/{name}.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 

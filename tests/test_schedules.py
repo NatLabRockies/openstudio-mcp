@@ -56,7 +56,6 @@ def test_list_schedule_rulesets():
                 # Check schedule structure
                 if schedules_result["schedule_rulesets"]:
                     schedule = schedules_result["schedule_rulesets"][0]
-                    assert "handle" in schedule
                     assert "name" in schedule
                     assert "schedule_type_limits" in schedule
                     assert "default_day_schedule" in schedule

@@ -83,7 +83,7 @@ def test_workflow_baseline_with_weather():
                 # Step 6: Save model
                 save_path = f"/runs/{name}_with_weather.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 
@@ -464,7 +464,7 @@ def test_workflow_full_building():
                 # Step 6: Save the complete model
                 save_path = f"/runs/{name}_complete.osm"
                 save = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert save.get("ok") is True
 
@@ -772,7 +772,7 @@ def test_workflow_comstock_typical_building():
                 # Step 8: Save model
                 save_path = f"/runs/typical_office_{uuid.uuid4().hex[:8]}.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 

@@ -108,7 +108,7 @@ def test_tool_references_valid():
         "surface_name", "construction_name", "component_name",
         "air_loop_name", "plant_loop_name", "variable_name",
         "object_name", "new_name", "object_type", "measure_dir",
-        "epw_path", "osm_path", "save_path", "run_id",
+        "epw_path", "osm_path", "run_id",
         "fraction_of_roof", "cooling_offset_f", "heating_offset_f",
         "alter_design_days", "begin_month", "begin_day",
         "end_month", "end_day", "do_zone_sizing", "run_for_sizing_periods",

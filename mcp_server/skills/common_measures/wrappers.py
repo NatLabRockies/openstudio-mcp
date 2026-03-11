@@ -70,7 +70,7 @@ def view_model_op(geometry_diagnostics: bool = False) -> dict[str, Any]:
             result["report_path"] = str(report)
             result["report_size_bytes"] = report.stat().st_size
             result["user_message"] = (
-                "Report generated. Use copy_run_artifact to export, "
+                "Report generated. Use copy_file to export, "
                 "then find it on the host at runs/exports/view_model_report.html"
             )
     return result
@@ -122,7 +122,7 @@ def view_simulation_data_op(
             result["report_path"] = str(report)
             result["report_size_bytes"] = report.stat().st_size
             result["user_message"] = (
-                "Report generated. Use copy_run_artifact to export, "
+                "Report generated. Use copy_file to export, "
                 "then find it on the host at runs/exports/view_data_report.html"
             )
     return result
@@ -148,7 +148,7 @@ def generate_results_report_op(units: str = "IP", run_id: str | None = None) -> 
             result["report_path"] = str(report)
             result["report_size_bytes"] = report.stat().st_size
             result["user_message"] = (
-                "Report generated. Use copy_run_artifact to export, "
+                "Report generated. Use copy_file to export, "
                 "then find it on the host at runs/exports/openstudio_results_report.html"
             )
     return result
@@ -293,23 +293,6 @@ def clean_unused_objects_op(
         "remove_unused_schedules": str(schedules).lower(),
         "remove_unused_constructions": str(constructions).lower(),
         "remove_unused_curves": str(curves).lower(),
-    })
-
-
-# --- 9. inject_idf ---
-
-def inject_idf_op(idf_path: str) -> dict[str, Any]:
-    """Inject raw IDF objects from an external file into the model.
-
-    Objects are added to the EnergyPlus workspace before simulation.
-    Best for adding new objects; modifying forward-translated objects
-    may cause conflicts.
-
-    Args:
-        idf_path: Path to the IDF file containing objects to inject
-    """
-    return _run("inject_idf_objects", {
-        "source_idf_path": idf_path,
     })
 
 

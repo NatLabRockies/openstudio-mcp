@@ -674,7 +674,7 @@ def test_qaqc_post_sim():
                 # Save + run simulation
                 save_path = f"/runs/{name}_weather.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 

@@ -23,13 +23,13 @@ def register(mcp):
         return load_osm_model(osm_path=osm_path, version_translate=version_translate)
 
     @mcp.tool(name="save_osm_model")
-    def save_osm_model_tool(save_path: str | None = None):
+    def save_osm_model_tool(osm_path: str | None = None):
         """Save loaded model to disk.
 
         Args:
-            save_path: Optional path to save to. If not provided, saves to original load path.
+            osm_path: Optional path to save to. If not provided, saves to original load path.
         """
-        return save_osm_model(save_path=save_path)
+        return save_osm_model(osm_path=osm_path)
 
     @mcp.tool(name="create_example_osm")
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):
@@ -67,18 +67,18 @@ def register(mcp):
         )
 
     @mcp.tool(name="list_files")
-    def list_files_tool(directory: str | None = None, pattern: str = "*"):
-        """List files in /inputs and /runs.
+    def list_files_tool(directory: str | None = None, pattern: str = "*", max_depth: int | None = None):
+        """List files and directories in /inputs and /runs.
 
-        If a file path was given, use it directly — only call this if a file
-        operation failed and you need to discover available files. Do not call
-        repeatedly for the same problem.
+        Only call if you need to discover available files. Do not call
+        repeatedly for the same directory.
 
         Args:
-            directory: Specific directory to list (e.g. "/inputs", "/runs"). If omitted, scans both.
-            pattern: Glob pattern to filter (e.g. "*.epw", "*.osm"). Default "*" returns all files.
+            directory: Directory to list (e.g. "/runs/my_run"). If omitted, scans /inputs and /runs.
+            pattern: Glob pattern to filter files (e.g. "*.epw", "*.osm"). Default "*".
+            max_depth: Max directory depth (1 = top-level only). Default unlimited.
         """
-        return list_files(directory=directory, pattern=pattern)
+        return list_files(directory=directory, pattern=pattern, max_depth=max_depth)
 
     @mcp.tool(name="inspect_osm_summary")
     def inspect_osm_summary_tool(osm_path: str):

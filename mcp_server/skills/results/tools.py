@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from mcp_server.skills.results.operations import (
-    copy_run_artifact,
+    copy_file,
     extract_component_sizing_op,
     extract_end_use_breakdown_op,
     extract_envelope_summary_op,
@@ -10,18 +10,17 @@ from mcp_server.skills.results.operations import (
     extract_summary_metrics,
     extract_zone_summary_op,
     query_timeseries_op,
-    read_run_artifact,
+    read_file,
 )
 
 
 def register(mcp):
-    @mcp.tool(name="read_run_artifact")
-    def read_run_artifact_tool(run_id: str, path: str, max_bytes: int | None = None, offset: int = 0):
-        """Read a run artifact file (text or base64 for binary).
+    @mcp.tool(name="read_file")
+    def read_file_tool(file_path: str, max_bytes: int | None = None, offset: int = 0):
+        """Read any file by absolute path (works across all mounts: /runs, /inputs, /repo, etc.).
 
         Args:
-            run_id: Run identifier
-            path: Relative path within the run directory
+            file_path: Absolute path to the file (e.g. /runs/my_run/run/eplusout.err)
             max_bytes: Max bytes to read (default 400KB)
             offset: Byte offset for chunked reading (default 0)
         """
@@ -29,7 +28,7 @@ def register(mcp):
             mb = int(max_bytes) if max_bytes is not None else 400_000
         except (ValueError, TypeError):
             mb = 400_000
-        return read_run_artifact(run_id=run_id, path=path, max_bytes=mb, offset=offset)
+        return read_file(file_path=file_path, max_bytes=mb, offset=offset)
 
     @mcp.tool(name="extract_summary_metrics")
     def extract_summary_metrics_tool(run_id: str, include_raw: bool = False):
@@ -41,16 +40,15 @@ def register(mcp):
         """
         return extract_summary_metrics(run_id, include_raw=include_raw)
 
-    @mcp.tool(name="copy_run_artifact")
-    def copy_run_artifact_tool(run_id: str, path: str, destination: str = "/runs/exports"):
-        """Copy a run artifact to an accessible path, bypassing the MCP size limit.
+    @mcp.tool(name="copy_file")
+    def copy_file_tool(file_path: str, destination: str = "/runs/exports"):
+        """Copy a file to an accessible path, bypassing the MCP size limit.
 
         Args:
-            run_id: Run identifier
-            path: Relative path within the run directory
+            file_path: Absolute path to the source file
             destination: Target directory (default /runs/exports/)
         """
-        return copy_run_artifact(run_id=run_id, path=path, destination=destination)
+        return copy_file(file_path=file_path, destination=destination)
 
     # --- Tier 1: Tabular report extraction ---
 
