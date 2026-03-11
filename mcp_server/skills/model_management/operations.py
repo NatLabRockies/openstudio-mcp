@@ -306,7 +306,7 @@ def list_files(
 
     items.sort(key=lambda f: f["name"])
     total = len(items)
-    resp: dict[str, Any] = {"ok": True, "total": total}
+    resp: dict[str, Any] = {"ok": True}
     if max_results is not None and total > max_results:
         items = items[:max_results]
         resp["total_available"] = total

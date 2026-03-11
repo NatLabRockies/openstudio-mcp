@@ -1,4 +1,4 @@
-# Plan: List Tool Response Size Guardrails (v3) — COMPLETE
+# Plan: List Tool Response Size Guardrails (v3) — ALL PARTS COMPLETE
 
 ## Problem
 List tools return unbounded responses. An 80-zone model produced 91K chars from
@@ -221,7 +221,7 @@ Also add `get_construction_details(name)` — returns layer details for one cons
 
 ---
 
-## Part 5: Response size test
+## Part 5: Response size test ✅
 
 `tests/test_response_sizes.py`:
 - Create baseline model (10 zones, ~60 surfaces, air loops, plant loops, loads)
@@ -230,6 +230,8 @@ Also add `get_construction_details(name)` — returns layer details for one cons
 - With max_results=10 and brief defaults, each response should be well under 10K
 - Also test: unfiltered call shows `truncated: true` when model exceeds max_results
 - Also test: filtered call returns correct subset
+- Also test: `max_results=0` returns all
+- Also test: `get_load_details` + `get_construction_details` return ok
 
 ---
 

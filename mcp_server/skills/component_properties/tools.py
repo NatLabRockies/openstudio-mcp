@@ -20,6 +20,8 @@ def register(mcp: FastMCP) -> None:
     ) -> str:
         """List HVAC components. Default 10 results.
 
+        Common filters: category="coil"
+
         Args:
             category: Optional filter — "coil", "plant", "fan", or "pump"
             max_results: Max items (default 10, 0=unlimited)

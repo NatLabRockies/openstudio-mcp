@@ -21,6 +21,8 @@ def register(mcp):
     ):
         """List materials. Default 10 results.
 
+        Common filters: material_type="StandardOpaqueMaterial"
+
         Args:
             material_type: Filter by iddObjectType (e.g. "StandardOpaqueMaterial")
             max_results: Max items (default 10, 0=unlimited)
