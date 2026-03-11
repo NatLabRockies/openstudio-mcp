@@ -47,7 +47,7 @@ def test_create_thermal_zone_minimal():
                 assert zone_result["thermal_zone"]["num_equipment"] == 0
 
                 # Verify it appears in list
-                list_resp = await session.call_tool("list_thermal_zones", {})
+                list_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 assert any(z["name"] == "New Zone" for z in list_result["thermal_zones"])
 
@@ -77,7 +77,7 @@ def test_create_thermal_zone_with_spaces():
                 assert load_result.get("ok") is True
 
                 # Get existing spaces
-                spaces_resp = await session.call_tool("list_spaces", {})
+                spaces_resp = await session.call_tool("list_spaces", {"max_results": 0})
                 spaces_result = unwrap(spaces_resp)
                 assert len(spaces_result["spaces"]) > 0
                 space_names = [spaces_result["spaces"][0]["name"]]
@@ -219,7 +219,7 @@ def test_create_thermal_zone_json_string_spaces():
                 create_data = unwrap(create_resp)
                 await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
 
-                spaces_resp = await session.call_tool("list_spaces", {})
+                spaces_resp = await session.call_tool("list_spaces", {"max_results": 0})
                 space_name = unwrap(spaces_resp)["spaces"][0]["name"]
 
                 zone_resp = await session.call_tool("create_thermal_zone", {

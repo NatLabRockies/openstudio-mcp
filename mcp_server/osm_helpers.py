@@ -112,3 +112,66 @@ def list_all_as_dicts(
 
     results.sort(key=lambda d: d.get("name", d.get("Name", "")))
     return results
+
+
+def list_paginated(
+    model: openstudio.model.Model,
+    getter_name: str,
+    extract_fn: Callable,
+    *,
+    detailed: bool = True,
+    max_results: int | None = None,
+    obj_filter_fn: Callable | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Like list_all_as_dicts but with server-side filtering and pagination.
+
+    Filters OS objects BEFORE extraction (efficient — skips extract on
+    objects that won't be returned). Sorts by nameString(), truncates
+    to max_results, then extracts.
+
+    Args:
+        obj_filter_fn: (model, os_object) -> bool, applied before extraction
+        max_results: Max items to return. None = unlimited.
+
+    Returns:
+        (items, total_available) — items is truncated list, total is pre-truncation count.
+    """
+    import inspect
+
+    getter = getattr(model, getter_name)
+    objects = list(getter())
+
+    if obj_filter_fn:
+        objects = [o for o in objects if obj_filter_fn(model, o)]
+
+    total = len(objects)
+    objects.sort(key=lambda o: o.nameString() if hasattr(o, "nameString") else "")
+
+    if max_results is not None and total > max_results:
+        objects = objects[:max_results]
+
+    sig = inspect.signature(extract_fn)
+    if "detailed" in sig.parameters:
+        items = [extract_fn(model, obj, detailed=detailed) for obj in objects]
+    else:
+        items = [extract_fn(model, obj) for obj in objects]
+
+    return items, total
+
+
+def build_list_response(
+    key: str,
+    items: list[dict[str, Any]],
+    total: int,
+    max_results: int | None = None,
+) -> dict[str, Any]:
+    """Build standardized list response with truncation metadata.
+
+    When truncated, adds total_available and truncated=True so the LLM
+    knows to filter or override max_results.
+    """
+    resp: dict[str, Any] = {"ok": True, "count": len(items), key: items}
+    if max_results is not None and total > max_results:
+        resp["total_available"] = total
+        resp["truncated"] = True
+    return resp

@@ -55,7 +55,7 @@ def test_create_standard_opaque_material():
                 assert material_result["material"]["conductivity_w_m_k"] == 1.7
 
                 # Verify it appears in list
-                list_resp = await session.call_tool("list_materials", {})
+                list_resp = await session.call_tool("list_materials", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 assert any(m["name"] == "Test Concrete" for m in list_result["materials"])
 
@@ -139,7 +139,7 @@ def test_create_construction_from_materials():
                 assert construction_result["construction"]["layers"] == ["Exterior Finish", "Insulation", "Interior Finish"]
 
                 # Verify it appears in list
-                list_resp = await session.call_tool("list_constructions", {})
+                list_resp = await session.call_tool("list_constructions", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 assert any(c["name"] == "Test Wall Construction" for c in list_result["constructions"])
 
@@ -205,13 +205,13 @@ def test_assign_construction_to_surface():
                 assert load_result.get("ok") is True
 
                 # Get a surface name
-                surfaces_resp = await session.call_tool("list_surfaces", {})
+                surfaces_resp = await session.call_tool("list_surfaces", {"max_results": 0})
                 surfaces_result = unwrap(surfaces_resp)
                 assert len(surfaces_result["surfaces"]) > 0
                 surface_name = surfaces_result["surfaces"][0]["name"]
 
                 # Get an existing construction name
-                constructions_resp = await session.call_tool("list_constructions", {})
+                constructions_resp = await session.call_tool("list_constructions", {"max_results": 0})
                 constructions_result = unwrap(constructions_resp)
                 assert len(constructions_result["constructions"]) > 0
                 construction_name = constructions_result["constructions"][0]["name"]
@@ -320,7 +320,7 @@ def test_end_to_end_construction_workflow():
                 assert construction_result.get("ok") is True
 
                 # Step 3: Get a surface
-                surfaces_resp = await session.call_tool("list_surfaces", {})
+                surfaces_resp = await session.call_tool("list_surfaces", {"max_results": 0})
                 surfaces_result = unwrap(surfaces_resp)
                 surface_name = surfaces_result["surfaces"][0]["name"]
 

@@ -11,7 +11,12 @@ from typing import Any
 import openstudio
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts
+from mcp_server.osm_helpers import (
+    build_list_response,
+    fetch_object,
+    list_all_as_dicts,
+    list_paginated,
+)
 
 
 def _extract_material(model, material) -> dict[str, Any]:
@@ -92,32 +97,39 @@ def _extract_construction_set(model, construction_set) -> dict[str, Any]:
     return result
 
 
-def list_materials() -> dict[str, Any]:
-    """List all materials in the model."""
+def list_materials(
+    material_type: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List materials with optional type filter and pagination."""
     try:
         model = get_model()
-        materials = list_all_as_dicts(model, "getMaterials", _extract_material)
-        return {
-            "ok": True,
-            "count": len(materials),
-            "materials": materials,
-        }
+
+        filt = None
+        if material_type:
+            def filt(m, mat):
+                return material_type in mat.iddObjectType().valueName()
+
+        items, total = list_paginated(
+            model, "getMaterials", _extract_material,
+            max_results=max_results, obj_filter_fn=filt,
+        )
+        return build_list_response("materials", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to list materials: {e}"}
 
 
-def list_constructions() -> dict[str, Any]:
-    """List all constructions in the model."""
+def list_constructions(max_results: int = 10) -> dict[str, Any]:
+    """List constructions with pagination."""
     try:
         model = get_model()
-        constructions = list_all_as_dicts(model, "getConstructions", _extract_construction)
-        return {
-            "ok": True,
-            "count": len(constructions),
-            "constructions": constructions,
-        }
+        items, total = list_paginated(
+            model, "getConstructions", _extract_construction,
+            max_results=max_results,
+        )
+        return build_list_response("constructions", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
@@ -138,6 +150,30 @@ def list_construction_sets() -> dict[str, Any]:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to list construction sets: {e}"}
+
+
+def get_construction_details(construction_name: str) -> dict[str, Any]:
+    """Get detailed info for a construction including material layers."""
+    try:
+        model = get_model()
+        construction = fetch_object(model, "Construction", name=construction_name)
+        if construction is None:
+            return {"ok": False, "error": f"Construction '{construction_name}' not found"}
+
+        layers = [_extract_material(model, layer) for layer in construction.layers()]
+        return {
+            "ok": True,
+            "construction": {
+                "name": construction.nameString(),
+                "handle": str(construction.handle()),
+                "num_layers": len(layers),
+                "layers": layers,
+            },
+        }
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to get construction details: {e}"}
 
 
 def create_standard_opaque_material(name: str, roughness: str = "Smooth",

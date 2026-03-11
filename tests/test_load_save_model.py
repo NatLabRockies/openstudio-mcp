@@ -185,7 +185,7 @@ def test_list_files():
                 assert create_result.get("ok") is True
 
                 # List all files — should find the OSM we just created
-                list_resp = await session.call_tool("list_files", {})
+                list_resp = await session.call_tool("list_files", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 print("list_files (all):", list_result)
                 assert list_result.get("ok") is True
@@ -194,7 +194,7 @@ def test_list_files():
                 assert "example_model.osm" in names
 
                 # Filter by pattern
-                osm_resp = await session.call_tool("list_files", {"pattern": "*.osm"})
+                osm_resp = await session.call_tool("list_files", {"pattern": "*.osm", "max_results": 0})
                 osm_result = unwrap(osm_resp)
                 print("list_files (*.osm):", osm_result)
                 assert osm_result.get("ok") is True
@@ -202,21 +202,21 @@ def test_list_files():
                 assert all(f["name"].endswith(".osm") for f in osm_files)
 
                 # Filter by pattern with no matches
-                epw_resp = await session.call_tool("list_files", {"pattern": "*.xyz_no_match"})
+                epw_resp = await session.call_tool("list_files", {"pattern": "*.xyz_no_match", "max_results": 0})
                 epw_result = unwrap(epw_resp)
                 print("list_files (no match):", epw_result)
                 assert epw_result.get("ok") is True
                 assert epw_result.get("total") == 0
 
                 # Specific directory
-                runs_resp = await session.call_tool("list_files", {"directory": "/runs"})
+                runs_resp = await session.call_tool("list_files", {"directory": "/runs", "max_results": 0})
                 runs_result = unwrap(runs_resp)
                 print("list_files (/runs):", runs_result)
                 assert runs_result.get("ok") is True
                 assert runs_result.get("total", 0) >= 1
 
                 # Disallowed directory
-                bad_resp = await session.call_tool("list_files", {"directory": "/etc"})
+                bad_resp = await session.call_tool("list_files", {"directory": "/etc", "max_results": 0})
                 bad_result = unwrap(bad_resp)
                 print("list_files (/etc):", bad_result)
                 assert bad_result.get("ok") is False

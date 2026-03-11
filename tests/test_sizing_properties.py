@@ -94,7 +94,7 @@ def test_set_sizing_zone_properties_bulk():
                 assert cr.get("ok") is True, cr
 
                 # Get first 2 zone names
-                zones = unwrap(await session.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await session.call_tool("list_thermal_zones", {"max_results": 0}))
                 assert zones.get("ok") is True
                 zone_names = [z["name"] for z in zones["thermal_zones"][:2]]
 

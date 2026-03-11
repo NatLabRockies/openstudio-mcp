@@ -24,7 +24,7 @@ def test_list_components():
                     "system_type": 1,
                     "thermal_zone_names": zones,
                 })
-                result = await session.call_tool("list_hvac_components", {})
+                result = await session.call_tool("list_hvac_components", {"max_results": 0})
                 data = unwrap(result)
                 assert data["ok"] is True
                 assert data["count"] > 0
@@ -43,7 +43,7 @@ def test_list_components_by_category():
                     "system_type": 1,
                     "thermal_zone_names": zones,
                 })
-                result = await session.call_tool("list_hvac_components", {"category": "coil"})
+                result = await session.call_tool("list_hvac_components", {"category": "coil", "max_results": 0})
                 data = unwrap(result)
                 assert data["ok"] is True
                 for c in data["components"]:
@@ -63,7 +63,7 @@ def test_get_heating_coil_properties():
                     "thermal_zone_names": zones,
                 })
                 # Find heating coil name
-                lr = await session.call_tool("list_hvac_components", {"category": "coil"})
+                lr = await session.call_tool("list_hvac_components", {"category": "coil", "max_results": 0})
                 comps = unwrap(lr)["components"]
                 htg = next((c for c in comps if "Heating" in c["name"] and c["type"] == "CoilHeatingElectric"), None)
                 assert htg is not None, f"No heating coil found in {comps}"
@@ -88,7 +88,7 @@ def test_get_cooling_coil_properties():
                     "system_type": 1,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "coil"})
+                lr = await session.call_tool("list_hvac_components", {"category": "coil", "max_results": 0})
                 comps = unwrap(lr)["components"]
                 clg = next((c for c in comps if "Cooling" in c["name"] and "DXSingleSpeed" in c["type"]), None)
                 assert clg is not None
@@ -113,7 +113,7 @@ def test_get_fan_properties():
                     "system_type": 1,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "fan"})
+                lr = await session.call_tool("list_hvac_components", {"category": "fan", "max_results": 0})
                 comps = unwrap(lr)["components"]
                 fan = next((c for c in comps if "Fan" in c["name"]), None)
                 assert fan is not None
@@ -138,7 +138,7 @@ def test_set_fan_pressure_rise():
                     "system_type": 1,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "fan"})
+                lr = await session.call_tool("list_hvac_components", {"category": "fan", "max_results": 0})
                 fan = next(c for c in unwrap(lr)["components"] if "Fan" in c["name"])
 
                 result = await session.call_tool("set_component_properties", {
@@ -170,7 +170,7 @@ def test_set_invalid_property():
                     "system_type": 1,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "fan"})
+                lr = await session.call_tool("list_hvac_components", {"category": "fan", "max_results": 0})
                 fan = next(c for c in unwrap(lr)["components"] if "Fan" in c["name"])
 
                 result = await session.call_tool("set_component_properties", {
@@ -212,7 +212,7 @@ def test_list_components_system7():
                     "system_type": 7,
                     "thermal_zone_names": zones,
                 })
-                result = await session.call_tool("list_hvac_components", {})
+                result = await session.call_tool("list_hvac_components", {"max_results": 0})
                 data = unwrap(result)
                 assert data["ok"] is True
                 types = {c["type"] for c in data["components"]}
@@ -233,7 +233,7 @@ def test_get_chiller_properties():
                     "system_type": 7,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "plant"})
+                lr = await session.call_tool("list_hvac_components", {"category": "plant", "max_results": 0})
                 chiller = next(c for c in unwrap(lr)["components"] if c["type"] == "ChillerElectricEIR")
 
                 result = await session.call_tool("get_component_properties", {
@@ -257,7 +257,7 @@ def test_set_chiller_cop():
                     "system_type": 7,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "plant"})
+                lr = await session.call_tool("list_hvac_components", {"category": "plant", "max_results": 0})
                 chiller = next(c for c in unwrap(lr)["components"] if c["type"] == "ChillerElectricEIR")
 
                 result = await session.call_tool("set_component_properties", {
@@ -289,7 +289,7 @@ def test_get_boiler_properties():
                     "system_type": 7,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "plant"})
+                lr = await session.call_tool("list_hvac_components", {"category": "plant", "max_results": 0})
                 boiler = next(c for c in unwrap(lr)["components"] if c["type"] == "BoilerHotWater")
 
                 result = await session.call_tool("get_component_properties", {
@@ -312,7 +312,7 @@ def test_set_boiler_efficiency():
                     "system_type": 7,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "plant"})
+                lr = await session.call_tool("list_hvac_components", {"category": "plant", "max_results": 0})
                 boiler = next(c for c in unwrap(lr)["components"] if c["type"] == "BoilerHotWater")
 
                 result = await session.call_tool("set_component_properties", {
@@ -344,7 +344,7 @@ def test_get_pump_properties():
                     "system_type": 7,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "pump"})
+                lr = await session.call_tool("list_hvac_components", {"category": "pump", "max_results": 0})
                 comps = unwrap(lr)["components"]
                 pump = next((c for c in comps if "Pump" in c["type"]), None)
                 assert pump is not None, f"No pump found: {comps}"
@@ -369,7 +369,7 @@ def test_set_pump_head():
                     "system_type": 7,
                     "thermal_zone_names": zones,
                 })
-                lr = await session.call_tool("list_hvac_components", {"category": "pump"})
+                lr = await session.call_tool("list_hvac_components", {"category": "pump", "max_results": 0})
                 comps = unwrap(lr)["components"]
                 pump = next(c for c in comps if "Pump" in c["type"])
 

@@ -14,13 +14,18 @@ def register(mcp: FastMCP) -> None:
     """Register component properties tools with MCP server."""
 
     @mcp.tool(name="list_hvac_components")
-    def list_hvac_components_tool(category: str | None = None) -> str:
-        """List all HVAC components in the model with name, type, and category.
+    def list_hvac_components_tool(
+        category: str | None = None,
+        max_results: int = 10,
+    ) -> str:
+        """List HVAC components. Default 10 results.
 
         Args:
             category: Optional filter — "coil", "plant", "fan", or "pump"
+            max_results: Max items (default 10, 0=unlimited)
         """
-        return json.dumps(operations.list_hvac_components(category), indent=2)
+        mr = None if max_results == 0 else max_results
+        return json.dumps(operations.list_hvac_components(category, max_results=mr), indent=2)
 
     @mcp.tool(name="get_component_properties")
     def get_component_properties_tool(component_name: str) -> str:

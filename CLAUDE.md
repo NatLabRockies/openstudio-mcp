@@ -52,10 +52,10 @@ Always use openstudio-mcp tools for BEM tasks:
 | `building` | `get_building_info`, `get_model_summary`, `list_building_stories` | Phase 2 |
 | `spaces` | `list_spaces`, `get_space_details`, `list_thermal_zones`, `get_thermal_zone_details`, `create_space`, `create_thermal_zone` | Phase 2 + 3 |
 | `geometry` | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio`, `import_floorspacejs` | Phase 2 + 7 |
-| `constructions` | `list_materials`, `list_constructions`, `list_construction_sets`, `create_standard_opaque_material`, `create_construction`, `assign_construction_to_surface` | Phase 2 + 3 |
+| `constructions` | `list_materials`, `list_constructions`, `list_construction_sets`, `get_construction_details`, `create_standard_opaque_material`, `create_construction`, `assign_construction_to_surface` | Phase 2 + 3 |
 | `schedules` | `list_schedule_rulesets`, `get_schedule_details`, `create_schedule_ruleset` | Phase 2 + 3 |
 | `hvac` | `list_air_loops`, `get_air_loop_details`, `list_plant_loops`, `get_plant_loop_details`, `list_zone_hvac_equipment`, `get_zone_hvac_details`, `add_air_loop` | Phase 2 + 3 |
-| `loads` | `list_people_loads`, `list_lighting_loads`, `list_electric_equipment`, `list_gas_equipment`, `list_infiltration`, `create_people_definition`, `create_lights_definition`, `create_electric_equipment`, `create_gas_equipment`, `create_infiltration` | Phase 2 + 6A |
+| `loads` | `list_people_loads`, `list_lighting_loads`, `list_electric_equipment`, `list_gas_equipment`, `list_infiltration`, `get_load_details`, `create_people_definition`, `create_lights_definition`, `create_electric_equipment`, `create_gas_equipment`, `create_infiltration` | Phase 2 + 6A |
 | `space_types` | `list_space_types`, `get_space_type_details` | Phase 2 |
 | `simulation_outputs` | `add_output_variable`, `add_output_meter` | Phase 3 |
 | `hvac_systems` | `add_baseline_system`, `list_baseline_systems`, `get_baseline_system_info`, `replace_air_terminals`, `replace_zone_terminal`, `add_doas_system`, `add_vrf_system`, `add_radiant_system` | Phase 4 |
@@ -68,7 +68,7 @@ Always use openstudio-mcp tools for BEM tasks:
 | `common_measures` | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8 |
 | `skill_discovery` | `list_skills`, `get_skill` | — |
 
-**Total: 22 skills, 136 MCP tools, ~280 integration tests**
+**Total: 22 skills, 138 MCP tools, ~280 integration tests**
 
 ## Model Query Pattern
 ```python

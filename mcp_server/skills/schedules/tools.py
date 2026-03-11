@@ -10,9 +10,14 @@ from mcp_server.skills.schedules.operations import (
 
 def register(mcp):
     @mcp.tool(name="list_schedule_rulesets")
-    def list_schedule_rulesets_tool():
-        """List all schedule rulesets in the model."""
-        return list_schedule_rulesets()
+    def list_schedule_rulesets_tool(max_results: int = 10):
+        """List schedule rulesets. Default 10 results.
+
+        Args:
+            max_results: Max items (default 10, 0=unlimited)
+        """
+        mr = None if max_results == 0 else max_results
+        return list_schedule_rulesets(max_results=mr)
 
     @mcp.tool(name="get_schedule_details")
     def get_schedule_details_tool(schedule_name: str):

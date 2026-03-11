@@ -47,7 +47,7 @@ def test_create_space_minimal():
                 assert space_result["space"]["floor_area_m2"] == 0.0  # No surfaces yet
 
                 # Verify it appears in list
-                list_resp = await session.call_tool("list_spaces", {})
+                list_resp = await session.call_tool("list_spaces", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 assert any(s["name"] == "New Office" for s in list_result["spaces"])
 

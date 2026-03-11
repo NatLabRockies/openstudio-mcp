@@ -10,7 +10,12 @@ from typing import Any
 import openstudio
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
+from mcp_server.osm_helpers import (
+    build_list_response,
+    fetch_object,
+    list_paginated,
+    optional_name,
+)
 
 
 def _extract_people(model, people) -> dict[str, Any]:
@@ -176,84 +181,153 @@ def _extract_infiltration(model, infiltration) -> dict[str, Any]:
     return result
 
 
-def list_people_loads() -> dict[str, Any]:
-    """List all people loads in the model."""
+def _load_space_filter(space_name, space_type_name):
+    """Build obj_filter_fn for load list tools (shared by all 5 load types)."""
+    if not space_name and not space_type_name:
+        return None
+    def filt(m, obj):
+        if space_name and optional_name(obj.space()) != space_name:
+            return False
+        if space_type_name and optional_name(obj.spaceType()) != space_type_name:
+            return False
+        return True
+    return filt
+
+
+def list_people_loads(
+    space_name: str | None = None,
+    space_type_name: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List people loads. Loads in a space: space_name='Office 1'."""
     try:
         model = get_model()
-        people = list_all_as_dicts(model, "getPeoples", _extract_people)
-        return {
-            "ok": True,
-            "count": len(people),
-            "people_loads": people,
-        }
+        items, total = list_paginated(
+            model, "getPeoples", _extract_people,
+            max_results=max_results,
+            obj_filter_fn=_load_space_filter(space_name, space_type_name),
+        )
+        return build_list_response("people_loads", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to list people loads: {e}"}
 
 
-def list_lighting_loads() -> dict[str, Any]:
-    """List all lighting loads in the model."""
+def list_lighting_loads(
+    space_name: str | None = None,
+    space_type_name: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List lighting loads. Loads in a space: space_name='Office 1'."""
     try:
         model = get_model()
-        lights = list_all_as_dicts(model, "getLightss", _extract_lights)
-        return {
-            "ok": True,
-            "count": len(lights),
-            "lighting_loads": lights,
-        }
+        items, total = list_paginated(
+            model, "getLightss", _extract_lights,
+            max_results=max_results,
+            obj_filter_fn=_load_space_filter(space_name, space_type_name),
+        )
+        return build_list_response("lighting_loads", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to list lighting loads: {e}"}
 
 
-def list_electric_equipment() -> dict[str, Any]:
-    """List all electric equipment in the model."""
+def list_electric_equipment(
+    space_name: str | None = None,
+    space_type_name: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List electric equipment. Loads in a space: space_name='Office 1'."""
     try:
         model = get_model()
-        equipment = list_all_as_dicts(model, "getElectricEquipments", _extract_electric_equipment)
-        return {
-            "ok": True,
-            "count": len(equipment),
-            "electric_equipment": equipment,
-        }
+        items, total = list_paginated(
+            model, "getElectricEquipments", _extract_electric_equipment,
+            max_results=max_results,
+            obj_filter_fn=_load_space_filter(space_name, space_type_name),
+        )
+        return build_list_response("electric_equipment", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to list electric equipment: {e}"}
 
 
-def list_gas_equipment() -> dict[str, Any]:
-    """List all gas equipment in the model."""
+def list_gas_equipment(
+    space_name: str | None = None,
+    space_type_name: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List gas equipment. Loads in a space: space_name='Office 1'."""
     try:
         model = get_model()
-        equipment = list_all_as_dicts(model, "getGasEquipments", _extract_gas_equipment)
-        return {
-            "ok": True,
-            "count": len(equipment),
-            "gas_equipment": equipment,
-        }
+        items, total = list_paginated(
+            model, "getGasEquipments", _extract_gas_equipment,
+            max_results=max_results,
+            obj_filter_fn=_load_space_filter(space_name, space_type_name),
+        )
+        return build_list_response("gas_equipment", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to list gas equipment: {e}"}
 
 
-def list_infiltration() -> dict[str, Any]:
-    """List all infiltration objects in the model."""
+def list_infiltration(
+    space_name: str | None = None,
+    space_type_name: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List infiltration objects. Loads in a space: space_name='Office 1'."""
     try:
         model = get_model()
-        infiltration = list_all_as_dicts(model, "getSpaceInfiltrationDesignFlowRates", _extract_infiltration)
-        return {
-            "ok": True,
-            "count": len(infiltration),
-            "infiltration": infiltration,
-        }
+        items, total = list_paginated(
+            model, "getSpaceInfiltrationDesignFlowRates", _extract_infiltration,
+            max_results=max_results,
+            obj_filter_fn=_load_space_filter(space_name, space_type_name),
+        )
+        return build_list_response("infiltration", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to list infiltration: {e}"}
+
+
+# ---------------------------------------------------------------------------
+# Load detail lookup (Part 4 — unified dispatcher)
+# ---------------------------------------------------------------------------
+
+# (type_name, getter_by_name, extract_fn)
+LOAD_TYPES = [
+    ("People", "getPeopleByName", _extract_people),
+    ("Lights", "getLightsByName", _extract_lights),
+    ("ElectricEquipment", "getElectricEquipmentByName", _extract_electric_equipment),
+    ("GasEquipment", "getGasEquipmentByName", _extract_gas_equipment),
+    ("SpaceInfiltrationDesignFlowRate", "getSpaceInfiltrationDesignFlowRateByName", _extract_infiltration),
+]
+
+
+def get_load_details(load_name: str) -> dict[str, Any]:
+    """Get detailed info for any load object by name.
+
+    Tries each load type until found. Returns load_type + all fields.
+    """
+    try:
+        model = get_model()
+        for type_name, getter_name, extract_fn in LOAD_TYPES:
+            getter = getattr(model, getter_name, None)
+            if getter is None:
+                continue
+            result = getter(load_name)
+            if result.is_initialized():
+                obj = result.get()
+                return {"ok": True, "load_type": type_name, "load": extract_fn(model, obj)}
+        return {"ok": False, "error": f"Load '{load_name}' not found"}
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to get load details: {e}"}
 
 
 # ---------------------------------------------------------------------------

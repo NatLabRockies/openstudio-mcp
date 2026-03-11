@@ -67,18 +67,26 @@ def register(mcp):
         )
 
     @mcp.tool(name="list_files")
-    def list_files_tool(directory: str | None = None, pattern: str = "*", max_depth: int | None = None):
-        """List files and directories in /inputs and /runs.
+    def list_files_tool(
+        directory: str | None = None,
+        pattern: str = "*",
+        max_depth: int | None = None,
+        max_results: int = 10,
+    ):
+        """List files in /inputs and /runs. Default 10 results.
 
-        Only call if you need to discover available files. Do not call
-        repeatedly for the same directory.
+        Only call if you need to discover files. Do not call repeatedly
+        for the same directory.
 
         Args:
             directory: Directory to list (e.g. "/runs/my_run"). If omitted, scans /inputs and /runs.
-            pattern: Glob pattern to filter files (e.g. "*.epw", "*.osm"). Default "*".
+            pattern: Glob pattern (e.g. "*.epw", "*.osm"). Default "*".
             max_depth: Max directory depth (1 = top-level only). Default unlimited.
+            max_results: Max items (default 10, 0=unlimited)
         """
-        return list_files(directory=directory, pattern=pattern, max_depth=max_depth)
+        mr = None if max_results == 0 else max_results
+        return list_files(directory=directory, pattern=pattern, max_depth=max_depth,
+                         max_results=mr)
 
     @mcp.tool(name="inspect_osm_summary")
     def inspect_osm_summary_tool(osm_path: str):

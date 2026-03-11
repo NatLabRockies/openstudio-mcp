@@ -39,7 +39,7 @@ def test_list_materials():
                 assert load_result.get("ok") is True
 
                 # List materials
-                materials_resp = await session.call_tool("list_materials", {})
+                materials_resp = await session.call_tool("list_materials", {"max_results": 0})
                 materials_result = unwrap(materials_resp)
 
                 assert isinstance(materials_result, dict)
@@ -74,7 +74,7 @@ def test_list_constructions():
                 assert load_result.get("ok") is True
 
                 # List constructions
-                constructions_resp = await session.call_tool("list_constructions", {})
+                constructions_resp = await session.call_tool("list_constructions", {"max_results": 0})
                 constructions_result = unwrap(constructions_resp)
 
                 assert isinstance(constructions_result, dict)
@@ -105,14 +105,14 @@ def test_constructions_baseline():
                 assert unwrap(lr).get("ok") is True
 
                 # Materials — baseline has walls, roof, floor materials
-                mr = await session.call_tool("list_materials", {})
+                mr = await session.call_tool("list_materials", {"max_results": 0})
                 md = unwrap(mr)
                 print("baseline materials:", md)
                 assert md.get("ok") is True
                 assert md["count"] >= 5  # Multiple materials from construction library
 
                 # Constructions
-                cr2 = await session.call_tool("list_constructions", {})
+                cr2 = await session.call_tool("list_constructions", {"max_results": 0})
                 cd2 = unwrap(cr2)
                 print("baseline constructions:", cd2)
                 assert cd2.get("ok") is True

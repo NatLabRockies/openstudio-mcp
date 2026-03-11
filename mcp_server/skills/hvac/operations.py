@@ -10,7 +10,13 @@ from typing import Any
 import openstudio
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts
+from mcp_server.osm_helpers import (
+    build_list_response,
+    fetch_object,
+    list_all_as_dicts,
+    list_paginated,
+    optional_name,
+)
 
 
 def _extract_detailed_supply_components(air_loop) -> dict[str, Any]:
@@ -252,16 +258,42 @@ def list_plant_loops(detailed: bool = False) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list plant loops: {e}"}
 
 
-def list_zone_hvac_equipment() -> dict[str, Any]:
-    """List all zone HVAC equipment in the model."""
+def list_zone_hvac_equipment(
+    thermal_zone_name: str | None = None,
+    equipment_type: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List zone HVAC equipment with filtering and pagination.
+
+    Common filters:
+    - Equipment in a zone: thermal_zone_name="Zone 1"
+    - All PTACs: equipment_type="ZoneHVACPackagedTerminalAirConditioner"
+    """
     try:
         model = get_model()
-        equipment = list_all_as_dicts(model, "getZoneHVACComponents", _extract_zone_hvac_component)
-        return {
-            "ok": True,
-            "count": len(equipment),
-            "zone_hvac_equipment": equipment,
-        }
+
+        filt = None
+        if thermal_zone_name or equipment_type:
+            def filt(m, comp):
+                if equipment_type:
+                    if comp.iddObjectType().valueName().replace("OS_", "").replace("_", "") != equipment_type.replace("_", ""):
+                        # Also try exact iddObjectType match
+                        if equipment_type not in comp.iddObjectType().valueName():
+                            return False
+                if thermal_zone_name:
+                    if hasattr(comp, "thermalZone"):
+                        tz = comp.thermalZone()
+                        if not tz.is_initialized() or tz.get().nameString() != thermal_zone_name:
+                            return False
+                    else:
+                        return False
+                return True
+
+        items, total = list_paginated(
+            model, "getZoneHVACComponents", _extract_zone_hvac_component,
+            max_results=max_results, obj_filter_fn=filt,
+        )
+        return build_list_response("zone_hvac_equipment", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:

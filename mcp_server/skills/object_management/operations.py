@@ -154,8 +154,12 @@ def rename_object(
         return {"ok": False, "error": f"Failed to rename object: {e}"}
 
 
-def list_model_objects(object_type: str) -> dict[str, Any]:
-    """List all objects of a given type."""
+def list_model_objects(
+    object_type: str,
+    name_contains: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List objects of a given type with optional name filter and pagination."""
     try:
         model = get_model()
 
@@ -176,7 +180,23 @@ def list_model_objects(object_type: str) -> dict[str, Any]:
             for obj in objects
         ]
         items.sort(key=lambda d: d["name"])
-        return {"ok": True, "type": object_type, "count": len(items), "objects": items}
+
+        if name_contains:
+            nc = name_contains.lower()
+            items = [i for i in items if nc in i["name"].lower()]
+
+        total = len(items)
+        truncated = max_results is not None and total > max_results
+        if truncated:
+            items = items[:max_results]
+
+        resp: dict[str, Any] = {
+            "ok": True, "type": object_type, "count": len(items), "objects": items,
+        }
+        if truncated:
+            resp["total_available"] = total
+            resp["truncated"] = True
+        return resp
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

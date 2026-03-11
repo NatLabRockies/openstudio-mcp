@@ -42,7 +42,7 @@ async def _setup_baseline(s, name):
     lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
     assert lr.get("ok") is True, lr
 
-    zr = unwrap(await s.call_tool("list_thermal_zones", {}))
+    zr = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
     zone_names = [z["name"] for z in zr["thermal_zones"]]
     assert len(zone_names) == 10
 

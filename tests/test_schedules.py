@@ -40,7 +40,7 @@ def test_list_schedule_rulesets():
                 assert load_result.get("ok") is True
 
                 # List schedule rulesets
-                schedules_resp = await session.call_tool("list_schedule_rulesets", {})
+                schedules_resp = await session.call_tool("list_schedule_rulesets", {"max_results": 0})
                 schedules_result = unwrap(schedules_resp)
                 print("list_schedule_rulesets:", schedules_result)
 
@@ -90,7 +90,7 @@ def test_get_schedule_details():
                 assert load_result.get("ok") is True
 
                 # First list schedules to get a valid name
-                list_resp = await session.call_tool("list_schedule_rulesets", {})
+                list_resp = await session.call_tool("list_schedule_rulesets", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 assert list_result.get("ok") is True
                 assert list_result["count"] > 0, "Need at least one schedule for this test"
@@ -178,7 +178,7 @@ def test_schedules_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                sr = await session.call_tool("list_schedule_rulesets", {})
+                sr = await session.call_tool("list_schedule_rulesets", {"max_results": 0})
                 sd = unwrap(sr)
                 print("baseline schedules:", sd)
                 assert sd.get("ok") is True
@@ -215,7 +215,7 @@ def test_schedules_tools_without_loaded_model():
                 await session.initialize()
 
                 # Try to list schedules without loading a model
-                schedules_resp = await session.call_tool("list_schedule_rulesets", {})
+                schedules_resp = await session.call_tool("list_schedule_rulesets", {"max_results": 0})
                 schedules_result = unwrap(schedules_resp)
                 print("list_schedule_rulesets (no model):", schedules_result)
 

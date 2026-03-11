@@ -44,8 +44,12 @@ def register(mcp):
         )
 
     @mcp.tool(name="list_model_objects")
-    def list_model_objects_tool(object_type: str):
-        """List all objects of a given type by name.
+    def list_model_objects_tool(
+        object_type: str,
+        name_contains: str | None = None,
+        max_results: int = 10,
+    ):
+        """List objects of a given type. Default 10 results.
 
         Common types: Space, ThermalZone, AirLoopHVAC, PlantLoop,
         BoilerHotWater, ChillerElectricEIR, CoilHeatingWater, CoilCoolingWater,
@@ -54,5 +58,9 @@ def register(mcp):
 
         Args:
             object_type: Type to list (see common types above)
+            name_contains: Substring filter on object name (case-insensitive)
+            max_results: Max items (default 10, 0=unlimited)
         """
-        return list_model_objects(object_type=object_type)
+        mr = None if max_results == 0 else max_results
+        return list_model_objects(object_type=object_type, name_contains=name_contains,
+                                 max_results=mr)

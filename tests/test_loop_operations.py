@@ -39,7 +39,7 @@ def test_add_second_boiler():
                 assert data["equipment_name"] == "Backup Boiler"
 
                 # Verify 2 boilers exist
-                cr = await session.call_tool("list_hvac_components", {"category": "plant"})
+                cr = await session.call_tool("list_hvac_components", {"category": "plant", "max_results": 0})
                 comps = unwrap(cr)["components"]
                 boilers = [c for c in comps if c["type"] == "BoilerHotWater"]
                 assert len(boilers) >= 2
@@ -70,7 +70,7 @@ def test_add_second_chiller():
                 data = unwrap(result)
                 assert data["ok"] is True
 
-                cr = await session.call_tool("list_hvac_components", {"category": "plant"})
+                cr = await session.call_tool("list_hvac_components", {"category": "plant", "max_results": 0})
                 chillers = [c for c in unwrap(cr)["components"] if c["type"] == "ChillerElectricEIR"]
                 assert len(chillers) >= 2
     asyncio.run(_run())
@@ -108,7 +108,7 @@ def test_remove_boiler():
                 assert data["removed"] == "Temp Boiler"
 
                 # Independent query verification
-                cr = await session.call_tool("list_hvac_components", {"category": "plant"})
+                cr = await session.call_tool("list_hvac_components", {"category": "plant", "max_results": 0})
                 names = [c["name"] for c in unwrap(cr)["components"]]
                 assert "Temp Boiler" not in names
     asyncio.run(_run())
@@ -201,7 +201,7 @@ def test_add_baseboard_to_zone():
                 assert data["equipment_name"] == "Test Baseboard"
 
                 # Independent query verification
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 equip_names = [eq["name"] for eq in zd.get("zone_hvac_equipment", [])]
                 assert "Test Baseboard" in equip_names
@@ -231,7 +231,7 @@ def test_remove_zone_equipment():
                 assert data["removed"] == "Temp Baseboard"
 
                 # Independent query verification
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 equip_names = [eq["name"] for eq in zd.get("zone_hvac_equipment", [])]
                 assert "Temp Baseboard" not in equip_names

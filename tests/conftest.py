@@ -99,7 +99,7 @@ async def create_and_load(session, name):
     assert cd.get("ok") is True, cd
     lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
     assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
+    zr = await session.call_tool("list_thermal_zones", {"max_results": 0})
     zd = unwrap(zr)
     return [z["name"] for z in zd["thermal_zones"]]
 
@@ -111,7 +111,7 @@ async def create_baseline_and_load(session, name):
     assert cd.get("ok") is True, cd
     lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
     assert unwrap(lr).get("ok") is True
-    zr = await session.call_tool("list_thermal_zones", {})
+    zr = await session.call_tool("list_thermal_zones", {"max_results": 0})
     zd = unwrap(zr)
     return [z["name"] for z in zd["thermal_zones"]]
 

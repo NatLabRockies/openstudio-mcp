@@ -234,6 +234,7 @@ def list_files(
     directory: str | None = None,
     pattern: str = "*",
     max_depth: int | None = None,
+    max_results: int = 10,
 ) -> dict[str, Any]:
     """List files and directories in mounted directories.
 
@@ -243,6 +244,7 @@ def list_files(
         directory: Specific directory to list. If None, scans both /inputs and /runs.
         pattern: Glob pattern to filter files (e.g. "*.epw", "*.osm"). Default "*".
         max_depth: Max directory depth (1 = top-level only, None = unlimited).
+        max_results: Max items to return (default 10, None = unlimited).
 
     Returns:
         Dict with ok=True, total count, and file/directory list.
@@ -303,7 +305,15 @@ def list_files(
                 })
 
     items.sort(key=lambda f: f["name"])
-    return {"ok": True, "total": len(items), "items": items}
+    total = len(items)
+    resp: dict[str, Any] = {"ok": True, "total": total}
+    if max_results is not None and total > max_results:
+        items = items[:max_results]
+        resp["total_available"] = total
+        resp["truncated"] = True
+    resp["count"] = len(items)
+    resp["items"] = items
+    return resp
 
 
 def create_baseline_osm(

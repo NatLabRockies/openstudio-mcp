@@ -63,8 +63,11 @@ def _find_component_by_name(model: openstudio.model.Model, name: str):
     return None
 
 
-def list_hvac_components(category: str | None = None) -> dict:
-    """List all HVAC components in model matching known types."""
+def list_hvac_components(
+    category: str | None = None,
+    max_results: int = 10,
+) -> dict:
+    """List HVAC components with optional category filter and pagination."""
     try:
         model = get_model()
     except RuntimeError as e:
@@ -74,12 +77,21 @@ def list_hvac_components(category: str | None = None) -> dict:
         return {"ok": False, "error": f"Unknown category '{category}'. Valid: {CATEGORIES}"}
 
     components = _find_all_components(model, category)
-    return {
+    total = len(components)
+    truncated = max_results is not None and total > max_results
+    if truncated:
+        components = components[:max_results]
+
+    resp: dict = {
         "ok": True,
         "count": len(components),
         "categories": CATEGORIES,
         "components": components,
     }
+    if truncated:
+        resp["total_available"] = total
+        resp["truncated"] = True
+    return resp
 
 
 def get_component_properties(component_name: str) -> dict:

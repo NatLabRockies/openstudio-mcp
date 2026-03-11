@@ -103,7 +103,7 @@ def test_add_remove_demand_component():
 
                 # List cooling coils
                 comps = unwrap(await session.call_tool("list_hvac_components", {
-                    "category": "coil",
+                    "category": "coil", "max_results": 0,
                 }))
                 cooling_coils = [c for c in comps["components"] if "Cooling" in c["type"] and "Water" in c["type"]]
 

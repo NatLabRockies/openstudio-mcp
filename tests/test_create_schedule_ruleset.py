@@ -51,7 +51,7 @@ def test_create_schedule_ruleset_fractional():
                 assert "handle" in schedule_result["schedule"]
 
                 # Verify it appears in list
-                list_resp = await session.call_tool("list_schedule_rulesets", {})
+                list_resp = await session.call_tool("list_schedule_rulesets", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 assert any(s["name"] == "Always On Test" for s in list_result["schedule_rulesets"])
 
@@ -92,7 +92,7 @@ def test_create_schedule_ruleset_temperature():
                 assert schedule_result["schedule"]["name"] == "Constant 21C"
 
                 # Independent query verification
-                lst = unwrap(await session.call_tool("list_schedule_rulesets", {}))
+                lst = unwrap(await session.call_tool("list_schedule_rulesets", {"max_results": 0}))
                 assert any(s["name"] == "Constant 21C" for s in lst["schedule_rulesets"])
 
     asyncio.run(_run())
@@ -131,7 +131,7 @@ def test_create_schedule_ruleset_onoff():
                 assert schedule_result.get("ok") is True
                 assert schedule_result["schedule"]["name"] == "Always Off"
 
-                lst = unwrap(await session.call_tool("list_schedule_rulesets", {}))
+                lst = unwrap(await session.call_tool("list_schedule_rulesets", {"max_results": 0}))
                 assert any(s["name"] == "Always Off" for s in lst["schedule_rulesets"])
 
     asyncio.run(_run())

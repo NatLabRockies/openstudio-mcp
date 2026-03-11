@@ -89,7 +89,7 @@ def test_add_baseline_system_1_ptac():
                 assert load_data.get("ok") is True
 
                 # List thermal zones
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 assert zones_data.get("ok") is True
                 assert len(zones_data["thermal_zones"]) > 0
@@ -155,7 +155,7 @@ def test_add_baseline_system_2_pthp():
                 assert unwrap(load_resp).get("ok") is True
 
                 # Get zone names
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
@@ -203,7 +203,7 @@ def test_add_baseline_system_3_psz_ac():
                 assert unwrap(load_resp).get("ok") is True
 
                 # Get first zone only (PSZ = single zone)
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -261,7 +261,7 @@ def test_add_baseline_system_json_string_zones():
                 })
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
 
                 # Pass thermal_zone_names as a JSON-encoded string instead of list
@@ -359,7 +359,7 @@ def test_add_baseline_system_4_psz_hp():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -399,7 +399,7 @@ def test_system_4_multi_zone_rejection():
                 zone2_resp = await session.call_tool("create_thermal_zone", {"name": "Zone 2"})
                 assert unwrap(zone2_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
@@ -435,7 +435,7 @@ def test_add_baseline_system_5_vav_reheat():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -471,7 +471,7 @@ def test_add_baseline_system_6_vav_pfp():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -505,7 +505,7 @@ def test_unimplemented_system_type():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 # Try System 11 (doesn't exist)
@@ -541,7 +541,7 @@ def test_add_baseline_system_7_central_vav_reheat():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -582,7 +582,7 @@ def test_system_7_plant_loop_verification():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -625,7 +625,7 @@ def test_add_baseline_system_8_central_vav_pfp():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -664,7 +664,7 @@ def test_system_8_pfp_terminals():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -702,7 +702,7 @@ def test_add_baseline_system_9_gas_unit_heaters():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -744,7 +744,7 @@ def test_add_baseline_system_10_electric_unit_heaters():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
                 assert unwrap(load_resp).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
 
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -783,7 +783,7 @@ def test_baseline_system_07_multi_zone():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
                 assert len(zone_names) == 10

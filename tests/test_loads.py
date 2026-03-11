@@ -40,7 +40,7 @@ def test_list_people_loads():
                 assert load_result.get("ok") is True
 
                 # List people loads
-                people_resp = await session.call_tool("list_people_loads", {})
+                people_resp = await session.call_tool("list_people_loads", {"max_results": 0})
                 people_result = unwrap(people_resp)
                 print("list_people_loads:", people_result)
 
@@ -84,7 +84,7 @@ def test_list_lighting_loads():
                 assert load_result.get("ok") is True
 
                 # List lighting loads
-                lights_resp = await session.call_tool("list_lighting_loads", {})
+                lights_resp = await session.call_tool("list_lighting_loads", {"max_results": 0})
                 lights_result = unwrap(lights_resp)
                 print("list_lighting_loads:", lights_result)
 
@@ -122,7 +122,7 @@ def test_list_electric_equipment():
                 assert load_result.get("ok") is True
 
                 # List electric equipment
-                equipment_resp = await session.call_tool("list_electric_equipment", {})
+                equipment_resp = await session.call_tool("list_electric_equipment", {"max_results": 0})
                 equipment_result = unwrap(equipment_resp)
                 print("list_electric_equipment:", equipment_result)
 
@@ -160,7 +160,7 @@ def test_list_gas_equipment():
                 assert load_result.get("ok") is True
 
                 # List gas equipment
-                equipment_resp = await session.call_tool("list_gas_equipment", {})
+                equipment_resp = await session.call_tool("list_gas_equipment", {"max_results": 0})
                 equipment_result = unwrap(equipment_resp)
                 print("list_gas_equipment:", equipment_result)
 
@@ -198,7 +198,7 @@ def test_list_infiltration():
                 assert load_result.get("ok") is True
 
                 # List infiltration
-                infiltration_resp = await session.call_tool("list_infiltration", {})
+                infiltration_resp = await session.call_tool("list_infiltration", {"max_results": 0})
                 infiltration_result = unwrap(infiltration_resp)
                 print("list_infiltration:", infiltration_result)
 
@@ -232,26 +232,26 @@ def test_loads_baseline():
                 assert unwrap(lr).get("ok") is True
 
                 # People loads - baseline has people via space type
-                pr = await session.call_tool("list_people_loads", {})
+                pr = await session.call_tool("list_people_loads", {"max_results": 0})
                 pd = unwrap(pr)
                 print("baseline people:", pd)
                 assert pd.get("ok") is True
                 assert pd["count"] >= 1  # At least 1 People definition
 
                 # Lights
-                lr2 = await session.call_tool("list_lighting_loads", {})
+                lr2 = await session.call_tool("list_lighting_loads", {"max_results": 0})
                 ld = unwrap(lr2)
                 assert ld.get("ok") is True
                 assert ld["count"] >= 1
 
                 # Electric equipment
-                er = await session.call_tool("list_electric_equipment", {})
+                er = await session.call_tool("list_electric_equipment", {"max_results": 0})
                 ed = unwrap(er)
                 assert ed.get("ok") is True
                 assert ed["count"] >= 1
 
                 # Infiltration
-                ir = await session.call_tool("list_infiltration", {})
+                ir = await session.call_tool("list_infiltration", {"max_results": 0})
                 infiltration_data = unwrap(ir)
                 assert infiltration_data.get("ok") is True
                 assert infiltration_data["count"] >= 1
@@ -271,7 +271,7 @@ def test_loads_tools_without_loaded_model():
                 await session.initialize()
 
                 # Try to list people without loading a model
-                people_resp = await session.call_tool("list_people_loads", {})
+                people_resp = await session.call_tool("list_people_loads", {"max_results": 0})
                 people_result = unwrap(people_resp)
                 print("list_people_loads (no model):", people_result)
 

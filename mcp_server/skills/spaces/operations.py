@@ -10,7 +10,12 @@ from typing import Any
 import openstudio
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
+from mcp_server.osm_helpers import (
+    build_list_response,
+    fetch_object,
+    list_paginated,
+    optional_name,
+)
 
 
 def _extract_space(model, space, detailed: bool = True) -> dict[str, Any]:
@@ -87,16 +92,38 @@ def _extract_thermal_zone(model, zone, detailed: bool = True) -> dict[str, Any]:
     return result
 
 
-def list_spaces(detailed: bool = False) -> dict[str, Any]:
-    """List all spaces in the model."""
+def list_spaces(
+    detailed: bool = False,
+    thermal_zone_name: str | None = None,
+    building_story_name: str | None = None,
+    space_type_name: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List spaces with server-side filtering and pagination.
+
+    Common filters:
+    - Spaces on a story: building_story_name="Floor 1"
+    - Spaces in a zone: thermal_zone_name="Zone 1"
+    """
     try:
         model = get_model()
-        spaces = list_all_as_dicts(model, "getSpaces", _extract_space, detailed=detailed)
-        return {
-            "ok": True,
-            "count": len(spaces),
-            "spaces": spaces,
-        }
+
+        filt = None
+        if thermal_zone_name or building_story_name or space_type_name:
+            def filt(m, s):
+                if thermal_zone_name and optional_name(s.thermalZone()) != thermal_zone_name:
+                    return False
+                if building_story_name and optional_name(s.buildingStory()) != building_story_name:
+                    return False
+                if space_type_name and optional_name(s.spaceType()) != space_type_name:
+                    return False
+                return True
+
+        items, total = list_paginated(
+            model, "getSpaces", _extract_space,
+            detailed=detailed, max_results=max_results, obj_filter_fn=filt,
+        )
+        return build_list_response("spaces", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
@@ -122,16 +149,33 @@ def get_space_details(space_name: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to get space details: {e}"}
 
 
-def list_thermal_zones(detailed: bool = False) -> dict[str, Any]:
-    """List all thermal zones in the model."""
+def list_thermal_zones(
+    detailed: bool = False,
+    air_loop_name: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List thermal zones with server-side filtering and pagination.
+
+    Common filters:
+    - Zones on an air loop: air_loop_name="DOAS"
+    """
     try:
         model = get_model()
-        zones = list_all_as_dicts(model, "getThermalZones", _extract_thermal_zone, detailed=detailed)
-        return {
-            "ok": True,
-            "count": len(zones),
-            "thermal_zones": zones,
-        }
+
+        filt = None
+        if air_loop_name:
+            air_loop = fetch_object(model, "AirLoopHVAC", name=air_loop_name)
+            if air_loop is None:
+                return {"ok": False, "error": f"Air loop '{air_loop_name}' not found"}
+            allowed = {z.nameString() for z in air_loop.thermalZones()}
+            def filt(m, z):
+                return z.nameString() in allowed
+
+        items, total = list_paginated(
+            model, "getThermalZones", _extract_thermal_zone,
+            detailed=detailed, max_results=max_results, obj_filter_fn=filt,
+        )
+        return build_list_response("thermal_zones", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
