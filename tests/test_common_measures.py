@@ -236,9 +236,9 @@ def test_view_model():
                     "pattern": "*",
                 }))
                 assert files.get("ok") is True, f"list_files failed: {files}"
-                assert files["total_files"] > 0, f"No files in run_dir {run_dir}"
+                assert files["total"] > 0, f"No files in run_dir {run_dir}"
                 # The view_model measure generates report.html or similar
-                file_names = [f["name"] for f in files["files"]]
+                file_names = [f["name"] for f in files["items"]]
                 has_html = any(f.endswith(".html") for f in file_names)
                 has_json = any(f.endswith(".json") for f in file_names)
                 assert has_html or has_json, (

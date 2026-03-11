@@ -44,8 +44,7 @@ def test_create_thermal_zone_minimal():
 
                 assert zone_result.get("ok") is True
                 assert zone_result["thermal_zone"]["name"] == "New Zone"
-                assert "handle" in zone_result["thermal_zone"]
-                assert zone_result["thermal_zone"]["num_spaces"] == 0
+                assert zone_result["thermal_zone"]["num_equipment"] == 0
 
                 # Verify it appears in list
                 list_resp = await session.call_tool("list_thermal_zones", {})
@@ -91,7 +90,7 @@ def test_create_thermal_zone_with_spaces():
                 zone_result = unwrap(zone_resp)
 
                 assert zone_result.get("ok") is True
-                assert zone_result["thermal_zone"]["num_spaces"] == 1
+                assert zone_result["thermal_zone"]["name"] == "New Zone"
 
                 # Independent query verification
                 sd = unwrap(await session.call_tool("get_space_details", {

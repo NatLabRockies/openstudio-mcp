@@ -24,6 +24,7 @@ def _extract_people(model, people) -> dict[str, Any]:
         source = "unknown"
 
     result = {
+        "handle": str(people.handle()),
         "name": people.nameString(),
         "source": source,
         "space": optional_name(people.space()),
@@ -51,6 +52,7 @@ def _extract_people(model, people) -> dict[str, Any]:
 def _extract_lights(model, lights) -> dict[str, Any]:
     """Extract lighting load attributes to dict."""
     result = {
+        "handle": str(lights.handle()),
         "name": lights.nameString(),
         "space": optional_name(lights.space()),
         "schedule": optional_name(lights.schedule()),
@@ -82,6 +84,7 @@ def _extract_lights(model, lights) -> dict[str, Any]:
 def _extract_electric_equipment(model, equipment) -> dict[str, Any]:
     """Extract electric equipment load attributes to dict."""
     result = {
+        "handle": str(equipment.handle()),
         "name": equipment.nameString(),
         "space": optional_name(equipment.space()),
         "schedule": optional_name(equipment.schedule()),
@@ -113,6 +116,7 @@ def _extract_electric_equipment(model, equipment) -> dict[str, Any]:
 def _extract_gas_equipment(model, equipment) -> dict[str, Any]:
     """Extract gas equipment load attributes to dict."""
     result = {
+        "handle": str(equipment.handle()),
         "name": equipment.nameString(),
         "space": optional_name(equipment.space()),
         "schedule": optional_name(equipment.schedule()),
@@ -144,6 +148,7 @@ def _extract_gas_equipment(model, equipment) -> dict[str, Any]:
 def _extract_infiltration(model, infiltration) -> dict[str, Any]:
     """Extract infiltration object attributes to dict."""
     result: dict[str, Any] = {
+        "handle": str(infiltration.handle()),
         "name": infiltration.nameString(),
         "space": optional_name(infiltration.space()),
         "schedule": optional_name(infiltration.schedule()),

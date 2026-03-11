@@ -176,6 +176,7 @@ def _extract_plant_loop(model, plant_loop, detailed: bool = True) -> dict[str, A
 def _extract_zone_hvac_component(model, component) -> dict[str, Any]:
     """Extract zone HVAC component attributes to dict."""
     result = {
+        "handle": str(component.handle()),
         "type": component.iddObjectType().valueName(),
     }
 

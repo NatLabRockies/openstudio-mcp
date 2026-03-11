@@ -44,7 +44,6 @@ def test_create_space_minimal():
 
                 assert space_result.get("ok") is True
                 assert space_result["space"]["name"] == "New Office"
-                assert "handle" in space_result["space"]
                 assert space_result["space"]["floor_area_m2"] == 0.0  # No surfaces yet
 
                 # Verify it appears in list

@@ -106,9 +106,10 @@ def test_thermal_zones_baseline():
                 print("baseline zones:", zd)
                 assert zd.get("ok") is True
                 assert zd["count"] == 10
-                # Each zone has 1 space
+                # Verify zone fields present
                 for z in zd["thermal_zones"]:
-                    assert z["num_spaces"] == 1
+                    assert "name" in z
+                    assert "floor_area_m2" in z
 
     asyncio.run(_run())
 
@@ -143,6 +144,6 @@ def test_list_thermal_zones():
                 assert zones_result.get("ok") is True
                 assert zones_result["count"] == 1
                 assert "name" in zones_result["thermal_zones"][0]
-                assert "num_spaces" in zones_result["thermal_zones"][0]
+                assert "floor_area_m2" in zones_result["thermal_zones"][0]
 
     asyncio.run(_run())

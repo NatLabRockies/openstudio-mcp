@@ -19,6 +19,7 @@ def _extract_space(model, space, detailed: bool = True) -> dict[str, Any]:
     When detailed=False, returns only name, floor_area_m2, thermal_zone.
     """
     result = {
+        "handle": str(space.handle()),
         "name": space.nameString(),
         "floor_area_m2": float(space.floorArea()),
         "thermal_zone": optional_name(space.thermalZone()),
@@ -53,6 +54,7 @@ def _extract_thermal_zone(model, zone, detailed: bool = True) -> dict[str, Any]:
     """
     num_equipment = len(zone.equipment())
     result = {
+        "handle": str(zone.handle()),
         "name": zone.nameString(),
         "floor_area_m2": float(zone.floorArea()),
         "num_equipment": num_equipment,
