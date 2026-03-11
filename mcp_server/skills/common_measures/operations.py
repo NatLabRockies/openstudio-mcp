@@ -74,7 +74,6 @@ def list_common_measures(category: str | None = None) -> dict[str, Any]:
 
         entry: dict[str, Any] = {
             "name": d.name,
-            "path": str(d),
             "category": cat,
         }
         try:

@@ -56,7 +56,6 @@ def test_list_common_measures():
                 assert res["count"] > 40, f"Expected >40 measures, got {res['count']}"
                 for m in res["measures"]:
                     assert "name" in m
-                    assert "path" in m
                     assert "category" in m
 
     asyncio.run(_run())
@@ -103,7 +102,7 @@ def test_list_measure_arguments_common():
                                 if m["name"] == "ChangeBuildingLocation"]
                 assert len(loc_measures) == 1, "ChangeBuildingLocation not found"
                 res = unwrap(await s.call_tool("list_measure_arguments", {
-                    "measure_dir": loc_measures[0]["path"],
+                    "measure_dir": "/opt/common-measures/" + loc_measures[0]["name"],
                 }))
                 assert res.get("ok") is True, f"Failed: {res}"
                 assert len(res["arguments"]) >= 1
@@ -237,7 +236,7 @@ def test_view_model():
                     "max_results": 0,
                 }))
                 assert files.get("ok") is True, f"list_files failed: {files}"
-                assert files["total"] > 0, f"No files in run_dir {run_dir}"
+                assert files["count"] > 0, f"No files in run_dir {run_dir}"
                 # The view_model measure generates report.html or similar
                 file_names = [f["name"] for f in files["items"]]
                 has_html = any(f.endswith(".html") for f in file_names)

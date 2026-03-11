@@ -41,6 +41,7 @@ PAGINATED_TOOLS = [
     ("list_zone_hvac_equipment", "zone_hvac_equipment", {}),
     ("list_schedule_rulesets", "schedule_rulesets", {}),
     ("list_files", "items", {}),
+    ("list_space_types", "space_types", {}),
 ]
 
 
@@ -166,6 +167,31 @@ class TestResponseSizes:
                         {"material_type": "StandardOpaqueMaterial", "max_results": 0},
                     )
                     data["materials_opaque"] = unwrap(raw)
+
+                    # -- Space type details (C3) --
+                    st_list = unwrap(
+                        await session.call_tool("list_space_types", {"max_results": 1}),
+                    )
+                    if st_list.get("ok") and st_list.get("space_types"):
+                        st_name = st_list["space_types"][0]["name"]
+                        raw = await session.call_tool(
+                            "get_space_type_details", {"space_type_name": st_name},
+                        )
+                        data["space_type_details"] = unwrap(raw)
+                        data["space_type_name"] = st_name
+
+                    # -- read_file default (C1) --
+                    raw = await session.call_tool("list_files", {})
+                    files_resp = unwrap(raw)
+                    if files_resp.get("ok") and files_resp.get("items"):
+                        # Find a file (not dir) to read
+                        for item in files_resp["items"]:
+                            if item.get("type") == "file":
+                                raw = await session.call_tool(
+                                    "read_file", {"file_path": item["path"]},
+                                )
+                                data["read_file_default"] = unwrap(raw)
+                                break
 
                     # -- Detail tools --
                     # get_construction_details
@@ -597,3 +623,57 @@ class TestResponseSizes:
         assert "outside_boundary_condition" in first, (
             f"Brief surface missing outside_boundary_condition. Keys: {list(first.keys())}"
         )
+
+    # -----------------------------------------------------------------------
+    # C1: read_file default 50KB
+    # -----------------------------------------------------------------------
+
+    def test_read_file_default_under_budget(self, session_data):
+        """read_file with defaults returns <50KB text."""
+        resp = session_data.get("read_file_default")
+        if resp is None:
+            pytest.skip("No files to read")
+        assert resp["ok"] is True
+        # bytes_read should be <= 50000 (default max_bytes)
+        assert resp.get("bytes_read", 0) <= 50_000
+
+    # -----------------------------------------------------------------------
+    # C3: get_space_type_details capped nested arrays
+    # -----------------------------------------------------------------------
+
+    def test_space_type_details_under_budget(self, session_data):
+        """get_space_type_details response < 10K chars."""
+        resp = session_data.get("space_type_details")
+        if resp is None:
+            pytest.skip("No space types")
+        assert resp["ok"] is True
+        size = len(json.dumps(resp))
+        assert size < MAX_RESPONSE_CHARS
+
+    def test_space_type_details_brief_loads(self, session_data):
+        """get_space_type_details nested loads have brief format {name, schedule}."""
+        resp = session_data.get("space_type_details")
+        if resp is None:
+            pytest.skip("No space types")
+        st = resp["space_type"]
+        # Check that load arrays exist and items have only name+schedule keys
+        for key in ("people_loads", "lighting_loads", "electric_equipment_loads", "gas_equipment_loads"):
+            assert key in st, f"Missing {key}"
+            for item in st[key]:
+                if isinstance(item, dict) and "_truncated" not in item:
+                    assert "name" in item, f"{key} item missing 'name'"
+
+    # -----------------------------------------------------------------------
+    # H1: list_space_types pagination
+    # -----------------------------------------------------------------------
+
+    def test_space_types_truncation(self, session_data):
+        """list_space_types truncation check."""
+        default = session_data["defaults"]["list_space_types"]
+        unlimited = session_data["unlimited"]["list_space_types"]
+        total = unlimited["count"]
+        if total > 10:
+            assert default["truncated"] is True
+            assert default["total_available"] == total
+        else:
+            assert default.get("truncated") is not True

@@ -23,9 +23,11 @@ def register(mcp):
     def get_schedule_details_tool(schedule_name: str):
         """Get detailed information about a specific schedule ruleset.
 
+        Returns all schedule rules. For schedules with many rules, use
+        list_schedule_rulesets first to check num_rules.
+
         Args:
             schedule_name: Name of the schedule ruleset to retrieve
-
         """
         return get_schedule_details(schedule_name=schedule_name)
 

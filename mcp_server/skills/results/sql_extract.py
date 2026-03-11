@@ -276,8 +276,16 @@ def extract_zone_summary(sql_path: Path) -> dict:
         conn.close()
 
 
-def extract_component_sizing(sql_path: Path, component_type: str | None = None) -> dict:
-    """Extract autosized component values from ComponentSizingSummary."""
+def extract_component_sizing(
+    sql_path: Path, component_type: str | None = None, max_results: int = 50,
+) -> dict:
+    """Extract autosized component values from ComponentSizingSummary.
+
+    Args:
+        sql_path: Path to eplusout.sql
+        component_type: Filter by type (e.g. "Coil", "Fan", "Pump", "Chiller")
+        max_results: Cap on returned components (default 50, 0=unlimited)
+    """
     conn = sqlite3.connect(str(sql_path))
     try:
         if component_type:
@@ -295,7 +303,7 @@ def extract_component_sizing(sql_path: Path, component_type: str | None = None) 
             """)
 
         if not rows:
-            return {"ok": True, "components": [],
+            return {"ok": True, "components": [], "count": 0,
                     "source": "ComponentSizingSummary"}
 
         # Group by TableName (component type) + RowName (instance)
@@ -320,11 +328,22 @@ def extract_component_sizing(sql_path: Path, component_type: str | None = None) 
                     "properties": props,
                 })
 
-        return {
+        total = len(components)
+        truncated = False
+        if max_results > 0 and total > max_results:
+            components = components[:max_results]
+            truncated = True
+
+        result: dict[str, Any] = {
             "ok": True,
             "components": components,
+            "count": len(components),
             "source": "ComponentSizingSummary",
         }
+        if truncated:
+            result["total_available"] = total
+            result["truncated"] = True
+        return result
     finally:
         conn.close()
 
@@ -342,7 +361,7 @@ def query_timeseries(
     end_month: int | None = None,
     end_day: int | None = None,
     frequency: str | None = None,
-    max_points: int = 10000,
+    max_points: int = 2000,
 ) -> dict:
     """Query time-series data from ReportData/ReportDataDictionary/Time tables."""
     conn = sqlite3.connect(str(sql_path))

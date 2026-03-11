@@ -48,7 +48,6 @@ def test_list_comstock_measures():
                 # Check each measure has required fields
                 for m in res["measures"]:
                     assert "name" in m
-                    assert "path" in m
                     assert "category" in m
                     assert m["category"] in ("baseline", "upgrade", "setup", "other")
 
@@ -97,7 +96,7 @@ def test_list_measure_arguments_comstock():
                 wall_measures = [m for m in listing["measures"]
                                  if m["name"] == "set_wall_template"]
                 assert len(wall_measures) == 1, "set_wall_template not found"
-                measure_path = wall_measures[0]["path"]
+                measure_path = "/opt/comstock-measures/" + wall_measures[0]["name"]
                 # Now list its arguments
                 res = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": measure_path,
@@ -178,7 +177,7 @@ def test_apply_comstock_measure_direct():
                     f"simulation_settings not found in setup measures: "
                     f"{[m['name'] for m in listing['measures']]}"
                 )
-                measure_path = sim_measures[0]["path"]
+                measure_path = "/opt/comstock-measures/" + sim_measures[0]["name"]
 
                 # Apply it via generic apply_measure
                 res = unwrap(await s.call_tool("apply_measure", {

@@ -189,7 +189,7 @@ def test_list_files():
                 list_result = unwrap(list_resp)
                 print("list_files (all):", list_result)
                 assert list_result.get("ok") is True
-                assert list_result.get("total", 0) >= 1
+                assert list_result.get("count", 0) >= 1
                 names = [f["name"] for f in list_result["items"]]
                 assert "example_model.osm" in names
 
@@ -206,14 +206,14 @@ def test_list_files():
                 epw_result = unwrap(epw_resp)
                 print("list_files (no match):", epw_result)
                 assert epw_result.get("ok") is True
-                assert epw_result.get("total") == 0
+                assert epw_result.get("count") == 0
 
                 # Specific directory
                 runs_resp = await session.call_tool("list_files", {"directory": "/runs", "max_results": 0})
                 runs_result = unwrap(runs_resp)
                 print("list_files (/runs):", runs_result)
                 assert runs_result.get("ok") is True
-                assert runs_result.get("total", 0) >= 1
+                assert runs_result.get("count", 0) >= 1
 
                 # Disallowed directory
                 bad_resp = await session.call_tool("list_files", {"directory": "/etc", "max_results": 0})

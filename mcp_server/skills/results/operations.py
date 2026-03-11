@@ -185,9 +185,11 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
 
 
 def read_file(
-    file_path: str, max_bytes: int = 400_000, offset: int = 0,
+    file_path: str, max_bytes: int = 50_000, offset: int = 0,
 ) -> dict[str, Any]:
     """Read a file by absolute path (any allowed mount: /runs, /inputs, /repo, etc.).
+
+    Default 50KB. Use offset+max_bytes for chunked reading of large files.
 
     - `file_path` must be an absolute path within allowed roots.
     - `offset` allows chunked reading (byte offset to start from).
@@ -294,13 +296,15 @@ def extract_zone_summary_op(run_id: str) -> dict[str, Any]:
     return extract_zone_summary(sql_path)
 
 
-def extract_component_sizing_op(run_id: str, component_type: str | None = None) -> dict[str, Any]:
+def extract_component_sizing_op(
+    run_id: str, component_type: str | None = None, max_results: int = 50,
+) -> dict[str, Any]:
     """Extract autosized component values."""
     from mcp_server.skills.results.sql_extract import extract_component_sizing
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return extract_component_sizing(sql_path, component_type)
+    return extract_component_sizing(sql_path, component_type, max_results=max_results)
 
 
 def query_timeseries_op(
@@ -312,7 +316,7 @@ def query_timeseries_op(
     end_month: int | None = None,
     end_day: int | None = None,
     frequency: str | None = None,
-    max_points: int = 10000,
+    max_points: int = 2000,
 ) -> dict[str, Any]:
     """Query time-series data for a specific variable."""
     from mcp_server.skills.results.sql_extract import query_timeseries
