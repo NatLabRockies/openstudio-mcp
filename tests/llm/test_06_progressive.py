@@ -17,12 +17,16 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, baseline_model_exists, get_tier
+from .conftest import (
+    BASELINE_MODEL, BASELINE_HVAC_MODEL,
+    baseline_model_exists, baseline_hvac_model_exists, get_tier,
+)
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
+LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
 # Boston EPW with .stat/.ddy companions
 BOSTON_EPW = (
@@ -124,6 +128,76 @@ PROGRESSIVE_CASES = [
         "L2": "List all the schedule rulesets in the model.",
         "L3": "List the schedules using list_schedule_rulesets.",
     },
+    # --- Generic object access (needs HVAC model) ---
+    {
+        "id": "inspect_component",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_object_fields", "get_component_properties"],
+        "L1": "What are the properties of the hot water boiler?",
+        "L2": "Show me all properties of the BoilerHotWater in the model.",
+        "L3": "Use get_object_fields to read properties of the BoilerHotWater.",
+    },
+    {
+        "id": "modify_component",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["set_object_property", "set_component_properties"],
+        "L1": "Make the boiler more efficient.",
+        "L2": "Set the boiler's nominal thermal efficiency to 0.92.",
+        "L3": "Use set_object_property to set nominalThermalEfficiency to 0.92 "
+              "on the BoilerHotWater.",
+    },
+    {
+        "id": "list_dynamic_type",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["list_model_objects"],
+        "L1": "What sizing parameters exist in the model?",
+        "L2": "List all SizingSystem objects in the model.",
+        "L3": "Use list_model_objects with object_type SizingSystem to list sizing objects.",
+    },
+    # --- Migrated from test_02 (formerly with-model only) ---
+    {
+        "id": "floor_area",
+        "needs_model": True,
+        "expected": ["get_building_info", "get_model_summary"],
+        "L1": "How big is the building?",
+        "L2": "What is the building's total floor area?",
+        "L3": "Get the building floor area using get_building_info.",
+    },
+    {
+        "id": "materials",
+        "needs_model": True,
+        "expected": ["list_materials"],
+        "L1": "What materials are used in the building?",
+        "L2": "List all materials in the model.",
+        "L3": "List the materials using list_materials.",
+    },
+    {
+        "id": "thermal_zones",
+        "needs_model": True,
+        "expected": ["list_thermal_zones"],
+        "L1": "How many zones does the building have?",
+        "L2": "List all thermal zones in the model.",
+        "L3": "List the thermal zones using list_thermal_zones.",
+    },
+    {
+        "id": "subsurfaces",
+        "needs_model": True,
+        "expected": ["list_subsurfaces"],
+        "L1": "What windows does the building have?",
+        "L2": "List all subsurfaces (windows and doors) in the model.",
+        "L3": "List the subsurfaces using list_subsurfaces.",
+    },
+    {
+        "id": "surface_details",
+        "needs_model": True,
+        "expected": ["get_surface_details", "list_surfaces"],
+        "L1": "Tell me about the south wall.",
+        "L2": "Show details for a wall surface in the model.",
+        "L3": "Show surface details using get_surface_details or list_surfaces.",
+    },
 ]
 
 SUFFIX = " Use MCP tools only."
@@ -137,11 +211,16 @@ for case in PROGRESSIVE_CASES:
             "case_id": case["id"],
             "level": level,
             "needs_model": case["needs_model"],
+            "needs_hvac": case.get("needs_hvac", False),
             "prompt": case[level],
             "expected": case["expected"],
         })
 
 
+_GENERIC_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
+
+
+@pytest.mark.progressive
 @pytest.mark.parametrize("case", _FLAT_CASES, ids=[c["id"] for c in _FLAT_CASES])
 def test_progressive(case):
     """Test tool discovery at varying prompt specificity levels.
@@ -155,7 +234,11 @@ def test_progressive(case):
         pytest.skip("Tier 1 not selected")
 
     prompt = case["prompt"]
-    if case["needs_model"]:
+    if case.get("needs_hvac"):
+        if not baseline_hvac_model_exists():
+            pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
+        prompt = LOAD_HVAC + prompt.lower()
+    elif case["needs_model"]:
         if not baseline_model_exists():
             pytest.skip("Baseline model not found — run test_01_setup first")
         prompt = LOAD + prompt.lower()

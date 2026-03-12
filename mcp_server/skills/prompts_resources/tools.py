@@ -355,7 +355,8 @@ def register(mcp):
             ],
             "object_management": [
                 "delete_object", "rename_object",
-                "list_model_objects",
+                "list_model_objects", "get_object_fields",
+                "set_object_property",
             ],
             "weather": [
                 "get_weather_info",

@@ -52,6 +52,19 @@ def test_create_baseline_model():
     assert not result.is_error, f"Claude reported error: {result.final_text}"
 
 
+def test_create_baseline_with_hvac():
+    """Create baseline + System 7 HVAC for component inspection tests."""
+    result = run_claude(
+        "Create a baseline building named 'llm-test-baseline-hvac' using "
+        "create_baseline_osm with ashrae_sys_num '07'. Use MCP tools only.",
+        timeout=120,
+    )
+    assert "create_baseline_osm" in result.tool_names, (
+        f"create_baseline_osm not called. Tools: {result.tool_names}"
+    )
+    assert not result.is_error, f"Claude reported error: {result.final_text}"
+
+
 def test_create_example_model():
     """Create an example SEB model for later tests.
 

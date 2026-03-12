@@ -18,9 +18,12 @@ Environment variables:
   LLM_TESTS_RUNS_DIR — host path for /runs volume mount (default: /tmp/llm-test-runs)
 
 Usage:
-  pytest tests/llm/ -m stable       # ~80 tests, always pass (~35 min)
-  pytest tests/llm/ -m flaky        # ~10 tests, sometimes fail (~10 min)
-  pytest tests/llm/                 # all 90 tests (~75 min)
+  pytest tests/llm/ -m smoke        # ~10 tests, fast validation (~10 min)
+  pytest tests/llm/ -m generic      # ~12 tests, generic access tools only
+  pytest tests/llm/ -m progressive  # ~54 tests, all L1/L2/L3
+  pytest tests/llm/ -m stable       # ~95 tests, always pass
+  pytest tests/llm/ -m flaky        # ~12 tests, sometimes fail
+  pytest tests/llm/                 # all ~107 tests
 """
 from __future__ import annotations
 
@@ -41,8 +44,12 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "tier3: end-to-end simulation tests")
     config.addinivalue_line("markers", "tier4: guardrail regression tests")
     config.addinivalue_line("markers", "needs_baseline: requires baseline model from test_01")
+    config.addinivalue_line("markers", "needs_hvac: requires baseline+HVAC model from test_01")
     config.addinivalue_line("markers", "stable: tests that pass consistently (Runs 2-4)")
     config.addinivalue_line("markers", "flaky: tests that fail intermittently or structurally")
+    config.addinivalue_line("markers", "progressive: L1/L2/L3 prompt specificity tests")
+    config.addinivalue_line("markers", "generic: generic object access tool tests")
+    config.addinivalue_line("markers", "smoke: fast validation subset (~10 tests)")
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +82,7 @@ def claude_cli_available() -> bool:
 # by LLM_TESTS_RUNS_DIR env var (default /tmp/llm-test-runs).
 # test_01_setup creates these models; all subsequent tests load them.
 BASELINE_MODEL = "/runs/examples/llm-test-baseline/baseline_model.osm"
+BASELINE_HVAC_MODEL = "/runs/examples/llm-test-baseline-hvac/baseline_model.osm"
 EXAMPLE_MODEL = "/runs/examples/llm-test-example/example_model.osm"
 
 # Host-side runs dir — used to verify model files exist before tests.
@@ -88,6 +96,12 @@ _RUNS_DIR = Path(os.environ.get("LLM_TESTS_RUNS_DIR", _DEFAULT_RUNS_DIR))
 def baseline_model_exists() -> bool:
     """Check if the baseline model exists on the host filesystem."""
     host_path = _RUNS_DIR / "examples" / "llm-test-baseline" / "baseline_model.osm"
+    return host_path.exists()
+
+
+def baseline_hvac_model_exists() -> bool:
+    """Check if the baseline+HVAC model exists on the host filesystem."""
+    host_path = _RUNS_DIR / "examples" / "llm-test-baseline-hvac" / "baseline_model.osm"
     return host_path.exists()
 
 
@@ -115,7 +129,7 @@ def get_sim_run_id() -> str | None:
 # ---------------------------------------------------------------------------
 # Prevents runaway test runs from burning through too many Claude invocations.
 # Each test_* function consumes 1 prompt. Retries also consume prompts.
-MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "100"))
+MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "120"))
 _prompt_count = 0
 
 
@@ -148,6 +162,11 @@ def _check_baseline_model(request):
                 f"Baseline model not found at {_RUNS_DIR / 'llm-test-baseline/model.osm'}. "
                 "Run test_01_setup first."
             )
+    if "needs_hvac" in [m.name for m in request.node.iter_markers()]:
+        if not baseline_hvac_model_exists():
+            pytest.skip(
+                "Baseline+HVAC model not found. Run test_01_setup first."
+            )
 
 
 def get_tier() -> str:
@@ -175,23 +194,50 @@ def _is_setup(nodeid: str) -> bool:
     return "test_01_setup" in nodeid
 
 
-def pytest_collection_modifyitems(config, items):
-    """Tag LLM tests with retry count and stable/flaky markers.
+# Generic access case IDs — used for auto-tagging with `generic` marker
+_GENERIC_CASE_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
 
-    Setup tests (test_01_setup) get BOTH markers so they run with either
+# Smoke subset — fast validation of key tools (~10 tests)
+_SMOKE_IDS = {
+    # setup
+    "test_create_baseline_model", "test_create_baseline_with_hvac",
+    # progressive L3 (most reliable)
+    "list_spaces_L3", "add_hvac_L3", "view_model_L3",
+    "inspect_component_L3", "list_dynamic_type_L3",
+    # workflow
+    "inspect_and_modify_boiler",
+    # guardrail
+    "test_inspect_component_uses_mcp_not_script",
+}
+
+
+def pytest_collection_modifyitems(config, items):
+    """Tag LLM tests with retry count and stable/flaky/generic/smoke markers.
+
+    Setup tests (test_01_setup) get BOTH stable+flaky so they run with either
     -m stable or -m flaky — downstream tests depend on them.
     """
     for item in items:
-        if "llm" in [m.name for m in item.iter_markers()]:
-            item._llm_retries = MAX_RETRIES
-            if _is_setup(item.nodeid):
-                # Setup runs with either marker selection
-                item.add_marker(pytest.mark.stable)
-                item.add_marker(pytest.mark.flaky)
-            elif _is_flaky(item.nodeid):
-                item.add_marker(pytest.mark.flaky)
-            else:
-                item.add_marker(pytest.mark.stable)
+        if "llm" not in [m.name for m in item.iter_markers()]:
+            continue
+        item._llm_retries = MAX_RETRIES
+
+        # stable / flaky
+        if _is_setup(item.nodeid):
+            item.add_marker(pytest.mark.stable)
+            item.add_marker(pytest.mark.flaky)
+        elif _is_flaky(item.nodeid):
+            item.add_marker(pytest.mark.flaky)
+        else:
+            item.add_marker(pytest.mark.stable)
+
+        # generic marker for generic access cases
+        if any(gid in item.nodeid for gid in _GENERIC_CASE_IDS):
+            item.add_marker(pytest.mark.generic)
+
+        # smoke marker
+        if any(sid in item.nodeid for sid in _SMOKE_IDS):
+            item.add_marker(pytest.mark.smoke)
 
 
 def pytest_runtest_protocol(item, nextitem):
@@ -322,7 +368,7 @@ def pytest_sessionfinish(session, exitstatus):
     if not _benchmark_results:
         return
 
-    runs_dir = Path(os.environ.get("LLM_TESTS_RUNS_DIR", "/tmp/llm-test-runs"))
+    runs_dir = _RUNS_DIR
     runs_dir.mkdir(parents=True, exist_ok=True)
 
     total = len(_benchmark_results)

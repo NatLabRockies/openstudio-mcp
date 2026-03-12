@@ -303,12 +303,14 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `remove_zone_equipment` | Remove equipment from thermal zone |
 | `remove_all_zone_equipment` | Batch-remove ALL equipment from multiple zones |
 
-### Object Management (3 tools)
+### Object Management (5 tools)
 | Tool | Description |
 |------|-------------|
 | `delete_object` | Delete any named object (28+ supported types) |
 | `rename_object` | Rename any named object |
-| `list_model_objects` | List all objects of a given type |
+| `list_model_objects` | List objects of any type (CamelCase, IDD colon, or underscore formats) |
+| `get_object_fields` | Read all properties of any object via introspection — returns values + available setters |
+| `set_object_property` | Write any property on any object via official setters — auto-coerces value types |
 
 ### Weather & Simulation Config (7 tools)
 | Tool | Description |

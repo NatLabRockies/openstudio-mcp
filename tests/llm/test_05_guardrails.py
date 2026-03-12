@@ -23,7 +23,10 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, get_sim_run_id, get_tier
+from .conftest import (
+    BASELINE_MODEL, BASELINE_HVAC_MODEL,
+    baseline_hvac_model_exists, get_sim_run_id, get_tier,
+)
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier4]
@@ -101,4 +104,37 @@ def test_no_script_for_results():
     # Must call an MCP results extraction tool
     assert any(t in RESULTS_TOOLS for t in result.tool_names), (
         f"No MCP results tool used. MCP tools: {result.tool_names}"
+    )
+
+
+# Valid MCP tools for component inspection
+INSPECT_TOOLS = {"get_object_fields", "get_component_properties"}
+
+LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
+
+
+def test_inspect_component_uses_mcp_not_script():
+    """Agent must use MCP tools to inspect components, not write Python."""
+    tier = get_tier()
+    if tier not in ("all", "4"):
+        pytest.skip("Tier 4 not selected")
+
+    if not baseline_hvac_model_exists():
+        pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
+
+    result = run_claude(
+        LOAD_HVAC + "What are the cooling coil properties? "
+        "Use MCP tools only, do not write any scripts.",
+        timeout=120,
+    )
+
+    # Must use MCP inspection tool
+    assert any(t in INSPECT_TOOLS for t in result.tool_names), (
+        f"No MCP inspection tool used. MCP tools: {result.tool_names}"
+    )
+
+    # No raw openstudio scripting in response
+    text = result.final_text.lower()
+    assert "import openstudio" not in text, (
+        "Response contains 'import openstudio' — agent wrote a script"
     )

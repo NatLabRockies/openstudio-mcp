@@ -26,12 +26,16 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, baseline_model_exists, get_tier
+from .conftest import (
+    BASELINE_MODEL, BASELINE_HVAC_MODEL,
+    baseline_model_exists, baseline_hvac_model_exists, get_tier,
+)
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
+LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
 WORKFLOW_CASES = [
     {
@@ -213,6 +217,19 @@ WORKFLOW_CASES = [
         "required_tools": ["create_space_from_floor_print", "match_surfaces"],
         "timeout": 120,
     },
+    {
+        # Generic object access: inspect and modify a boiler
+        "id": "inspect_and_modify_boiler",
+        "prompt": LOAD_HVAC + (
+            "List the BoilerHotWater objects using list_model_objects. "
+            "Then read the properties of the first boiler using get_object_fields. "
+            "Then set its nominalThermalEfficiency to 0.95 using set_object_property. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "list_model_objects",
+                           "get_object_fields", "set_object_property"],
+        "timeout": 120,
+    },
 ]
 
 
@@ -235,7 +252,9 @@ def test_workflow(case):
         pytest.skip("Tier 2 not selected")
 
     # Skip if this case needs a pre-loaded model and it doesn't exist
-    if BASELINE_MODEL in case["prompt"] and not baseline_model_exists():
+    if BASELINE_HVAC_MODEL in case["prompt"] and not baseline_hvac_model_exists():
+        pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
+    elif BASELINE_MODEL in case["prompt"] and not baseline_model_exists():
         pytest.skip("Baseline model not found — run test_01_setup first")
 
     result = run_claude(

@@ -101,3 +101,20 @@ rename_object(object_name="Zone 1", new_name="North Office")
 delete_object(object_name="Unused Space")
 clean_unused_objects()                    # remove orphans
 ```
+
+## Inspect & Modify Any Object (Generic Access)
+
+```
+# Read all properties of any object
+get_object_fields(object_type="BoilerHotWater", object_name="Boiler Hot Water 1")
+# → returns property values + available setter methods
+
+# Write a property using the discovered setter
+set_object_property(object_type="BoilerHotWater", object_name="Boiler Hot Water 1",
+    property_name="nominalThermalEfficiency", value=0.92)
+
+# Works with any type — SizingSystem, CoilCoolingWater, etc.
+get_object_fields(object_type="SizingSystem", object_name="VAV Sys 1 Sizing System")
+```
+
+Note: Always call `get_object_fields` first to discover property names and setter availability before using `set_object_property`.
