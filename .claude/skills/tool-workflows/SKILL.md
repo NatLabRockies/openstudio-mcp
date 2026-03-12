@@ -64,7 +64,7 @@ change_building_location(weather_file="/inputs/Chicago.epw")
 ## Tune Component Properties
 
 ```
-list_hvac_components(category="Coil")     # find component names
+list_model_objects(object_type="CoilHeatingGas")  # find component names
 get_component_properties(component_name="Heating Coil 1")
 set_component_properties(component_name="Heating Coil 1",
     properties={"efficiency": 0.95})
