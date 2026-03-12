@@ -138,11 +138,24 @@ def _extract_air_loop(model, air_loop, detailed: bool = True) -> dict[str, Any]:
             "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
         })
 
+    # Extract demand-side terminals per zone
+    demand_terminals = []
+    for zone in air_loop.thermalZones():
+        terminal_opt = zone.airLoopHVACTerminal()
+        if terminal_opt.is_initialized():
+            terminal = terminal_opt.get()
+            demand_terminals.append({
+                "zone": zone.nameString(),
+                "terminal_type": terminal.iddObjectType().valueName(),
+                "terminal_name": terminal.nameString(),
+            })
+
     result.update({
         "handle": str(air_loop.handle()),
         "thermal_zones": thermal_zones,
         "num_supply_components": len(supply_components),
         "supply_components": supply_components[:10],
+        "demand_terminals": demand_terminals,
         "detailed_components": _extract_detailed_supply_components(air_loop),
         "outdoor_air_system": _extract_outdoor_air_system(air_loop),
         "setpoint_managers": _extract_setpoint_managers(air_loop),

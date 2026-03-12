@@ -72,7 +72,7 @@ jobs:
               ;;
             3)
               # controls, object mgmt, loads, building, doas, hvac, measures, skill_qaqc, skill_add_hvac, validation sys5-6
-              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_skill_qaqc.py tests/test_skill_add_hvac.py tests/test_hvac_validation_sys5_6.py tests/test_hvac_supply_wiring.py"
+              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_generic_access.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_skill_qaqc.py tests/test_skill_add_hvac.py tests/test_hvac_validation_sys5_6.py tests/test_hvac_supply_wiring.py"
               EXTRA_ENV=""
               ;;
             4)
