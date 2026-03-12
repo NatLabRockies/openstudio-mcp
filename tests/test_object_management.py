@@ -125,45 +125,7 @@ def test_delete_nonexistent():
     asyncio.run(_run())
 
 
-# ---- List tests ----
-
-@pytest.mark.integration
-def test_list_objects_by_type():
-    if not integration_enabled():
-        pytest.skip("integration disabled")
-
-    async def _run():
-        async with stdio_client(server_params()) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                await setup_example(s, _unique())
-                res = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "Space", "max_results": 0,
-                }))
-                assert res.get("ok") is True
-                assert res["type"] == "Space"
-                assert res["count"] > 0
-                assert "name" in res["objects"][0]
-    asyncio.run(_run())
-
-
-@pytest.mark.integration
-def test_list_objects_invalid_type():
-    if not integration_enabled():
-        pytest.skip("integration disabled")
-
-    async def _run():
-        async with stdio_client(server_params()) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                await setup_example(s, _unique())
-                res = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "FakeType", "max_results": 0,
-                }))
-                assert res.get("ok") is False
-                assert "Unsupported" in res["error"]
-    asyncio.run(_run())
-
+# list_model_objects tests are in test_generic_access.py
 
 # ---- Baseline model tests ----
 

@@ -113,7 +113,7 @@ def test_set_setpoint_min_max_temp():
                     "system_type": 5,
                     "thermal_zone_names": zones,
                 })
-                # Find SPM name via list_hvac_components or air loop details
+                # Find SPM name via air loop details
                 alr = await session.call_tool("list_air_loops", {})
                 loop = unwrap(alr)["air_loops"][0]
                 # Get air loop details to find SPM name

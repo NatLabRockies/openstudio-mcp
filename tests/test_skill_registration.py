@@ -35,6 +35,7 @@ EXPECTED_TOOLS = {
     "match_surfaces",
     "set_window_to_wall_ratio",
     "list_materials",
+    "get_construction_details",
     "create_standard_opaque_material",
     "create_construction",
     "assign_construction_to_surface",
@@ -78,7 +79,8 @@ EXPECTED_TOOLS = {
     "add_zone_equipment",
     "remove_zone_equipment",
     "remove_all_zone_equipment",
-    # Phase 6A: Load Creation
+    # Phase 6A: Loads
+    "get_load_details",
     "create_people_definition",
     "create_lights_definition",
     "create_electric_equipment",
@@ -88,6 +90,8 @@ EXPECTED_TOOLS = {
     "delete_object",
     "rename_object",
     "list_model_objects",
+    "get_object_fields",
+    "set_object_property",
     # Phase 6C: Weather, Design Days, SimControl, RunPeriod
     "get_weather_info",
     "add_design_day",
@@ -189,3 +193,6 @@ def test_all_tool_names_registered():
     registered_names = set(registered_tools.keys())
     missing = EXPECTED_TOOLS - registered_names
     assert not missing, f"Missing tools after registration: {missing}"
+
+    extra = registered_names - EXPECTED_TOOLS
+    assert not extra, f"Unexpected tools not in EXPECTED_TOOLS: {extra}"
