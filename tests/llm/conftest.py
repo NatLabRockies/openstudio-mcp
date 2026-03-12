@@ -18,12 +18,12 @@ Environment variables:
   LLM_TESTS_RUNS_DIR — host path for /runs volume mount (default: /tmp/llm-test-runs)
 
 Usage:
-  pytest tests/llm/ -m smoke        # ~10 tests, fast validation (~10 min)
+  pytest tests/llm/ -m smoke        # ~12 tests, fast validation (~10 min)
   pytest tests/llm/ -m generic      # ~12 tests, generic access tools only
-  pytest tests/llm/ -m progressive  # ~54 tests, all L1/L2/L3
-  pytest tests/llm/ -m stable       # ~95 tests, always pass
-  pytest tests/llm/ -m flaky        # ~12 tests, sometimes fail
-  pytest tests/llm/                 # all ~107 tests
+  pytest tests/llm/ -m progressive  # ~102 tests, all L1/L2/L3
+  pytest tests/llm/ -m stable       # ~140 tests, always pass
+  pytest tests/llm/ -m flaky        # ~18 tests, sometimes fail
+  pytest tests/llm/                 # all ~160 tests
 """
 from __future__ import annotations
 
@@ -64,6 +64,13 @@ FLAKY_TESTS = frozenset({
     "thermostat_L1",
     "add_hvac_L1",
     "list_dynamic_type_L1",
+    # New cases — L1 prompts may trigger wrong tool
+    "save_model_L1",
+    "schedule_details_L1",
+    "create_loads_L1",
+    "set_wwr_L1",
+    "check_loads_L1",
+    "ideal_air_L1",
 })
 
 
@@ -124,12 +131,17 @@ def get_sim_run_id() -> str | None:
     return None
 
 
+def sim_run_exists() -> bool:
+    """Check if a simulation run_id has been saved."""
+    return get_sim_run_id() is not None
+
+
 # ---------------------------------------------------------------------------
 # Prompt budget tracking
 # ---------------------------------------------------------------------------
 # Prevents runaway test runs from burning through too many Claude invocations.
 # Each test_* function consumes 1 prompt. Retries also consume prompts.
-MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "120"))
+MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "180"))
 _prompt_count = 0
 
 
@@ -204,6 +216,8 @@ _SMOKE_IDS = {
     # progressive L3 (most reliable)
     "list_spaces_L3", "add_hvac_L3", "view_model_L3",
     "inspect_component_L3", "list_dynamic_type_L3",
+    # new progressive L3
+    "get_eui_L3", "set_wwr_L3", "save_model_L3",
     # workflow
     "inspect_and_modify_boiler",
     # guardrail

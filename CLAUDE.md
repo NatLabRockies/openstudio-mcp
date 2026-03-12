@@ -134,11 +134,11 @@ MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" \
 ```
 
 ### LLM Tests (Claude Max usage)
-Each `claude -p` invocation loads ~27K tokens of tool definitions. Full suite (107 tests)
+Each `claude -p` invocation loads ~26K tokens of tool definitions. Full suite (~160 tests)
 uses ~9.5M cache tokens per run. To minimize usage:
 - **Iterate with targeted tests:** `LLM_TESTS_ENABLED=1 pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
 - **Run full suite only for final validation**
-- **Marker filters:** `-m smoke` (9 tests), `-m generic` (10), `-m progressive` (54)
+- **Marker filters:** `-m smoke` (12 tests), `-m generic` (10), `-m progressive` (102)
 - **Always save results:** After running, copy benchmark to `docs/llm-test-benchmark-YYYY-MM-DD.md`
 
 ### Local Development

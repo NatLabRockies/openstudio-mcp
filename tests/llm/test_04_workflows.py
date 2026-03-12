@@ -29,6 +29,7 @@ import pytest
 from .conftest import (
     BASELINE_MODEL, BASELINE_HVAC_MODEL,
     baseline_model_exists, baseline_hvac_model_exists, get_tier,
+    get_sim_run_id,
 )
 from .runner import run_claude
 
@@ -218,6 +219,44 @@ WORKFLOW_CASES = [
         "timeout": 120,
     },
     {
+        # Envelope retrofit: WWR + window upgrade
+        "id": "envelope_retrofit",
+        "prompt": LOAD + (
+            "Set the window-to-wall ratio to 0.4 using set_window_to_wall_ratio. "
+            "Then replace window constructions using replace_window_constructions. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "set_window_to_wall_ratio",
+                           "replace_window_constructions"],
+        "timeout": 180,
+    },
+    {
+        # Create loads and assign to model
+        "id": "create_and_assign_loads",
+        "prompt": LOAD + (
+            "Create a people definition using create_people_definition with "
+            "people_per_floor_area 0.05 and name 'Office People'. "
+            "Then create a lights definition using create_lights_definition with "
+            "watts_per_floor_area 10 and name 'Office Lights'. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_people_definition",
+                           "create_lights_definition"],
+        "timeout": 120,
+    },
+    {
+        # Plant loop with supply equipment
+        "id": "plant_loop_with_boiler",
+        "prompt": LOAD + (
+            "Create a heating plant loop using create_plant_loop with loop_type "
+            "heating. Then add a hot water boiler using add_supply_equipment "
+            "with equipment_type BoilerHotWater. Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_plant_loop",
+                           "add_supply_equipment"],
+        "timeout": 120,
+    },
+    {
         # Generic object access: inspect and modify a boiler
         "id": "inspect_and_modify_boiler",
         "prompt": LOAD_HVAC + (
@@ -228,6 +267,14 @@ WORKFLOW_CASES = [
         ),
         "required_tools": ["load_osm_model", "list_model_objects",
                            "get_object_fields", "set_object_property"],
+        "timeout": 120,
+    },
+    {
+        # Extract multiple result types from a completed simulation
+        "id": "extract_results_chain",
+        "needs_run": True,
+        "prompt": None,  # built dynamically from run_id
+        "required_tools": ["extract_summary_metrics", "extract_end_use_breakdown"],
         "timeout": 120,
     },
 ]
@@ -251,14 +298,25 @@ def test_workflow(case):
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
 
-    # Skip if this case needs a pre-loaded model and it doesn't exist
-    if BASELINE_HVAC_MODEL in case["prompt"] and not baseline_hvac_model_exists():
+    # Build prompt for needs_run cases
+    prompt = case["prompt"]
+    if case.get("needs_run"):
+        run_id = get_sim_run_id()
+        if not run_id:
+            pytest.skip("No simulation run_id — run test_01_setup first")
+        prompt = (
+            f"Extract results from simulation run '{run_id}'. "
+            "First extract summary metrics using extract_summary_metrics. "
+            "Then extract end use breakdown using extract_end_use_breakdown. "
+            "Use MCP tools only."
+        )
+    elif BASELINE_HVAC_MODEL in prompt and not baseline_hvac_model_exists():
         pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
-    elif BASELINE_MODEL in case["prompt"] and not baseline_model_exists():
+    elif BASELINE_MODEL in prompt and not baseline_model_exists():
         pytest.skip("Baseline model not found — run test_01_setup first")
 
     result = run_claude(
-        case["prompt"],
+        prompt,
         timeout=case.get("timeout", 120),
         max_turns=case.get("max_turns"),
     )

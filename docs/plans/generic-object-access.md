@@ -5,7 +5,7 @@
 ## Context
 Claude Desktop session (2026-03-11) on `annex_final_v6.osm` — LLM burned 12+ tool_search calls and 15 min trying to find FourPipeBeam objects. Root cause: no generic way to query arbitrary object types or read/write their properties.
 
-Current: 136 tools x ~200 tokens each = ~27K tokens/session.
+Current: 131 tools x ~200 tokens each = ~26K tokens/session.
 
 ## Phase A: New Generic Tools — DONE
 
@@ -82,7 +82,28 @@ Verified generic tools return same data as explicit tools. Tests in `tests/test_
 ### Test results
 - 102 passed, 0 failed, 2 skipped across 9 affected test files
 
+## Phase D: Remove 5 More Redundant List Tools — DONE
+
+Removed 5 additional list tools (136 → 131) that are fully covered by `list_model_objects`:
+
+| Removed | Replacement |
+|---------|-------------|
+| `list_space_types` | `list_model_objects("SpaceType")` |
+| `list_building_stories` | `list_model_objects("BuildingStory")` |
+| `list_constructions` | `list_model_objects("Construction")` |
+| `list_construction_sets` | `list_model_objects("DefaultConstructionSet")` |
+| `list_schedule_rulesets` | `list_model_objects("ScheduleRuleset")` |
+
+### Kept (unique value beyond listing)
+- `list_air_loops` — returns topology (supply/demand components), not just names
+- All `get_*_details` tools — computed values, nested traversal
+- All creation tools
+
+### LLM test validation (Run 6: 153/159 = 96.2%)
+- 16 new progressive cases covering all gap categories
+- 4 new workflow cases
+- No regressions from tool removal
+
 ## Future candidates (not planned)
 - Merge sizing/economizer/SPM tools into `get/set_object_property` if LLM tests show confusion
 - `list_model_objects` category filter (e.g. "show all coils") — defer unless needed
-- Remove more topology list tools if generic access proves sufficient

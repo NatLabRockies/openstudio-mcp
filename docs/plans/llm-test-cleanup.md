@@ -193,15 +193,16 @@ Add `BASELINE_HVAC_MODEL` to conftest.py, with `baseline_hvac_model_exists()` ch
 ### Net test count
 - Remove: 10 (test_02 with-model cases)
 - Add: 9 (3 generic progressive) + 15 (5 moved-from-test_02 progressive) + 1 (workflow) + 1 (guardrail) + 1 (setup) = 27
-- **New total: ~107 tests** (was 90)
+- **Run 5 total: 107 tests** (was 90)
+- **Run 6 total: 159 tests** (+16 progressive cases x3 levels + 4 workflows + 1 sim setup)
 
 ### New markers summary
 ```
-pytest -m smoke        # ~9 tests, fast validation
-pytest -m generic      # ~12 tests, generic access tools only
-pytest -m progressive  # ~45 tests, all L1/L2/L3
-pytest -m stable       # ~95 tests, reliable
-pytest -m flaky        # ~12 tests, intermittent
+pytest -m smoke        # 12 tests, fast validation
+pytest -m generic      # 10 tests, generic access tools only
+pytest -m progressive  # 102 tests, all L1/L2/L3 (34 cases)
+pytest -m stable       # ~145 tests, reliable
+pytest -m flaky        # ~14 tests, intermittent
 ```
 
 ## Verification

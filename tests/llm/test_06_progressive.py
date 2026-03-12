@@ -20,6 +20,7 @@ import pytest
 from .conftest import (
     BASELINE_MODEL, BASELINE_HVAC_MODEL,
     baseline_model_exists, baseline_hvac_model_exists, get_tier,
+    get_sim_run_id,
 )
 from .runner import run_claude
 
@@ -198,6 +199,145 @@ PROGRESSIVE_CASES = [
         "L2": "Show details for a wall surface in the model.",
         "L3": "Show surface details using get_surface_details or list_surfaces.",
     },
+    # --- Simulation & results (need completed simulation) ---
+    {
+        "id": "run_simulation",
+        "needs_model": True,
+        "expected": ["run_simulation", "run_osw"],
+        "L1": "Simulate the building and get the energy results.",
+        "L2": "Run an EnergyPlus simulation on this model.",
+        "L3": "Run the simulation using run_simulation.",
+    },
+    {
+        "id": "get_eui",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_summary_metrics"],
+        "L1": "What's the building's energy use?",
+        "L2": "Extract the EUI from the simulation results.",
+        "L3": "Extract summary metrics using extract_summary_metrics.",
+    },
+    {
+        "id": "end_use_breakdown",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_end_use_breakdown"],
+        "L1": "How much energy goes to heating vs cooling?",
+        "L2": "Show the end use breakdown from the simulation.",
+        "L3": "Extract end use breakdown using extract_end_use_breakdown.",
+    },
+    {
+        "id": "hvac_sizing",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_hvac_sizing", "extract_component_sizing"],
+        "L1": "Are the HVAC systems properly sized?",
+        "L2": "Show the HVAC sizing results from the simulation.",
+        "L3": "Extract HVAC sizing using extract_hvac_sizing.",
+    },
+    # --- Envelope ---
+    {
+        "id": "set_wwr",
+        "needs_model": True,
+        "expected": ["set_window_to_wall_ratio"],
+        "L1": "Add windows to the building.",
+        "L2": "Set the window-to-wall ratio to 40% on all facades.",
+        "L3": "Set the window to wall ratio to 0.4 using set_window_to_wall_ratio.",
+    },
+    {
+        "id": "replace_windows",
+        "needs_model": True,
+        "expected": ["replace_window_constructions"],
+        "L1": "Upgrade the windows to double-pane low-e.",
+        "L2": "Replace all window constructions with better performing glazing.",
+        "L3": "Replace window constructions using replace_window_constructions.",
+    },
+    {
+        "id": "construction_details",
+        "needs_model": True,
+        "expected": ["get_construction_details"],
+        "L1": "What layers make up the exterior wall?",
+        "L2": "Show the material layers of a wall construction.",
+        "L3": "Get construction details using get_construction_details.",
+    },
+    # --- Loads ---
+    {
+        "id": "check_loads",
+        "needs_model": True,
+        "expected": ["get_load_details", "get_object_fields", "list_model_objects"],
+        "L1": "What loads are assigned to the first space?",
+        "L2": "Get the people and lighting load details for a space.",
+        "L3": "Get load details using get_load_details.",
+    },
+    {
+        "id": "create_loads",
+        "needs_model": True,
+        "expected": ["create_people_definition", "create_lights_definition"],
+        "L1": "Add people and lighting to the office spaces.",
+        "L2": "Create a people load of 0.05 people/sqft and lighting at 10 W/sqft.",
+        "L3": "Create a people definition using create_people_definition with "
+              "people_per_floor_area 0.05.",
+    },
+    # --- Plant loops ---
+    {
+        "id": "create_plant_loop",
+        "needs_model": True,
+        "expected": ["create_plant_loop"],
+        "L1": "Create a hot water heating loop.",
+        "L2": "Create a plant loop for hot water heating with a 82C design temp.",
+        "L3": "Create a plant loop using create_plant_loop with loop_type heating.",
+    },
+    # --- Schedules & space types ---
+    {
+        "id": "schedule_details",
+        "needs_model": True,
+        "expected": ["get_schedule_details"],
+        "L1": "What hours is the HVAC running?",
+        "L2": "Show the details of an HVAC operation schedule.",
+        "L3": "Get schedule details using get_schedule_details.",
+    },
+    {
+        "id": "space_type_info",
+        "needs_model": True,
+        "expected": ["get_space_type_details", "get_object_fields"],
+        "L1": "What type of space is this and what are its defaults?",
+        "L2": "Show the space type details including default loads and schedules.",
+        "L3": "Get space type details using get_space_type_details.",
+    },
+    # --- Design conditions ---
+    {
+        "id": "set_run_period",
+        "needs_model": True,
+        "expected": ["set_run_period", "get_run_period"],
+        "L1": "Set the simulation to run for a full year.",
+        "L2": "Set the run period from January 1 to December 31.",
+        "L3": "Set the run period using set_run_period with start 1/1 end 12/31.",
+    },
+    {
+        "id": "ideal_air",
+        "needs_model": True,
+        "expected": ["enable_ideal_air_loads"],
+        "L1": "Use ideal air loads for quick sizing.",
+        "L2": "Enable ideal air loads on all zones for sizing runs.",
+        "L3": "Enable ideal air loads using enable_ideal_air_loads.",
+    },
+    # --- Model management & misc ---
+    {
+        "id": "save_model",
+        "needs_model": True,
+        "expected": ["save_osm_model"],
+        "L1": "Save my changes.",
+        "L2": "Save the model to /runs/my_model.osm.",
+        "L3": "Save the model using save_osm_model to /runs/my_model.osm.",
+    },
+    {
+        "id": "add_ev",
+        "needs_model": True,
+        "expected": ["add_ev_load"],
+        "L1": "Add electric vehicle charging to the building.",
+        "L2": "Add EV charging load to the parking area.",
+        "L3": "Add EV charging using add_ev_load.",
+    },
 ]
 
 SUFFIX = " Use MCP tools only."
@@ -212,6 +352,7 @@ for case in PROGRESSIVE_CASES:
             "level": level,
             "needs_model": case["needs_model"],
             "needs_hvac": case.get("needs_hvac", False),
+            "needs_run": case.get("needs_run", False),
             "prompt": case[level],
             "expected": case["expected"],
         })
@@ -234,7 +375,12 @@ def test_progressive(case):
         pytest.skip("Tier 1 not selected")
 
     prompt = case["prompt"]
-    if case.get("needs_hvac"):
+    if case.get("needs_run"):
+        run_id = get_sim_run_id()
+        if not run_id:
+            pytest.skip("No simulation run_id — run test_01_setup first")
+        prompt = f"Use run_id '{run_id}'. " + prompt
+    elif case.get("needs_hvac"):
         if not baseline_hvac_model_exists():
             pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
         prompt = LOAD_HVAC + prompt.lower()
@@ -244,7 +390,8 @@ def test_progressive(case):
         prompt = LOAD + prompt.lower()
     prompt += SUFFIX
 
-    result = run_claude(prompt, timeout=120)
+    timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else 120
+    result = run_claude(prompt, timeout=timeout)
     tool_names = result.tool_names
 
     assert any(t in case["expected"] for t in tool_names), (

@@ -116,19 +116,25 @@ def test_load_baseline_model():
 
 
 def test_run_baseline_simulation():
-    """Run a simulation on the baseline model and save the run_id.
+    """Set weather and run simulation on the baseline model, save run_id.
 
-    The run_id is saved to /runs/llm-test-sim-run-id.txt so troubleshoot
-    tests can reference it. The simulation output persists in /runs/sim_XXX/
-    across Docker containers (shared volume mount).
+    The baseline model has no weather file, so we set Boston weather first.
+    The run_id is saved to /runs/llm-test-sim-run-id.txt so results
+    extraction tests can reference it.
     """
+    boston_epw = (
+        "/opt/comstock-measures/ChangeBuildingLocation"
+        "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+    )
     result = run_claude(
         f"Load the model at {BASELINE_MODEL} using load_osm_model. "
+        f"Then set the weather using change_building_location with "
+        f"weather_file {boston_epw}. "
         "Then run a simulation using run_simulation. "
         "Wait for it to complete by checking get_run_status. "
         "Report the run_id when done.",
         timeout=420,
-        max_turns=15,
+        max_turns=20,
     )
 
     tool_names = result.tool_names
