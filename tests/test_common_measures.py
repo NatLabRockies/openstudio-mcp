@@ -262,11 +262,11 @@ def test_replace_window_constructions():
                 await _setup_baseline(s, _unique("win_repl"))
 
                 # Get existing constructions
-                consts = unwrap(await s.call_tool("list_constructions", {"max_results": 0}))
+                consts = unwrap(await s.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0}))
                 assert consts.get("ok") is True
                 if consts.get("count", 0) == 0:
                     pytest.skip("No constructions in baseline model")
-                const_name = consts["constructions"][0]["name"]
+                const_name = consts["objects"][0]["name"]
 
                 # Before: snapshot subsurface constructions
                 before_subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
@@ -366,9 +366,9 @@ def test_set_thermostat_schedules():
 
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {"max_results": 0}))
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
                 assert scheds["count"] > 0, "No schedules in baseline"
-                sched_name = scheds["schedule_rulesets"][0]["name"]
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("set_thermostat_schedules", {
                     "zone_name": zone_name,
@@ -400,8 +400,8 @@ def test_replace_thermostat_schedules():
 
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {"max_results": 0}))
-                sched_name = scheds["schedule_rulesets"][0]["name"]
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("replace_thermostat_schedules", {
                     "zone_name": zone_name,
@@ -428,9 +428,9 @@ def test_shift_schedule_time():
                 await s.initialize()
                 await _setup_baseline(s, _unique("shift_sched"))
 
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {"max_results": 0}))
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
                 assert scheds["count"] > 0
-                sched_name = scheds["schedule_rulesets"][0]["name"]
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("shift_schedule_time", {
                     "schedule_name": sched_name,
@@ -548,8 +548,8 @@ def test_add_zone_ventilation():
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
                 # Provide a schedule (required arg)
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {"max_results": 0}))
-                sched_name = scheds["schedule_rulesets"][0]["name"] if scheds["count"] > 0 else ""
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                sched_name = scheds["objects"][0]["name"] if scheds["count"] > 0 else ""
 
                 res = unwrap(await s.call_tool("add_zone_ventilation", {
                     "zone_name": zone_name,

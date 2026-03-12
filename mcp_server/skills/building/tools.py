@@ -4,7 +4,6 @@ from __future__ import annotations
 from mcp_server.skills.building.operations import (
     get_building_info,
     get_model_summary,
-    list_building_stories,
 )
 
 
@@ -19,7 +18,4 @@ def register(mcp):
         """Get object counts for all major categories (spaces, zones, geometry, HVAC, loads, schedules)."""
         return get_model_summary()
 
-    @mcp.tool(name="list_building_stories")
-    def list_building_stories_tool():
-        """List all building stories with elevation and height."""
-        return list_building_stories()
+    # list_building_stories removed — use list_model_objects("BuildingStory")

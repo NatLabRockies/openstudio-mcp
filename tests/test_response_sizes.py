@@ -32,13 +32,9 @@ PAGINATED_TOOLS = [
     ("list_spaces", "spaces", {}),
     ("list_thermal_zones", "thermal_zones", {}),
     ("list_materials", "materials", {}),
-    ("list_constructions", "constructions", {}),
-    ("list_construction_sets", "construction_sets", {}),
     ("list_model_objects", "objects", {"object_type": "Space"}),
     ("list_zone_hvac_equipment", "zone_hvac_equipment", {}),
-    ("list_schedule_rulesets", "schedule_rulesets", {}),
     ("list_files", "items", {}),
-    ("list_space_types", "space_types", {}),
 ]
 
 
@@ -160,10 +156,11 @@ class TestResponseSizes:
 
                     # -- Space type details (C3) --
                     st_list = unwrap(
-                        await session.call_tool("list_space_types", {"max_results": 1}),
+                        await session.call_tool("list_model_objects",
+                                                {"object_type": "SpaceType", "max_results": 1}),
                     )
-                    if st_list.get("ok") and st_list.get("space_types"):
-                        st_name = st_list["space_types"][0]["name"]
+                    if st_list.get("ok") and st_list.get("objects"):
+                        st_name = st_list["objects"][0]["name"]
                         raw = await session.call_tool(
                             "get_space_type_details", {"space_type_name": st_name},
                         )
@@ -184,10 +181,13 @@ class TestResponseSizes:
                                 break
 
                     # -- Detail tools --
-                    # get_construction_details
-                    constrs = data["defaults"]["list_constructions"]
-                    if constrs.get("ok") and constrs.get("constructions"):
-                        c_name = constrs["constructions"][0]["name"]
+                    # get_construction_details (via list_model_objects)
+                    constr_objs = unwrap(
+                        await session.call_tool("list_model_objects",
+                                                {"object_type": "Construction", "max_results": 1}),
+                    )
+                    if constr_objs.get("ok") and constr_objs.get("objects"):
+                        c_name = constr_objs["objects"][0]["name"]
                         raw = await session.call_tool(
                             "get_construction_details", {"construction_name": c_name},
                         )
@@ -319,16 +319,6 @@ class TestResponseSizes:
         assert default["total_available"] == total
         assert default["count"] == 10
 
-    def test_truncation_constructions(self, session_data):
-        """list_constructions truncates when >10 constructions exist."""
-        default = session_data["defaults"]["list_constructions"]
-        unlimited = session_data["unlimited"]["list_constructions"]
-        total = unlimited["count"]
-        if total <= 10:
-            pytest.skip("Baseline has <= 10 constructions")
-        assert default["truncated"] is True
-        assert default["total_available"] == total
-
     def test_truncation_model_objects(self, session_data):
         """list_model_objects(Space) truncates when >10 spaces."""
         default = session_data["defaults"]["list_model_objects"]
@@ -341,18 +331,6 @@ class TestResponseSizes:
             assert default["truncated"] is True
             assert default["total_available"] == total
             assert default["count"] == 10
-
-    def test_truncation_schedule_rulesets(self, session_data):
-        """list_schedule_rulesets truncation check."""
-        default = session_data["defaults"]["list_schedule_rulesets"]
-        unlimited = session_data["unlimited"]["list_schedule_rulesets"]
-        total = unlimited["count"]
-        # Baseline may or may not exceed 10 schedules — test shape either way
-        if total > 10:
-            assert default["truncated"] is True
-            assert default["total_available"] == total
-        else:
-            assert default.get("truncated") is not True
 
     # -----------------------------------------------------------------------
     # max_results override
@@ -639,17 +617,3 @@ class TestResponseSizes:
                 if isinstance(item, dict) and "_truncated" not in item:
                     assert "name" in item, f"{key} item missing 'name'"
 
-    # -----------------------------------------------------------------------
-    # H1: list_space_types pagination
-    # -----------------------------------------------------------------------
-
-    def test_space_types_truncation(self, session_data):
-        """list_space_types truncation check."""
-        default = session_data["defaults"]["list_space_types"]
-        unlimited = session_data["unlimited"]["list_space_types"]
-        total = unlimited["count"]
-        if total > 10:
-            assert default["truncated"] is True
-            assert default["total_available"] == total
-        else:
-            assert default.get("truncated") is not True

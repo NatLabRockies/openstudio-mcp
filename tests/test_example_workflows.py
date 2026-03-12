@@ -192,7 +192,7 @@ def test_workflow_envelope_retrofit():
                 assert lr.get("ok") is True
 
                 # Step 2: List current constructions
-                cons = unwrap(await s.call_tool("list_constructions", {"max_results": 0}))
+                cons = unwrap(await s.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0}))
                 assert cons.get("ok") is True
 
                 # Step 3: List surfaces to find an exterior wall
@@ -771,7 +771,7 @@ def test_workflow_comstock_typical_building():
                 assert loops["count"] > 0, "Expected air loops after typical building"
 
                 # Step 7: List constructions
-                cons = unwrap(await s.call_tool("list_constructions", {"max_results": 0}))
+                cons = unwrap(await s.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0}))
                 assert cons.get("ok") is True
                 assert cons["count"] > 0, "Expected constructions after typical building"
 

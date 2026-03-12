@@ -78,7 +78,7 @@ EVAL_CASES = [
     # Building info
     ("get building info", "get_building_info"),
     ("model summary overview", "get_model_summary"),
-    ("list building stories", "list_building_stories"),
+    ("list building stories", "list_model_objects"),
     # Spaces
     ("list all spaces", "list_spaces"),
     ("get space details", "get_space_details"),
@@ -109,10 +109,10 @@ EVAL_CASES = [
     ("set window to wall ratio", "set_window_to_wall_ratio"),
     # Constructions
     ("list materials", "list_materials"),
-    ("list constructions", "list_constructions"),
+    ("list constructions", "list_model_objects"),
     ("create opaque material", "create_standard_opaque_material"),
     # Schedules
-    ("list schedule rulesets", "list_schedule_rulesets"),
+    ("list schedule rulesets", "list_model_objects"),
     ("get schedule details", "get_schedule_details"),
     ("create schedule ruleset", "create_schedule_ruleset"),
     # Loads

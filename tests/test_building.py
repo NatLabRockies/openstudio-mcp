@@ -115,7 +115,7 @@ def test_get_model_summary():
 
 @pytest.mark.integration
 def test_list_building_stories():
-    """Test listing building stories."""
+    """Test listing building stories via list_model_objects."""
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -135,26 +135,25 @@ def test_list_building_stories():
                 load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
-                # List building stories
-                stories_resp = await session.call_tool("list_building_stories", {})
+                # List building stories via generic object access
+                stories_resp = await session.call_tool("list_model_objects", {"object_type": "BuildingStory"})
                 stories_result = unwrap(stories_resp)
-                print("list_building_stories:", stories_result)
+                print("list_model_objects BuildingStory:", stories_result)
 
                 assert isinstance(stories_result, dict)
                 assert stories_result.get("ok") is True, stories_result
-                assert "building_stories" in stories_result
+                assert "objects" in stories_result
                 assert "count" in stories_result
 
                 # Example model has 1 story
                 assert stories_result["count"] == 1
-                stories = stories_result["building_stories"]
+                stories = stories_result["objects"]
                 assert len(stories) == 1
 
                 # Check story attributes
                 story = stories[0]
                 assert "name" in story
-                assert "num_spaces" in story
-                assert story["num_spaces"] == 4  # Example model has 4 spaces
+                assert "handle" in story
 
     asyncio.run(_run())
 
@@ -274,7 +273,7 @@ def test_conditioned_floor_area_no_hvac():
 
 @pytest.mark.integration
 def test_building_stories_baseline():
-    """Test building stories with 2-story baseline model."""
+    """Test building stories with 2-story baseline model via list_model_objects."""
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -290,15 +289,12 @@ def test_building_stories_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                sr = await session.call_tool("list_building_stories", {})
+                sr = await session.call_tool("list_model_objects", {"object_type": "BuildingStory"})
                 sd = unwrap(sr)
                 print("baseline stories:", sd)
                 assert sd.get("ok") is True, sd
                 assert sd["count"] == 2
-                assert len(sd["building_stories"]) == 2
-                # Each story has 5 spaces
-                for story in sd["building_stories"]:
-                    assert story["num_spaces"] == 5
+                assert len(sd["objects"]) == 2
 
     asyncio.run(_run())
 

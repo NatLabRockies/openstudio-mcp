@@ -61,7 +61,7 @@ def register(mcp):
             f"Upgrade {surface_type} to {r_value} insulation.\n\n"
             "Steps:\n"
             "1. load_osm_model(osm_path=<your model>)\n"
-            "2. list_constructions() — review current assemblies\n"
+            '2. list_model_objects(object_type="Construction") — review current assemblies\n'
             "3. list_surfaces() — find exterior walls\n"
             '4. create_standard_opaque_material(name="New_Insulation", '
             "thickness_m=0.089, conductivity_w_m_k=0.04, "
@@ -143,7 +143,7 @@ def register(mcp):
             f'climate_zone="{climate_zone}")\n'
             "4. get_model_summary() — verify what was added\n"
             "5. list_air_loops() — inspect HVAC\n"
-            "6. list_constructions() — inspect envelope\n"
+            '6. list_model_objects(object_type="Construction") — inspect envelope\n'
             "7. save_osm_model()"
         )
 
@@ -161,7 +161,7 @@ def register(mcp):
             "1. get_model_summary() — overall object counts\n"
             "2. list_thermal_zones() — verify all zones exist\n"
             "3. list_air_loops() — verify HVAC serves zones\n"
-            "4. list_constructions() — verify envelope is defined\n"
+            '4. list_model_objects(object_type="Construction") — verify envelope is defined\n'
             "5. get_weather_info() — verify weather file is set\n"
             "6. get_run_period() — verify simulation period\n"
             "7. get_simulation_control() — check sizing flags\n"
@@ -286,7 +286,6 @@ def register(mcp):
             ],
             "building": [
                 "get_building_info", "get_model_summary",
-                "list_building_stories",
             ],
             "spaces": [
                 "list_spaces", "get_space_details",
@@ -301,14 +300,13 @@ def register(mcp):
                 "import_floorspacejs",
             ],
             "constructions": [
-                "list_materials", "list_constructions",
-                "list_construction_sets",
+                "list_materials", "get_construction_details",
                 "create_standard_opaque_material",
                 "create_construction",
                 "assign_construction_to_surface",
             ],
             "schedules": [
-                "list_schedule_rulesets", "get_schedule_details",
+                "get_schedule_details",
                 "create_schedule_ruleset",
             ],
             "hvac": [
@@ -325,7 +323,7 @@ def register(mcp):
                 "create_gas_equipment", "create_infiltration",
             ],
             "space_types": [
-                "list_space_types", "get_space_type_details",
+                "get_space_type_details",
             ],
             "simulation_outputs": [
                 "add_output_variable", "add_output_meter",

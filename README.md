@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 136 tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
+**22 skills &bull; 131 tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
 
 ---
 
@@ -72,7 +72,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 136 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 131 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -156,12 +156,14 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `save_osm_model` | Save in-memory model to disk |
 | `list_files` | Discover files in /inputs and /runs (OSM, EPW, results) |
 
-### Building (3 tools)
+### Building (2 tools)
+
+List building stories via `list_model_objects("BuildingStory")`.
+
 | Tool | Description |
 |------|-------------|
 | `get_building_info` | Building name, area, volume, orientation |
 | `get_model_summary` | Object counts by category |
-| `list_building_stories` | List building stories with spaces |
 
 ### Spaces (6 tools)
 | Tool | Description |
@@ -186,20 +188,24 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `set_window_to_wall_ratio` | Add centered window by glazing ratio (e.g. 0.4 = 40%) |
 | `import_floorspacejs` | Import custom geometry from FloorSpaceJS JSON file |
 
-### Constructions (6 tools)
+### Constructions (5 tools)
+
+List constructions via `list_model_objects("Construction")`, construction sets via `list_model_objects("DefaultConstructionSet")`.
+
 | Tool | Description |
 |------|-------------|
 | `list_materials` | List materials with thermal properties |
-| `list_constructions` | List constructions with layers |
-| `list_construction_sets` | List default construction sets |
+| `get_construction_details` | Construction layers with thermal properties |
 | `create_standard_opaque_material` | Create material with conductivity/density |
 | `create_construction` | Create layered construction from materials |
 | `assign_construction_to_surface` | Assign construction to surface |
 
-### Schedules (3 tools)
+### Schedules (2 tools)
+
+List schedules via `list_model_objects("ScheduleRuleset")`.
+
 | Tool | Description |
 |------|-------------|
-| `list_schedule_rulesets` | List schedule rulesets |
 | `get_schedule_details` | Schedule type, values, rules |
 | `create_schedule_ruleset` | Create constant schedule (Fractional/Temp/OnOff) |
 
@@ -227,10 +233,12 @@ List loads via `list_model_objects("People")`, `list_model_objects("Lights")`, e
 | `create_gas_equipment` | Create gas equipment load |
 | `create_infiltration` | Create infiltration (by area or ACH) |
 
-### Space Types (2 tools)
+### Space Types (1 tool)
+
+List space types via `list_model_objects("SpaceType")`.
+
 | Tool | Description |
 |------|-------------|
-| `list_space_types` | List space types with default loads |
 | `get_space_type_details` | Space type loads, schedules, standards |
 
 ### Simulation (7 tools)

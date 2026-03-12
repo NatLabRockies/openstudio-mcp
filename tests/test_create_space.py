@@ -77,11 +77,11 @@ def test_create_space_with_building_story():
                 assert load_result.get("ok") is True
 
                 # Get existing building story
-                stories_resp = await session.call_tool("list_building_stories", {})
+                stories_resp = await session.call_tool("list_model_objects", {"object_type": "BuildingStory"})
                 stories_result = unwrap(stories_resp)
                 assert stories_result.get("ok") is True
-                assert len(stories_result["building_stories"]) > 0
-                story_name = stories_result["building_stories"][0]["name"]
+                assert len(stories_result["objects"]) > 0
+                story_name = stories_result["objects"][0]["name"]
 
                 # Create space with building story
                 space_resp = await session.call_tool("create_space", {
@@ -125,11 +125,11 @@ def test_create_space_with_space_type():
                 assert load_result.get("ok") is True
 
                 # Get existing space type
-                space_types_resp = await session.call_tool("list_space_types", {})
+                space_types_resp = await session.call_tool("list_model_objects", {"object_type": "SpaceType"})
                 space_types_result = unwrap(space_types_resp)
                 assert space_types_result.get("ok") is True
-                assert len(space_types_result["space_types"]) > 0
-                space_type_name = space_types_result["space_types"][0]["name"]
+                assert len(space_types_result["objects"]) > 0
+                space_type_name = space_types_result["objects"][0]["name"]
 
                 # Create space with space type
                 space_resp = await session.call_tool("create_space", {

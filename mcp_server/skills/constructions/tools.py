@@ -7,8 +7,6 @@ from mcp_server.skills.constructions.operations import (
     create_construction,
     create_standard_opaque_material,
     get_construction_details,
-    list_construction_sets,
-    list_constructions,
     list_materials,
 )
 
@@ -30,16 +28,6 @@ def register(mcp):
         mr = None if max_results == 0 else max_results
         return list_materials(material_type=material_type, max_results=mr)
 
-    @mcp.tool(name="list_constructions")
-    def list_constructions_tool(max_results: int = 10):
-        """List constructions (layered assemblies). Default 10 results.
-
-        Args:
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_constructions(max_results=mr)
-
     @mcp.tool(name="get_construction_details")
     def get_construction_details_tool(construction_name: str):
         """Get detailed info for a construction including all material layers with thermal properties.
@@ -49,15 +37,8 @@ def register(mcp):
         """
         return get_construction_details(construction_name=construction_name)
 
-    @mcp.tool(name="list_construction_sets")
-    def list_construction_sets_tool(max_results: int = 10):
-        """List construction sets. Default 10 results.
-
-        Args:
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_construction_sets(max_results=mr)
+    # list_constructions removed — use list_model_objects("Construction")
+    # list_construction_sets removed — use list_model_objects("DefaultConstructionSet")
 
     @mcp.tool(name="create_standard_opaque_material")
     def create_standard_opaque_material_tool(name: str, roughness: str = "Smooth",

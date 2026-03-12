@@ -139,9 +139,9 @@ def test_create_construction_from_materials():
                 assert construction_result["construction"]["layers"] == ["Exterior Finish", "Insulation", "Interior Finish"]
 
                 # Verify it appears in list
-                list_resp = await session.call_tool("list_constructions", {"max_results": 0})
+                list_resp = await session.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0})
                 list_result = unwrap(list_resp)
-                assert any(c["name"] == "Test Wall Construction" for c in list_result["constructions"])
+                assert any(c["name"] == "Test Wall Construction" for c in list_result["objects"])
 
     asyncio.run(_run())
 
@@ -211,10 +211,10 @@ def test_assign_construction_to_surface():
                 surface_name = surfaces_result["surfaces"][0]["name"]
 
                 # Get an existing construction name
-                constructions_resp = await session.call_tool("list_constructions", {"max_results": 0})
+                constructions_resp = await session.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0})
                 constructions_result = unwrap(constructions_resp)
-                assert len(constructions_result["constructions"]) > 0
-                construction_name = constructions_result["constructions"][0]["name"]
+                assert len(constructions_result["objects"]) > 0
+                construction_name = constructions_result["objects"][0]["name"]
 
                 # Assign construction to surface
                 assign_resp = await session.call_tool("assign_construction_to_surface", {

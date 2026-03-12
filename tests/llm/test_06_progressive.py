@@ -123,10 +123,10 @@ PROGRESSIVE_CASES = [
     {
         "id": "schedules",
         "needs_model": True,
-        "expected": ["list_schedule_rulesets", "get_schedule_details"],
+        "expected": ["list_model_objects", "get_schedule_details"],
         "L1": "What schedules does the building use?",
         "L2": "List all the schedule rulesets in the model.",
-        "L3": "List the schedules using list_schedule_rulesets.",
+        "L3": "List the schedules using list_model_objects with object_type ScheduleRuleset.",
     },
     # --- Generic object access (needs HVAC model) ---
     {

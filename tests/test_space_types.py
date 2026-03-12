@@ -19,7 +19,7 @@ def _unique_name(prefix: str = "pytest_space_types") -> str:
 
 @pytest.mark.integration
 def test_list_space_types():
-    """Test listing all space types."""
+    """Test listing all space types via list_model_objects."""
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -39,26 +39,23 @@ def test_list_space_types():
                 load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
-                # List space types
-                space_types_resp = await session.call_tool("list_space_types", {})
+                # List space types via generic list_model_objects
+                space_types_resp = await session.call_tool("list_model_objects", {"object_type": "SpaceType"})
                 space_types_result = unwrap(space_types_resp)
-                print("list_space_types:", space_types_result)
+                print("list_model_objects(SpaceType):", space_types_result)
 
                 assert isinstance(space_types_result, dict)
                 assert space_types_result.get("ok") is True, space_types_result
                 assert "count" in space_types_result
-                assert "space_types" in space_types_result
-                assert isinstance(space_types_result["space_types"], list)
+                assert "objects" in space_types_result
+                assert isinstance(space_types_result["objects"], list)
 
                 # Example model has at least one space type
                 assert space_types_result["count"] > 0, "Expected at least one space type"
 
-                if space_types_result["space_types"]:
-                    space_type = space_types_result["space_types"][0]
+                if space_types_result["objects"]:
+                    space_type = space_types_result["objects"][0]
                     assert "name" in space_type
-                    assert "num_people" in space_type
-                    assert "num_lights" in space_type
-                    assert "num_electric_equipment" in space_type
 
                     print(f"Found {space_types_result['count']} space types")
                     print(f"First space type: {space_type['name']}")
@@ -89,12 +86,12 @@ def test_get_space_type_details():
                 assert load_result.get("ok") is True
 
                 # First list space types to get a valid name
-                list_resp = await session.call_tool("list_space_types", {})
+                list_resp = await session.call_tool("list_model_objects", {"object_type": "SpaceType"})
                 list_result = unwrap(list_resp)
                 assert list_result.get("ok") is True
                 assert list_result["count"] > 0, "Need at least one space type for this test"
 
-                space_type_name = list_result["space_types"][0]["name"]
+                space_type_name = list_result["objects"][0]["name"]
 
                 # Get details for the first space type
                 details_resp = await session.call_tool("get_space_type_details", {"space_type_name": space_type_name})
@@ -169,9 +166,9 @@ def test_space_types_tools_without_loaded_model():
                 await session.initialize()
 
                 # Try to list space types without loading a model
-                space_types_resp = await session.call_tool("list_space_types", {})
+                space_types_resp = await session.call_tool("list_model_objects", {"object_type": "SpaceType"})
                 space_types_result = unwrap(space_types_resp)
-                print("list_space_types (no model):", space_types_result)
+                print("list_model_objects(SpaceType, no model):", space_types_result)
 
                 assert isinstance(space_types_result, dict)
                 assert space_types_result.get("ok") is False
@@ -199,7 +196,7 @@ def test_space_types_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                sr = await session.call_tool("list_space_types", {})
+                sr = await session.call_tool("list_model_objects", {"object_type": "SpaceType"})
                 sd = unwrap(sr)
                 print("baseline space types:", sd)
                 assert sd.get("ok") is True
@@ -207,14 +204,11 @@ def test_space_types_baseline():
 
                 # Find Baseline Model Space Type
                 bl_st = None
-                for st in sd["space_types"]:
+                for st in sd["objects"]:
                     if "Baseline" in st["name"]:
                         bl_st = st
                         break
                 assert bl_st is not None, "Expected 'Baseline Model Space Type'"
-                assert bl_st["num_people"] >= 1
-                assert bl_st["num_lights"] >= 1
-                assert bl_st["num_electric_equipment"] >= 1
 
                 # Get details
                 dr = await session.call_tool("get_space_type_details", {"space_type_name": bl_st["name"]})

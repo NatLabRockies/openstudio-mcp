@@ -4,27 +4,18 @@ from __future__ import annotations
 from mcp_server.skills.schedules.operations import (
     create_schedule_ruleset,
     get_schedule_details,
-    list_schedule_rulesets,
 )
 
 
 def register(mcp):
-    @mcp.tool(name="list_schedule_rulesets")
-    def list_schedule_rulesets_tool(max_results: int = 10):
-        """List schedule rulesets. Default 10 results.
-
-        Args:
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_schedule_rulesets(max_results=mr)
+    # list_schedule_rulesets removed — use list_model_objects("ScheduleRuleset")
 
     @mcp.tool(name="get_schedule_details")
     def get_schedule_details_tool(schedule_name: str):
         """Get detailed information about a specific schedule ruleset.
 
         Returns all schedule rules. For schedules with many rules, use
-        list_schedule_rulesets first to check num_rules.
+        list_model_objects("ScheduleRuleset") first to check num_rules.
 
         Args:
             schedule_name: Name of the schedule ruleset to retrieve

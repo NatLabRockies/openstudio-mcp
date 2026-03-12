@@ -244,8 +244,8 @@ def test_delete_with_type_hint():
                 assert res["type"] == "ScheduleRuleset"
 
                 # Independent query verification
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {"max_results": 0}))
-                names = [sr["name"] for sr in scheds["schedule_rulesets"]]
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                names = [sr["name"] for sr in scheds["objects"]]
                 assert "TempSched" not in names
     asyncio.run(_run())
 
@@ -271,8 +271,8 @@ def test_rename_schedule():
                 assert res["new_name"] == "NewSched"
 
                 # Independent query verification
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {"max_results": 0}))
-                names = [sr["name"] for sr in scheds["schedule_rulesets"]]
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                names = [sr["name"] for sr in scheds["objects"]]
                 assert "NewSched" in names
                 assert "OldSched" not in names
     asyncio.run(_run())
