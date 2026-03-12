@@ -342,12 +342,12 @@ def test_air_loop_demand_terminals():
 
 
 # ---------------------------------------------------------------------------
-# Phase B: Equivalence tests — generic vs explicit tools
+# Phase C: Definition traversal via get_object_fields
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-def test_equivalence_list_people():
-    """list_model_objects('People') returns same names as list_people_loads."""
+def test_get_object_fields_people_definition():
+    """get_object_fields for People returns inline definition fields."""
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -355,25 +355,37 @@ def test_equivalence_list_people():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await setup_example(s, _unique("pytest_equiv"))
+                await _create_baseline_with_hvac(s, _unique("pytest_defn_ppl"))
 
-                # Old explicit tool
-                old = unwrap(await s.call_tool("list_people_loads", {"max_results": 0}))
-                # New generic tool
-                new = unwrap(await s.call_tool("list_model_objects",
-                             {"object_type": "People", "max_results": 0}))
+                # Find a People object
+                people = unwrap(await s.call_tool("list_model_objects",
+                                {"object_type": "People", "max_results": 1}))
+                assert people["ok"] and people["count"] >= 1
+                ppl_name = people["objects"][0]["name"]
 
-                assert old["ok"] is True and new["ok"] is True
-                old_names = sorted(p["name"] for p in old.get("people_loads", []))
-                new_names = sorted(o["name"] for o in new.get("objects", []))
-                assert old_names == new_names, f"Mismatch: {old_names} vs {new_names}"
+                # get_object_fields should follow the peopleDefinition link
+                res = unwrap(await s.call_tool("get_object_fields",
+                             {"object_type": "People", "object_name": ppl_name}))
+                assert res["ok"] is True, res
+                props = res["properties"]
+                # Should have a definition field with nested scalar values
+                defn_keys = [k for k, v in props.items()
+                             if v.get("type", "").startswith("definition(")]
+                assert len(defn_keys) >= 1, (
+                    f"No definition fields found in People properties: "
+                    f"{list(props.keys())}"
+                )
+                # The definition should contain numeric fields
+                defn_val = props[defn_keys[0]]["value"]
+                assert isinstance(defn_val, dict), f"Definition value is not dict: {defn_val}"
+                print(f"People definition fields: {list(defn_val.keys())}")
 
     asyncio.run(_run())
 
 
 @pytest.mark.integration
-def test_equivalence_list_lights():
-    """list_model_objects('Lights') returns same names as list_lighting_loads."""
+def test_get_object_fields_lights_definition():
+    """get_object_fields for Lights returns inline definition fields."""
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -381,40 +393,22 @@ def test_equivalence_list_lights():
         async with stdio_client(server_params()) as (r, w):
             async with ClientSession(r, w) as s:
                 await s.initialize()
-                await setup_example(s, _unique("pytest_equiv_l"))
+                await _create_baseline_with_hvac(s, _unique("pytest_defn_lts"))
 
-                old = unwrap(await s.call_tool("list_lighting_loads", {"max_results": 0}))
-                new = unwrap(await s.call_tool("list_model_objects",
-                             {"object_type": "Lights", "max_results": 0}))
+                lights = unwrap(await s.call_tool("list_model_objects",
+                                {"object_type": "Lights", "max_results": 1}))
+                assert lights["ok"] and lights["count"] >= 1
+                lts_name = lights["objects"][0]["name"]
 
-                assert old["ok"] is True and new["ok"] is True
-                old_names = sorted(p["name"] for p in old.get("lighting_loads", []))
-                new_names = sorted(o["name"] for o in new.get("objects", []))
-                assert old_names == new_names, f"Mismatch: {old_names} vs {new_names}"
-
-    asyncio.run(_run())
-
-
-@pytest.mark.integration
-def test_equivalence_list_electric_equipment():
-    """list_model_objects('ElectricEquipment') matches list_electric_equipment."""
-    if not integration_enabled():
-        pytest.skip("integration")
-
-    async def _run():
-        async with stdio_client(server_params()) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                await setup_example(s, _unique("pytest_equiv_ee"))
-
-                old = unwrap(await s.call_tool("list_electric_equipment", {"max_results": 0}))
-                new = unwrap(await s.call_tool("list_model_objects",
-                             {"object_type": "ElectricEquipment", "max_results": 0}))
-
-                assert old["ok"] is True and new["ok"] is True
-                old_names = sorted(p["name"] for p in old.get("electric_equipment", []))
-                new_names = sorted(o["name"] for o in new.get("objects", []))
-                assert old_names == new_names
+                res = unwrap(await s.call_tool("get_object_fields",
+                             {"object_type": "Lights", "object_name": lts_name}))
+                assert res["ok"] is True, res
+                props = res["properties"]
+                defn_keys = [k for k, v in props.items()
+                             if v.get("type", "").startswith("definition(")]
+                assert len(defn_keys) >= 1, (
+                    f"No definition fields in Lights: {list(props.keys())}"
+                )
 
     asyncio.run(_run())
 

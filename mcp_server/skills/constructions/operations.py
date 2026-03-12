@@ -14,7 +14,6 @@ from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import (
     build_list_response,
     fetch_object,
-    list_all_as_dicts,
     list_paginated,
 )
 
@@ -136,16 +135,15 @@ def list_constructions(max_results: int = 10) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list constructions: {e}"}
 
 
-def list_construction_sets() -> dict[str, Any]:
-    """List all construction sets in the model."""
+def list_construction_sets(max_results: int = 10) -> dict[str, Any]:
+    """List construction sets with pagination."""
     try:
         model = get_model()
-        construction_sets = list_all_as_dicts(model, "getDefaultConstructionSets", _extract_construction_set)
-        return {
-            "ok": True,
-            "count": len(construction_sets),
-            "construction_sets": construction_sets,
-        }
+        items, total = list_paginated(
+            model, "getDefaultConstructionSets", _extract_construction_set,
+            max_results=max_results,
+        )
+        return build_list_response("construction_sets", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:

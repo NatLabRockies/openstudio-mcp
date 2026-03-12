@@ -24,19 +24,16 @@ from mcp.client.stdio import stdio_client
 MAX_RESPONSE_CHARS = 10_000
 
 # Paginated list tools: (tool_name, items_key, extra_args_for_default_call)
+# Phase C: removed list_people_loads, list_lighting_loads, list_electric_equipment,
+#   list_gas_equipment, list_infiltration, list_hvac_components
 PAGINATED_TOOLS = [
     ("list_surfaces", "surfaces", {}),
     ("list_subsurfaces", "subsurfaces", {}),
     ("list_spaces", "spaces", {}),
     ("list_thermal_zones", "thermal_zones", {}),
-    ("list_people_loads", "people_loads", {}),
-    ("list_lighting_loads", "lighting_loads", {}),
-    ("list_electric_equipment", "electric_equipment", {}),
-    ("list_gas_equipment", "gas_equipment", {}),
-    ("list_infiltration", "infiltration", {}),
     ("list_materials", "materials", {}),
     ("list_constructions", "constructions", {}),
-    ("list_hvac_components", "components", {}),
+    ("list_construction_sets", "construction_sets", {}),
     ("list_model_objects", "objects", {"object_type": "Space"}),
     ("list_zone_hvac_equipment", "zone_hvac_equipment", {}),
     ("list_schedule_rulesets", "schedule_rulesets", {}),
@@ -50,10 +47,7 @@ def _unique_name():
 
 
 def _unwrap_tool(tool_name, raw):
-    """Unwrap MCP result — list_hvac_components returns JSON string."""
-    if tool_name == "list_hvac_components":
-        text = getattr(raw.content[0], "text", "")
-        return json.loads(text)
+    """Unwrap MCP result."""
     return unwrap(raw)
 
 
@@ -150,10 +144,6 @@ class TestResponseSizes:
                         )
                         data["zones_by_air_loop"] = unwrap(raw)
 
-                    # -- Filter: hvac components by category --
-                    raw = await session.call_tool("list_hvac_components", {"category": "coil"})
-                    data["hvac_coils"] = _unwrap_tool("list_hvac_components", raw)
-
                     # -- Filter: model objects by name_contains --
                     raw = await session.call_tool(
                         "list_model_objects",
@@ -204,10 +194,13 @@ class TestResponseSizes:
                         data["construction_details"] = unwrap(raw)
                         data["construction_name"] = c_name
 
-                    # get_load_details — try lights (baseline always has lights)
-                    lights = data["unlimited"]["list_lighting_loads"]
-                    if lights.get("ok") and lights.get("lighting_loads"):
-                        l_name = lights["lighting_loads"][0]["name"]
+                    # get_load_details — try lights (use list_model_objects)
+                    lights_objs = unwrap(
+                        await session.call_tool("list_model_objects",
+                                                {"object_type": "Lights", "max_results": 1}),
+                    )
+                    if lights_objs.get("ok") and lights_objs.get("objects"):
+                        l_name = lights_objs["objects"][0]["name"]
                         raw = await session.call_tool(
                             "get_load_details", {"load_name": l_name},
                         )
@@ -215,9 +208,13 @@ class TestResponseSizes:
                         data["load_name_lights"] = l_name
 
                     # get_load_details — infiltration
-                    infil = data["unlimited"]["list_infiltration"]
-                    if infil.get("ok") and infil.get("infiltration"):
-                        i_name = infil["infiltration"][0]["name"]
+                    infil_objs = unwrap(
+                        await session.call_tool("list_model_objects",
+                                                {"object_type": "SpaceInfiltrationDesignFlowRate",
+                                                 "max_results": 1}),
+                    )
+                    if infil_objs.get("ok") and infil_objs.get("objects"):
+                        i_name = infil_objs["objects"][0]["name"]
                         raw = await session.call_tool(
                             "get_load_details", {"load_name": i_name},
                         )
@@ -468,27 +465,6 @@ class TestResponseSizes:
             pytest.skip("No air loops in baseline model")
         assert resp["ok"] is True
         assert resp["count"] > 0
-
-    # -----------------------------------------------------------------------
-    # Filter: list_hvac_components by category
-    # -----------------------------------------------------------------------
-
-    def test_filter_hvac_components_by_category(self, session_data):
-        """Filtering HVAC components by category='coil' returns only coils."""
-        resp = session_data["hvac_coils"]
-        assert resp["ok"] is True
-        for c in resp["components"]:
-            # Category should contain 'coil' (heating_coil, cooling_coil, etc.)
-            assert "coil" in c.get("category", "").lower() or "coil" in c.get("type", "").lower(), (
-                f"Component {c.get('name')} has unexpected category: {c.get('category')}"
-            )
-
-    def test_hvac_components_has_categories_metadata(self, session_data):
-        """list_hvac_components includes categories list for discoverability."""
-        resp = session_data["defaults"]["list_hvac_components"]
-        assert "categories" in resp
-        assert isinstance(resp["categories"], list)
-        assert len(resp["categories"]) > 0
 
     # -----------------------------------------------------------------------
     # Filter: list_model_objects by name_contains

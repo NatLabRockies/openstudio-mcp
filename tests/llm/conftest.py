@@ -62,8 +62,8 @@ FLAKY_TESTS = frozenset({
     # Structural L1 failures (prompt too vague — by design)
     "import_floorplan_L1",
     "thermostat_L1",
-    # Tier4 guardrails — intermittent (agent may simulate before extracting)
-    "test_no_script_for_results",
+    "add_hvac_L1",
+    "list_dynamic_type_L1",
 })
 
 

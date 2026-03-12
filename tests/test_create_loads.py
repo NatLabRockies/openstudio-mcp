@@ -46,8 +46,9 @@ def test_create_people_by_area():
                 assert res["people"]["name"] == "Office People"
                 assert res["people"]["space"] == space
                 # Verify shows in list
-                lst = unwrap(await s.call_tool("list_people_loads", {"max_results": 0}))
-                assert any(p["name"] == "Office People" for p in lst["people_loads"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "People", "max_results": 0}))
+                assert any(p["name"] == "Office People" for p in lst["objects"])
     asyncio.run(_run())
 
 
@@ -67,8 +68,9 @@ def test_create_people_by_count():
                 assert res.get("ok") is True
                 assert res["people"]["name"] == "Lab People"
 
-                lst = unwrap(await s.call_tool("list_people_loads", {"max_results": 0}))
-                assert any(p["name"] == "Lab People" for p in lst["people_loads"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "People", "max_results": 0}))
+                assert any(p["name"] == "Lab People" for p in lst["objects"])
     asyncio.run(_run())
 
 
@@ -94,8 +96,9 @@ def test_create_people_with_schedule():
                 assert res.get("ok") is True
                 assert res["people"]["number_of_people_schedule"] == "Occ Schedule"
 
-                lst = unwrap(await s.call_tool("list_people_loads", {"max_results": 0}))
-                assert any(p["name"] == "Scheduled People" for p in lst["people_loads"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "People", "max_results": 0}))
+                assert any(p["name"] == "Scheduled People" for p in lst["objects"])
     asyncio.run(_run())
 
 
@@ -116,8 +119,9 @@ def test_create_lights_by_area():
                 }))
                 assert res.get("ok") is True
                 assert res["lights"]["name"] == "Office Lights"
-                lst = unwrap(await s.call_tool("list_lighting_loads", {"max_results": 0}))
-                assert any(l["name"] == "Office Lights" for l in lst["lighting_loads"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "Lights", "max_results": 0}))
+                assert any(l["name"] == "Office Lights" for l in lst["objects"])
     asyncio.run(_run())
 
 
@@ -136,8 +140,9 @@ def test_create_lights_by_level():
                 }))
                 assert res.get("ok") is True
 
-                lst = unwrap(await s.call_tool("list_lighting_loads", {"max_results": 0}))
-                assert any(l["name"] == "Desk Lamp" for l in lst["lighting_loads"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "Lights", "max_results": 0}))
+                assert any(l["name"] == "Desk Lamp" for l in lst["objects"])
     asyncio.run(_run())
 
 
@@ -158,8 +163,9 @@ def test_create_electric_equipment():
                 }))
                 assert res.get("ok") is True
                 assert res["electric_equipment"]["name"] == "Computers"
-                lst = unwrap(await s.call_tool("list_electric_equipment", {"max_results": 0}))
-                assert any(e["name"] == "Computers" for e in lst["electric_equipment"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "ElectricEquipment", "max_results": 0}))
+                assert any(e["name"] == "Computers" for e in lst["objects"])
     asyncio.run(_run())
 
 
@@ -179,8 +185,9 @@ def test_create_gas_equipment():
                 assert res.get("ok") is True
                 assert res["gas_equipment"]["name"] == "Kitchen Range"
 
-                lst = unwrap(await s.call_tool("list_gas_equipment", {"max_results": 0}))
-                assert any(g["name"] == "Kitchen Range" for g in lst["gas_equipment"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "GasEquipment", "max_results": 0}))
+                assert any(g["name"] == "Kitchen Range" for g in lst["objects"])
     asyncio.run(_run())
 
 
@@ -202,8 +209,9 @@ def test_create_infiltration_by_area():
                 }))
                 assert res.get("ok") is True
                 assert res["infiltration"]["name"] == "Envelope Leakage"
-                lst = unwrap(await s.call_tool("list_infiltration", {"max_results": 0}))
-                assert any(i["name"] == "Envelope Leakage" for i in lst["infiltration"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "SpaceInfiltrationDesignFlowRate", "max_results": 0}))
+                assert any(i["name"] == "Envelope Leakage" for i in lst["objects"])
     asyncio.run(_run())
 
 
@@ -222,8 +230,9 @@ def test_create_infiltration_by_ach():
                 }))
                 assert res.get("ok") is True
 
-                lst = unwrap(await s.call_tool("list_infiltration", {"max_results": 0}))
-                assert any(i["name"] == "ACH Infiltration" for i in lst["infiltration"])
+                lst = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "SpaceInfiltrationDesignFlowRate", "max_results": 0}))
+                assert any(i["name"] == "ACH Infiltration" for i in lst["objects"])
     asyncio.run(_run())
 
 

@@ -1,4 +1,8 @@
-"""MCP tool definitions for internal loads."""
+"""MCP tool definitions for internal loads.
+
+List tools removed in Phase C — use list_model_objects("People"), etc.
+Kept: get_load_details (type dispatcher), all creation tools.
+"""
 from __future__ import annotations
 
 from mcp_server.skills.loads.operations import (
@@ -14,110 +18,10 @@ from mcp_server.skills.loads.operations import (
     create_lights_definition,
     create_people_definition,
     get_load_details,
-    list_electric_equipment,
-    list_gas_equipment,
-    list_infiltration,
-    list_lighting_loads,
-    list_people_loads,
 )
 
 
 def register(mcp):
-    @mcp.tool(name="list_people_loads")
-    def list_people_loads_tool(
-        space_name: str | None = None,
-        space_type_name: str | None = None,
-        max_results: int = 10,
-    ):
-        """List people (occupancy) loads. Default 10 results.
-
-        Common filters: space_name="Office 1", space_type_name="Office"
-
-        Args:
-            space_name: Filter by parent space
-            space_type_name: Filter by parent space type
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_people_loads(space_name=space_name, space_type_name=space_type_name,
-                                max_results=mr)
-
-    @mcp.tool(name="list_lighting_loads")
-    def list_lighting_loads_tool(
-        space_name: str | None = None,
-        space_type_name: str | None = None,
-        max_results: int = 10,
-    ):
-        """List lighting loads. Default 10 results.
-
-        Common filters: space_name="Office 1"
-
-        Args:
-            space_name: Filter by parent space
-            space_type_name: Filter by parent space type
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_lighting_loads(space_name=space_name, space_type_name=space_type_name,
-                                  max_results=mr)
-
-    @mcp.tool(name="list_electric_equipment")
-    def list_electric_equipment_tool(
-        space_name: str | None = None,
-        space_type_name: str | None = None,
-        max_results: int = 10,
-    ):
-        """List electric equipment (plug loads). Default 10 results.
-
-        Common filters: space_name="Office 1"
-
-        Args:
-            space_name: Filter by parent space
-            space_type_name: Filter by parent space type
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_electric_equipment(space_name=space_name, space_type_name=space_type_name,
-                                      max_results=mr)
-
-    @mcp.tool(name="list_gas_equipment")
-    def list_gas_equipment_tool(
-        space_name: str | None = None,
-        space_type_name: str | None = None,
-        max_results: int = 10,
-    ):
-        """List gas equipment loads. Default 10 results.
-
-        Common filters: space_name="Kitchen"
-
-        Args:
-            space_name: Filter by parent space
-            space_type_name: Filter by parent space type
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_gas_equipment(space_name=space_name, space_type_name=space_type_name,
-                                 max_results=mr)
-
-    @mcp.tool(name="list_infiltration")
-    def list_infiltration_tool(
-        space_name: str | None = None,
-        space_type_name: str | None = None,
-        max_results: int = 10,
-    ):
-        """List infiltration objects. Default 10 results.
-
-        Common filters: space_name="Office 1"
-
-        Args:
-            space_name: Filter by parent space
-            space_type_name: Filter by parent space type
-            max_results: Max items (default 10, 0=unlimited)
-        """
-        mr = None if max_results == 0 else max_results
-        return list_infiltration(space_name=space_name, space_type_name=space_type_name,
-                                max_results=mr)
-
     @mcp.tool(name="get_load_details")
     def get_load_details_tool(load_name: str):
         """Get detailed info for any load object (people, lights, electric/gas equipment, infiltration).

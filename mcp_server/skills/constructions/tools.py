@@ -50,9 +50,14 @@ def register(mcp):
         return get_construction_details(construction_name=construction_name)
 
     @mcp.tool(name="list_construction_sets")
-    def list_construction_sets_tool():
-        """List all construction sets in the model."""
-        return list_construction_sets()
+    def list_construction_sets_tool(max_results: int = 10):
+        """List construction sets. Default 10 results.
+
+        Args:
+            max_results: Max items (default 10, 0=unlimited)
+        """
+        mr = None if max_results == 0 else max_results
+        return list_construction_sets(max_results=mr)
 
     @mcp.tool(name="create_standard_opaque_material")
     def create_standard_opaque_material_tool(name: str, roughness: str = "Smooth",

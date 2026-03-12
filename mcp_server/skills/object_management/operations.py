@@ -164,10 +164,12 @@ def _is_useful_getter(method_name: str) -> bool:
     return not method_name.startswith("__")
 
 
-def _extract_value(val) -> tuple[Any, str]:
+def _extract_value(val, _depth: int = 0) -> tuple[Any, str]:
     """Extract a JSON-serializable value from a getter return.
 
     Returns (value, type_label) or raises TypeError if not serializable.
+    When _depth < 1, follows definition links (PeopleDefinition, etc.)
+    one level deep to expose their scalar fields inline.
     """
     # None / basic types
     if val is None:
@@ -182,6 +184,24 @@ def _extract_value(val) -> tuple[Any, str]:
         inner = val.get()
         if isinstance(inner, (bool, int, float, str)):
             return inner, f"Optional{type(inner).__name__.capitalize()}"
+
+        # Follow definition links 1 level deep (PeopleDefinition, LightsDefinition, etc.)
+        if _depth < 1 and "Definition" in type(inner).__name__:
+            fields = {}
+            for m in dir(inner):
+                if not _is_useful_getter(m):
+                    continue
+                attr = getattr(inner, m, None)
+                if attr is None or not callable(attr):
+                    continue
+                try:
+                    v, _t = _extract_value(attr(), _depth=1)
+                    fields[m] = v
+                except (TypeError, Exception):
+                    continue
+            if fields:
+                return fields, f"definition({type(inner).__name__})"
+
         # Inner is a model object — skip
         raise TypeError("Optional contains model object")
 
@@ -197,6 +217,23 @@ def _extract_value(val) -> tuple[Any, str]:
                 return items, "list[str]"
         except Exception:
             pass
+
+    # Follow definition links returned directly (not Optional-wrapped)
+    if _depth < 1 and "Definition" in type(val).__name__:
+        fields = {}
+        for m in dir(val):
+            if not _is_useful_getter(m):
+                continue
+            attr = getattr(val, m, None)
+            if attr is None or not callable(attr):
+                continue
+            try:
+                v, _t = _extract_value(attr(), _depth=1)
+                fields[m] = v
+            except (TypeError, Exception):
+                continue
+        if fields:
+            return fields, f"definition({type(val).__name__})"
 
     raise TypeError(f"Non-serializable: {type(val).__name__}")
 

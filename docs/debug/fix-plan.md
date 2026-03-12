@@ -1,4 +1,4 @@
-# Fix Plan: Issues from Debug Runs (v5)
+# Fix Plan: Issues from Debug Runs (v6)
 
 ## Evidence Base
 
@@ -475,6 +475,33 @@ Create responses (test_create_space, test_create_thermal_zone, etc.) keep handle
 - `README.md` — same tool table updates
 - `.github/workflows/ci.yml` — add new test files to appropriate shard
 
+## W16. Context-waste reduction: detail tools + remaining list tools ✅ DONE
+
+Extends W15 guardrails to detail tools, catalog tools, and remaining unpaginated list tools.
+
+### Critical
+- **C1.** `read_file` default 400KB→50KB (results/operations.py, tools.py)
+- **C2.** `query_timeseries` default 10K→2000 points (results/tools.py, sql_extract.py, operations.py)
+- **C3.** `get_space_type_details` nested loads: brief `{name, schedule}` format, capped at 10 items w/ truncation hint (space_types/operations.py)
+
+### High
+- **H1.** `list_space_types` — added `max_results=10` pagination via `build_list_response` (space_types/operations.py, tools.py)
+- **H2.** `extract_component_sizing` — added `max_results=50` w/ `total_available`/`truncated` metadata (sql_extract.py, operations.py, tools.py)
+- **H3.** `list_comstock_measures` — dropped `path` field (comstock/operations.py)
+
+### Medium
+- **M1.** `list_common_measures` — dropped `path` field (common_measures/operations.py)
+- **M2.** `get_schedule_details` — docstring warns about large rule sets (schedules/tools.py)
+- **M3.** Server instructions — added pagination/filter guidance, updated tool count 136→138 (server.py)
+
+### Tests
+- `list_space_types` added to `PAGINATED_TOOLS` in test_response_sizes.py (6 existing assertions)
+- 4 new tests: `test_read_file_default_under_budget`, `test_space_type_details_under_budget`, `test_space_type_details_brief_loads`, `test_space_types_truncation`
+- Fixed pre-existing `total`→`count` in test_load_save_model.py, test_common_measures.py
+- Fixed `path` references in test_comstock.py, test_common_measures.py (construct from name)
+
+### Commit: `11e6b06` (13 files, 192+/95-)
+
 ## Scope Exclusions
 - ~~Duplicate People QA/QC check~~ — W6 + existing delete_object handles it
 - ~~WaterHeaterMixed, ChillerElectricEIR expansion, plant loop temp limits, warmup days~~ — model-specific
@@ -525,7 +552,8 @@ Create responses (test_create_space, test_create_thermal_zone, etc.) keep handle
 | W13 | 3 (add demand, remove demand, move coil) | 3 |
 | W14 | 1 (new supported types) | 1 |
 | W15 | 0 (param additions, no new test files) | — |
-| **Total** | **25 new tests** | **26** |
+| W16 | 4 (read_file budget, space_type_details x2, space_types truncation) | 4 |
+| **Total** | **29 new tests** | **30** |
 
 ## Log File Reference
 

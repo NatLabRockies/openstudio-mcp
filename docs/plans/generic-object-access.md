@@ -1,11 +1,11 @@
 # Plan: Generic Model Object Access + Tool Consolidation
 
-## Status: Phase A+B COMPLETE, Phase C pending
+## Status: Phase A+B+C COMPLETE
 
 ## Context
 Claude Desktop session (2026-03-11) on `annex_final_v6.osm` — LLM burned 12+ tool_search calls and 15 min trying to find FourPipeBeam objects. Root cause: no generic way to query arbitrary object types or read/write their properties.
 
-Current: 140 tools x ~200 tokens each = ~28K tokens/session. Many tools are simple list/property wrappers that generic tools can replace.
+Current: 136 tools x ~200 tokens each = ~27K tokens/session.
 
 ## Phase A: New Generic Tools — DONE
 
@@ -18,6 +18,7 @@ Current: 140 tools x ~200 tokens each = ~28K tokens/session. Many tools are simp
 - Introspects `dir(obj)`, calls useful getters, returns typed values + available setters
 - Handles OptionalDouble/String/Int, enums, base types
 - Base-class blocklist filters SWIG noise (~40 methods)
+- **Definition traversal** (Phase C): follows `*Definition` links 1 level deep, returns nested scalar fields inline
 - File: `mcp_server/skills/object_management/operations.py`
 
 ### W3: `set_object_property` — generic property write
@@ -29,59 +30,59 @@ Current: 140 tools x ~200 tokens each = ~28K tokens/session. Many tools are simp
 - Added `demand_terminals` list with zone/terminal_type/terminal_name
 - File: `mcp_server/skills/hvac/operations.py`
 
-## Phase B: Equivalence Tests — DONE (15 tests, all pass)
+## Phase B: Equivalence Tests — DONE
 
-| Test | What |
-|------|------|
-| `test_list_model_objects_dynamic_fallback` | SizingSystem via dynamic getter |
-| `test_list_model_objects_idd_colon_format` | OS:Coil:Cooling:Water normalization |
-| `test_list_model_objects_idd_underscore_format` | OS_Coil_Cooling_Water normalization |
-| `test_list_model_objects_unknown_type_error` | helpful error for fake types |
-| `test_get_object_fields_boiler` | reads efficiency from BoilerHotWater |
-| `test_get_object_fields_by_handle` | handle-based lookup |
-| `test_get_object_fields_not_found` | error for missing object |
-| `test_set_object_property_boiler_efficiency` | sets efficiency to 0.92 |
-| `test_set_object_property_with_set_prefix` | accepts "setNominalThermalEfficiency" |
-| `test_set_object_property_invalid_setter` | error for fake setter |
-| `test_air_loop_demand_terminals` | demand_terminals in air loop details |
-| `test_equivalence_list_people` | generic vs list_people_loads |
-| `test_equivalence_list_lights` | generic vs list_lighting_loads |
-| `test_equivalence_list_electric_equipment` | generic vs list_electric_equipment |
-| `test_equivalence_boiler_properties` | generic vs get_component_properties |
+Verified generic tools return same data as explicit tools. Tests in `tests/test_generic_access.py`.
 
-## Phase C: Tool Removal — PENDING
+## Phase C: Remove 6 Redundant List/Discovery Tools — DONE
 
-### Validation gate: run LLM test suite with generic tools before removing explicit tools
+### Removed tools (142 → 136)
+| Removed | Replacement |
+|---------|-------------|
+| `list_people_loads` | `list_model_objects("People")` → `get_object_fields` |
+| `list_lighting_loads` | `list_model_objects("Lights")` → `get_object_fields` |
+| `list_electric_equipment` | `list_model_objects("ElectricEquipment")` |
+| `list_gas_equipment` | `list_model_objects("GasEquipment")` |
+| `list_infiltration` | `list_model_objects("SpaceInfiltrationDesignFlowRate")` |
+| `list_hvac_components` | `list_model_objects` per type + loop detail tools |
 
-### Remove (~16 tools)
-- 5 load list tools (People, Lights, ElectricEquipment, GasEquipment, Infiltration)
-- `list_hvac_components` (use `list_model_objects` per type)
-- `get_component_properties` + `set_component_properties`
-- `get/set_sizing_system_properties`
-- `get/set_sizing_zone_properties`
-- `set_sizing_properties` (plant loop)
-- `set_economizer_properties`
-- `get/set_setpoint_manager_properties`
+### Kept
+- `get/set_component_properties` — unit metadata, not a discovery issue
+- `get_load_details` — type dispatcher (tries all 5 load types by name), genuinely unique
+- All sizing/economizer/SPM tools — future merge candidate but not a discovery problem
+- All creation tools, detail/topology tools
 
-### Keep (structured topology)
-- Air/plant loop detail tools, space/zone details, schedule details
-- All creation tools, simulation, measures, building info, model summary
-- `list_spaces`, `list_thermal_zones`, `list_surfaces` (enriched fields)
-- `list_constructions`, `list_schedule_rulesets`, `list_space_types`
+### Definition traversal (`_extract_value` `_depth` parameter)
+- `_extract_value(val, _depth=0)` — when a getter returns a model object with "Definition" in class name (Optional-wrapped or direct), recursively extracts scalar fields at `_depth=1`
+- Result: `get_object_fields("People", "Office People")` returns `{"peopleDefinition": {"numberofPeople": 10.0, ...}, ...}`
 
-### Net impact (after Phase C)
-- **-16 tools, +3 tools** (net from baseline) = ~13 fewer tools = ~2.6K token savings/session
-- Eliminates "unsupported type" dead ends (5-10K wasted tokens per incident)
-- Deletes ~500 lines of explicit getter/setter code in `components.py`
+### Additional: `list_construction_sets` pagination
+- Added `max_results` param (default 10, 0=unlimited) following standard pattern
 
-## Files Modified (Phase A+B)
-1. `mcp_server/skills/object_management/operations.py` — W1 fallback + W2/W3 ops
-2. `mcp_server/skills/object_management/tools.py` — W2/W3 tool registrations
-3. `mcp_server/skills/hvac/operations.py` — W4 demand terminals
-4. `tests/test_generic_access.py` — 15 integration tests
-5. `.github/workflows/ci.yml` — added test_generic_access to shard 3
-6. `CLAUDE.md` — updated tool table + count (140 tools)
+### Files modified
+1. `mcp_server/skills/object_management/operations.py` — definition traversal in `_extract_value`
+2. `mcp_server/skills/loads/tools.py` — removed 5 list tool registrations
+3. `mcp_server/skills/component_properties/tools.py` — removed list_hvac_components
+4. `mcp_server/skills/constructions/operations.py` + `tools.py` — list_construction_sets pagination
+5. `mcp_server/skills/prompts_resources/tools.py` — updated tool catalog
+6. `tests/test_loads.py` — converted to use list_model_objects
+7. `tests/test_generic_access.py` — replaced equivalence tests with definition traversal tests
+8. `tests/test_response_sizes.py` — removed 6 tools from PAGINATED_TOOLS
+9. `tests/test_create_loads.py` — verification calls use list_model_objects
+10. `tests/test_component_properties.py` — rewritten to use list_model_objects
+11. `tests/test_loop_operations.py` — list_model_objects per component type
+12. `tests/test_plant_loop_demand.py` — list_model_objects for CoilCoolingWater
+13. `tests/test_example_workflows.py` — list_model_objects replacements
+14. `tests/test_skill_registration.py` — removed 6 from expected tools
+15. `tests/eval_tool_selection.py` — updated expected tool names
+16. `tests/llm/conftest.py` — updated FLAKY_TESTS
+17. `CLAUDE.md` — loads 11→6, component_properties 11→10, total 142→136
+18. `README.md` — updated tool counts and tables
 
-## Open Questions
-1. Phase C timing — validate with LLM tests first, then remove in separate PR?
-2. SWIG blocklist may need tuning for exotic object types (tuned for common HVAC/loads)
+### Test results
+- 102 passed, 0 failed, 2 skipped across 9 affected test files
+
+## Future candidates (not planned)
+- Merge sizing/economizer/SPM tools into `get/set_object_property` if LLM tests show confusion
+- `list_model_objects` category filter (e.g. "show all coils") — defer unless needed
+- Remove more topology list tools if generic access proves sufficient

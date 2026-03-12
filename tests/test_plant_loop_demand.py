@@ -102,10 +102,10 @@ def test_add_remove_demand_component():
                 assert result.get("ok") is True, result
 
                 # List cooling coils
-                comps = unwrap(await session.call_tool("list_hvac_components", {
-                    "category": "coil", "max_results": 0,
+                comps = unwrap(await session.call_tool("list_model_objects", {
+                    "object_type": "CoilCoolingWater",
                 }))
-                cooling_coils = [c for c in comps["components"] if "Cooling" in c["type"] and "Water" in c["type"]]
+                cooling_coils = comps["objects"]
 
                 if cooling_coils:
                     coil_name = cooling_coils[0]["name"]

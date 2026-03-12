@@ -260,7 +260,7 @@ def register(mcp):
         "openstudio://tool-catalog",
         name="Tool Catalog",
         description=(
-            "All 126 MCP tools organized by skill, with descriptions."
+            "All MCP tools organized by skill, with descriptions."
         ),
         mime_type="application/json",
     )
@@ -318,9 +318,8 @@ def register(mcp):
                 "add_air_loop",
             ],
             "loads": [
-                "list_people_loads", "list_lighting_loads",
-                "list_electric_equipment", "list_gas_equipment",
-                "list_infiltration", "create_people_definition",
+                "get_load_details",
+                "create_people_definition",
                 "create_lights_definition",
                 "create_electric_equipment",
                 "create_gas_equipment", "create_infiltration",
@@ -338,7 +337,7 @@ def register(mcp):
                 "add_vrf_system", "add_radiant_system",
             ],
             "component_properties": [
-                "list_hvac_components", "get_component_properties",
+                "get_component_properties",
                 "set_component_properties",
                 "set_economizer_properties",
                 "set_sizing_properties",

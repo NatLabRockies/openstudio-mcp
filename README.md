@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 136 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
+**22 skills &bull; 136 tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
 
 ---
 
@@ -214,14 +214,13 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `list_zone_hvac_equipment` | List zone-level HVAC equipment |
 | `get_zone_hvac_details` | Zone equipment details |
 
-### Loads (10 tools)
+### Loads (6 tools)
+
+List loads via `list_model_objects("People")`, `list_model_objects("Lights")`, etc. Use `get_object_fields` for definition details.
+
 | Tool | Description |
 |------|-------------|
-| `list_people_loads` | List people/occupancy definitions |
-| `list_lighting_loads` | List lighting definitions |
-| `list_electric_equipment` | List electric equipment |
-| `list_gas_equipment` | List gas equipment |
-| `list_infiltration` | List infiltration definitions |
+| `get_load_details` | Get detailed info for any load by name (type dispatcher) |
 | `create_people_definition` | Create people load (by area or count) |
 | `create_lights_definition` | Create lighting load (by area or wattage) |
 | `create_electric_equipment` | Create electric equipment load |
@@ -276,10 +275,12 @@ Primary tools for creating building energy models. `create_new_building` is the 
 | `add_vrf_system` | Add VRF multi-zone heat pump system |
 | `add_radiant_system` | Add low-temperature radiant heating/cooling |
 
-### Component Properties (11 tools)
+### Component Properties (10 tools)
+
+List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail tools, etc.
+
 | Tool | Description |
 |------|-------------|
-| `list_hvac_components` | List all HVAC components (15 types: coils, plant, fans, pumps) |
 | `get_component_properties` | Read all properties of a named component |
 | `set_component_properties` | Modify properties on a named component |
 | `set_economizer_properties` | Modify OA economizer settings on air loop |

@@ -153,10 +153,12 @@ def test_workflow_hvac_design_exploration():
                     assert details.get("ok") is True
 
                 # Step 5: List HVAC components to find a boiler
-                comps = unwrap(await s.call_tool("list_hvac_components", {"max_results": 0}))
+                comps = unwrap(await s.call_tool("list_model_objects", {
+                    "object_type": "BoilerHotWater", "max_results": 0,
+                }))
                 assert comps.get("ok") is True
-                # Find a boiler
-                boilers = [c for c in comps["components"] if "Boiler" in c.get("type", "")]
+                # All results are boilers (filtered by object_type)
+                boilers = comps["objects"]
                 if boilers:
                     # Step 6: Get and modify boiler properties
                     bp = unwrap(await s.call_tool("get_component_properties", {
@@ -298,13 +300,17 @@ def test_workflow_internal_loads():
                 assert equip.get("ok") is True
 
                 # Step 6: Verify loads are present
-                pl = unwrap(await s.call_tool("list_people_loads", {"max_results": 0}))
+                pl = unwrap(await s.call_tool("list_model_objects", {
+                    "object_type": "People", "max_results": 0,
+                }))
                 assert pl.get("ok") is True
-                assert any("Office People" in p.get("name", "") for p in pl["people_loads"])
+                assert any("Office People" in p.get("name", "") for p in pl["objects"])
 
-                ll = unwrap(await s.call_tool("list_lighting_loads", {"max_results": 0}))
+                ll = unwrap(await s.call_tool("list_model_objects", {
+                    "object_type": "Lights", "max_results": 0,
+                }))
                 assert ll.get("ok") is True
-                assert any("Office Lights" in l.get("name", "") for l in ll["lighting_loads"])
+                assert any("Office Lights" in l.get("name", "") for l in ll["objects"])
 
     asyncio.run(_run())
 

@@ -116,8 +116,8 @@ EVAL_CASES = [
     ("get schedule details", "get_schedule_details"),
     ("create schedule ruleset", "create_schedule_ruleset"),
     # Loads
-    ("list people loads", "list_people_loads"),
-    ("list lighting loads", "list_lighting_loads"),
+    ("list people loads", "list_model_objects"),
+    ("list lighting loads", "list_model_objects"),
     ("create people definition", "create_people_definition"),
     # Results
     ("extract summary metrics EUI", "extract_summary_metrics"),
@@ -130,7 +130,7 @@ EVAL_CASES = [
     ("validate OSW workflow", "validate_osw"),
     ("get run status", "get_run_status"),
     # Component properties
-    ("list HVAC components", "list_hvac_components"),
+    ("list HVAC components", "list_model_objects"),
     ("get component properties", "get_component_properties"),
     ("set component properties", "set_component_properties"),
     ("set economizer properties", "set_economizer_properties"),
