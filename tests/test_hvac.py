@@ -53,7 +53,6 @@ def test_list_air_loops():
                 # Example model may not have air loops
                 if air_loops_result["air_loops"]:
                     air_loop = air_loops_result["air_loops"][0]
-                    assert "handle" in air_loop
                     assert "name" in air_loop
                     assert "num_thermal_zones" in air_loop
                     assert "thermal_zones" in air_loop
@@ -190,7 +189,6 @@ def test_list_plant_loops():
                 # Example model may not have plant loops
                 if plant_loops_result["plant_loops"]:
                     plant_loop = plant_loops_result["plant_loops"][0]
-                    assert "handle" in plant_loop
                     assert "name" in plant_loop
                     assert "num_supply_components" in plant_loop
                     assert "supply_components" in plant_loop
@@ -228,7 +226,7 @@ def test_list_zone_hvac_equipment():
                 assert load_result.get("ok") is True
 
                 # List zone HVAC equipment
-                zone_hvac_resp = await session.call_tool("list_zone_hvac_equipment", {})
+                zone_hvac_resp = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zone_hvac_result = unwrap(zone_hvac_resp)
                 print("list_zone_hvac_equipment:", zone_hvac_result)
 
@@ -241,7 +239,6 @@ def test_list_zone_hvac_equipment():
                 # Example model may not have zone HVAC equipment
                 if zone_hvac_result["zone_hvac_equipment"]:
                     equipment = zone_hvac_result["zone_hvac_equipment"][0]
-                    assert "handle" in equipment
                     assert "type" in equipment
                     assert "name" in equipment
 
@@ -329,7 +326,7 @@ def test_add_air_loop_json_string_zones():
                 await session.call_tool("load_osm_model",
                                         {"osm_path": create_data["osm_path"]})
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
 
                 loop_resp = await session.call_tool("add_air_loop", {

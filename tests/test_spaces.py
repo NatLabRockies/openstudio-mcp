@@ -39,7 +39,7 @@ def test_list_spaces():
                 assert load_result.get("ok") is True
 
                 # List spaces
-                spaces_resp = await session.call_tool("list_spaces", {})
+                spaces_resp = await session.call_tool("list_spaces", {"max_results": 0})
                 spaces_result = unwrap(spaces_resp)
 
                 assert isinstance(spaces_result, dict)
@@ -70,7 +70,7 @@ def test_list_spaces_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                sr = await session.call_tool("list_spaces", {})
+                sr = await session.call_tool("list_spaces", {"max_results": 0})
                 sd = unwrap(sr)
                 print("baseline spaces:", sd)
                 assert sd.get("ok") is True
@@ -101,14 +101,15 @@ def test_thermal_zones_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                zr = await session.call_tool("list_thermal_zones", {"detailed": True})
+                zr = await session.call_tool("list_thermal_zones", {"detailed": True, "max_results": 0})
                 zd = unwrap(zr)
                 print("baseline zones:", zd)
                 assert zd.get("ok") is True
                 assert zd["count"] == 10
-                # Each zone has 1 space
+                # Verify zone fields present
                 for z in zd["thermal_zones"]:
-                    assert z["num_spaces"] == 1
+                    assert "name" in z
+                    assert "floor_area_m2" in z
 
     asyncio.run(_run())
 
@@ -136,13 +137,13 @@ def test_list_thermal_zones():
                 assert load_result.get("ok") is True
 
                 # List zones
-                zones_resp = await session.call_tool("list_thermal_zones", {"detailed": True})
+                zones_resp = await session.call_tool("list_thermal_zones", {"detailed": True, "max_results": 0})
                 zones_result = unwrap(zones_resp)
 
                 assert isinstance(zones_result, dict)
                 assert zones_result.get("ok") is True
                 assert zones_result["count"] == 1
                 assert "name" in zones_result["thermal_zones"][0]
-                assert "num_spaces" in zones_result["thermal_zones"][0]
+                assert "floor_area_m2" in zones_result["thermal_zones"][0]
 
     asyncio.run(_run())

@@ -64,7 +64,7 @@ change_building_location(weather_file="/inputs/Chicago.epw")
 ## Tune Component Properties
 
 ```
-list_hvac_components(category="Coil")     # find component names
+list_model_objects(object_type="CoilHeatingGas")  # find component names
 get_component_properties(component_name="Heating Coil 1")
 set_component_properties(component_name="Heating Coil 1",
     properties={"efficiency": 0.95})
@@ -101,3 +101,20 @@ rename_object(object_name="Zone 1", new_name="North Office")
 delete_object(object_name="Unused Space")
 clean_unused_objects()                    # remove orphans
 ```
+
+## Inspect & Modify Any Object (Generic Access)
+
+```
+# Read all properties of any object
+get_object_fields(object_type="BoilerHotWater", object_name="Boiler Hot Water 1")
+# → returns property values + available setter methods
+
+# Write a property using the discovered setter
+set_object_property(object_type="BoilerHotWater", object_name="Boiler Hot Water 1",
+    property_name="nominalThermalEfficiency", value=0.92)
+
+# Works with any type — SizingSystem, CoilCoolingWater, etc.
+get_object_fields(object_type="SizingSystem", object_name="VAV Sys 1 Sizing System")
+```
+
+Note: Always call `get_object_fields` first to discover property names and setter availability before using `set_object_property`.

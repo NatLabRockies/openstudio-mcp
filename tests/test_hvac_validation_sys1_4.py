@@ -27,7 +27,7 @@ def test_system_1_coil_types():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
@@ -76,7 +76,7 @@ def test_system_1_fan_present():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -117,7 +117,7 @@ def test_system_1_multiple_zones():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]][:3]
 
@@ -151,7 +151,7 @@ def test_system_2_heat_pump_coils():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -193,7 +193,7 @@ def test_system_2_fan_present():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -237,7 +237,7 @@ def test_system_3_coil_types():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -284,7 +284,7 @@ def test_system_3_fan_verification():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -324,7 +324,7 @@ def test_system_3_economizer_enabled():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -366,7 +366,7 @@ def test_system_3_economizer_disabled():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -407,7 +407,7 @@ def test_system_3_outdoor_air_present():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -445,7 +445,7 @@ def test_system_3_setpoint_managers():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -484,7 +484,7 @@ def test_system_3_electric_heating():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -518,7 +518,7 @@ def test_system_3_gas_heating():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -556,7 +556,7 @@ def test_system_4_heat_pump_coils():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -600,7 +600,7 @@ def test_system_4_supplemental_heat():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -634,7 +634,7 @@ def test_system_4_fan_present():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -674,7 +674,7 @@ def test_system_4_economizer_enabled():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -716,7 +716,7 @@ def test_system_4_economizer_disabled():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -757,7 +757,7 @@ def test_system_4_outdoor_air_present():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -796,7 +796,7 @@ def test_system_4_setpoint_managers():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -836,7 +836,7 @@ def test_system_4_dx_cooling():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_name = zones_data["thermal_zones"][0]["name"]
 
@@ -872,7 +872,7 @@ def test_system_4_single_zone_only():
                 # Create second zone
                 zone2_resp = await session.call_tool("create_thermal_zone", {"name": "Zone 2"})
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]][:2]
 

@@ -75,7 +75,7 @@ def test_add_output_variable_with_key():
                 assert load_result.get("ok") is True
 
                 # Get a thermal zone name
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_result = unwrap(zones_resp)
                 assert len(zones_result["thermal_zones"]) > 0
                 zone_name = zones_result["thermal_zones"][0]["name"]

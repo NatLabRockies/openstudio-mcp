@@ -38,7 +38,7 @@ def test_skill_add_hvac_workflow():
                 info = unwrap(await s.call_tool("get_building_info", {}))
                 assert info.get("ok") is True
 
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 assert zones.get("ok") is True
                 assert zones["count"] > 0
                 zone_names = [z["name"] for z in zones["thermal_zones"]]
@@ -57,7 +57,7 @@ def test_skill_add_hvac_workflow():
                 assert loops["count"] > 0
 
                 # 5. Verify zone equipment
-                equip = unwrap(await s.call_tool("list_zone_hvac_equipment", {}))
+                equip = unwrap(await s.call_tool("list_zone_hvac_equipment", {"max_results": 0}))
                 assert equip.get("ok") is True
 
     asyncio.run(_run())

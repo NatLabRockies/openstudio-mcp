@@ -15,7 +15,6 @@ from mcp_server.skills.common_measures.wrappers import (
     clean_unused_objects_op,
     enable_ideal_air_loads_op,
     generate_results_report_op,
-    inject_idf_op,
     replace_thermostat_schedules_op,
     replace_window_constructions_op,
     run_qaqc_checks_op,
@@ -182,15 +181,6 @@ def register(mcp):
             constructions=constructions,
             curves=curves,
         )
-
-    @mcp.tool(name="inject_idf")
-    def inject_idf_tool(idf_path: str = ""):
-        """Inject raw IDF objects from file into model.
-
-        Args:
-            idf_path: Path to the IDF file containing objects to inject
-        """
-        return inject_idf_op(idf_path=idf_path)
 
     @mcp.tool(name="change_building_location")
     def change_building_location_tool(

@@ -35,17 +35,17 @@ def test_skill_new_building_workflow():
                 assert lr.get("ok") is True
 
                 # 2. Get existing zones and spaces
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 assert zones.get("ok") is True
                 assert zones["count"] > 0
                 zone_names = [z["name"] for z in zones["thermal_zones"]]
 
-                spaces = unwrap(await s.call_tool("list_spaces", {}))
+                spaces = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 assert spaces.get("ok") is True
                 space_name = spaces["spaces"][0]["name"]
 
                 # 3. Add glazing to an exterior wall
-                surfaces = unwrap(await s.call_tool("list_surfaces", {}))
+                surfaces = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 assert surfaces.get("ok") is True
                 ext_walls = [sf for sf in surfaces["surfaces"]
                              if sf.get("surface_type") == "Wall"
@@ -102,7 +102,7 @@ def test_skill_new_building_workflow():
                 # 9. Save and simulate
                 save_path = f"/runs/{name}.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 

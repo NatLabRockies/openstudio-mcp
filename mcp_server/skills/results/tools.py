@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from mcp_server.skills.results.operations import (
-    copy_run_artifact,
+    copy_file,
     extract_component_sizing_op,
     extract_end_use_breakdown_op,
     extract_envelope_summary_op,
@@ -10,26 +10,27 @@ from mcp_server.skills.results.operations import (
     extract_summary_metrics,
     extract_zone_summary_op,
     query_timeseries_op,
-    read_run_artifact,
+    read_file,
 )
 
 
 def register(mcp):
-    @mcp.tool(name="read_run_artifact")
-    def read_run_artifact_tool(run_id: str, path: str, max_bytes: int | None = None, offset: int = 0):
-        """Read a run artifact file (text or base64 for binary).
+    @mcp.tool(name="read_file")
+    def read_file_tool(file_path: str, max_bytes: int | None = None, offset: int = 0):
+        """Read any file by absolute path (works across all mounts: /runs, /inputs, /repo, etc.).
+
+        Default 50KB. Use offset+max_bytes for chunked reading of large files.
 
         Args:
-            run_id: Run identifier
-            path: Relative path within the run directory
-            max_bytes: Max bytes to read (default 400KB)
+            file_path: Absolute path to the file (e.g. /runs/my_run/run/eplusout.err)
+            max_bytes: Max bytes to read (default 50KB)
             offset: Byte offset for chunked reading (default 0)
         """
         try:
-            mb = int(max_bytes) if max_bytes is not None else 400_000
+            mb = int(max_bytes) if max_bytes is not None else 50_000
         except (ValueError, TypeError):
-            mb = 400_000
-        return read_run_artifact(run_id=run_id, path=path, max_bytes=mb, offset=offset)
+            mb = 50_000
+        return read_file(file_path=file_path, max_bytes=mb, offset=offset)
 
     @mcp.tool(name="extract_summary_metrics")
     def extract_summary_metrics_tool(run_id: str, include_raw: bool = False):
@@ -41,16 +42,15 @@ def register(mcp):
         """
         return extract_summary_metrics(run_id, include_raw=include_raw)
 
-    @mcp.tool(name="copy_run_artifact")
-    def copy_run_artifact_tool(run_id: str, path: str, destination: str = "/runs/exports"):
-        """Copy a run artifact to an accessible path, bypassing the MCP size limit.
+    @mcp.tool(name="copy_file")
+    def copy_file_tool(file_path: str, destination: str = "/runs/exports"):
+        """Copy a file to an accessible path, bypassing the MCP size limit.
 
         Args:
-            run_id: Run identifier
-            path: Relative path within the run directory
+            file_path: Absolute path to the source file
             destination: Target directory (default /runs/exports/)
         """
-        return copy_run_artifact(run_id=run_id, path=path, destination=destination)
+        return copy_file(file_path=file_path, destination=destination)
 
     # --- Tier 1: Tabular report extraction ---
 
@@ -80,14 +80,22 @@ def register(mcp):
         return extract_zone_summary_op(run_id=run_id)
 
     @mcp.tool(name="extract_component_sizing")
-    def extract_component_sizing_tool(run_id: str, component_type: str | None = None):
+    def extract_component_sizing_tool(
+        run_id: str, component_type: str | None = None, max_results: int = 50,
+    ):
         """Extract autosized values for HVAC components (coils, fans, pumps, etc.).
+
+        Default 50 results. Use component_type filter (e.g. "Coil", "Fan") to narrow.
 
         Args:
             run_id: Run identifier
-            component_type: Optional filter (e.g. "Coil", "Fan", "Pump", "Chiller")
+            component_type: Filter by type (e.g. "Coil", "Fan", "Pump", "Chiller")
+            max_results: Cap on results (default 50, 0=unlimited)
         """
-        return extract_component_sizing_op(run_id=run_id, component_type=component_type)
+        mr = 0 if max_results == 0 else max_results
+        return extract_component_sizing_op(
+            run_id=run_id, component_type=component_type, max_results=mr,
+        )
 
     # --- Tier 2: Time-series ---
 
@@ -101,11 +109,12 @@ def register(mcp):
         end_month: int | None = None,
         end_day: int | None = None,
         frequency: str | None = None,
-        max_points: int = 10000,
+        max_points: int = 2000,
     ):
         """Query time-series output variable data for a date range.
 
-        Requires output variables added via add_output_variable before simulation.
+        Default 2000 points. Use start_month/end_month to narrow time range,
+        or increase max_points for finer resolution.
 
         Args:
             run_id: Run identifier
@@ -116,11 +125,11 @@ def register(mcp):
             end_month: End month (1-12)
             end_day: End day (1-31)
             frequency: "Zone Timestep", "Hourly", "Daily", "Monthly"
-            max_points: Cap on returned data points (default 10000)
+            max_points: Cap on returned data points (default 2000)
         """
         return query_timeseries_op(
             run_id=run_id, variable_name=variable_name, key_value=key_value,
             start_month=start_month, start_day=start_day,
             end_month=end_month, end_day=end_day,
-            frequency=frequency, max_points=int(max_points or 10000),
+            frequency=frequency, max_points=int(max_points or 2000),
         )

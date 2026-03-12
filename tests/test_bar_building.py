@@ -210,12 +210,12 @@ def test_sddc_office_seed_loads():
                 assert lr.get("thermal_zones", 0) == 0, "Expected 0 zones in seed"
 
                 # Verify surfaces exist
-                surfaces = unwrap(await s.call_tool("list_surfaces", {}))
+                surfaces = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 assert surfaces.get("ok") is True
                 assert surfaces["count"] >= 300, f"Expected ~328 surfaces: {surfaces['count']}"
 
                 # Verify space types exist
-                sts = unwrap(await s.call_tool("list_space_types", {}))
+                sts = unwrap(await s.call_tool("list_model_objects", {"object_type": "SpaceType"}))
                 assert sts.get("ok") is True
                 assert sts["count"] >= 10, f"Expected ~12 space types: {sts['count']}"
 

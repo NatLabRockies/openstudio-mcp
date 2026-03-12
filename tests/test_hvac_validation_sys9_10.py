@@ -28,7 +28,7 @@ def test_system_9_unit_heaters():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
@@ -62,7 +62,7 @@ def test_system_9_no_cooling():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
@@ -101,7 +101,7 @@ def test_system_10_unit_heaters():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
@@ -135,7 +135,7 @@ def test_system_10_no_cooling():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 

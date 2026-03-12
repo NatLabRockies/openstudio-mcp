@@ -42,9 +42,24 @@ def register(mcp):
         return list_plant_loops(detailed=detailed)
 
     @mcp.tool(name="list_zone_hvac_equipment")
-    def list_zone_hvac_equipment_tool():
-        """List all zone HVAC equipment in the model."""
-        return list_zone_hvac_equipment()
+    def list_zone_hvac_equipment_tool(
+        thermal_zone_name: str | None = None,
+        equipment_type: str | None = None,
+        max_results: int = 10,
+    ):
+        """List zone HVAC equipment. Default 10 results; use filters to narrow.
+
+        Common filters:
+        - Equipment in a zone: thermal_zone_name="Zone 1"
+
+        Args:
+            thermal_zone_name: Filter by thermal zone
+            equipment_type: Filter by iddObjectType (e.g. "ZoneHVACPackagedTerminalAirConditioner")
+            max_results: Max items (default 10, 0=unlimited)
+        """
+        mr = None if max_results == 0 else max_results
+        return list_zone_hvac_equipment(thermal_zone_name=thermal_zone_name,
+                                       equipment_type=equipment_type, max_results=mr)
 
     @mcp.tool(name="add_air_loop")
     def add_air_loop_tool(name: str, thermal_zone_names: list[str] | str | None = None):

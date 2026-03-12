@@ -26,7 +26,7 @@ async def _setup_and_simulate(s, name: str) -> tuple[str, str]:
     assert wr.get("ok") is True
 
     save_path = f"/runs/{name}.osm"
-    sr = unwrap(await s.call_tool("save_osm_model", {"save_path": save_path}))
+    sr = unwrap(await s.call_tool("save_osm_model", {"osm_path": save_path}))
     assert sr.get("ok") is True
     sim = unwrap(await s.call_tool("run_simulation", {
         "osm_path": save_path, "epw_path": EPW_PATH,
@@ -67,7 +67,7 @@ def test_skill_retrofit_workflow():
                 # 3. Re-simulate with retrofit
                 retro_path = f"/runs/{name}_retrofit.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": retro_path,
+                    "osm_path": retro_path,
                 }))
                 assert sr.get("ok") is True
                 sim = unwrap(await s.call_tool("run_simulation", {

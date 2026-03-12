@@ -15,20 +15,27 @@ import openstudio
 from mcp_server import model_manager
 from mcp_server.config import RUN_ROOT, is_path_allowed
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
+from mcp_server.osm_helpers import (
+    build_list_response,
+    fetch_object,
+    list_all_as_dicts,
+    list_paginated,
+    optional_name,
+)
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def _extract_surface(model, surface, detailed: bool = True) -> dict[str, Any]:
     """Extract surface attributes to dict.
 
-    When detailed=False, returns only name, surface_type, gross_area_m2, space.
+    Brief: name, surface_type, gross_area, space, outside_boundary_condition.
     """
     result = {
         "name": surface.nameString(),
         "surface_type": surface.surfaceType(),
         "gross_area_m2": float(surface.grossArea()),
         "space": optional_name(surface.space()),
+        "outside_boundary_condition": surface.outsideBoundaryCondition(),
     }
     if not detailed:
         return result
@@ -65,16 +72,39 @@ def _extract_subsurface(model, subsurface) -> dict[str, Any]:
     }
 
 
-def list_surfaces(detailed: bool = False) -> dict[str, Any]:
-    """List all surfaces in the model."""
+def list_surfaces(
+    detailed: bool = False,
+    space_name: str | None = None,
+    surface_type: str | None = None,
+    boundary: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List surfaces with server-side filtering and pagination.
+
+    Common filters:
+    - Exterior walls: surface_type="Wall", boundary="Outdoors"
+    - All exterior: boundary="Outdoors"
+    - Surfaces in a space: space_name="Office 1"
+    """
     try:
         model = get_model()
-        surfaces = list_all_as_dicts(model, "getSurfaces", _extract_surface, detailed=detailed)
-        return {
-            "ok": True,
-            "count": len(surfaces),
-            "surfaces": surfaces,
-        }
+
+        filt = None
+        if space_name or surface_type or boundary:
+            def filt(m, s):
+                if space_name and optional_name(s.space()) != space_name:
+                    return False
+                if surface_type and s.surfaceType() != surface_type:
+                    return False
+                if boundary and s.outsideBoundaryCondition() != boundary:
+                    return False
+                return True
+
+        items, total = list_paginated(
+            model, "getSurfaces", _extract_surface,
+            detailed=detailed, max_results=max_results, obj_filter_fn=filt,
+        )
+        return build_list_response("surfaces", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
@@ -100,16 +130,43 @@ def get_surface_details(surface_name: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to get surface details: {e}"}
 
 
-def list_subsurfaces() -> dict[str, Any]:
-    """List all subsurfaces (windows/doors) in the model."""
+def list_subsurfaces(
+    surface_name: str | None = None,
+    space_name: str | None = None,
+    subsurface_type: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List subsurfaces with server-side filtering and pagination.
+
+    Common filters:
+    - Windows on a surface: surface_name="Wall 1"
+    - Windows in a space: space_name="Office 1"
+    - All doors: subsurface_type="Door"
+    """
     try:
         model = get_model()
-        subsurfaces = list_all_as_dicts(model, "getSubSurfaces", _extract_subsurface)
-        return {
-            "ok": True,
-            "count": len(subsurfaces),
-            "subsurfaces": subsurfaces,
-        }
+
+        filt = None
+        if surface_name or space_name or subsurface_type:
+            def filt(m, sub):
+                if subsurface_type and sub.subSurfaceType() != subsurface_type:
+                    return False
+                if surface_name and optional_name(sub.surface()) != surface_name:
+                    return False
+                if space_name:
+                    parent = sub.surface()
+                    if parent.is_initialized():
+                        if optional_name(parent.get().space()) != space_name:
+                            return False
+                    else:
+                        return False
+                return True
+
+        items, total = list_paginated(
+            model, "getSubSurfaces", _extract_subsurface,
+            max_results=max_results, obj_filter_fn=filt,
+        )
+        return build_list_response("subsurfaces", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:

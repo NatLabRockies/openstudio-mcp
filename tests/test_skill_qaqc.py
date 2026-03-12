@@ -46,12 +46,12 @@ def test_skill_qaqc_workflow():
                 assert model_sum.get("ok") is True
 
                 # 4. Check thermal zones exist and have equipment
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 assert zones.get("ok") is True
                 assert zones["count"] > 0, "No thermal zones found"
 
                 # 5. Check spaces are assigned to zones
-                spaces = unwrap(await s.call_tool("list_spaces", {}))
+                spaces = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 assert spaces.get("ok") is True
                 assert spaces["count"] > 0, "No spaces found"
 
@@ -64,7 +64,7 @@ def test_skill_qaqc_workflow():
                 assert rp.get("ok") is True
 
                 # 8. Check HVAC exists (baseline model should have it)
-                hvac = unwrap(await s.call_tool("list_zone_hvac_equipment", {}))
+                hvac = unwrap(await s.call_tool("list_zone_hvac_equipment", {"max_results": 0}))
                 assert hvac.get("ok") is True
 
     asyncio.run(_run())

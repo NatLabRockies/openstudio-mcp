@@ -49,6 +49,19 @@ Use `object_type` parameter for disambiguation when multiple objects share a nam
 delete_object(object_name="MySchedule", object_type="ScheduleRuleset")
 ```
 
+## Inspecting and Modifying Any Object
+
+Use `get_object_fields` to read all properties, then `set_object_property` to change them:
+
+```
+1. get_object_fields(object_type="BoilerHotWater", object_name="Boiler Hot Water 1")
+   → returns property values + available setter methods
+2. set_object_property(object_type="BoilerHotWater", object_name="Boiler Hot Water 1",
+       property_name="nominalThermalEfficiency", value=0.92)
+```
+
+Works with any OpenStudio type — SizingSystem, CoilCoolingWater, ScheduleRuleset, etc.
+
 ## Integration Test
 
 See `tests/test_example_workflows.py::test_workflow_model_cleanup`

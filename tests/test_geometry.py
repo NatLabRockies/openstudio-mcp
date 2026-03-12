@@ -44,7 +44,7 @@ def test_list_surfaces():
                 assert load_result.get("ok") is True
 
                 # List surfaces
-                surfaces_result = unwrap(await session.call_tool("list_surfaces", {}))
+                surfaces_result = unwrap(await session.call_tool("list_surfaces", {"max_results": 0}))
 
                 assert isinstance(surfaces_result, dict)
                 assert surfaces_result.get("ok") is True
@@ -77,7 +77,7 @@ def test_list_subsurfaces():
                 assert load_result.get("ok") is True
 
                 # List subsurfaces
-                subsurfaces_result = unwrap(await session.call_tool("list_subsurfaces", {}))
+                subsurfaces_result = unwrap(await session.call_tool("list_subsurfaces", {"max_results": 0}))
 
                 assert isinstance(subsurfaces_result, dict)
                 assert subsurfaces_result.get("ok") is True
@@ -105,7 +105,7 @@ def test_surfaces_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                sr = await session.call_tool("list_surfaces", {})
+                sr = await session.call_tool("list_surfaces", {"max_results": 0})
                 sd = unwrap(sr)
                 print("baseline surfaces:", sd)
                 assert sd.get("ok") is True
@@ -135,7 +135,7 @@ def test_create_surface_wall():
                 sp_name = _unique_name("sp")
                 await _setup_with_space(s, _unique_name(), sp_name)
                 # 10m wide x 3m tall wall
-                surfs_before = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_before = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 count_before = surfs_before["count"]
 
                 res = unwrap(await s.call_tool("create_surface", {
@@ -151,7 +151,7 @@ def test_create_surface_wall():
                 assert surf["num_vertices"] == 4
 
                 # Independent query verification
-                surfs_after = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_after = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 assert surfs_after["count"] == count_before + 1
     asyncio.run(_run())
 
@@ -168,7 +168,7 @@ def test_create_surface_floor():
                 await s.initialize()
                 sp_name = _unique_name("sp")
                 await _setup_with_space(s, _unique_name(), sp_name)
-                surfs_before = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_before = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 count_before = surfs_before["count"]
 
                 res = unwrap(await s.call_tool("create_surface", {
@@ -181,7 +181,7 @@ def test_create_surface_floor():
                 assert res.get("ok") is True
                 assert res["surface"]["surface_type"] == "Floor"
 
-                surfs_after = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_after = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 assert surfs_after["count"] == count_before + 1
     asyncio.run(_run())
 
@@ -198,7 +198,7 @@ def test_create_surface_auto_type():
                 await s.initialize()
                 sp_name = _unique_name("sp")
                 await _setup_with_space(s, _unique_name(), sp_name)
-                surfs_before = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_before = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 count_before = surfs_before["count"]
 
                 # Vertical polygon → should auto-detect as Wall
@@ -210,7 +210,7 @@ def test_create_surface_auto_type():
                 assert res.get("ok") is True
                 assert res["surface"]["surface_type"] == "Wall"
 
-                surfs_after = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs_after = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 assert surfs_after["count"] == count_before + 1
     asyncio.run(_run())
 
@@ -271,7 +271,7 @@ def test_create_subsurface_window():
                 assert sub["surface"] == "WallForWindow"
 
                 # Independent query verification
-                subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                 assert any(ss["name"] == "TestWindow" for ss in subs.get("subsurfaces", []))
     asyncio.run(_run())
 
@@ -303,7 +303,7 @@ def test_create_subsurface_door():
                 assert res.get("ok") is True
                 assert res["subsurface"]["subsurface_type"] == "Door"
 
-                subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                 assert any(ss["name"] == "TestDoor" for ss in subs.get("subsurfaces", []))
     asyncio.run(_run())
 
@@ -357,7 +357,7 @@ def test_create_space_from_floor_print():
                 assert res["surface_types"]["Wall"] == 4
 
                 # Independent query verification
-                surfs = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 ext_surfs = [sf for sf in surfs["surfaces"] if sf["space"] == "ExtrudedSpace"]
                 assert len(ext_surfs) == 6
     asyncio.run(_run())
@@ -387,7 +387,7 @@ def test_match_surfaces_adjacent_spaces():
                     "floor_to_ceiling_height": 3.0,
                 }))
                 # Before matching: all walls are Outdoors
-                surfs_before = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
+                surfs_before = unwrap(await s.call_tool("list_surfaces", {"detailed": True, "max_results": 0}))
                 new_surfs = [sf for sf in surfs_before["surfaces"]
                              if sf["space"] in ("Left", "Right")]
                 interior_before = [sf for sf in new_surfs
@@ -400,7 +400,7 @@ def test_match_surfaces_adjacent_spaces():
                 assert res["matched_surfaces"] >= 2  # at least the shared wall pair
 
                 # After matching: shared wall should be "Surface"
-                surfs_after = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
+                surfs_after = unwrap(await s.call_tool("list_surfaces", {"detailed": True, "max_results": 0}))
                 new_surfs_after = [sf for sf in surfs_after["surfaces"]
                                    if sf["space"] in ("Left", "Right")]
                 interior_after = [sf for sf in new_surfs_after
@@ -464,7 +464,7 @@ def test_set_window_to_wall_ratio():
                 assert 10 < win_area < 14
 
                 # Independent query verification
-                subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                 assert subs["count"] >= 1
     asyncio.run(_run())
 
@@ -495,7 +495,7 @@ def test_set_window_to_wall_ratio_custom_sill():
                 assert res.get("ok") is True
                 assert res["num_subsurfaces"] >= 1
 
-                subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                 assert subs["count"] >= 1
     asyncio.run(_run())
 

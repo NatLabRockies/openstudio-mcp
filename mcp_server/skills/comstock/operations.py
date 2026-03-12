@@ -80,7 +80,6 @@ def list_comstock_measures(category: str | None = None) -> dict[str, Any]:
         entry: dict[str, Any] = {
             "name": d.name,
             "category": cat,
-            "path": str(d),
         }
         try:
             with suppress_openstudio_warnings():

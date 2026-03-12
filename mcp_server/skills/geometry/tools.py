@@ -16,13 +16,31 @@ from mcp_server.skills.geometry.operations import (
 
 def register(mcp):
     @mcp.tool(name="list_surfaces")
-    def list_surfaces_tool(detailed: bool = False):
-        """List all surfaces. Brief: name, type, area, space. Use get_surface_details for full info.
+    def list_surfaces_tool(
+        detailed: bool = False,
+        space_name: str | None = None,
+        surface_type: str | None = None,
+        boundary: str | None = None,
+        max_results: int = 10,
+    ):
+        """List surfaces. Default 10 results; use filters to narrow.
+
+        Common filters:
+        - Exterior walls: surface_type="Wall", boundary="Outdoors"
+        - All exterior: boundary="Outdoors"
+        - Surfaces in a space: space_name="Office 1"
 
         Args:
-            detailed: Return all fields (boundary conditions, construction, orientation, vertices, subsurfaces)
+            detailed: Return all fields (construction, orientation, vertices, subsurfaces)
+            space_name: Filter by parent space name
+            surface_type: Filter by type — "Wall", "Floor", "RoofCeiling"
+            boundary: Filter by outside boundary — "Outdoors", "Ground", "Surface"
+            max_results: Max items to return (default 10, 0=unlimited)
         """
-        return list_surfaces(detailed=detailed)
+        mr = None if max_results == 0 else max_results
+        return list_surfaces(detailed=detailed, space_name=space_name,
+                            surface_type=surface_type, boundary=boundary,
+                            max_results=mr)
 
     @mcp.tool(name="get_surface_details")
     def get_surface_details_tool(surface_name: str):
@@ -34,9 +52,28 @@ def register(mcp):
         return get_surface_details(surface_name=surface_name)
 
     @mcp.tool(name="list_subsurfaces")
-    def list_subsurfaces_tool():
-        """List all subsurfaces (windows/doors) in the model."""
-        return list_subsurfaces()
+    def list_subsurfaces_tool(
+        surface_name: str | None = None,
+        space_name: str | None = None,
+        subsurface_type: str | None = None,
+        max_results: int = 10,
+    ):
+        """List subsurfaces (windows/doors). Default 10 results; use filters to narrow.
+
+        Common filters:
+        - Windows on a wall: surface_name="Wall 1"
+        - All doors: subsurface_type="Door"
+        - Windows in a space: space_name="Office 1"
+
+        Args:
+            surface_name: Filter by parent surface name
+            space_name: Filter by parent space (transitive: subsurface→surface→space)
+            subsurface_type: Filter — "FixedWindow", "OperableWindow", "Door", "GlassDoor"
+            max_results: Max items to return (default 10, 0=unlimited)
+        """
+        mr = None if max_results == 0 else max_results
+        return list_subsurfaces(surface_name=surface_name, space_name=space_name,
+                               subsurface_type=subsurface_type, max_results=mr)
 
     @mcp.tool(name="create_surface")
     def create_surface_tool(

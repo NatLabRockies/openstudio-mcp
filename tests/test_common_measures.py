@@ -56,7 +56,6 @@ def test_list_common_measures():
                 assert res["count"] > 40, f"Expected >40 measures, got {res['count']}"
                 for m in res["measures"]:
                     assert "name" in m
-                    assert "path" in m
                     assert "category" in m
 
     asyncio.run(_run())
@@ -103,7 +102,7 @@ def test_list_measure_arguments_common():
                                 if m["name"] == "ChangeBuildingLocation"]
                 assert len(loc_measures) == 1, "ChangeBuildingLocation not found"
                 res = unwrap(await s.call_tool("list_measure_arguments", {
-                    "measure_dir": loc_measures[0]["path"],
+                    "measure_dir": "/opt/common-measures/" + loc_measures[0]["name"],
                 }))
                 assert res.get("ok") is True, f"Failed: {res}"
                 assert len(res["arguments"]) >= 1
@@ -132,7 +131,7 @@ def test_enable_ideal_air_loads():
                 assert res.get("ok") is True, f"enable_ideal_air_loads failed: {res}"
 
                 # After: check ideal air loads exist on zones
-                equip = unwrap(await s.call_tool("list_zone_hvac_equipment", {}))
+                equip = unwrap(await s.call_tool("list_zone_hvac_equipment", {"max_results": 0}))
                 assert equip.get("ok") is True
                 ideal_loads = [e for e in equip["zone_hvac_equipment"]
                                if "IdealLoads" in e.get("type", "")]
@@ -234,11 +233,12 @@ def test_view_model():
                 files = unwrap(await s.call_tool("list_files", {
                     "directory": run_dir,
                     "pattern": "*",
+                    "max_results": 0,
                 }))
                 assert files.get("ok") is True, f"list_files failed: {files}"
-                assert files["total_files"] > 0, f"No files in run_dir {run_dir}"
+                assert files["count"] > 0, f"No files in run_dir {run_dir}"
                 # The view_model measure generates report.html or similar
-                file_names = [f["name"] for f in files["files"]]
+                file_names = [f["name"] for f in files["items"]]
                 has_html = any(f.endswith(".html") for f in file_names)
                 has_json = any(f.endswith(".json") for f in file_names)
                 assert has_html or has_json, (
@@ -262,14 +262,14 @@ def test_replace_window_constructions():
                 await _setup_baseline(s, _unique("win_repl"))
 
                 # Get existing constructions
-                consts = unwrap(await s.call_tool("list_constructions", {}))
+                consts = unwrap(await s.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0}))
                 assert consts.get("ok") is True
                 if consts.get("count", 0) == 0:
                     pytest.skip("No constructions in baseline model")
-                const_name = consts["constructions"][0]["name"]
+                const_name = consts["objects"][0]["name"]
 
                 # Before: snapshot subsurface constructions
-                before_subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                before_subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                 assert before_subs.get("ok") is True
 
                 res = unwrap(await s.call_tool("replace_window_constructions", {
@@ -280,7 +280,7 @@ def test_replace_window_constructions():
 
                 if res.get("ok") is True and before_subs.get("count", 0) > 0:
                     # After: verify subsurfaces still exist (measure shouldn't delete them)
-                    after_subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                    after_subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                     assert after_subs.get("ok") is True
                     assert after_subs["count"] == before_subs["count"], (
                         f"Subsurface count changed: {before_subs['count']} -> {after_subs['count']}"
@@ -364,11 +364,11 @@ def test_set_thermostat_schedules():
                 await s.initialize()
                 await _setup_baseline(s, _unique("therm_set"))
 
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {}))
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
                 assert scheds["count"] > 0, "No schedules in baseline"
-                sched_name = scheds["schedule_rulesets"][0]["name"]
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("set_thermostat_schedules", {
                     "zone_name": zone_name,
@@ -398,10 +398,10 @@ def test_replace_thermostat_schedules():
                 await s.initialize()
                 await _setup_baseline(s, _unique("therm_repl"))
 
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {}))
-                sched_name = scheds["schedule_rulesets"][0]["name"]
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("replace_thermostat_schedules", {
                     "zone_name": zone_name,
@@ -428,9 +428,9 @@ def test_shift_schedule_time():
                 await s.initialize()
                 await _setup_baseline(s, _unique("shift_sched"))
 
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {}))
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
                 assert scheds["count"] > 0
-                sched_name = scheds["schedule_rulesets"][0]["name"]
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("shift_schedule_time", {
                     "schedule_name": sched_name,
@@ -545,11 +545,11 @@ def test_add_zone_ventilation():
                 await s.initialize()
                 await _setup_baseline(s, _unique("zone_vent"))
 
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
                 # Provide a schedule (required arg)
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {}))
-                sched_name = scheds["schedule_rulesets"][0]["name"] if scheds["count"] > 0 else ""
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                sched_name = scheds["objects"][0]["name"] if scheds["count"] > 0 else ""
 
                 res = unwrap(await s.call_tool("add_zone_ventilation", {
                     "zone_name": zone_name,
@@ -632,7 +632,7 @@ def test_set_adiabatic_boundaries():
                 assert res.get("ok") is True, f"Failed: {res}"
 
                 # After: verify some surfaces changed to adiabatic
-                after_surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
+                after_surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True, "max_results": 0}))
                 after_adiabatic = [
                     sf for sf in after_surfs["surfaces"]
                     if sf.get("outside_boundary_condition") == "Adiabatic"
@@ -674,7 +674,7 @@ def test_qaqc_post_sim():
                 # Save + run simulation
                 save_path = f"/runs/{name}_weather.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 

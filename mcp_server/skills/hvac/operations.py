@@ -10,7 +10,13 @@ from typing import Any
 import openstudio
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts
+from mcp_server.osm_helpers import (
+    build_list_response,
+    fetch_object,
+    list_all_as_dicts,
+    list_paginated,
+    optional_name,
+)
 
 
 def _extract_detailed_supply_components(air_loop) -> dict[str, Any]:
@@ -132,11 +138,24 @@ def _extract_air_loop(model, air_loop, detailed: bool = True) -> dict[str, Any]:
             "name": component.nameString() if hasattr(component, "nameString") else "Unnamed",
         })
 
+    # Extract demand-side terminals per zone
+    demand_terminals = []
+    for zone in air_loop.thermalZones():
+        terminal_opt = zone.airLoopHVACTerminal()
+        if terminal_opt.is_initialized():
+            terminal = terminal_opt.get()
+            demand_terminals.append({
+                "zone": zone.nameString(),
+                "terminal_type": terminal.iddObjectType().valueName(),
+                "terminal_name": terminal.nameString(),
+            })
+
     result.update({
         "handle": str(air_loop.handle()),
         "thermal_zones": thermal_zones,
         "num_supply_components": len(supply_components),
         "supply_components": supply_components[:10],
+        "demand_terminals": demand_terminals,
         "detailed_components": _extract_detailed_supply_components(air_loop),
         "outdoor_air_system": _extract_outdoor_air_system(air_loop),
         "setpoint_managers": _extract_setpoint_managers(air_loop),
@@ -252,16 +271,42 @@ def list_plant_loops(detailed: bool = False) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list plant loops: {e}"}
 
 
-def list_zone_hvac_equipment() -> dict[str, Any]:
-    """List all zone HVAC equipment in the model."""
+def list_zone_hvac_equipment(
+    thermal_zone_name: str | None = None,
+    equipment_type: str | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List zone HVAC equipment with filtering and pagination.
+
+    Common filters:
+    - Equipment in a zone: thermal_zone_name="Zone 1"
+    - All PTACs: equipment_type="ZoneHVACPackagedTerminalAirConditioner"
+    """
     try:
         model = get_model()
-        equipment = list_all_as_dicts(model, "getZoneHVACComponents", _extract_zone_hvac_component)
-        return {
-            "ok": True,
-            "count": len(equipment),
-            "zone_hvac_equipment": equipment,
-        }
+
+        filt = None
+        if thermal_zone_name or equipment_type:
+            def filt(m, comp):
+                if equipment_type:
+                    if comp.iddObjectType().valueName().replace("OS_", "").replace("_", "") != equipment_type.replace("_", ""):
+                        # Also try exact iddObjectType match
+                        if equipment_type not in comp.iddObjectType().valueName():
+                            return False
+                if thermal_zone_name:
+                    if hasattr(comp, "thermalZone"):
+                        tz = comp.thermalZone()
+                        if not tz.is_initialized() or tz.get().nameString() != thermal_zone_name:
+                            return False
+                    else:
+                        return False
+                return True
+
+        items, total = list_paginated(
+            model, "getZoneHVACComponents", _extract_zone_hvac_component,
+            max_results=max_results, obj_filter_fn=filt,
+        )
+        return build_list_response("zone_hvac_equipment", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
