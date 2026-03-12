@@ -271,3 +271,44 @@ def test_add_zone_equipment_invalid_type():
                 data = unwrap(result)
                 assert data["ok"] is False
     asyncio.run(_run())
+
+
+def test_remove_all_zone_equipment():
+    """Add 2 baseboards, remove_all, verify both gone."""
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                zones = await create_and_load(session, "lo_rmall")
+
+                # Add two baseboards
+                await session.call_tool("add_zone_equipment", {
+                    "zone_name": zones[0],
+                    "equipment_type": "ZoneHVACBaseboardConvectiveElectric",
+                    "equipment_name": "BB1",
+                })
+                await session.call_tool("add_zone_equipment", {
+                    "zone_name": zones[0],
+                    "equipment_type": "ZoneHVACBaseboardConvectiveElectric",
+                    "equipment_name": "BB2",
+                })
+
+                # Verify 2 present
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
+                names_before = [eq["name"] for eq in unwrap(ze).get("zone_hvac_equipment", [])]
+                assert "BB1" in names_before
+                assert "BB2" in names_before
+
+                # Remove all
+                result = await session.call_tool("remove_all_zone_equipment", {
+                    "zone_name": zones[0],
+                })
+                data = unwrap(result)
+                assert data["ok"] is True
+
+                # Verify both gone
+                ze2 = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
+                names_after = [eq["name"] for eq in unwrap(ze2).get("zone_hvac_equipment", [])]
+                assert "BB1" not in names_after
+                assert "BB2" not in names_after
+    asyncio.run(_run())

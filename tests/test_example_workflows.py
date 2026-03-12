@@ -166,6 +166,13 @@ def test_workflow_hvac_design_exploration():
                     }))
                     assert bp.get("ok") is True
 
+                    # Step 6b: Generic access — get_object_fields on same boiler
+                    fields = unwrap(await s.call_tool("get_object_fields", {
+                        "object_name": boilers[0]["name"],
+                    }))
+                    assert fields.get("ok") is True
+                    assert "fields" in fields
+
     asyncio.run(_run())
 
 
@@ -304,7 +311,15 @@ def test_workflow_internal_loads():
                     "object_type": "People", "max_results": 0,
                 }))
                 assert pl.get("ok") is True
-                assert any("Office People" in p.get("name", "") for p in pl["objects"])
+                people_obj = [p for p in pl["objects"] if "Office People" in p.get("name", "")]
+                assert len(people_obj) >= 1
+
+                # Step 6b: Generic access — inspect people definition fields
+                fields = unwrap(await s.call_tool("get_object_fields", {
+                    "object_name": people_obj[0]["name"],
+                }))
+                assert fields.get("ok") is True
+                assert "fields" in fields
 
                 ll = unwrap(await s.call_tool("list_model_objects", {
                     "object_type": "Lights", "max_results": 0,
