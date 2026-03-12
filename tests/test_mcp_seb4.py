@@ -431,7 +431,8 @@ def test_validate_osw_valid():
                 result = await _call_tool(session, "validate_osw", {"osw_path": DEFAULT_OSW_2013})
                 assert isinstance(result, dict)
                 assert result.get("ok") is True, result
-                assert result.get("valid") is True, result
+                # Valid OSW: ok=True and no issues
+                assert len(result.get("issues", [])) == 0, result
 
     asyncio.run(_run())
 

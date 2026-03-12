@@ -301,7 +301,7 @@ def test_remove_all_zone_equipment():
 
                 # Remove all
                 result = await session.call_tool("remove_all_zone_equipment", {
-                    "zone_name": zones[0],
+                    "zone_names": json.dumps([zones[0]]),
                 })
                 data = unwrap(result)
                 assert data["ok"] is True
