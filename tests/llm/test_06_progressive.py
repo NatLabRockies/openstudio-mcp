@@ -386,6 +386,15 @@ PROGRESSIVE_CASES = [
         "L3": "Use replace_air_terminals with terminal_type='CooledBeam'.",
     },
     {
+        "id": "replace_terminals_four_pipe_beam",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["replace_air_terminals"],
+        "L1": "Replace the air terminals with 4-pipe chilled beams that provide both heating and cooling.",
+        "L2": "Replace the air terminals on the air loop with FourPipeBeam type using replace_air_terminals.",
+        "L3": "Use replace_air_terminals with terminal_type='FourPipeBeam'.",
+    },
+    {
         "id": "measure_replace_terminals",
         "needs_model": True,
         "needs_hvac": True,
