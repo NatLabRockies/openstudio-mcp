@@ -350,6 +350,38 @@ def test_full_lifecycle():
 
 
 @pytest.mark.integration
+def test_create_measure_large_run_body():
+    """Create a measure with a ~2KB run_body — validates large payloads survive MCP transport."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("large_body")
+                # Build a ~2KB run_body with comments and real logic
+                lines = ['    runner.registerInfo("Start large body test")']
+                for i in range(40):
+                    lines.append(f'    # Step {i}: set building attribute to validate measure execution')
+                    lines.append(f'    runner.registerInfo("Processing step {i} of large measure body")')
+                lines.append('    model.getBuilding.setName("LargeBodyTest")')
+                lines.append('    runner.registerInfo("Done")')
+                run_body = "\n".join(lines)
+                assert len(run_body) > 2000, f"run_body only {len(run_body)} bytes"
+
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Large run_body transport test",
+                    "run_body": run_body,
+                    "language": "Ruby",
+                }))
+                assert res.get("ok") is True, res
+                assert res["validation"]["syntax_ok"] is True
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_apply_existing_measure():
     """Apply an existing measure from tests/assets/ to a model."""
     if not integration_enabled():
@@ -374,4 +406,194 @@ def test_apply_existing_measure():
                 assert res.get("ok") is True
                 bldg = unwrap(await s.call_tool("get_building_info", {}))
                 assert bldg["building"]["name"] == "Applied Externally"
+    asyncio.run(_run())
+
+
+# ── Name validation tests ──────────────────────────────────────────────
+
+
+@pytest.mark.integration
+def test_create_measure_rejects_path_traversal():
+    """create_measure must reject names with path traversal."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                for bad_name in ["../../etc", "../passwd", "a/b", ""]:
+                    res = unwrap(await s.call_tool("create_measure", {
+                        "name": bad_name,
+                        "description": "bad",
+                        "run_body": '    runner.registerInfo("x")',
+                        "language": "Ruby",
+                    }))
+                    assert res.get("ok") is False, f"Should reject name={bad_name!r}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_edit_measure_rejects_path_traversal():
+    """edit_measure must reject names with path traversal."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = unwrap(await s.call_tool("edit_measure", {
+                    "measure_name": "../../etc",
+                    "run_body": '    runner.registerInfo("x")',
+                }))
+                assert res.get("ok") is False
+    asyncio.run(_run())
+
+
+# ── Idempotent create test ─────────────────────────────────────────────
+
+
+@pytest.mark.integration
+def test_create_measure_idempotent():
+    """Calling create_measure twice with same name should succeed both times."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("idempotent")
+                body = '    runner.registerInfo("v1")'
+                # First create
+                res1 = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "First version",
+                    "run_body": body,
+                    "language": "Ruby",
+                }))
+                assert res1.get("ok") is True, res1
+                # Second create (same name, different body)
+                body2 = '    runner.registerInfo("v2")'
+                res2 = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Second version",
+                    "run_body": body2,
+                    "language": "Ruby",
+                }))
+                assert res2.get("ok") is True, f"Idempotent create failed: {res2}"
+                assert res2["validation"]["syntax_ok"] is True
+    asyncio.run(_run())
+
+
+# ── Test with real model ───────────────────────────────────────────────
+
+
+@pytest.mark.integration
+def test_test_measure_with_real_model():
+    """Measure requiring HVAC should pass test_measure against a real model.
+
+    Regression: previously test_measure always used an empty Model.new(),
+    causing measures that depend on plant loops/air loops to fail.
+    """
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                # Load the complex model so test_measure picks it up
+                load = unwrap(await s.call_tool("load_osm_model", {
+                    "osm_path": "/repo/tests/assets/SystemD_baseline.osm",
+                }))
+                assert load.get("ok") is True
+
+                # Create a measure that requires plant loops to exist
+                name = _unique("needs_hvac")
+                body = (
+                    '    chw = nil\n'
+                    '    model.getPlantLoops.each { |pl| chw = pl if pl.name.to_s.include?("Chilled") }\n'
+                    '    if chw.nil?\n'
+                    '      runner.registerError("No Chilled Water Loop found")\n'
+                    '      return false\n'
+                    '    end\n'
+                    '    runner.registerFinalCondition("Found #{chw.name}")'
+                )
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Requires CHW loop",
+                    "run_body": body,
+                    "language": "Ruby",
+                }))
+                assert create.get("ok") is True
+
+                # test_measure should pass because model has CHW loop
+                test = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert test.get("ok") is True, (
+                    f"test_measure failed (should pass with real model): "
+                    f"{test.get('test_output', '')[:500]}"
+                )
+                assert test["passed"] > 0
+                assert test["failed"] == 0
+    asyncio.run(_run())
+
+
+# ── measure.xml checksum validity ─────────────────────────────────────
+
+
+@pytest.mark.integration
+def test_measure_xml_checksums_valid():
+    """measure.xml file checksums must match actual files on disk.
+
+    Regression: _write_test_file was called AFTER _update_measure_xml,
+    leaving stale checksums that caused OS App Measure Manager to silently
+    reject the measure.
+    """
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        import binascii
+        import xml.etree.ElementTree as ET
+        from pathlib import Path
+
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("checksum")
+                body = '    runner.registerInfo("checksum test")'
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Checksum validation test",
+                    "run_body": body,
+                    "language": "Ruby",
+                }))
+                assert create.get("ok") is True
+
+                # Read measure.xml and verify checksums
+                xml_res = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{create['measure_dir']}/measure.xml",
+                }))
+                assert xml_res.get("ok") is True
+                root = ET.fromstring(xml_res["text"])
+
+                mdir = Path(create["measure_dir"])
+                for file_elem in root.findall(".//file"):
+                    fname = file_elem.findtext("filename")
+                    expected_crc = file_elem.findtext("checksum")
+                    if not fname or not expected_crc:
+                        continue
+                    # Find file on disk (could be in tests/ or docs/)
+                    candidates = list(mdir.rglob(fname))
+                    assert candidates, f"File {fname} listed in XML but not on disk"
+                    actual_data = candidates[0].read_bytes()
+                    actual_crc = f"{binascii.crc32(actual_data) & 0xffffffff:08X}"
+                    assert actual_crc == expected_crc, (
+                        f"Checksum mismatch for {fname}: "
+                        f"XML says {expected_crc}, actual {actual_crc}"
+                    )
     asyncio.run(_run())

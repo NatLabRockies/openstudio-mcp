@@ -58,19 +58,13 @@ def _find_skill_files() -> list[Path]:
 
 
 def _extract_tool_references(body: str) -> set[str]:
-    """Extract tool names from backtick-quoted references in markdown.
+    """Extract tool names from backtick-quoted function calls in markdown.
 
-    Matches patterns like `tool_name(` and `tool_name` when the name
-    looks like a snake_case MCP tool (contains underscore or known tool).
+    Only matches `tool_name(` patterns — all SKILL.md tool references use
+    function-call style.  Standalone `snake_case` words are parameter names,
+    not tools.
     """
-    # Match `tool_name(...)` patterns (function call style)
-    call_refs = set(re.findall(r"`(\w+)\(", body))
-
-    # Match standalone `tool_name` that contain underscores (snake_case = likely tool)
-    standalone_refs = set(re.findall(r"`(\w+)`", body))
-    snake_case = {r for r in standalone_refs if "_" in r}
-
-    return call_refs | snake_case
+    return set(re.findall(r"`(\w+)\(", body))
 
 
 # ---- tests ------------------------------------------------------------------
@@ -96,37 +90,12 @@ def test_tool_references_valid():
     """Every tool name referenced in SKILL.md body exists in MCP registry."""
     registered = _get_registered_tool_names()
 
-    # Known non-tool identifiers that look like snake_case but aren't tools
-    false_positives = {
-        "people_per_area", "watts_per_area", "default_value",
-        "schedule_type", "floor_to_ceiling_height", "thermal_zone_name",
-        "space_names", "material_names", "floor_vertices",
-        "heating_fuel", "cooling_fuel", "system_type", "system_name",
-        "economizer_type", "dry_bulb_max_c", "dry_bulb_range_c",
-        "day_type", "design_loop_exit_temperature_c",
-        "loop_design_temperature_difference_c",
-        "surface_name", "construction_name", "component_name",
-        "air_loop_name", "plant_loop_name", "variable_name",
-        "object_name", "new_name", "object_type", "measure_dir",
-        "epw_path", "osm_path", "run_id",
-        "fraction_of_roof", "cooling_offset_f", "heating_offset_f",
-        "alter_design_days", "begin_month", "begin_day",
-        "end_month", "end_day", "do_zone_sizing", "run_for_sizing_periods",
-        "reporting_frequency", "variable_names", "component_type",
-        "start_month", "end_month", "zone_equipment_type",
-        "sensible_effectiveness", "energy_recovery", "heat_recovery",
-        "outdoor_unit_capacity_w", "radiant_type", "ventilation_system",
-        "terminal_type", "terminal_options", "thermal_zone_names",
-        "fixed_windows", "operable_windows", "geometry_diagnostics",
-        "run_body",
-    }
-
     all_errors = []
     for path in _find_skill_files():
         _, body = _parse_skill_md(path)
         skill_name = path.parent.name
         refs = _extract_tool_references(body)
-        unknown = refs - registered - false_positives
+        unknown = refs - registered
         if unknown:
             all_errors.append(f"{skill_name}: unknown tools {sorted(unknown)}")
 

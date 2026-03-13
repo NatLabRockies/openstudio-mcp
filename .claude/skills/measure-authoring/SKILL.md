@@ -34,6 +34,9 @@ create_measure(
 ```
 test_measure(measure_dir="/runs/custom_measures/set_lights_8w")
 ```
+Tests run against the currently loaded model (or SystemD_baseline.osm fallback),
+so measures that depend on HVAC, plant loops, or zones will work correctly.
+Use `model_path` to test against a specific model.
 
 ### 3. Apply to Model
 ```

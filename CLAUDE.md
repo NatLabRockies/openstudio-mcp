@@ -3,7 +3,7 @@
 ## Project: openstudio-mcp
 MCP server that gives AI agents full control of building energy modeling —
 create buildings, configure HVAC, run EnergyPlus simulations, and extract
-results — all through 134 MCP tools backed by the OpenStudio SDK.
+results — all through 138 MCP tools backed by the OpenStudio SDK.
 
 **Who it's for:** Building energy modelers who want to use AI assistants
 (Claude, GPT, etc.) to do real modeling work — not just chat about it.
@@ -49,14 +49,15 @@ Always use openstudio-mcp tools for BEM tasks:
 | Phase 7 | 📋 FUTURE | Advanced creation (geometry, space type wizard) |
 | Phase 8 | ✅ COMPLETE | Bundle common-measures-gem (20 measures, 11 tools: reporting, thermostat, envelope, PV, visualization) |
 | Phase 9 | ✅ COMPLETE | AI-assisted measure authoring (3 tools: create, test, edit custom measures) |
+| Phase 10 | ✅ COMPLETE | Results & error management (4 tools: errors, variables, compare, validate) |
 
 ## Current Skills
 | Skill | Tools | Phase |
 |-------|-------|-------|
 | `server_info` | `get_server_status`, `get_versions` | Phase 1 |
 | `model_management` | `create_example_osm`, `create_baseline_osm`, `inspect_osm_summary`, `load_osm_model`, `save_osm_model`, `list_files` | Phase 1 + 2 |
-| `simulation` | `validate_osw`, `run_osw`, `run_simulation`, `get_run_status`, `get_run_logs`, `get_run_artifacts`, `cancel_run` | Phase 1 |
-| `results` | `extract_summary_metrics`, `read_file`, `copy_file`, `extract_end_use_breakdown`, `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`, `extract_component_sizing`, `query_timeseries` | Phase 1 + 9 |
+| `simulation` | `validate_osw`, `run_osw`, `run_simulation`, `get_run_status`, `get_run_logs`, `get_run_artifacts`, `cancel_run`, `validate_model` | Phase 1 + 10 |
+| `results` | `extract_summary_metrics`, `read_file`, `copy_file`, `extract_end_use_breakdown`, `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`, `extract_component_sizing`, `query_timeseries`, `extract_simulation_errors`, `list_output_variables`, `compare_runs` | Phase 1 + 9 + 10 |
 | `building` | `get_building_info`, `get_model_summary` | Phase 2 |
 | `spaces` | `list_spaces`, `get_space_details`, `list_thermal_zones`, `get_thermal_zone_details`, `create_space`, `create_thermal_zone` | Phase 2 + 3 |
 | `geometry` | `list_surfaces`, `get_surface_details`, `list_subsurfaces`, `create_surface`, `create_subsurface`, `create_space_from_floor_print`, `match_surfaces`, `set_window_to_wall_ratio`, `import_floorspacejs` | Phase 2 + 7 |
@@ -77,7 +78,7 @@ Always use openstudio-mcp tools for BEM tasks:
 | `measure_authoring` | `list_custom_measures`, `create_measure`, `test_measure`, `edit_measure` | Phase 9 |
 | `skill_discovery` | `list_skills`, `get_skill` | — |
 
-**Total: 23 skills, 134 MCP tools, ~390 integration tests**
+**Total: 23 skills, 138 MCP tools, ~400 integration tests**
 
 ## Model Query Pattern
 ```python
@@ -197,7 +198,7 @@ To add a new SPM type to `set_setpoint_manager_properties`:
 
 ## Rules
 1. Keep files small where practical — aim for under 250 lines, but don't split artificially just to hit a number
-2. Every MCP tool must have a test in `tests/skills/` (Phase 2+) or `tests/` (existing)
+2. Every MCP tool must have a test in `tests/skills/` (Phase 2+) or `tests/` (existing). New behavior, bug fixes, and security hardening must also have integration tests — not just the happy path.
 3. **Integration tests must be added to `.github/workflows/ci.yml`** — add a new step following the existing pattern
 4. Operations return dicts with `{"ok": True/False, ...}` — never raise through MCP
 5. Use `openstudio` Python bindings directly.

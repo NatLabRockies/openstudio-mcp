@@ -397,23 +397,42 @@ def get_run_status(run_id: str) -> dict[str, Any]:
     _RUNS[run_id] = rec
     _persist_run_record(rec)
 
-    return {
-        "ok": True,
-        "run": {
-            "run_id": rec.run_id,
-            "name": rec.name,
-            "status": rec.status,
-            "created_at": rec.created_at,
-            "started_at": rec.started_at,
-            "ended_at": rec.ended_at,
-            "pid": rec.pid,
-            "run_dir": str(rec.run_dir),
-            "osw_path": str(rec.osw_path),
-            "epw_path": str(rec.epw_path) if rec.epw_path else None,
-            "exit_code": rec.exit_code,
-            "error": rec.error,
-        },
+    run_dict = {
+        "run_id": rec.run_id,
+        "name": rec.name,
+        "status": rec.status,
+        "created_at": rec.created_at,
+        "started_at": rec.started_at,
+        "ended_at": rec.ended_at,
+        "pid": rec.pid,
+        "run_dir": str(rec.run_dir),
+        "osw_path": str(rec.osw_path),
+        "epw_path": str(rec.epw_path) if rec.epw_path else None,
+        "exit_code": rec.exit_code,
+        "error": rec.error,
     }
+
+    # On failure, attach error_summary from eplusout.err if available
+    if rec.status == "failed":
+        err_path = rec.run_dir / "run" / "eplusout.err"
+        if not err_path.exists():
+            err_path = rec.run_dir / "energyplus.err"
+        if err_path.exists():
+            try:
+                from mcp_server.skills.results.err_parser import parse_err_file
+                parsed = parse_err_file(err_path.read_text(errors="replace"))
+                run_dict["error_summary"] = {
+                    "fatal_count": len(parsed["fatal"]),
+                    "severe_count": len(parsed["severe"]),
+                    "warning_count": parsed["warning_count"],
+                    "first_fatal": parsed["fatal"][0] if parsed["fatal"] else None,
+                    "first_severe": parsed["severe"][0] if parsed["severe"] else None,
+                    "summary": parsed["summary"],
+                }
+            except Exception:
+                pass
+
+    return {"ok": True, "run": run_dict}
 
 
 def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "openstudio") -> dict[str, Any]:
@@ -521,6 +540,67 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     except Exception as e:
         return {"ok": False, "run_id": run_id, "error": str(e)}
+
+
+def validate_model_op() -> dict[str, Any]:
+    """Pre-simulation model checks using the loaded model."""
+    from mcp_server.model_manager import get_model
+
+    model = get_model()
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    MAX_PER_CATEGORY = 10
+
+    # Check weather file (warning, not error — EPW can be passed at sim time)
+    wf = model.getOptionalWeatherFile()
+    if not wf.is_initialized():
+        warnings.append(
+            "No weather file set on model — pass epw_path to run_simulation or use change_building_location",
+        )
+
+    # Check design days
+    dds = model.getDesignDays()
+    if len(dds) == 0:
+        errors.append("No design days — HVAC sizing will fail")
+
+    # Check thermal zones have HVAC or ideal air
+    zones = model.getThermalZones()
+    zones_no_hvac: list[str] = []
+    for z in zones:
+        equip = z.equipment()
+        has_ideal = z.useIdealAirLoads()
+        if len(equip) == 0 and not has_ideal:
+            zones_no_hvac.append(z.nameString())
+    if zones_no_hvac:
+        shown = zones_no_hvac[:MAX_PER_CATEGORY]
+        msg = f"{len(zones_no_hvac)} zone(s) have no HVAC or ideal air loads: {', '.join(shown)}"
+        if len(zones_no_hvac) > MAX_PER_CATEGORY:
+            msg += f" and {len(zones_no_hvac) - MAX_PER_CATEGORY} more"
+        warnings.append(msg)
+
+    # Check surfaces missing constructions
+    surfaces = model.getSurfaces()
+    no_construction: list[str] = []
+    for s in surfaces:
+        c = s.construction()
+        if not c.is_initialized():
+            no_construction.append(s.nameString())
+    if no_construction:
+        shown = no_construction[:MAX_PER_CATEGORY]
+        msg = f"{len(no_construction)} surface(s) missing construction: {', '.join(shown)}"
+        if len(no_construction) > MAX_PER_CATEGORY:
+            msg += f" and {len(no_construction) - MAX_PER_CATEGORY} more"
+        warnings.append(msg)
+
+    return {
+        "ok": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "zone_count": len(zones),
+        "surface_count": len(surfaces),
+        "design_day_count": len(dds),
+    }
 
 
 def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None = None) -> dict[str, Any]:

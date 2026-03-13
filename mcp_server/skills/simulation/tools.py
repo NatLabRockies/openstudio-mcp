@@ -8,6 +8,7 @@ from mcp_server.skills.simulation.operations import (
     get_run_status,
     run_osw,
     run_simulation,
+    validate_model_op,
     validate_osw,
 )
 
@@ -87,3 +88,10 @@ def register(mcp):
     def cancel_run_tool(run_id: str):
         """Attempt to cancel a running job."""
         return cancel_run(run_id)
+
+    @mcp.tool(name="validate_model")
+    def validate_model_tool():
+        """Pre-simulation validation: weather file, design days, HVAC, constructions.
+        Run before simulate to catch common issues early.
+        """
+        return validate_model_op()

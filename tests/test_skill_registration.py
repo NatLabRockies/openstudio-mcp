@@ -130,6 +130,11 @@ EXPECTED_TOOLS = {
     "extract_zone_summary",
     "extract_component_sizing",
     "query_timeseries",
+    # Phase 10: Results & Error Management
+    "extract_simulation_errors",
+    "list_output_variables",
+    "compare_runs",
+    "validate_model",
     # Model Management extras
     "list_files",
     # Common Measures — Tier 1

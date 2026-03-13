@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from mcp_server.skills.results.operations import (
+    compare_runs_op,
     copy_file,
     extract_component_sizing_op,
     extract_end_use_breakdown_op,
     extract_envelope_summary_op,
     extract_hvac_sizing_op,
+    extract_simulation_errors_op,
     extract_summary_metrics,
     extract_zone_summary_op,
+    list_output_variables_op,
     query_timeseries_op,
     read_file,
 )
@@ -44,13 +47,49 @@ def register(mcp):
 
     @mcp.tool(name="copy_file")
     def copy_file_tool(file_path: str, destination: str = "/runs/exports"):
-        """Copy a file to an accessible path, bypassing the MCP size limit.
+        """Copy a file or directory to an accessible path.
+
+        Supports both individual files and entire directories (e.g. measure dirs).
+        Bypasses the MCP size limit for large files like HTML reports.
 
         Args:
-            file_path: Absolute path to the source file
+            file_path: Absolute path to the source file or directory
             destination: Target directory (default /runs/exports/)
         """
         return copy_file(file_path=file_path, destination=destination)
+
+    @mcp.tool(name="extract_simulation_errors")
+    def extract_simulation_errors_tool(run_id: str):
+        """Parse simulation errors from eplusout.err into categorized Fatal/Severe/Warning lists.
+        Use after a failed simulation to diagnose what went wrong.
+
+        Args:
+            run_id: Run identifier
+        """
+        return extract_simulation_errors_op(run_id=run_id)
+
+    @mcp.tool(name="list_output_variables")
+    def list_output_variables_tool(run_id: str):
+        """List available output variables and meters from a completed simulation.
+        Use this to discover what timeseries data you can query with query_timeseries.
+
+        Args:
+            run_id: Run identifier
+        """
+        return list_output_variables_op(run_id=run_id)
+
+    @mcp.tool(name="compare_runs")
+    def compare_runs_tool(baseline_run_id: str, retrofit_run_id: str):
+        """Compare two simulation runs: EUI delta, unmet hours delta, and per-end-use breakdown.
+        Use after running baseline + retrofit simulations to quantify the impact.
+        Includes full end-use breakdown for both runs — no need to call
+        extract_end_use_breakdown separately.
+
+        Args:
+            baseline_run_id: Run identifier for the baseline simulation
+            retrofit_run_id: Run identifier for the retrofit simulation
+        """
+        return compare_runs_op(baseline_run_id=baseline_run_id, retrofit_run_id=retrofit_run_id)
 
     # --- Tier 1: Tabular report extraction ---
 

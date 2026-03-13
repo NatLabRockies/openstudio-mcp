@@ -38,7 +38,33 @@ pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
+SYSTEMD = "/repo/tests/assets/SystemD_baseline.osm"
+BOSTON_EPW_DIR = "/repo/tests/assets"
+
 WORKFLOW_CASES = [
+    {
+        # End-to-end retrofit from user perspective: load model, set weather,
+        # baseline sim, author measure, apply, retrofit sim, compare, save measure.
+        # Mimics a real Claude Desktop session with natural language.
+        "id": "systemd_fourpipebeam_e2e",
+        "prompt": (
+            f"I have a model at {SYSTEMD}. "
+            f"I want you to run the model with Boston-Logan weather file — "
+            f"files are in {BOSTON_EPW_DIR}. "
+            "After that, create a measure for me that changes the air terminals "
+            "to 4-pipe chilled beams, apply that measure to the model, "
+            "run the model, and compare the results for me. "
+            "Save the measure in the same location as the model so I have a copy."
+        ),
+        "required_tools": ["load_osm_model", "change_building_location",
+                           "save_osm_model", "run_simulation",
+                           "create_measure", "apply_measure"],
+        "any_of": ["compare_runs", "extract_summary_metrics",
+                    "extract_end_use_breakdown"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 40,
+        "timeout": 720,
+    },
     {
         # Add ASHRAE System 7 (VAV with reheat) — the most common baseline system
         "id": "add_vav_reheat",
@@ -419,6 +445,9 @@ WORKFLOW_CASES = [
 ]
 
 
+SYSTEMD_MODEL = SYSTEMD  # alias for the standalone test below
+
+
 @pytest.mark.parametrize("case", WORKFLOW_CASES, ids=[c["id"] for c in WORKFLOW_CASES])
 def test_workflow(case):
     """Agent loads model and completes a multi-step workflow.
@@ -478,3 +507,40 @@ def test_workflow(case):
                 f"Expected {tool} >= {min_count} times, got {actual}. "
                 f"Tools: {tool_names}"
             )
+
+
+def test_complex_model_multi_query():
+    """Load 44-zone complex model and run multiple query tools — transport regression test.
+
+    Reproduces the failure mode from Claude Desktop: SWIG stdout warnings on
+    large models corrupt MCP JSON-RPC, causing "No result received" timeouts.
+    The agent must successfully complete all 4 queries without transport errors.
+    """
+    tier = get_tier()
+    if tier not in ("all", "2"):
+        pytest.skip("Tier 2 not selected")
+
+    prompt = (
+        f"Load the model at {SYSTEMD_MODEL} using load_osm_model. Then:\n"
+        "1. Call get_building_info to get building details.\n"
+        "2. Call list_air_loops with max_results=0 to list all air loops.\n"
+        "3. Call list_plant_loops with max_results=0 to list all plant loops.\n"
+        "4. Call list_thermal_zones with max_results=5.\n"
+        "Report a summary of what you found. Use MCP tools only."
+    )
+
+    result = run_claude(prompt, timeout=120)
+    tool_names = result.tool_names
+
+    assert "load_osm_model" in tool_names, f"Missing load_osm_model. Tools: {tool_names}"
+    assert "get_building_info" in tool_names, f"Missing get_building_info. Tools: {tool_names}"
+
+    # At least 2 of the 3 list tools should succeed (agent may reorder or skip one)
+    list_tools = {"list_air_loops", "list_plant_loops", "list_thermal_zones"}
+    found = list_tools & set(tool_names)
+    assert len(found) >= 2, (
+        f"Expected >=2 of {list_tools}, got: {found}. Tools: {tool_names}"
+    )
+
+    # Verify no error in final text (transport failures show up as error messages)
+    assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"

@@ -10,7 +10,6 @@ import openstudio
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed
 from mcp_server.skills.model_management.baseline_model import create_baseline_model
-from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def _safe_name(s: str) -> str:
@@ -40,9 +39,8 @@ def create_example_osm(name: str | None = None, out_dir: str | None = None) -> d
     try:
         model_dir.mkdir(parents=True, exist_ok=True)
 
-        with suppress_openstudio_warnings():
-            model = openstudio.model.exampleModel()
-            ok = model.save(_os_path(osm_path), True)
+        model = openstudio.model.exampleModel()
+        ok = model.save(_os_path(osm_path), True)
 
         if ok is False:
             return {"ok": False, "error": "model.save(...) returned False."}
@@ -83,15 +81,13 @@ def inspect_osm_summary(osm_path: str) -> dict[str, Any]:
         return {"ok": False, "error": f"OSM not found: {p}", "osm_path": str(p)}
 
     try:
-        with suppress_openstudio_warnings():
-            vt = openstudio.osversion.VersionTranslator()
-            loaded = vt.loadModel(_os_path(p))
+        vt = openstudio.osversion.VersionTranslator()
+        loaded = vt.loadModel(_os_path(p))
 
-            if not loaded.is_initialized():
-                return {"ok": False, "error": f"Failed to load OSM: {p}", "osm_path": str(p)}
+        if not loaded.is_initialized():
+            return {"ok": False, "error": f"Failed to load OSM: {p}", "osm_path": str(p)}
 
-            model = loaded.get()
-
+        model = loaded.get()
         building = model.getBuilding()
         try:
             building_name = building.nameString()
@@ -342,16 +338,15 @@ def create_baseline_osm(
     try:
         model_dir.mkdir(parents=True, exist_ok=True)
 
-        with suppress_openstudio_warnings():
-            model, info = create_baseline_model(
-                name=safe,
-                num_floors=num_floors,
-                floor_to_floor_height=floor_to_floor_height,
-                perimeter_zone_depth=perimeter_zone_depth,
-                ashrae_sys_num=ashrae_sys_num,
-                wwr=wwr,
-            )
-            ok = model.save(str(osm_path), True)
+        model, info = create_baseline_model(
+            name=safe,
+            num_floors=num_floors,
+            floor_to_floor_height=floor_to_floor_height,
+            perimeter_zone_depth=perimeter_zone_depth,
+            ashrae_sys_num=ashrae_sys_num,
+            wwr=wwr,
+        )
+        ok = model.save(str(osm_path), True)
 
         if ok is False:
             return {"ok": False, "error": "model.save() returned False."}
