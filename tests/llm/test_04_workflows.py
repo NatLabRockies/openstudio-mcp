@@ -277,6 +277,145 @@ WORKFLOW_CASES = [
         "required_tools": ["extract_summary_metrics", "extract_end_use_breakdown"],
         "timeout": 120,
     },
+    {
+        # Replace air terminals with CooledBeam, simulate, extract results
+        "id": "hvac_chilled_beam_comparison",
+        "prompt": LOAD_HVAC + (
+            "Get the current air loop details. "
+            "Replace all air terminals with CooledBeam type using replace_air_terminals. "
+            "Save the model and run a simulation. "
+            "Extract the end use breakdown. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "replace_air_terminals",
+                           "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "max_turns": 25,
+        "timeout": 300,
+    },
+    {
+        # Measure authoring lifecycle: create → test → apply
+        "id": "create_test_apply_measure",
+        "prompt": LOAD + (
+            "Create a Ruby custom measure named 'set_bldg_name_test' using "
+            "create_measure. It should set the building name to 'LLM Test'. "
+            "Use language Ruby, and run_body: "
+            "\"    model.getBuilding.setName('LLM Test')\\n"
+            "    runner.registerInfo('Done')\". "
+            "Then test it using test_measure. "
+            "Then apply it using apply_measure with the measure_dir from create. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure"],
+        "max_turns": 25,
+        "timeout": 180,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_set_lights_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that sets all LightsDefinition "
+            "objects to 8 W/m2 using setWattsperSpaceFloorArea.\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_set_infiltration_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that sets all "
+            "SpaceInfiltrationDesignFlowRate objects to use "
+            "Flow/ExteriorArea method at 0.0003 m3/s-m2 "
+            "(setFlowperExteriorSurfaceArea).\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_replace_terminals_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that replaces all air terminals "
+            "on every air loop with 4-pipe active chilled beam terminals. "
+            "For each air loop, iterate thermalZones, removeBranchForZone, "
+            "create CoilCoolingFourPipeBeam + CoilHeatingFourPipeBeam, "
+            "wire coils to the CHW and HW plant loops, create "
+            "AirTerminalSingleDuctConstantVolumeFourPipeBeam, and reconnect "
+            "via addBranchForZone.\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics or end use breakdown.\n"
+            "6. Compare baseline vs retrofit results and report the "
+            "difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 40,
+        "timeout": 720,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_add_baseboards_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that adds a "
+            "ZoneHVACBaseboardConvectiveElectric to every thermal zone "
+            "using addToThermalZone. Name each baseboard after its zone.\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
 ]
 
 
@@ -331,3 +470,11 @@ def test_workflow(case):
         assert any(t in tool_names for t in case["any_of"]), (
             f"None of {case['any_of']} found. Tools: {tool_names}"
         )
+
+    if "min_calls" in case:
+        for tool, min_count in case["min_calls"].items():
+            actual = tool_names.count(tool)
+            assert actual >= min_count, (
+                f"Expected {tool} >= {min_count} times, got {actual}. "
+                f"Tools: {tool_names}"
+            )

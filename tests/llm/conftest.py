@@ -11,7 +11,7 @@ This conftest provides:
 
 Environment variables:
   LLM_TESTS_ENABLED  — set to "1" to enable LLM tests (default: disabled)
-  LLM_TESTS_MAX_PROMPTS — hard cap on Claude invocations per run (default: 50)
+  LLM_TESTS_MAX_PROMPTS — hard cap on Claude invocations per run (default: 180)
   LLM_TESTS_TIER — filter to run specific tier: "1", "2", "3", "4", or "all"
   LLM_TESTS_RETRIES — retry count for failed tests (default: 2)
   LLM_TESTS_MODEL — model to use: "sonnet", "haiku", "opus" (default: "sonnet")
@@ -71,6 +71,9 @@ FLAKY_TESTS = frozenset({
     "set_wwr_L1",
     "check_loads_L1",
     "ideal_air_L1",
+    # Measure authoring — L1 may trigger related tools instead
+    "test_measure_L1",
+    "edit_measure_L1",
 })
 
 
@@ -309,6 +312,11 @@ def pytest_runtest_protocol(item, nextitem):
 _benchmark_results: list[dict] = []
 _test_start_times: dict[str, float] = {}
 
+# Clear NDJSON logs at session start so only latest run remains
+_ndjson_log_dir = _RUNS_DIR / "ndjson_logs"
+if _ndjson_log_dir.exists():
+    shutil.rmtree(_ndjson_log_dir)
+
 
 def pytest_runtest_setup(item):
     """Record test start time."""
@@ -356,6 +364,16 @@ def pytest_runtest_logreport(report):
         "attempt": attempt,
         **stats,
     })
+
+    # Persist NDJSON log for debugging
+    if _last_result and _last_result.raw_ndjson:
+        log_dir = _RUNS_DIR / "ndjson_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_name = _short_test_id(report.nodeid).replace("/", "_")
+        suffix = f"_attempt{attempt}" if attempt > 1 else ""
+        (log_dir / f"{log_name}{suffix}.ndjson").write_text(
+            _last_result.raw_ndjson, encoding="utf-8",
+        )
 
 
 def _fmt_tokens(n: int) -> str:

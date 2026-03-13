@@ -69,7 +69,9 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             air_loop_name: Name of air loop to modify
-            terminal_type: VAV_Reheat | VAV_NoReheat | PFP_Electric | PFP_HotWater | CAV | FourPipeBeam
+            terminal_type: VAV_Reheat | VAV_NoReheat | PFP_Electric | PFP_HotWater | CAV | FourPipeBeam | CooledBeam
+                CooledBeam = 2-pipe cooling-only beam (CHW loop, no heating). Best for interior zones.
+                FourPipeBeam = 4-pipe active beam (CHW+HW, heating+cooling). Best for perimeter/cold climates.
             terminal_options: Optional dict: min_airflow_fraction (0-1), fan_power_w_per_cfm
         """
         result = operations.replace_air_terminals(
@@ -89,7 +91,9 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             zone_name: Name of the thermal zone to modify
-            terminal_type: VAV_Reheat | VAV_NoReheat | PFP_Electric | PFP_HotWater | CAV | FourPipeBeam
+            terminal_type: VAV_Reheat | VAV_NoReheat | PFP_Electric | PFP_HotWater | CAV | FourPipeBeam | CooledBeam
+                CooledBeam = 2-pipe cooling-only beam (CHW loop, no heating). Best for interior zones.
+                FourPipeBeam = 4-pipe active beam (CHW+HW, heating+cooling). Best for perimeter/cold climates.
             terminal_options: Optional dict: min_airflow_fraction (0-1)
         """
         result = operations.replace_zone_terminal(

@@ -9,10 +9,33 @@
 | 3   | 90    | 82     | 91.1% | $11.39 | + test definition fixes, tool description improvements |
 | 4   | 90    | 84     | 93.3% | $11.62 | No code changes (stability run) |
 | 5   | 107   | 103    | 96.3% | $8.87  | + generic access tests, test cleanup |
-| **6** | **159** | **153** | **96.2%** | **—** | **+ 16 progressive cases, 4 workflows, sim setup** |
+| 6   | 159   | 153    | 96.2% | —      | + 16 progressive cases, 4 workflows, sim setup |
+| **7** | **159** | **155** | **97.5%** | **—** | **Test consolidation (no tool/prompt changes)** |
 
 *Cost is notional API pricing reported by Claude Code CLI, not actual charges.
 On Claude Max (subscription), these tests run at no additional cost.*
+
+## Run 7 (2026-03-12, post-consolidation)
+
+- **No tool or prompt changes** — stability run after test consolidation
+- **155/159 passed (97.5%)** — up from 153/159 (96.2%)
+- Runtime: 94 min (1:34:26)
+- 4 failures, all known flaky:
+  - `floorspacejs_to_typical` (workflow) — multi-step chain stuck after step 1
+  - `import_floorplan_L1` — no file path in prompt
+  - `list_dynamic_type_L1` — used explicit sizing tools instead of list_model_objects
+  - `check_loads_L1` — "What loads?" too vague, used get_space_details instead
+
+### Per-Tier (Run 7)
+
+| Tier        | Passed | Total | Rate |
+|-------------|--------|-------|------|
+| setup       | 5      | 5     | 100% |
+| tier1       | 4      | 4     | 100% |
+| tier2       | 18     | 19    | 95%  |
+| tier3       | 26     | 26    | 100% |
+| tier4       | 3      | 3     | 100% |
+| progressive | 99     | 102   | 97%  |
 
 ## Run 6 Changes
 
@@ -110,19 +133,21 @@ All 16 new progressive cases passed at L2+L3. 15/16 passed at L1.
 | plant_loop_with_boiler | load + create_plant_loop + add_supply_equipment | PASS | |
 | extract_results_chain | extract_summary_metrics + extract_end_use_breakdown | PASS | Uses saved run_id |
 
-## Run 6 Failed Tests (6 failures)
+## Run 7 Failed Tests (4 failures)
 
 ### Known flaky L1 (3 failures)
 - **import_floorplan_L1** — no file path in prompt, agent asks for one
 - **list_dynamic_type_L1** — "What sizing parameters?" → used explicit tool instead of list_model_objects
 - **check_loads_L1** — "What loads are assigned to the first space?" too vague
 
-### Eval cases (2 failures)
-- **energy-report** — multi-step chain, intermittent
-- **retrofit** — multi-step comparison, intermittent
-
 ### Workflow (1 failure)
 - **floorspacejs_to_typical** — multi-step chain got stuck after step 1. Known flaky.
+
+## Run 6 Failed Tests (6 failures)
+
+- import_floorplan_L1, list_dynamic_type_L1, check_loads_L1 (flaky L1)
+- energy-report, retrofit (eval, intermittent)
+- floorspacejs_to_typical (workflow, intermittent)
 
 ## Running
 

@@ -416,3 +416,105 @@ def test_mcp_bad_osw_path_fails_cleanly():
 
     err = str(run_res.get("error") or "").lower()
     assert ("osw" in err) or ("not found" in err), f"Unexpected error message: {run_res!r}"
+
+
+@pytest.mark.integration
+def test_validate_osw_valid():
+    """validate_osw returns ok+valid for a good OSW."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await _call_tool(session, "validate_osw", {"osw_path": DEFAULT_OSW_2013})
+                assert isinstance(result, dict)
+                assert result.get("ok") is True, result
+                # Valid OSW: ok=True and no issues
+                assert len(result.get("issues", [])) == 0, result
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_validate_osw_bad_weather():
+    """validate_osw returns invalid for OSW with missing weather file."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await _call_tool(session, "validate_osw", {"osw_path": DEFAULT_OSW_2013_BAD_WEATHER})
+                assert isinstance(result, dict)
+                # Should fail validation (bad weather) — ok=false or valid=false
+                if result.get("ok") is True:
+                    assert result.get("valid") is False, result
+                else:
+                    assert result.get("ok") is False
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_cancel_run():
+    """Start sim, immediately cancel, assert terminal state."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    _host_path_exists_if_applicable(DEFAULT_OSW_2013)
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tool_timeout = float(os.environ.get("MCP_TOOL_TIMEOUT", "30"))
+
+                run_res = await _call_tool(session, "run_osw", {
+                    "osw_path": DEFAULT_OSW_2013, "epw_path": None, "name": "cancel_test",
+                }, timeout=tool_timeout)
+                assert isinstance(run_res, dict) and run_res.get("ok") is not False, run_res
+
+                run_id = run_res.get("run_id") or run_res.get("id")
+                assert run_id, f"No run_id: {run_res}"
+
+                # Immediately cancel
+                cancel = await _call_tool(session, "cancel_run", {"run_id": run_id}, timeout=tool_timeout)
+                assert isinstance(cancel, dict)
+
+                # Check final state is terminal
+                status = await _call_tool(session, "get_run_status", {"run_id": run_id}, timeout=tool_timeout)
+                state = _extract_run_status(status).lower()
+                terminal = {"success", "failed", "error", "cancelled", "canceled"}
+                assert state in terminal, f"Expected terminal state, got: {state}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_get_run_artifacts():
+    """After simulation completes, get_run_artifacts returns non-empty list."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    _host_path_exists_if_applicable(DEFAULT_OSW_2013)
+
+    result = asyncio.run(_run_once_and_wait(osw_path=DEFAULT_OSW_2013, epw_path=None))
+    state = (result.get("state") or "").lower()
+    assert state == "success", f"Sim failed: {state}"
+
+    run_id = result["run_id"]
+
+    async def _check():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                artifacts = await _call_tool(session, "get_run_artifacts", {"run_id": run_id})
+                assert isinstance(artifacts, dict)
+                assert artifacts.get("ok") is True, artifacts
+                items = artifacts.get("items") or artifacts.get("artifacts") or []
+                assert len(items) > 0, f"Expected artifacts, got: {artifacts}"
+
+    asyncio.run(_check())

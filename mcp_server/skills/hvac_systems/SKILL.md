@@ -28,11 +28,12 @@ All ASHRAE 90.1 Appendix G baseline system types fully implemented:
 - ✅ System 7: VAV w/ Reheat (Chiller/Boiler/Tower, HW reheat)
 - ✅ System 8: VAV w/ PFP (Chiller/Boiler/Tower, electric reheat)
 
-**Testing:** 18 comprehensive integration tests
-- All systems tested with success + error cases
+**Testing:** 73 validation tests + 18 system integration tests
+- All 10 systems tested with success + error cases
 - Multi-zone validation (PSZ rejection)
 - Plant loop verification (Systems 5, 7-8)
 - Terminal verification (VAV vs PFP)
+- Economizer on/off for systems 3-8
 - Edge case handling
 
 **Implementation Timeline:**
@@ -54,7 +55,7 @@ All ASHRAE 90.1 Appendix G baseline system types fully implemented:
 Add complete ASHRAE 90.1 Appendix G baseline HVAC system.
 
 **Parameters:**
-- `system_type` (int, required): ASHRAE baseline system type (1-3 currently)
+- `system_type` (int, required): ASHRAE baseline system type (1-10)
 - `thermal_zone_names` (list[str], required): Thermal zone names to serve
 - `heating_fuel` (str, default="NaturalGas"): "NaturalGas", "Electricity", or "DistrictHeating"
 - `cooling_fuel` (str, default="Electricity"): "Electricity" or "DistrictCooling"
@@ -189,19 +190,52 @@ Get detailed metadata for a specific ASHRAE baseline system type.
 **Use Case:** Small commercial, retail, single-zone buildings
 **Notes:** Central air loop serving single zone, supports economizer
 
-### System 4: PSZ-HP (Coming Soon)
+### System 4: PSZ-HP
 **Equipment:** Packaged single-zone heat pump rooftop unit
 **Heating:** DX heat pump with supplemental electric
 **Cooling:** DX heat pump
 **Use Case:** Small commercial, retail
+**Notes:** Single zone only, supports economizer
 
-### Systems 5-10 (Coming Soon)
-- System 5: Packaged VAV w/ Reheat
-- System 6: Packaged VAV w/ PFP Boxes
-- System 7: VAV w/ Reheat (Chiller/Boiler)
-- System 8: VAV w/ PFP Boxes (Chiller/Boiler)
-- System 9: Heating & Ventilation (Gas)
-- System 10: Heating & Ventilation (Electric)
+### System 5: Packaged VAV w/ Reheat
+**Equipment:** Packaged rooftop VAV with hot water reheat
+**Heating:** HW boiler loop + DX cooling
+**Cooling:** DX coil
+**Use Case:** Medium commercial
+**Notes:** Creates HW plant loop with boiler, VAV reheat terminals
+
+### System 6: Packaged VAV w/ PFP Boxes
+**Equipment:** Packaged rooftop VAV with parallel fan-powered boxes
+**Heating:** Electric reheat in PFP terminals
+**Cooling:** DX coil
+**Use Case:** Medium commercial
+**Notes:** PFP terminals with electric reheat, no HW loop
+
+### System 7: VAV w/ Reheat (Chiller/Boiler)
+**Equipment:** Central VAV with chiller, boiler, cooling tower
+**Heating:** HW boiler, HW reheat coils
+**Cooling:** Chilled water coil
+**Use Case:** Large commercial
+**Notes:** Creates CHW, HW, and condenser water loops
+
+### System 8: VAV w/ PFP Boxes (Chiller/Boiler)
+**Equipment:** Central VAV with chiller, cooling tower, PFP terminals
+**Heating:** Electric reheat in PFP terminals
+**Cooling:** Chilled water coil
+**Use Case:** Large commercial
+**Notes:** Creates CHW and condenser loops, PFP with electric reheat
+
+### System 9: Heating & Ventilation (Gas)
+**Equipment:** Gas-fired unit heaters
+**Heating:** Gas unit heater per zone
+**Cooling:** None
+**Use Case:** Warehouses, mechanical rooms
+
+### System 10: Heating & Ventilation (Electric)
+**Equipment:** Electric unit heaters
+**Heating:** Electric unit heater per zone
+**Cooling:** None
+**Use Case:** Warehouses, mechanical rooms
 
 ## Validation
 
@@ -226,7 +260,7 @@ Validation results included in tool response under `"validation"` key.
 
 - Systems 1-2 create zone equipment (no air loops)
 - System 3 creates central air loop with outdoor air system
-- Systems 5-8 will create plant loops (chilled water, hot water, condenser)
+- Systems 5-8 create plant loops (chilled water, hot water, condenser)
 - Economizer parameter only applies to central systems (3-8)
 - Fuel parameters validated against system type capabilities
 
@@ -238,6 +272,7 @@ Validation results included in tool response under `"validation"` key.
 | `Radiant` | Low-temp radiant panels (floor/ceiling) | CHW + HW |
 | `ChilledBeams` | Passive/active chilled beams (cooling only) | CHW only |
 | `FourPipeBeam` | 4-pipe active chilled beams (heating + cooling) | CHW + HW |
+| `CooledBeam` | 2-pipe cooled beams (cooling only) | CHW only |
 
 ## API Reference
 

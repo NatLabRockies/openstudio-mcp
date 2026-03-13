@@ -1,12 +1,19 @@
 # CLAUDE.md — Instructions for Claude Code
 
 ## Project: openstudio-mcp
-Building energy simulation MCP server using OpenStudio SDK Python bindings and Measures.
+MCP server that gives AI agents full control of building energy modeling —
+create buildings, configure HVAC, run EnergyPlus simulations, and extract
+results — all through 134 MCP tools backed by the OpenStudio SDK.
 
-**Template project:** This codebase is designed as a reference implementation
-that other building energy simulation engines (EnergyPlus, TRNSYS, DOE-2, etc.)
-can use as a template. Code must be explicit, well-commented, and easy for
-contributors unfamiliar with OpenStudio to understand and adapt.
+**Who it's for:** Building energy modelers who want to use AI assistants
+(Claude, GPT, etc.) to do real modeling work — not just chat about it.
+The MCP tools replace manual GUI workflows in the OpenStudio Application
+with tool calls an LLM can chain together autonomously.
+
+**Template project:** Designed as a reference implementation that other
+building energy simulation engines (EnergyPlus, TRNSYS, DOE-2, etc.)
+can fork and adapt. Code is explicit, well-commented, and accessible
+to contributors unfamiliar with OpenStudio.
 
 ## Critical: Use MCP Tools — Do Not Reinvent
 Always use openstudio-mcp tools for BEM tasks:
@@ -41,6 +48,7 @@ Always use openstudio-mcp tools for BEM tasks:
 | Phase 6 | ✅ COMPLETE | Loads, object management, weather & measures (3 skills, 13 tools) |
 | Phase 7 | 📋 FUTURE | Advanced creation (geometry, space type wizard) |
 | Phase 8 | ✅ COMPLETE | Bundle common-measures-gem (20 measures, 11 tools: reporting, thermostat, envelope, PV, visualization) |
+| Phase 9 | ✅ COMPLETE | AI-assisted measure authoring (3 tools: create, test, edit custom measures) |
 
 ## Current Skills
 | Skill | Tools | Phase |
@@ -60,15 +68,16 @@ Always use openstudio-mcp tools for BEM tasks:
 | `simulation_outputs` | `add_output_variable`, `add_output_meter` | Phase 3 |
 | `hvac_systems` | `add_baseline_system`, `list_baseline_systems`, `get_baseline_system_info`, `replace_air_terminals`, `replace_zone_terminal`, `add_doas_system`, `add_vrf_system`, `add_radiant_system` | Phase 4 |
 | `component_properties` | `get_component_properties`, `set_component_properties`, `set_economizer_properties`, `set_sizing_properties`, `set_sizing_system_properties`, `get_sizing_system_properties`, `set_sizing_zone_properties`, `get_sizing_zone_properties`, `get_setpoint_manager_properties`, `set_setpoint_manager_properties` | Phase 5 |
-| `loop_operations` | `create_plant_loop`, `add_supply_equipment`, `remove_supply_equipment`, `add_demand_component`, `remove_demand_component`, `add_zone_equipment`, `remove_zone_equipment`, `remove_all_zone_equipment` | Phase 5 |
+| `loop_operations` | `create_plant_loop`, `add_supply_equipment`, `remove_supply_equipment`, `add_demand_component`, `remove_demand_component`, `add_zone_equipment`, `remove_zone_equipment`, `remove_all_zone_equipment`, `set_zone_equipment_priority` | Phase 5 |
 | `object_management` | `delete_object`, `rename_object`, `list_model_objects`, `get_object_fields`, `set_object_property` | Phase 6B |
 | `weather` | `get_weather_info`, `add_design_day`, `get_simulation_control`, `set_simulation_control`, `get_run_period`, `set_run_period` | Phase 6C |
 | `measures` | `list_measure_arguments`, `apply_measure` | Phase 6D |
 | `comstock` | `list_comstock_measures`, `create_bar_building`, `create_typical_building`, `create_new_building` | ComStock |
 | `common_measures` | `list_common_measures`, `view_model`, `view_simulation_data`, `generate_results_report`, `run_qaqc_checks`, `adjust_thermostat_setpoints`, `replace_window_constructions`, `enable_ideal_air_loads`, `clean_unused_objects`, `change_building_location`, `set_thermostat_schedules`, `replace_thermostat_schedules`, `shift_schedule_time`, `add_rooftop_pv`, `add_pv_to_shading`, `add_ev_load`, `add_zone_ventilation`, `set_lifecycle_cost_params`, `add_cost_per_floor_area`, `set_adiabatic_boundaries` | Phase 8 |
+| `measure_authoring` | `list_custom_measures`, `create_measure`, `test_measure`, `edit_measure` | Phase 9 |
 | `skill_discovery` | `list_skills`, `get_skill` | — |
 
-**Total: 22 skills, 131 MCP tools, ~310 integration tests**
+**Total: 23 skills, 134 MCP tools, ~390 integration tests**
 
 ## Model Query Pattern
 ```python
@@ -185,11 +194,6 @@ To add a new SPM type to `set_setpoint_manager_properties`:
    Returns (changes_dict, errors_list).
 3. Add an entry to `SPM_TYPES` registry with getter method name and get/set functions.
 4. Add a test in `tests/test_component_controls.py`.
-
-## Active Fix Plan
-See `docs/debug/fix-plan.md` for current work items (11 items from Claude Desktop
-debug sessions). Key changes: remove inject_idf, rename read_run_artifact→read_file,
-list_files redesign, sizing system/zone tools, 6 new SPM types.
 
 ## Rules
 1. Keep files small where practical — aim for under 250 lines, but don't split artificially just to hit a number

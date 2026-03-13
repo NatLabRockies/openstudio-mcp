@@ -73,6 +73,8 @@ def replace_terminals(
                 result = _create_cav_terminal(model, air_loop, zone, options)
             elif terminal_type == "FourPipeBeam":
                 result = _create_four_pipe_beam_terminal(model, air_loop, zone, options)
+            elif terminal_type == "CooledBeam":
+                result = _create_cooled_beam_terminal(model, air_loop, zone, options)
             else:
                 return {
                     "ok": False,
@@ -418,6 +420,7 @@ def replace_zone_terminal(
             "PFP_HotWater": _create_pfp_hw_terminal,
             "CAV": _create_cav_terminal,
             "FourPipeBeam": _create_four_pipe_beam_terminal,
+            "CooledBeam": _create_cooled_beam_terminal,
         }
         creator = creators.get(terminal_type)
         if creator is None:
@@ -555,3 +558,54 @@ def _create_four_pipe_beam_terminal(
 
     except Exception as e:
         return {"ok": False, "error": f"Failed to create four pipe beam terminal: {e}"}
+
+
+def _create_cooled_beam_terminal(
+    model,
+    air_loop,
+    zone,
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    """Create 2-pipe cooled beam terminal (cooling only).
+
+    Cooled beams provide passive/active cooling via a chilled water coil.
+    No heating — use with DOAS preheat or separate zone heating.
+    Requires a CHW plant loop only (no HW loop needed).
+
+    Args:
+        model: OpenStudio model
+        air_loop: AirLoopHVAC to connect terminal to
+        zone: ThermalZone to serve
+        options: Configuration dict (unused currently)
+
+    Returns:
+        dict with ok=True and terminal object, or ok=False and error message
+    """
+    try:
+        chw_loop = _find_chilled_water_loop(model)
+        if chw_loop is None:
+            return {
+                "ok": False,
+                "error": "CooledBeam requires a chilled water plant loop. None found in model.",
+            }
+
+        always_on = model.alwaysOnDiscreteSchedule()
+
+        # Create cooling coil for cooled beam
+        coil = openstudio.model.CoilCoolingCooledBeam(model)
+        coil.setName(f"{zone.nameString()} CooledBeam Clg Coil")
+        chw_loop.addDemandBranchForComponent(coil)
+
+        # Create 2-pipe cooled beam terminal with cooling coil and schedule
+        terminal = openstudio.model.AirTerminalSingleDuctConstantVolumeCooledBeam(
+            model, always_on, coil,
+        )
+        terminal.setName(f"{zone.nameString()} CooledBeam Terminal")
+
+        # Connect terminal to air loop and zone
+        air_loop.addBranchForZone(zone, terminal.to_StraightComponent())
+
+        return {"ok": True, "terminal": terminal}
+
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to create cooled beam terminal: {e}"}
