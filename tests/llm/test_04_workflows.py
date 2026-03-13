@@ -38,7 +38,33 @@ pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
+SYSTEMD = "/repo/tests/assets/SystemD_baseline.osm"
+BOSTON_EPW_DIR = "/repo/tests/assets"
+
 WORKFLOW_CASES = [
+    {
+        # End-to-end retrofit from user perspective: load model, set weather,
+        # baseline sim, author measure, apply, retrofit sim, compare, save measure.
+        # Mimics a real Claude Desktop session with natural language.
+        "id": "systemd_fourpipebeam_e2e",
+        "prompt": (
+            f"I have a model at {SYSTEMD}. "
+            f"I want you to run the model with Boston-Logan weather file — "
+            f"files are in {BOSTON_EPW_DIR}. "
+            "After that, create a measure for me that changes the air terminals "
+            "to 4-pipe chilled beams, apply that measure to the model, "
+            "run the model, and compare the results for me. "
+            "Save the measure in the same location as the model so I have a copy."
+        ),
+        "required_tools": ["load_osm_model", "change_building_location",
+                           "save_osm_model", "run_simulation",
+                           "create_measure", "apply_measure"],
+        "any_of": ["compare_runs", "extract_summary_metrics",
+                    "extract_end_use_breakdown"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 40,
+        "timeout": 720,
+    },
     {
         # Add ASHRAE System 7 (VAV with reheat) — the most common baseline system
         "id": "add_vav_reheat",
@@ -419,8 +445,7 @@ WORKFLOW_CASES = [
 ]
 
 
-# Path to complex model (44 zones, 2 DOAS, 3 plant loops) via test-assets volume
-SYSTEMD_MODEL = "/repo/tests/assets/SystemD_baseline.osm"
+SYSTEMD_MODEL = SYSTEMD  # alias for the standalone test below
 
 
 @pytest.mark.parametrize("case", WORKFLOW_CASES, ids=[c["id"] for c in WORKFLOW_CASES])

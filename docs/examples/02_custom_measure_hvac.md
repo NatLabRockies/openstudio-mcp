@@ -84,6 +84,7 @@ The AI compares:
 - `edit_measure` can fix issues without recreating from scratch
 - Chilled beams are AIR TERMINALS (connected via `addBranchForZone`), NOT zone equipment
 
-## Integration Test
+## Integration Tests
 
-See `tests/llm/test_04_workflows.py::test_workflow[measure_replace_terminals_full_chain]`
+- `tests/llm/test_04_workflows.py::test_workflow[measure_replace_terminals_full_chain]` — explicit prompt with API hints
+- `tests/llm/test_04_workflows.py::test_workflow[systemd_fourpipebeam_e2e]` — natural-language prompt on 44-zone model (see [Example 19](19_systemd_fourpipebeam_retrofit.md))
