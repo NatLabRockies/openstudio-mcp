@@ -540,3 +540,60 @@ def test_test_measure_with_real_model():
                 assert test["passed"] > 0
                 assert test["failed"] == 0
     asyncio.run(_run())
+
+
+# ── measure.xml checksum validity ─────────────────────────────────────
+
+
+@pytest.mark.integration
+def test_measure_xml_checksums_valid():
+    """measure.xml file checksums must match actual files on disk.
+
+    Regression: _write_test_file was called AFTER _update_measure_xml,
+    leaving stale checksums that caused OS App Measure Manager to silently
+    reject the measure.
+    """
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        import binascii
+        import xml.etree.ElementTree as ET
+        from pathlib import Path
+
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("checksum")
+                body = '    runner.registerInfo("checksum test")'
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Checksum validation test",
+                    "run_body": body,
+                    "language": "Ruby",
+                }))
+                assert create.get("ok") is True
+
+                # Read measure.xml and verify checksums
+                xml_res = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{create['measure_dir']}/measure.xml",
+                }))
+                assert xml_res.get("ok") is True
+                root = ET.fromstring(xml_res["text"])
+
+                mdir = Path(create["measure_dir"])
+                for file_elem in root.findall(".//file"):
+                    fname = file_elem.findtext("filename")
+                    expected_crc = file_elem.findtext("checksum")
+                    if not fname or not expected_crc:
+                        continue
+                    # Find file on disk (could be in tests/ or docs/)
+                    candidates = list(mdir.rglob(fname))
+                    assert candidates, f"File {fname} listed in XML but not on disk"
+                    actual_data = candidates[0].read_bytes()
+                    actual_crc = f"{binascii.crc32(actual_data) & 0xffffffff:08X}"
+                    assert actual_crc == expected_crc, (
+                        f"Checksum mismatch for {fname}: "
+                        f"XML says {expected_crc}, actual {actual_crc}"
+                    )
+    asyncio.run(_run())

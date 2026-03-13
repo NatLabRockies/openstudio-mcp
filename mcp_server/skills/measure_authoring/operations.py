@@ -516,11 +516,12 @@ def create_measure_op(
 
         script_path.write_text(script, encoding="utf-8")
 
-        # Sync measure.xml with script's arguments()
-        _update_measure_xml(measure_dir, language)
-
-        # Write custom test file (replaces SDK-generated one)
+        # Write custom test file BEFORE updating XML (order matters —
+        # _update_measure_xml re-hashes all files, so test must exist first)
         _write_test_file(measure_dir, class_name, args, language)
+
+        # Sync measure.xml checksums with all current files
+        _update_measure_xml(measure_dir, language)
 
         # Syntax check
         validation = {"syntax_ok": True}
@@ -633,6 +634,10 @@ def test_measure_op(
             if ml:
                 minitest_line = f"[minitest] {ml.group(0)}\n...\n"
             display = minitest_line + output[-1500:]
+
+        # Update measure.xml checksums — test_model.osm was added to tests/,
+        # and any new files must be registered for OS App Measure Manager.
+        _update_measure_xml(mdir, language)
 
         return {
             "ok": proc.returncode == 0,
@@ -756,9 +761,10 @@ def edit_measure_op(
 
         script_path.write_text(content, encoding="utf-8")
 
-        # Sync measure.xml if arguments changed
-        if arguments is not None:
-            _update_measure_xml(measure_dir, language)
+        # Always sync measure.xml checksums — any file change (run_body,
+        # arguments, description) invalidates checksums.  Stale checksums
+        # cause OS App Measure Manager to silently reject the measure.
+        _update_measure_xml(measure_dir, language)
 
         # Syntax check
         validation = {"syntax_ok": True}
