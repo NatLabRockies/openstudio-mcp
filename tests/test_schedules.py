@@ -18,8 +18,8 @@ def _unique_name(prefix: str = "pytest_schedules") -> str:
 
 
 @pytest.mark.integration
-def test_list_schedule_rulesets():
-    """Test listing all schedule rulesets."""
+def test_list_schedule_rulesets_via_generic():
+    """Test listing all schedule rulesets via list_model_objects."""
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -39,28 +39,24 @@ def test_list_schedule_rulesets():
                 load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
-                # List schedule rulesets
-                schedules_resp = await session.call_tool("list_schedule_rulesets", {})
+                # List schedule rulesets via generic access
+                schedules_resp = await session.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0})
                 schedules_result = unwrap(schedules_resp)
-                print("list_schedule_rulesets:", schedules_result)
+                print("list_model_objects(ScheduleRuleset):", schedules_result)
 
                 assert isinstance(schedules_result, dict)
                 assert schedules_result.get("ok") is True, schedules_result
                 assert "count" in schedules_result
-                assert "schedule_rulesets" in schedules_result
-                assert isinstance(schedules_result["schedule_rulesets"], list)
+                assert "objects" in schedules_result
+                assert isinstance(schedules_result["objects"], list)
 
                 # Check we have some schedules
                 assert schedules_result["count"] > 0, "Expected at least one schedule ruleset"
 
                 # Check schedule structure
-                if schedules_result["schedule_rulesets"]:
-                    schedule = schedules_result["schedule_rulesets"][0]
-                    assert "handle" in schedule
+                if schedules_result["objects"]:
+                    schedule = schedules_result["objects"][0]
                     assert "name" in schedule
-                    assert "schedule_type_limits" in schedule
-                    assert "default_day_schedule" in schedule
-                    assert "num_rules" in schedule
 
                     print(f"Found {schedules_result['count']} schedule rulesets")
                     print(f"First schedule: {schedule['name']}")
@@ -91,12 +87,12 @@ def test_get_schedule_details():
                 assert load_result.get("ok") is True
 
                 # First list schedules to get a valid name
-                list_resp = await session.call_tool("list_schedule_rulesets", {})
+                list_resp = await session.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0})
                 list_result = unwrap(list_resp)
                 assert list_result.get("ok") is True
                 assert list_result["count"] > 0, "Need at least one schedule for this test"
 
-                schedule_name = list_result["schedule_rulesets"][0]["name"]
+                schedule_name = list_result["objects"][0]["name"]
 
                 # Get details for the first schedule
                 details_resp = await session.call_tool("get_schedule_details", {"schedule_name": schedule_name})
@@ -179,7 +175,7 @@ def test_schedules_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                sr = await session.call_tool("list_schedule_rulesets", {})
+                sr = await session.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0})
                 sd = unwrap(sr)
                 print("baseline schedules:", sd)
                 assert sd.get("ok") is True
@@ -188,10 +184,9 @@ def test_schedules_baseline():
 
                 # Find the people/lights schedule and check it has rules
                 ple_name = None
-                for s in sd["schedule_rulesets"]:
+                for s in sd["objects"]:
                     if "People Lights" in s["name"]:
                         ple_name = s["name"]
-                        assert s["num_rules"] >= 2  # Saturday + Sunday rules
                         break
                 assert ple_name is not None, "Expected People Lights and Equipment Schedule"
 
@@ -216,9 +211,9 @@ def test_schedules_tools_without_loaded_model():
                 await session.initialize()
 
                 # Try to list schedules without loading a model
-                schedules_resp = await session.call_tool("list_schedule_rulesets", {})
+                schedules_resp = await session.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0})
                 schedules_result = unwrap(schedules_resp)
-                print("list_schedule_rulesets (no model):", schedules_result)
+                print("list_model_objects(ScheduleRuleset, no model):", schedules_result)
 
                 assert isinstance(schedules_result, dict)
                 assert schedules_result.get("ok") is False

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.config import RUN_ROOT
-from mcp_server.util import resolve_run_dir, safe_read_text
+from mcp_server.util import resolve_run_dir, safe_read_text  # resolve_run_dir still used by extract_* ops
 
 
 def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Path | None:
@@ -184,35 +184,34 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
     }
 
 
-def read_run_artifact(
-    run_id: str, path: str, max_bytes: int = 400_000, offset: int = 0,
+def read_file(
+    file_path: str, max_bytes: int = 50_000, offset: int = 0,
 ) -> dict[str, Any]:
-    """Read an artifact file from a run directory safely.
+    """Read a file by absolute path (any allowed mount: /runs, /inputs, /repo, etc.).
 
-    - `path` must be relative to the run directory (no absolute paths).
+    Default 50KB. Use offset+max_bytes for chunked reading of large files.
+
+    - `file_path` must be an absolute path within allowed roots.
     - `offset` allows chunked reading (byte offset to start from).
     - For text-like files, returns `text`.
     - For binary/unknown, returns `base64` + `mime`.
     """
-    try:
-        run_dir = resolve_run_dir(RUN_ROOT, run_id)
-    except FileNotFoundError:
-        return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
+    from mcp_server.config import is_path_allowed
 
-    if path.startswith(("/", "\\")):
-        return {"ok": False, "error": "invalid_path", "message": "path must be relative to run_dir"}
-
-    full = (run_dir / path).resolve()
-    if run_dir.resolve() not in full.parents and full != run_dir.resolve():
-        return {"ok": False, "error": "invalid_path", "message": "path escapes run_dir"}
+    full = Path(file_path).resolve()
+    if not is_path_allowed(full):
+        return {
+            "ok": False, "error": "invalid_path",
+            "message": f"Path not in allowed roots: {file_path}",
+        }
 
     if not full.exists() or not full.is_file():
-        return {"ok": False, "error": "not_found", "message": f"Missing file: {path}", "run_id": run_id}
+        return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
 
     file_size = full.stat().st_size
 
     # Read with optional offset for chunked reading
-    with open(full, "rb") as f:
+    with full.open("rb") as f:
         if offset > 0:
             f.seek(offset)
         data = f.read(max_bytes)
@@ -222,9 +221,7 @@ def read_run_artifact(
         text = data.decode("utf-8")
         return {
             "ok": True,
-            "run_id": run_id,
-            "path": path,
-            "abs_path": str(full),
+            "file_path": str(full),
             "kind": "text",
             "file_size": file_size,
             "offset": offset,
@@ -236,9 +233,7 @@ def read_run_artifact(
         mime, _ = mimetypes.guess_type(str(full))
         return {
             "ok": True,
-            "run_id": run_id,
-            "path": path,
-            "abs_path": str(full),
+            "file_path": str(full),
             "kind": "base64",
             "mime": mime or "application/octet-stream",
             "file_size": file_size,
@@ -301,13 +296,15 @@ def extract_zone_summary_op(run_id: str) -> dict[str, Any]:
     return extract_zone_summary(sql_path)
 
 
-def extract_component_sizing_op(run_id: str, component_type: str | None = None) -> dict[str, Any]:
+def extract_component_sizing_op(
+    run_id: str, component_type: str | None = None, max_results: int = 50,
+) -> dict[str, Any]:
     """Extract autosized component values."""
     from mcp_server.skills.results.sql_extract import extract_component_sizing
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return extract_component_sizing(sql_path, component_type)
+    return extract_component_sizing(sql_path, component_type, max_results=max_results)
 
 
 def query_timeseries_op(
@@ -319,7 +316,7 @@ def query_timeseries_op(
     end_month: int | None = None,
     end_day: int | None = None,
     frequency: str | None = None,
-    max_points: int = 10000,
+    max_points: int = 2000,
 ) -> dict[str, Any]:
     """Query time-series data for a specific variable."""
     from mcp_server.skills.results.sql_extract import query_timeseries
@@ -333,29 +330,23 @@ def query_timeseries_op(
     )
 
 
-def copy_run_artifact(run_id: str, path: str, destination: str = "/runs/exports") -> dict[str, Any]:
-    """Copy a run artifact to an accessible location without streaming through MCP.
+def copy_file(file_path: str, destination: str = "/runs/exports") -> dict[str, Any]:
+    """Copy a file to an accessible location without streaming through MCP.
 
     Bypasses the MCP 1MB transport limit for large files like HTML reports.
-    The destination is on the same bind-mounted volume, so the file is
-    directly accessible on the host filesystem.
+    Both source and destination must be within allowed roots.
     """
     from mcp_server.config import is_path_allowed
 
-    try:
-        run_dir = resolve_run_dir(RUN_ROOT, run_id)
-    except FileNotFoundError:
-        return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
-
-    if path.startswith(("/", "\\")):
-        return {"ok": False, "error": "invalid_path", "message": "path must be relative to run_dir"}
-
-    full = (run_dir / path).resolve()
-    if run_dir.resolve() not in full.parents and full != run_dir.resolve():
-        return {"ok": False, "error": "invalid_path", "message": "path escapes run_dir"}
+    full = Path(file_path).resolve()
+    if not is_path_allowed(full):
+        return {
+            "ok": False, "error": "invalid_path",
+            "message": f"Source not in allowed roots: {file_path}",
+        }
 
     if not full.exists() or not full.is_file():
-        return {"ok": False, "error": "not_found", "message": f"Missing file: {path}", "run_id": run_id}
+        return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
 
     dest_dir = Path(destination)
     if not is_path_allowed(dest_dir):
@@ -370,11 +361,7 @@ def copy_run_artifact(run_id: str, path: str, destination: str = "/runs/exports"
 
     return {
         "ok": True,
-        "run_id": run_id,
         "source": str(full),
         "destination": str(dest_file),
         "size_bytes": dest_file.stat().st_size,
-        "user_message": (
-            f"File exported. On the host machine, open: runs/exports/{full.name}"
-        ),
     }

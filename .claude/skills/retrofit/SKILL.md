@@ -24,7 +24,7 @@ Record baseline EUI and end-use breakdown.
 Inspect the model to suggest relevant ECMs:
 ```
 get_building_info()
-list_constructions()
+list_model_objects(object_type="Construction")
 list_air_loops()
 list_zone_hvac_equipment()
 ```
@@ -75,3 +75,4 @@ Present side-by-side comparison:
 - Always save to a new path before re-simulating to preserve the baseline
 - Multiple ECMs can be stacked before re-simulating
 - Some measures modify the model in-memory (thermostat, window); others run as OpenStudio measures
+- For custom ECMs not covered by existing tools, use `create_measure` to write a custom measure (see `measure-authoring` skill)

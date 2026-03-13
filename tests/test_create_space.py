@@ -44,11 +44,10 @@ def test_create_space_minimal():
 
                 assert space_result.get("ok") is True
                 assert space_result["space"]["name"] == "New Office"
-                assert "handle" in space_result["space"]
                 assert space_result["space"]["floor_area_m2"] == 0.0  # No surfaces yet
 
                 # Verify it appears in list
-                list_resp = await session.call_tool("list_spaces", {})
+                list_resp = await session.call_tool("list_spaces", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 assert any(s["name"] == "New Office" for s in list_result["spaces"])
 
@@ -78,11 +77,11 @@ def test_create_space_with_building_story():
                 assert load_result.get("ok") is True
 
                 # Get existing building story
-                stories_resp = await session.call_tool("list_building_stories", {})
+                stories_resp = await session.call_tool("list_model_objects", {"object_type": "BuildingStory"})
                 stories_result = unwrap(stories_resp)
                 assert stories_result.get("ok") is True
-                assert len(stories_result["building_stories"]) > 0
-                story_name = stories_result["building_stories"][0]["name"]
+                assert len(stories_result["objects"]) > 0
+                story_name = stories_result["objects"][0]["name"]
 
                 # Create space with building story
                 space_resp = await session.call_tool("create_space", {
@@ -126,11 +125,11 @@ def test_create_space_with_space_type():
                 assert load_result.get("ok") is True
 
                 # Get existing space type
-                space_types_resp = await session.call_tool("list_space_types", {})
+                space_types_resp = await session.call_tool("list_model_objects", {"object_type": "SpaceType"})
                 space_types_result = unwrap(space_types_resp)
                 assert space_types_result.get("ok") is True
-                assert len(space_types_result["space_types"]) > 0
-                space_type_name = space_types_result["space_types"][0]["name"]
+                assert len(space_types_result["objects"]) > 0
+                space_type_name = space_types_result["objects"][0]["name"]
 
                 # Create space with space type
                 space_resp = await session.call_tool("create_space", {

@@ -64,7 +64,7 @@ change_building_location(weather_file="/inputs/Chicago.epw")
 ## Tune Component Properties
 
 ```
-list_hvac_components(category="Coil")     # find component names
+list_model_objects(object_type="CoilHeatingGas")  # find component names
 get_component_properties(component_name="Heating Coil 1")
 set_component_properties(component_name="Heating Coil 1",
     properties={"efficiency": 0.95})
@@ -93,6 +93,33 @@ apply_measure(measure_dir="/inputs/measures/my_measure",
 
 Note: All measure arguments are strings. Booleans → `"true"` / `"false"`. Numbers → `"42"`.
 
+## Write and Apply a Custom Measure
+
+Full chain: create → test → apply → simulate → compare results.
+
+```
+# 1. Baseline simulation
+save_osm_model(save_path="/runs/baseline.osm")
+run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
+extract_summary_metrics(run_id=<baseline_id>)
+
+# 2. Create custom measure
+create_measure(name="my_measure", description="...",
+    language="Ruby", run_body="    model.get...each { |x| ... }")
+test_measure(measure_dir="/runs/custom_measures/my_measure")
+
+# 3. Reload original model, apply measure, re-simulate
+load_osm_model(osm_path="<original>")
+apply_measure(measure_dir="/runs/custom_measures/my_measure")
+save_osm_model(save_path="/runs/retrofit.osm")
+run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
+extract_summary_metrics(run_id=<retrofit_id>)
+
+# 4. Compare baseline vs retrofit EUI
+```
+
+See the `measure-authoring` skill for run_body patterns and language guidance.
+
 ## Object Cleanup
 
 ```
@@ -101,3 +128,20 @@ rename_object(object_name="Zone 1", new_name="North Office")
 delete_object(object_name="Unused Space")
 clean_unused_objects()                    # remove orphans
 ```
+
+## Inspect & Modify Any Object (Generic Access)
+
+```
+# Read all properties of any object
+get_object_fields(object_type="BoilerHotWater", object_name="Boiler Hot Water 1")
+# → returns property values + available setter methods
+
+# Write a property using the discovered setter
+set_object_property(object_type="BoilerHotWater", object_name="Boiler Hot Water 1",
+    property_name="nominalThermalEfficiency", value=0.92)
+
+# Works with any type — SizingSystem, CoilCoolingWater, etc.
+get_object_fields(object_type="SizingSystem", object_name="VAV Sys 1 Sizing System")
+```
+
+Note: Always call `get_object_fields` first to discover property names and setter availability before using `set_object_property`.

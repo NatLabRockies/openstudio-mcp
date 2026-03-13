@@ -10,7 +10,12 @@ from typing import Any
 import openstudio
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
+from mcp_server.osm_helpers import (
+    build_list_response,
+    fetch_object,
+    list_paginated,
+    optional_name,
+)
 
 
 def _extract_schedule_ruleset(model, schedule) -> dict[str, Any]:
@@ -39,16 +44,15 @@ def _extract_schedule_ruleset(model, schedule) -> dict[str, Any]:
     }
 
 
-def list_schedule_rulesets() -> dict[str, Any]:
-    """List all schedule rulesets in the model."""
+def list_schedule_rulesets(max_results: int = 10) -> dict[str, Any]:
+    """List schedule rulesets with pagination."""
     try:
         model = get_model()
-        schedules = list_all_as_dicts(model, "getScheduleRulesets", _extract_schedule_ruleset)
-        return {
-            "ok": True,
-            "count": len(schedules),
-            "schedule_rulesets": schedules,
-        }
+        items, total = list_paginated(
+            model, "getScheduleRulesets", _extract_schedule_ruleset,
+            max_results=max_results,
+        )
+        return build_list_response("schedule_rulesets", items, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:

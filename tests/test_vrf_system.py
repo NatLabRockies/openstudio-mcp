@@ -35,7 +35,7 @@ def test_vrf_heat_recovery():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -56,7 +56,7 @@ def test_vrf_heat_recovery():
                 assert len(system_data["system"]["terminals"]) == len(zone_names)
 
                 # Independent query verification
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 equip_types = [eq["type"] for eq in zd.get("zone_hvac_equipment", [])]
                 assert any("VRF" in t or "Terminal" in t for t in equip_types)
@@ -80,7 +80,7 @@ def test_vrf_heat_pump():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -98,7 +98,7 @@ def test_vrf_heat_pump():
                 assert "HR" not in system_data["system"]["outdoor_unit"]
                 assert len(system_data["system"]["terminals"]) == len(zone_names)
 
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 equip_types = [eq["type"] for eq in zd.get("zone_hvac_equipment", [])]
                 assert any("VRF" in t or "Terminal" in t for t in equip_types)
@@ -122,7 +122,7 @@ def test_vrf_multi_zone():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
 
@@ -144,7 +144,7 @@ def test_vrf_multi_zone():
                 for zone_name in zone_names:
                     assert zone_name in terminal_zones
 
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 equip_zones = [eq.get("thermal_zone") for eq in zd.get("zone_hvac_equipment", [])]
                 for zn in zone_names:
@@ -169,7 +169,7 @@ def test_vrf_capacity_autosize():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -185,7 +185,7 @@ def test_vrf_capacity_autosize():
                 assert system_data.get("ok") is True
                 assert system_data["system"]["capacity_w"] == "autosized"
 
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 assert len(zd.get("zone_hvac_equipment", [])) > 0
 
@@ -208,7 +208,7 @@ def test_vrf_capacity_explicit():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -225,7 +225,7 @@ def test_vrf_capacity_explicit():
                 assert system_data.get("ok") is True
                 assert system_data["system"]["capacity_w"] == capacity
 
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 assert len(zd.get("zone_hvac_equipment", [])) > 0
 
@@ -250,7 +250,7 @@ def test_vrf_multi_zone_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
                 assert len(zone_names) == 10
@@ -286,7 +286,7 @@ def test_vrf_json_string_zones():
                 create_data = unwrap(create_resp)
                 await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_vrf_system", {

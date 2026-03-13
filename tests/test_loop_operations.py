@@ -39,9 +39,8 @@ def test_add_second_boiler():
                 assert data["equipment_name"] == "Backup Boiler"
 
                 # Verify 2 boilers exist
-                cr = await session.call_tool("list_hvac_components", {"category": "plant"})
-                comps = unwrap(cr)["components"]
-                boilers = [c for c in comps if c["type"] == "BoilerHotWater"]
+                cr = await session.call_tool("list_model_objects", {"object_type": "BoilerHotWater", "max_results": 0})
+                boilers = unwrap(cr)["objects"]
                 assert len(boilers) >= 2
     asyncio.run(_run())
 
@@ -70,8 +69,8 @@ def test_add_second_chiller():
                 data = unwrap(result)
                 assert data["ok"] is True
 
-                cr = await session.call_tool("list_hvac_components", {"category": "plant"})
-                chillers = [c for c in unwrap(cr)["components"] if c["type"] == "ChillerElectricEIR"]
+                cr = await session.call_tool("list_model_objects", {"object_type": "ChillerElectricEIR", "max_results": 0})
+                chillers = unwrap(cr)["objects"]
                 assert len(chillers) >= 2
     asyncio.run(_run())
 
@@ -108,8 +107,8 @@ def test_remove_boiler():
                 assert data["removed"] == "Temp Boiler"
 
                 # Independent query verification
-                cr = await session.call_tool("list_hvac_components", {"category": "plant"})
-                names = [c["name"] for c in unwrap(cr)["components"]]
+                cr = await session.call_tool("list_model_objects", {"object_type": "BoilerHotWater", "max_results": 0})
+                names = [c["name"] for c in unwrap(cr)["objects"]]
                 assert "Temp Boiler" not in names
     asyncio.run(_run())
 
@@ -201,7 +200,7 @@ def test_add_baseboard_to_zone():
                 assert data["equipment_name"] == "Test Baseboard"
 
                 # Independent query verification
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 equip_names = [eq["name"] for eq in zd.get("zone_hvac_equipment", [])]
                 assert "Test Baseboard" in equip_names
@@ -231,7 +230,7 @@ def test_remove_zone_equipment():
                 assert data["removed"] == "Temp Baseboard"
 
                 # Independent query verification
-                ze = await session.call_tool("list_zone_hvac_equipment", {})
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
                 equip_names = [eq["name"] for eq in zd.get("zone_hvac_equipment", [])]
                 assert "Temp Baseboard" not in equip_names
@@ -271,4 +270,95 @@ def test_add_zone_equipment_invalid_type():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+    asyncio.run(_run())
+
+
+def test_set_zone_equipment_priority():
+    """Add 2 baseboards, reorder, verify new priority."""
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                zones = await create_and_load(session, "lo_prio")
+
+                # Add two baseboards
+                await session.call_tool("add_zone_equipment", {
+                    "zone_name": zones[0],
+                    "equipment_type": "ZoneHVACBaseboardConvectiveElectric",
+                    "equipment_name": "BB_Primary",
+                })
+                await session.call_tool("add_zone_equipment", {
+                    "zone_name": zones[0],
+                    "equipment_type": "ZoneHVACBaseboardConvectiveElectric",
+                    "equipment_name": "BB_Secondary",
+                })
+
+                # First call with incomplete list to discover all equipment names
+                # (ZoneHVACEquipmentList includes air terminals too)
+                probe = await session.call_tool("set_zone_equipment_priority", {
+                    "zone_name": zones[0],
+                    "equipment_names": json.dumps(["BB_Secondary", "BB_Primary"]),
+                })
+                probe_data = unwrap(probe)
+                if not probe_data["ok"] and "Missing equipment" in probe_data.get("error", ""):
+                    # Extract missing names from error, build complete list
+                    # Reorder: BB_Secondary first, BB_Primary second, rest after
+                    import re
+                    missing = re.findall(r"'([^']+)'", probe_data["error"])
+                    reorder = ["BB_Secondary", "BB_Primary"] + missing
+                    result = await session.call_tool("set_zone_equipment_priority", {
+                        "zone_name": zones[0],
+                        "equipment_names": json.dumps(reorder),
+                    })
+                    data = unwrap(result)
+                else:
+                    data = probe_data
+
+                assert data["ok"] is True
+                assert data["zone"] == zones[0]
+                # Find our baseboards in new_order
+                bb_sec = next(e for e in data["new_order"] if e["name"] == "BB_Secondary")
+                bb_pri = next(e for e in data["new_order"] if e["name"] == "BB_Primary")
+                assert bb_sec["cooling_priority"] < bb_pri["cooling_priority"]
+    asyncio.run(_run())
+
+
+def test_remove_all_zone_equipment():
+    """Add 2 baseboards, remove_all, verify both gone."""
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                zones = await create_and_load(session, "lo_rmall")
+
+                # Add two baseboards
+                await session.call_tool("add_zone_equipment", {
+                    "zone_name": zones[0],
+                    "equipment_type": "ZoneHVACBaseboardConvectiveElectric",
+                    "equipment_name": "BB1",
+                })
+                await session.call_tool("add_zone_equipment", {
+                    "zone_name": zones[0],
+                    "equipment_type": "ZoneHVACBaseboardConvectiveElectric",
+                    "equipment_name": "BB2",
+                })
+
+                # Verify 2 present
+                ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
+                names_before = [eq["name"] for eq in unwrap(ze).get("zone_hvac_equipment", [])]
+                assert "BB1" in names_before
+                assert "BB2" in names_before
+
+                # Remove all
+                result = await session.call_tool("remove_all_zone_equipment", {
+                    "zone_names": json.dumps([zones[0]]),
+                })
+                data = unwrap(result)
+                assert data["ok"] is True
+
+                # Verify both gone
+                ze2 = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
+                names_after = [eq["name"] for eq in unwrap(ze2).get("zone_hvac_equipment", [])]
+                assert "BB1" not in names_after
+                assert "BB2" not in names_after
     asyncio.run(_run())

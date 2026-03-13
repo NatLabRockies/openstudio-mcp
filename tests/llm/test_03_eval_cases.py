@@ -93,8 +93,11 @@ EXTRA_EXPECTED = {
     # Retrofit analysis involves many intermediate steps (inspect envelope,
     # list constructions, etc.) — any of these is valid progress
     "retrofit": ["save_osm_model", "run_simulation", "extract_summary_metrics",
-                 "replace_window_constructions", "list_constructions",
+                 "replace_window_constructions", "list_model_objects",
                  "extract_envelope_summary"],
+    # "Full energy report" can be answered by generate_results_report (single HTML)
+    # or by individual extract_* tools — both are valid
+    "energy-report": ["generate_results_report"],
     # Agent may use create_typical_building (ComStock) instead of create_baseline_osm,
     # or build from scratch using geometry tools (create_space_from_floor_print,
     # create_thermal_zone, etc.) — all are valid creation approaches

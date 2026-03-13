@@ -20,7 +20,7 @@ An engineer has a small office model with geometry and space types but no HVAC, 
      climate_zone="ASHRAE 169-2013-2A")        -- adds everything
 5. get_model_summary()                         -- verify HVAC + constructions
 6. list_air_loops()                            -- inspect HVAC system
-7. list_constructions()                        -- inspect envelope
+7. list_model_objects(object_type="Construction")                        -- inspect envelope
 8. save_osm_model(save_path="/runs/typical_office.osm")
 ```
 
@@ -32,7 +32,7 @@ An engineer has a small office model with geometry and space types but no HVAC, 
 | `create_typical_building` | Apply full standards template (constructions, loads, HVAC, SWH) |
 | `get_model_summary` | Verify objects were added to the model |
 | `list_air_loops` | Inspect the HVAC system created by the template |
-| `list_constructions` | Inspect envelope constructions assigned to surfaces |
+| `list_model_objects` | Inspect envelope constructions assigned to surfaces |
 
 ## Tips
 

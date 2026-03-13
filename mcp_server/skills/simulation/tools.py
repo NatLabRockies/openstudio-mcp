@@ -66,7 +66,11 @@ def register(mcp):
 
     @mcp.tool(name="get_run_status")
     def get_run_status_tool(run_id: str):
-        """Get current status for a run."""
+        """Get current status for a run.
+
+        Poll no more than once per minute. For long simulations (>2 min),
+        poll every 2-3 minutes.
+        """
         return get_run_status(run_id)
 
     @mcp.tool(name="get_run_logs")

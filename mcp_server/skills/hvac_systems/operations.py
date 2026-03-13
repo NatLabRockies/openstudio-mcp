@@ -190,7 +190,10 @@ def replace_air_terminals(
             }
 
         # Validate terminal type
-        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV", "FourPipeBeam"]
+        valid_types = [
+            "VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater",
+            "CAV", "FourPipeBeam", "CooledBeam",
+        ]
         if terminal_type not in valid_types:
             return {
                 "ok": False,
@@ -236,7 +239,10 @@ def replace_zone_terminal(
         if zone is None:
             return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
 
-        valid_types = ["VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater", "CAV", "FourPipeBeam"]
+        valid_types = [
+            "VAV_Reheat", "VAV_NoReheat", "PFP_Electric", "PFP_HotWater",
+            "CAV", "FourPipeBeam", "CooledBeam",
+        ]
         if terminal_type not in valid_types:
             return {
                 "ok": False,

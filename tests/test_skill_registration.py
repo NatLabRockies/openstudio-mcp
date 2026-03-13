@@ -20,7 +20,6 @@ EXPECTED_TOOLS = {
     "save_osm_model",
     "get_building_info",
     "get_model_summary",
-    "list_building_stories",
     "list_spaces",
     "get_space_details",
     "list_thermal_zones",
@@ -36,12 +35,10 @@ EXPECTED_TOOLS = {
     "match_surfaces",
     "set_window_to_wall_ratio",
     "list_materials",
-    "list_constructions",
-    "list_construction_sets",
+    "get_construction_details",
     "create_standard_opaque_material",
     "create_construction",
     "assign_construction_to_surface",
-    "list_schedule_rulesets",
     "get_schedule_details",
     "create_schedule_ruleset",
     "list_air_loops",
@@ -51,12 +48,6 @@ EXPECTED_TOOLS = {
     "get_plant_loop_details",
     "list_zone_hvac_equipment",
     "get_zone_hvac_details",
-    "list_people_loads",
-    "list_lighting_loads",
-    "list_electric_equipment",
-    "list_gas_equipment",
-    "list_infiltration",
-    "list_space_types",
     "get_space_type_details",
     "add_output_variable",
     "add_output_meter",
@@ -69,19 +60,28 @@ EXPECTED_TOOLS = {
     "add_vrf_system",
     "add_radiant_system",
     # Phase 5: Component Properties
-    "list_hvac_components",
     "get_component_properties",
     "set_component_properties",
     "set_economizer_properties",
     "set_sizing_properties",
+    "set_sizing_system_properties",
+    "get_sizing_system_properties",
+    "set_sizing_zone_properties",
+    "get_sizing_zone_properties",
+    "get_setpoint_manager_properties",
     "set_setpoint_manager_properties",
     # Phase 5: Loop Operations
+    "create_plant_loop",
     "add_supply_equipment",
     "remove_supply_equipment",
+    "add_demand_component",
+    "remove_demand_component",
     "add_zone_equipment",
     "remove_zone_equipment",
     "remove_all_zone_equipment",
-    # Phase 6A: Load Creation
+    "set_zone_equipment_priority",
+    # Phase 6A: Loads
+    "get_load_details",
     "create_people_definition",
     "create_lights_definition",
     "create_electric_equipment",
@@ -91,6 +91,8 @@ EXPECTED_TOOLS = {
     "delete_object",
     "rename_object",
     "list_model_objects",
+    "get_object_fields",
+    "set_object_property",
     # Phase 6C: Weather, Design Days, SimControl, RunPeriod
     "get_weather_info",
     "add_design_day",
@@ -101,6 +103,10 @@ EXPECTED_TOOLS = {
     # Phase 6D: Measures
     "list_measure_arguments",
     "apply_measure",
+    "list_custom_measures",
+    "create_measure",
+    "test_measure",
+    "edit_measure",
     # ComStock + geometry workflows
     "list_comstock_measures",
     "create_typical_building",
@@ -114,9 +120,9 @@ EXPECTED_TOOLS = {
     "get_run_logs",
     "get_run_artifacts",
     "cancel_run",
-    "read_run_artifact",
+    "read_file",
     "extract_summary_metrics",
-    "copy_run_artifact",
+    "copy_file",
     # Results extraction (Tier 1 + Tier 2)
     "extract_end_use_breakdown",
     "extract_envelope_summary",
@@ -136,7 +142,6 @@ EXPECTED_TOOLS = {
     "replace_window_constructions",
     "enable_ideal_air_loads",
     "clean_unused_objects",
-    "inject_idf",
     "change_building_location",
     # Common Measures — Tier 2
     "set_thermostat_schedules",
@@ -193,3 +198,6 @@ def test_all_tool_names_registered():
     registered_names = set(registered_tools.keys())
     missing = EXPECTED_TOOLS - registered_names
     assert not missing, f"Missing tools after registration: {missing}"
+
+    extra = registered_names - EXPECTED_TOOLS
+    assert not extra, f"Unexpected tools not in EXPECTED_TOOLS: {extra}"

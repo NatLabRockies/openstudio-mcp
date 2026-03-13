@@ -14,7 +14,7 @@ An energy auditor wants to evaluate the impact of upgrading wall insulation from
 
 ```
 1. load_osm_model(osm_path="/inputs/my_building.osm")
-2. list_constructions()
+2. list_model_objects(object_type="Construction")
 3. list_surfaces()
 4. create_standard_opaque_material(name="R20_Insulation",
      thickness_m=0.089, conductivity_w_m_k=0.04,
@@ -31,7 +31,7 @@ An energy auditor wants to evaluate the impact of upgrading wall insulation from
 
 | Tool | Purpose |
 |------|---------|
-| `list_constructions` | See existing wall assemblies |
+| `list_model_objects` | See existing wall assemblies |
 | `list_surfaces` | Find exterior walls by boundary condition |
 | `create_standard_opaque_material` | Define insulation properties |
 | `create_construction` | Stack material layers |

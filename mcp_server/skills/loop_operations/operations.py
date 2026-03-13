@@ -67,6 +67,181 @@ def _apply_properties(obj: Any, props: dict, type_def: dict) -> list[str]:
     return errors
 
 
+def create_plant_loop(
+    name: str,
+    loop_type: str,
+    design_exit_temp_c: float | None = None,
+    design_delta_temp_c: float | None = None,
+    supply_pump_type: str = "variable",
+    pump_head_pa: float = 179352.0,
+    pump_motor_eff: float = 0.9,
+) -> dict:
+    """Create a PlantLoop with sizing, pump, bypass pipe, and setpoint manager.
+
+    Args:
+        name: Name for the plant loop
+        loop_type: "Cooling" or "Heating" (sets sizing defaults)
+        design_exit_temp_c: Loop design exit temperature (C). Default 7.2 for cooling, 82.0 for heating.
+        design_delta_temp_c: Loop design temperature difference (C). Default 6.7 for cooling, 11.0 for heating.
+        supply_pump_type: "variable" or "constant" (default "variable")
+        pump_head_pa: Pump head in Pa (default 179352)
+        pump_motor_eff: Pump motor efficiency 0-1 (default 0.9)
+    """
+    try:
+        model = get_model()
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+
+    if loop_type not in ("Cooling", "Heating"):
+        return {"ok": False, "error": f"loop_type must be 'Cooling' or 'Heating', got '{loop_type}'"}
+
+    # Defaults based on loop type
+    if design_exit_temp_c is None:
+        design_exit_temp_c = 7.22 if loop_type == "Cooling" else 82.0
+    if design_delta_temp_c is None:
+        design_delta_temp_c = 6.67 if loop_type == "Cooling" else 11.0
+
+    try:
+        # Create plant loop
+        loop = openstudio.model.PlantLoop(model)
+        loop.setName(name)
+
+        # Configure sizing
+        sizing = loop.sizingPlant()
+        sizing.setDesignLoopExitTemperature(design_exit_temp_c)
+        sizing.setLoopDesignTemperatureDifference(design_delta_temp_c)
+        sizing.setLoopType(loop_type)
+
+        # Add pump on supply inlet node
+        supply_inlet = loop.supplyInletNode()
+        if supply_pump_type == "constant":
+            pump = openstudio.model.PumpConstantSpeed(model)
+        else:
+            pump = openstudio.model.PumpVariableSpeed(model)
+        pump.setName(f"{name} Pump")
+        pump.setRatedPumpHead(pump_head_pa)
+        pump.setMotorEfficiency(pump_motor_eff)
+        pump.addToNode(supply_inlet)
+
+        # Add bypass pipe on supply side
+        bypass = openstudio.model.PipeAdiabatic(model)
+        bypass.setName(f"{name} Supply Bypass")
+        loop.addSupplyBranchForComponent(bypass)
+
+        # Add demand bypass pipe
+        demand_bypass = openstudio.model.PipeAdiabatic(model)
+        demand_bypass.setName(f"{name} Demand Bypass")
+        loop.addDemandBranchForComponent(demand_bypass)
+
+        # Add setpoint manager on supply outlet
+        supply_outlet = loop.supplyOutletNode()
+        spm_sched = openstudio.model.ScheduleConstant(model)
+        spm_sched.setName(f"{name} SPM Schedule")
+        spm_sched.setValue(design_exit_temp_c)
+        spm = openstudio.model.SetpointManagerScheduled(model, spm_sched)
+        spm.setName(f"{name} SPM")
+        spm.addToNode(supply_outlet)
+
+        return {
+            "ok": True,
+            "name": loop.nameString(),
+            "loop_type": loop_type,
+            "design_exit_temp_c": design_exit_temp_c,
+            "design_delta_temp_c": design_delta_temp_c,
+            "pump_type": supply_pump_type,
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to create plant loop: {e}"}
+
+
+def add_demand_component(component_name: str, plant_loop_name: str) -> dict:
+    """Add an existing component to a plant loop's demand side."""
+    try:
+        model = get_model()
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+
+    plant_loop = fetch_object(model, "PlantLoop", name=plant_loop_name)
+    if plant_loop is None:
+        return {"ok": False, "error": f"Plant loop '{plant_loop_name}' not found"}
+
+    # Search across all known component types
+    component = _find_hvac_component_by_name(model, component_name)
+    if component is None:
+        return {"ok": False, "error": f"Component '{component_name}' not found"}
+
+    try:
+        success = plant_loop.addDemandBranchForComponent(component)
+        if not success:
+            return {"ok": False, "error": f"Failed to add '{component_name}' to demand side of '{plant_loop_name}'"}
+    except Exception as e:
+        return {"ok": False, "error": f"Error adding demand component: {e}"}
+
+    return {
+        "ok": True,
+        "component": component_name,
+        "plant_loop": plant_loop_name,
+    }
+
+
+def remove_demand_component(component_name: str, plant_loop_name: str) -> dict:
+    """Remove a component from a plant loop's demand side."""
+    try:
+        model = get_model()
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+
+    plant_loop = fetch_object(model, "PlantLoop", name=plant_loop_name)
+    if plant_loop is None:
+        return {"ok": False, "error": f"Plant loop '{plant_loop_name}' not found"}
+
+    component = _find_hvac_component_by_name(model, component_name)
+    if component is None:
+        return {"ok": False, "error": f"Component '{component_name}' not found"}
+
+    try:
+        success = plant_loop.removeDemandBranchWithComponent(component)
+        if not success:
+            msg = f"Failed to remove '{component_name}' from demand side of '{plant_loop_name}'"
+            return {"ok": False, "error": msg}
+    except Exception as e:
+        return {"ok": False, "error": f"Error removing demand component: {e}"}
+
+    return {
+        "ok": True,
+        "component": component_name,
+        "plant_loop": plant_loop_name,
+    }
+
+
+def _find_hvac_component_by_name(model, name: str):
+    """Search common HVAC component types by name.
+
+    Returns the typed OpenStudio object or None.
+    """
+    # List of (getter_method_name) to search
+    search_types = [
+        "getCoilCoolingWaters",
+        "getCoilHeatingWaters",
+        "getCoilCoolingDXSingleSpeeds",
+        "getCoilHeatingDXSingleSpeeds",
+        "getCoilCoolingFourPipeBeams",
+        "getCoilHeatingFourPipeBeams",
+        "getBoilerHotWaters",
+        "getChillerElectricEIRs",
+        "getCoolingTowerSingleSpeeds",
+        "getWaterHeaterMixeds",
+    ]
+    for getter_name in search_types:
+        getter = getattr(model, getter_name, None)
+        if getter is None:
+            continue
+        for obj in getter():
+            if hasattr(obj, "nameString") and obj.nameString() == name:
+                return obj
+    return None
+
+
 def add_supply_equipment(
     plant_loop_name: str,
     equipment_type: str,
@@ -230,6 +405,82 @@ def remove_zone_equipment(zone_name: str, equipment_name: str) -> dict:
         "ok": True,
         "removed": equipment_name,
         "zone": zone_name,
+    }
+
+
+def set_zone_equipment_priority(zone_name: str, equipment_names: list[str]) -> dict:
+    """Reorder zone equipment. First in list = highest priority (served first).
+
+    Uses ZoneHVACEquipmentList.setCoolingPriority() / setHeatingPriority()
+    to set both cooling and heating priority for each equipment.
+    Requires ALL equipment on the zone to be listed.
+    """
+    try:
+        model = get_model()
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+
+    zone = fetch_object(model, "ThermalZone", name=zone_name)
+    if zone is None:
+        return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
+
+    # Find ZoneHVACEquipmentList for this zone
+    target_list = None
+    for equip_list in model.getZoneHVACEquipmentLists():
+        if equip_list.thermalZone().handle() == zone.handle():
+            target_list = equip_list
+            break
+
+    if target_list is None:
+        return {"ok": False, "error": f"No equipment list found for zone '{zone_name}'"}
+
+    # Build name→object map from current equipment
+    current_equip = {}
+    for eq in target_list.equipment():
+        name = eq.nameString() if hasattr(eq, "nameString") else str(eq.name())
+        current_equip[name] = eq
+
+    # Validate all names exist and list is complete
+    current_names = set(current_equip.keys())
+    requested_names = set(equipment_names)
+    missing = requested_names - current_names
+    if missing:
+        return {"ok": False, "error": f"Equipment not found on zone: {sorted(missing)}"}
+    extra = current_names - requested_names
+    if extra:
+        return {"ok": False, "error": f"Missing equipment from list (must include all): {sorted(extra)}"}
+
+    # Record old order
+    old_order = []
+    for eq in target_list.equipment():
+        name = eq.nameString() if hasattr(eq, "nameString") else str(eq.name())
+        old_order.append({
+            "name": name,
+            "cooling_priority": target_list.coolingPriority(eq),
+            "heating_priority": target_list.heatingPriority(eq),
+        })
+
+    # Set new priorities (1-based, first in list = highest priority)
+    for i, name in enumerate(equipment_names):
+        eq = current_equip[name]
+        target_list.setCoolingPriority(eq, i + 1)
+        target_list.setHeatingPriority(eq, i + 1)
+
+    # Record new order
+    new_order = []
+    for name in equipment_names:
+        eq = current_equip[name]
+        new_order.append({
+            "name": name,
+            "cooling_priority": target_list.coolingPriority(eq),
+            "heating_priority": target_list.heatingPriority(eq),
+        })
+
+    return {
+        "ok": True,
+        "zone": zone_name,
+        "old_order": old_order,
+        "new_order": new_order,
     }
 
 

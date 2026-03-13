@@ -17,12 +17,17 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, baseline_model_exists, get_tier
+from .conftest import (
+    BASELINE_MODEL, BASELINE_HVAC_MODEL,
+    baseline_model_exists, baseline_hvac_model_exists, get_tier,
+    get_sim_run_id,
+)
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
+LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
 # Boston EPW with .stat/.ddy companions
 BOSTON_EPW = (
@@ -103,7 +108,7 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "expected": ["adjust_thermostat_setpoints", "set_thermostat_schedules",
                      "replace_thermostat_schedules"],
-        "L1": "Change the thermostat settings.",
+        "L1": "Make the building warmer in winter.",
         "L2": "Raise the cooling setpoint by 2 degrees F.",
         "L3": "Adjust the thermostat setpoints using adjust_thermostat_setpoints. "
               "Raise cooling by 2F.",
@@ -119,10 +124,304 @@ PROGRESSIVE_CASES = [
     {
         "id": "schedules",
         "needs_model": True,
-        "expected": ["list_schedule_rulesets", "get_schedule_details"],
+        "expected": ["list_model_objects", "get_schedule_details"],
         "L1": "What schedules does the building use?",
         "L2": "List all the schedule rulesets in the model.",
-        "L3": "List the schedules using list_schedule_rulesets.",
+        "L3": "List the schedules using list_model_objects with object_type ScheduleRuleset.",
+    },
+    # --- Generic object access (needs HVAC model) ---
+    {
+        "id": "inspect_component",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_object_fields", "get_component_properties"],
+        "L1": "What are the properties of the hot water boiler?",
+        "L2": "Show me all properties of the BoilerHotWater in the model.",
+        "L3": "Use get_object_fields to read properties of the BoilerHotWater.",
+    },
+    {
+        "id": "modify_component",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["set_object_property", "set_component_properties"],
+        "L1": "Make the boiler more efficient.",
+        "L2": "Set the boiler's nominal thermal efficiency to 0.92.",
+        "L3": "Use set_object_property to set nominalThermalEfficiency to 0.92 "
+              "on the BoilerHotWater.",
+    },
+    {
+        "id": "list_dynamic_type",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["list_model_objects"],
+        "L1": "What sizing parameters exist in the model?",
+        "L2": "List all SizingSystem objects in the model.",
+        "L3": "Use list_model_objects with object_type SizingSystem to list sizing objects.",
+    },
+    # --- Migrated from test_02 (formerly with-model only) ---
+    {
+        "id": "floor_area",
+        "needs_model": True,
+        "expected": ["get_building_info", "get_model_summary"],
+        "L1": "How big is the building?",
+        "L2": "What is the building's total floor area?",
+        "L3": "Get the building floor area using get_building_info.",
+    },
+    {
+        "id": "materials",
+        "needs_model": True,
+        "expected": ["list_materials"],
+        "L1": "What materials are used in the building?",
+        "L2": "List all materials in the model.",
+        "L3": "List the materials using list_materials.",
+    },
+    {
+        "id": "thermal_zones",
+        "needs_model": True,
+        "expected": ["list_thermal_zones"],
+        "L1": "How many zones does the building have?",
+        "L2": "List all thermal zones in the model.",
+        "L3": "List the thermal zones using list_thermal_zones.",
+    },
+    {
+        "id": "subsurfaces",
+        "needs_model": True,
+        "expected": ["list_subsurfaces"],
+        "L1": "What windows does the building have?",
+        "L2": "List all subsurfaces (windows and doors) in the model.",
+        "L3": "List the subsurfaces using list_subsurfaces.",
+    },
+    {
+        "id": "surface_details",
+        "needs_model": True,
+        "expected": ["get_surface_details", "list_surfaces"],
+        "L1": "Tell me about the south wall.",
+        "L2": "Show details for a wall surface in the model.",
+        "L3": "Show surface details using get_surface_details or list_surfaces.",
+    },
+    # --- Simulation & results (need completed simulation) ---
+    {
+        "id": "run_simulation",
+        "needs_model": True,
+        "expected": ["run_simulation", "run_osw"],
+        "L1": "Simulate the building and get the energy results.",
+        "L2": "Run an EnergyPlus simulation on this model.",
+        "L3": "Run the simulation using run_simulation.",
+    },
+    {
+        "id": "get_eui",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_summary_metrics"],
+        "L1": "What's the building's energy use?",
+        "L2": "Extract the EUI from the simulation results.",
+        "L3": "Extract summary metrics using extract_summary_metrics.",
+    },
+    {
+        "id": "end_use_breakdown",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_end_use_breakdown"],
+        "L1": "How much energy goes to heating vs cooling?",
+        "L2": "Show the end use breakdown from the simulation.",
+        "L3": "Extract end use breakdown using extract_end_use_breakdown.",
+    },
+    {
+        "id": "hvac_sizing",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_hvac_sizing", "extract_component_sizing"],
+        "L1": "Are the HVAC systems properly sized?",
+        "L2": "Show the HVAC sizing results from the simulation.",
+        "L3": "Extract HVAC sizing using extract_hvac_sizing.",
+    },
+    # --- Envelope ---
+    {
+        "id": "set_wwr",
+        "needs_model": True,
+        "expected": ["set_window_to_wall_ratio"],
+        "L1": "Add windows to the building.",
+        "L2": "Set the window-to-wall ratio to 40% on all facades.",
+        "L3": "Set the window to wall ratio to 0.4 using set_window_to_wall_ratio.",
+    },
+    {
+        "id": "replace_windows",
+        "needs_model": True,
+        "expected": ["replace_window_constructions"],
+        "L1": "Upgrade the windows to double-pane low-e.",
+        "L2": "Replace all window constructions with better performing glazing.",
+        "L3": "Replace window constructions using replace_window_constructions.",
+    },
+    {
+        "id": "construction_details",
+        "needs_model": True,
+        "expected": ["get_construction_details"],
+        "L1": "What layers make up the exterior wall?",
+        "L2": "Show the material layers of a wall construction.",
+        "L3": "Get construction details using get_construction_details.",
+    },
+    # --- Loads ---
+    {
+        "id": "check_loads",
+        "needs_model": True,
+        "expected": ["get_load_details", "get_object_fields", "list_model_objects"],
+        "L1": "What loads are assigned to the first space?",
+        "L2": "Get the people and lighting load details for a space.",
+        "L3": "Get load details using get_load_details.",
+    },
+    {
+        "id": "create_loads",
+        "needs_model": True,
+        "expected": ["create_people_definition", "create_lights_definition"],
+        "L1": "Add people and lighting to the office spaces.",
+        "L2": "Create a people load of 0.05 people/sqft and lighting at 10 W/sqft.",
+        "L3": "Create a people definition using create_people_definition with "
+              "people_per_floor_area 0.05.",
+    },
+    # --- Plant loops ---
+    {
+        "id": "create_plant_loop",
+        "needs_model": True,
+        "expected": ["create_plant_loop"],
+        "L1": "Create a hot water heating loop.",
+        "L2": "Create a plant loop for hot water heating with a 82C design temp.",
+        "L3": "Create a plant loop using create_plant_loop with loop_type heating.",
+    },
+    # --- Schedules & space types ---
+    {
+        "id": "schedule_details",
+        "needs_model": True,
+        "expected": ["get_schedule_details"],
+        "L1": "What hours is the HVAC running?",
+        "L2": "Show the details of an HVAC operation schedule.",
+        "L3": "Get schedule details using get_schedule_details.",
+    },
+    {
+        "id": "space_type_info",
+        "needs_model": True,
+        "expected": ["get_space_type_details", "get_object_fields"],
+        "L1": "What type of space is this and what are its defaults?",
+        "L2": "Show the space type details including default loads and schedules.",
+        "L3": "Get space type details using get_space_type_details.",
+    },
+    # --- Design conditions ---
+    {
+        "id": "set_run_period",
+        "needs_model": True,
+        "expected": ["set_run_period", "get_run_period"],
+        "L1": "Set the simulation to run for a full year.",
+        "L2": "Set the run period from January 1 to December 31.",
+        "L3": "Set the run period using set_run_period with start 1/1 end 12/31.",
+    },
+    {
+        "id": "ideal_air",
+        "needs_model": True,
+        "expected": ["enable_ideal_air_loads"],
+        "L1": "Use ideal air loads for quick sizing.",
+        "L2": "Enable ideal air loads on all zones for sizing runs.",
+        "L3": "Enable ideal air loads using enable_ideal_air_loads.",
+    },
+    # --- Model management & misc ---
+    {
+        "id": "save_model",
+        "needs_model": True,
+        "expected": ["save_osm_model"],
+        "L1": "Save my changes.",
+        "L2": "Save the model to /runs/my_model.osm.",
+        "L3": "Save the model using save_osm_model to /runs/my_model.osm.",
+    },
+    {
+        "id": "add_ev",
+        "needs_model": True,
+        "expected": ["add_ev_load"],
+        "L1": "Add electric vehicle charging to the building.",
+        "L2": "Add EV charging load to the parking area.",
+        "L3": "Add EV charging using add_ev_load.",
+    },
+    # --- Measure authoring (Phase 9) ---
+    {
+        "id": "list_measures",
+        "needs_model": False,
+        "expected": ["list_custom_measures"],
+        "L1": "What custom measures do I have?",
+        "L2": "List all custom measures I've created.",
+        "L3": "List custom measures using list_custom_measures.",
+    },
+    {
+        "id": "create_measure",
+        "needs_model": False,
+        "expected": ["create_measure"],
+        "L1": "Write a custom measure that sets the building name.",
+        "L2": "Create a Ruby ModelMeasure that sets the building name to 'Test'.",
+        "L3": "Create a custom measure using create_measure with language Ruby "
+              "and run_body that calls model.getBuilding.setName.",
+    },
+    {
+        "id": "test_measure",
+        "needs_model": False,
+        "expected": ["test_measure"],
+        "L1": "Run the tests for my custom measure.",
+        "L2": "Run the test suite for the measure at /runs/custom_measures/my_measure.",
+        "L3": "Test the measure using test_measure with measure_dir "
+              "/runs/custom_measures/my_measure.",
+    },
+    {
+        "id": "apply_existing_measure",
+        "needs_model": True,
+        "expected": ["apply_measure", "list_measure_arguments"],
+        "L1": "Apply the set_building_name measure from /repo/tests/assets/measures/.",
+        "L2": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+              "with building_name 'New Name'.",
+        "L3": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+              "using apply_measure with arguments {building_name: 'New Name'}.",
+    },
+    # --- CooledBeam + zone priority ---
+    {
+        "id": "replace_terminals_cooled_beam",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["replace_air_terminals"],
+        "L1": "Replace the air terminals with cooling-only chilled beams.",
+        "L2": "Replace the air terminals on the air loop with CooledBeam type using replace_air_terminals.",
+        "L3": "Use replace_air_terminals with terminal_type='CooledBeam'.",
+    },
+    {
+        "id": "replace_terminals_four_pipe_beam",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["replace_air_terminals"],
+        "L1": "Replace the air terminals with 4-pipe chilled beams that provide both heating and cooling.",
+        "L2": "Replace the air terminals on the air loop with FourPipeBeam type using replace_air_terminals.",
+        "L3": "Use replace_air_terminals with terminal_type='FourPipeBeam'.",
+    },
+    {
+        "id": "measure_replace_terminals",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["create_measure"],
+        "L1": "Write a custom measure that replaces VAV terminals with 4-pipe chilled beams on all air loops.",
+        "L2": "Create a Ruby measure using create_measure that walks air loops and replaces terminals with 4-pipe chilled beam terminals.",
+        "L3": "Use create_measure (language Ruby). run_body should iterate model.getAirLoopHVACs, removeBranchForZone for each zone, create AirTerminalSingleDuctConstantVolumeFourPipeBeam, reconnect via addBranchForZone.",
+    },
+    {
+        "id": "zone_equipment_priority",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["set_zone_equipment_priority", "add_zone_equipment"],
+        "L1": "Add a baseboard heater to the first zone, then reorder zone equipment priority.",
+        "L2": "Add a ZoneHVACBaseboardConvectiveElectric to the first zone using add_zone_equipment, "
+              "then use set_zone_equipment_priority to change the serving order.",
+        "L3": "Use add_zone_equipment to add a ZoneHVACBaseboardConvectiveElectric to the first zone. "
+              "Then call set_zone_equipment_priority to set the baseboard as highest priority.",
+    },
+    {
+        "id": "edit_measure",
+        "needs_model": False,
+        "expected": ["edit_measure", "list_custom_measures"],
+        "L1": "Update my custom measure to also log the old building name.",
+        "L2": "Edit the run body of custom measure my_measure to add logging.",
+        "L3": "Edit measure my_measure using edit_measure with run_body "
+              "'    runner.registerInfo(\"updated\")'.",
     },
 ]
 
@@ -137,11 +436,17 @@ for case in PROGRESSIVE_CASES:
             "case_id": case["id"],
             "level": level,
             "needs_model": case["needs_model"],
+            "needs_hvac": case.get("needs_hvac", False),
+            "needs_run": case.get("needs_run", False),
             "prompt": case[level],
             "expected": case["expected"],
         })
 
 
+_GENERIC_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
+
+
+@pytest.mark.progressive
 @pytest.mark.parametrize("case", _FLAT_CASES, ids=[c["id"] for c in _FLAT_CASES])
 def test_progressive(case):
     """Test tool discovery at varying prompt specificity levels.
@@ -155,13 +460,23 @@ def test_progressive(case):
         pytest.skip("Tier 1 not selected")
 
     prompt = case["prompt"]
-    if case["needs_model"]:
+    if case.get("needs_run"):
+        run_id = get_sim_run_id()
+        if not run_id:
+            pytest.skip("No simulation run_id — run test_01_setup first")
+        prompt = f"Use run_id '{run_id}'. " + prompt
+    elif case.get("needs_hvac"):
+        if not baseline_hvac_model_exists():
+            pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
+        prompt = LOAD_HVAC + prompt.lower()
+    elif case["needs_model"]:
         if not baseline_model_exists():
             pytest.skip("Baseline model not found — run test_01_setup first")
         prompt = LOAD + prompt.lower()
     prompt += SUFFIX
 
-    result = run_claude(prompt, timeout=120)
+    timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else 120
+    result = run_claude(prompt, timeout=timeout)
     tool_names = result.tool_names
 
     assert any(t in case["expected"] for t in tool_names), (

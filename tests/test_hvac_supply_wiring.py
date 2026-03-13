@@ -29,7 +29,7 @@ async def _setup_model(session, name):
     cr = await session.call_tool("create_example_osm", {"name": name})
     cd = unwrap(cr)
     await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-    zr = await session.call_tool("list_thermal_zones", {})
+    zr = await session.call_tool("list_thermal_zones", {"max_results": 0})
     zd = unwrap(zr)
     return [z["name"] for z in zd["thermal_zones"]]
 

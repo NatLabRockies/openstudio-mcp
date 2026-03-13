@@ -38,10 +38,10 @@ extract_summary_metrics(run_id=...)
 **EUI too high:**
 - Missing/wrong thermostat schedules → `get_schedule_details`, `set_thermostat_schedules`
 - Oversized HVAC → `extract_hvac_sizing` to check autosizing
-- High infiltration → `list_infiltration`
+- High infiltration → `list_model_objects(object_type="SpaceInfiltrationDesignFlowRate")`
 
 **EUI too low:**
-- Missing internal loads → `list_people_loads`, `list_lighting_loads`, `list_electric_equipment`
+- Missing internal loads → `list_model_objects(object_type="People")`, `list_model_objects(object_type="Lights")`, `list_model_objects(object_type="ElectricEquipment")`
 - No HVAC (ideal air or missing) → `list_air_loops`, `list_zone_hvac_equipment`
 - Wrong run period (partial year) → `get_run_period`
 

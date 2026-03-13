@@ -42,7 +42,7 @@ async def _setup_baseline(s, name):
     lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
     assert lr.get("ok") is True, lr
 
-    zr = unwrap(await s.call_tool("list_thermal_zones", {}))
+    zr = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
     zone_names = [z["name"] for z in zr["thermal_zones"]]
     assert len(zone_names) == 10
 
@@ -68,7 +68,7 @@ async def _setup_baseline(s, name):
 async def _save_run_and_check(s, name):
     """Save model, run simulation, assert success + no fatal/severe errors."""
     save_path = f"/runs/{name}.osm"
-    sr = unwrap(await s.call_tool("save_osm_model", {"save_path": save_path}))
+    sr = unwrap(await s.call_tool("save_osm_model", {"osm_path": save_path}))
     assert sr.get("ok") is True
 
     sim = unwrap(await s.call_tool("run_simulation", {
@@ -85,8 +85,8 @@ async def _save_run_and_check(s, name):
     )
 
     # Check eplusout.err for fatal/severe
-    err_resp = unwrap(await s.call_tool("read_run_artifact", {
-        "run_id": run_id, "path": "run/eplusout.err", "max_bytes": 100000,
+    err_resp = unwrap(await s.call_tool("read_file", {
+        "file_path": f"/runs/{run_id}/run/eplusout.err", "max_bytes": 100000,
     }))
     if err_resp.get("ok"):
         err_text = err_resp.get("content", "")

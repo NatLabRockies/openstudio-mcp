@@ -14,13 +14,30 @@ from mcp_server.skills.spaces.operations import (
 
 def register(mcp):
     @mcp.tool(name="list_spaces")
-    def list_spaces_tool(detailed: bool = False):
-        """List all spaces. Default brief: name, floor_area_m2, thermal_zone. Use get_space_details for full info.
+    def list_spaces_tool(
+        detailed: bool = False,
+        thermal_zone_name: str | None = None,
+        building_story_name: str | None = None,
+        space_type_name: str | None = None,
+        max_results: int = 10,
+    ):
+        """List spaces. Default 10 results; use filters to narrow.
+
+        Common filters:
+        - Spaces on a story: building_story_name="Floor 1"
+        - Spaces in a zone: thermal_zone_name="Zone 1"
 
         Args:
-            detailed: Return all fields (handle, volume, origin, loads counts, etc.)
+            detailed: Return all fields (volume, origin, loads counts, etc.)
+            thermal_zone_name: Filter by thermal zone
+            building_story_name: Filter by building story
+            space_type_name: Filter by space type
+            max_results: Max items to return (default 10, 0=unlimited)
         """
-        return list_spaces(detailed=detailed)
+        mr = None if max_results == 0 else max_results
+        return list_spaces(detailed=detailed, thermal_zone_name=thermal_zone_name,
+                          building_story_name=building_story_name,
+                          space_type_name=space_type_name, max_results=mr)
 
     @mcp.tool(name="get_space_details")
     def get_space_details_tool(space_name: str):
@@ -32,13 +49,24 @@ def register(mcp):
         return get_space_details(space_name=space_name)
 
     @mcp.tool(name="list_thermal_zones")
-    def list_thermal_zones_tool(detailed: bool = False):
-        """List all thermal zones. Brief: name, floor_area, num_equipment. Use get_thermal_zone_details for full.
+    def list_thermal_zones_tool(
+        detailed: bool = False,
+        air_loop_name: str | None = None,
+        max_results: int = 10,
+    ):
+        """List thermal zones. Default 10 results; use filters to narrow.
+
+        Common filters:
+        - Zones on an air loop: air_loop_name="DOAS"
 
         Args:
-            detailed: Return all fields (thermostat, schedules, equipment list, air_loop, etc.)
+            detailed: Return all fields (thermostat, schedules, air_loop, etc.)
+            air_loop_name: Filter by air loop name
+            max_results: Max items to return (default 10, 0=unlimited)
         """
-        return list_thermal_zones(detailed=detailed)
+        mr = None if max_results == 0 else max_results
+        return list_thermal_zones(detailed=detailed, air_loop_name=air_loop_name,
+                                 max_results=mr)
 
     @mcp.tool(name="get_thermal_zone_details")
     def get_thermal_zone_details_tool(zone_name: str):

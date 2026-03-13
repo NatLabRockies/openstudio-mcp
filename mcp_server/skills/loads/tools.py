@@ -1,4 +1,8 @@
-"""MCP tool definitions for internal loads."""
+"""MCP tool definitions for internal loads.
+
+List tools removed in Phase C — use list_model_objects("People"), etc.
+Kept: get_load_details (type dispatcher), all creation tools.
+"""
 from __future__ import annotations
 
 from mcp_server.skills.loads.operations import (
@@ -13,39 +17,21 @@ from mcp_server.skills.loads.operations import (
 from mcp_server.skills.loads.operations import (
     create_lights_definition,
     create_people_definition,
-    list_electric_equipment,
-    list_gas_equipment,
-    list_infiltration,
-    list_lighting_loads,
-    list_people_loads,
+    get_load_details,
 )
 
 
 def register(mcp):
-    @mcp.tool(name="list_people_loads")
-    def list_people_loads_tool():
-        """List all people (occupancy) loads in the model."""
-        return list_people_loads()
+    @mcp.tool(name="get_load_details")
+    def get_load_details_tool(load_name: str):
+        """Get detailed info for any load object (people, lights, electric/gas equipment, infiltration).
 
-    @mcp.tool(name="list_lighting_loads")
-    def list_lighting_loads_tool():
-        """List all lighting loads in the model."""
-        return list_lighting_loads()
+        Tries each load type by name until found. Returns load_type + all fields.
 
-    @mcp.tool(name="list_electric_equipment")
-    def list_electric_equipment_tool():
-        """List all electric equipment (plug loads) in the model."""
-        return list_electric_equipment()
-
-    @mcp.tool(name="list_gas_equipment")
-    def list_gas_equipment_tool():
-        """List all gas equipment loads in the model."""
-        return list_gas_equipment()
-
-    @mcp.tool(name="list_infiltration")
-    def list_infiltration_tool():
-        """List all infiltration objects in the model."""
-        return list_infiltration()
+        Args:
+            load_name: Name of the load object
+        """
+        return get_load_details(load_name=load_name)
 
     # --- Creation tools ---
 

@@ -39,7 +39,7 @@ def test_list_materials():
                 assert load_result.get("ok") is True
 
                 # List materials
-                materials_resp = await session.call_tool("list_materials", {})
+                materials_resp = await session.call_tool("list_materials", {"max_results": 0})
                 materials_result = unwrap(materials_resp)
 
                 assert isinstance(materials_result, dict)
@@ -52,8 +52,8 @@ def test_list_materials():
 
 
 @pytest.mark.integration
-def test_list_constructions():
-    """Test listing all constructions."""
+def test_list_constructions_via_generic():
+    """Test listing all constructions via list_model_objects."""
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -73,15 +73,14 @@ def test_list_constructions():
                 load_result = unwrap(load_resp)
                 assert load_result.get("ok") is True
 
-                # List constructions
-                constructions_resp = await session.call_tool("list_constructions", {})
+                # List constructions via generic access
+                constructions_resp = await session.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0})
                 constructions_result = unwrap(constructions_resp)
 
                 assert isinstance(constructions_result, dict)
                 assert constructions_result.get("ok") is True
                 assert constructions_result["count"] > 0
-                assert "name" in constructions_result["constructions"][0]
-                assert "layers" in constructions_result["constructions"][0]
+                assert "name" in constructions_result["objects"][0]
 
     asyncio.run(_run())
 
@@ -105,21 +104,21 @@ def test_constructions_baseline():
                 assert unwrap(lr).get("ok") is True
 
                 # Materials — baseline has walls, roof, floor materials
-                mr = await session.call_tool("list_materials", {})
+                mr = await session.call_tool("list_materials", {"max_results": 0})
                 md = unwrap(mr)
                 print("baseline materials:", md)
                 assert md.get("ok") is True
                 assert md["count"] >= 5  # Multiple materials from construction library
 
-                # Constructions
-                cr2 = await session.call_tool("list_constructions", {})
+                # Constructions via generic access
+                cr2 = await session.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0})
                 cd2 = unwrap(cr2)
                 print("baseline constructions:", cd2)
                 assert cd2.get("ok") is True
                 assert cd2["count"] >= 4  # Ext wall, roof, floor, int wall at minimum
 
-                # Construction sets
-                csr = await session.call_tool("list_construction_sets", {})
+                # Construction sets via generic access
+                csr = await session.call_tool("list_model_objects", {"object_type": "DefaultConstructionSet"})
                 csd = unwrap(csr)
                 print("baseline construction sets:", csd)
                 assert csd.get("ok") is True

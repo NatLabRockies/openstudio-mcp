@@ -26,12 +26,17 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import BASELINE_MODEL, baseline_model_exists, get_tier
+from .conftest import (
+    BASELINE_MODEL, BASELINE_HVAC_MODEL,
+    baseline_model_exists, baseline_hvac_model_exists, get_tier,
+    get_sim_run_id,
+)
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
+LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
 WORKFLOW_CASES = [
     {
@@ -185,10 +190,10 @@ WORKFLOW_CASES = [
             "Step 1: Import the FloorspaceJS file at "
             "/test-assets/sddc_office/floorplan.json "
             "using import_floorspacejs.\n"
-            "Step 2: Call change_building_location "
-            "with weather_file "
+            "Step 2: Call change_building_location with weather_file="
             "/opt/comstock-measures/ChangeBuildingLocation"
-            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw.\n"
+            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw "
+            "(use this path directly, do not search for files).\n"
             "Step 3: Call create_typical_building to add "
             "constructions, loads, and HVAC.\n"
             "Use MCP tools only. Complete all 3 steps."
@@ -213,6 +218,204 @@ WORKFLOW_CASES = [
         "required_tools": ["create_space_from_floor_print", "match_surfaces"],
         "timeout": 120,
     },
+    {
+        # Envelope retrofit: WWR + window upgrade
+        "id": "envelope_retrofit",
+        "prompt": LOAD + (
+            "Set the window-to-wall ratio to 0.4 using set_window_to_wall_ratio. "
+            "Then replace window constructions using replace_window_constructions. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "set_window_to_wall_ratio",
+                           "replace_window_constructions"],
+        "timeout": 180,
+    },
+    {
+        # Create loads and assign to model
+        "id": "create_and_assign_loads",
+        "prompt": LOAD + (
+            "Create a people definition using create_people_definition with "
+            "people_per_floor_area 0.05 and name 'Office People'. "
+            "Then create a lights definition using create_lights_definition with "
+            "watts_per_floor_area 10 and name 'Office Lights'. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_people_definition",
+                           "create_lights_definition"],
+        "timeout": 120,
+    },
+    {
+        # Plant loop with supply equipment
+        "id": "plant_loop_with_boiler",
+        "prompt": LOAD + (
+            "Create a heating plant loop using create_plant_loop with loop_type "
+            "heating. Then add a hot water boiler using add_supply_equipment "
+            "with equipment_type BoilerHotWater. Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_plant_loop",
+                           "add_supply_equipment"],
+        "timeout": 120,
+    },
+    {
+        # Generic object access: inspect and modify a boiler
+        "id": "inspect_and_modify_boiler",
+        "prompt": LOAD_HVAC + (
+            "List the BoilerHotWater objects using list_model_objects. "
+            "Then read the properties of the first boiler using get_object_fields. "
+            "Then set its nominalThermalEfficiency to 0.95 using set_object_property. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "list_model_objects",
+                           "get_object_fields", "set_object_property"],
+        "timeout": 120,
+    },
+    {
+        # Extract multiple result types from a completed simulation
+        "id": "extract_results_chain",
+        "needs_run": True,
+        "prompt": None,  # built dynamically from run_id
+        "required_tools": ["extract_summary_metrics", "extract_end_use_breakdown"],
+        "timeout": 120,
+    },
+    {
+        # Replace air terminals with CooledBeam, simulate, extract results
+        "id": "hvac_chilled_beam_comparison",
+        "prompt": LOAD_HVAC + (
+            "Get the current air loop details. "
+            "Replace all air terminals with CooledBeam type using replace_air_terminals. "
+            "Save the model and run a simulation. "
+            "Extract the end use breakdown. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "replace_air_terminals",
+                           "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "max_turns": 25,
+        "timeout": 300,
+    },
+    {
+        # Measure authoring lifecycle: create → test → apply
+        "id": "create_test_apply_measure",
+        "prompt": LOAD + (
+            "Create a Ruby custom measure named 'set_bldg_name_test' using "
+            "create_measure. It should set the building name to 'LLM Test'. "
+            "Use language Ruby, and run_body: "
+            "\"    model.getBuilding.setName('LLM Test')\\n"
+            "    runner.registerInfo('Done')\". "
+            "Then test it using test_measure. "
+            "Then apply it using apply_measure with the measure_dir from create. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure"],
+        "max_turns": 25,
+        "timeout": 180,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_set_lights_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that sets all LightsDefinition "
+            "objects to 8 W/m2 using setWattsperSpaceFloorArea.\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_set_infiltration_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that sets all "
+            "SpaceInfiltrationDesignFlowRate objects to use "
+            "Flow/ExteriorArea method at 0.0003 m3/s-m2 "
+            "(setFlowperExteriorSurfaceArea).\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_replace_terminals_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that replaces all air terminals "
+            "on every air loop with 4-pipe active chilled beam terminals. "
+            "For each air loop, iterate thermalZones, removeBranchForZone, "
+            "create CoilCoolingFourPipeBeam + CoilHeatingFourPipeBeam, "
+            "wire coils to the CHW and HW plant loops, create "
+            "AirTerminalSingleDuctConstantVolumeFourPipeBeam, and reconnect "
+            "via addBranchForZone.\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics or end use breakdown.\n"
+            "6. Compare baseline vs retrofit results and report the "
+            "difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 40,
+        "timeout": 720,
+    },
+    {
+        # Full chain: baseline sim → write measure → apply → retrofit sim → compare
+        "id": "measure_add_baseboards_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that adds a "
+            "ZoneHVACBaseboardConvectiveElectric to every thermal zone "
+            "using addToThermalZone. Name each baseboard after its zone.\n"
+            "4. Create it with create_measure, test with test_measure, "
+            "apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
 ]
 
 
@@ -234,12 +437,25 @@ def test_workflow(case):
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
 
-    # Skip if this case needs a pre-loaded model and it doesn't exist
-    if BASELINE_MODEL in case["prompt"] and not baseline_model_exists():
+    # Build prompt for needs_run cases
+    prompt = case["prompt"]
+    if case.get("needs_run"):
+        run_id = get_sim_run_id()
+        if not run_id:
+            pytest.skip("No simulation run_id — run test_01_setup first")
+        prompt = (
+            f"Extract results from simulation run '{run_id}'. "
+            "First extract summary metrics using extract_summary_metrics. "
+            "Then extract end use breakdown using extract_end_use_breakdown. "
+            "Use MCP tools only."
+        )
+    elif BASELINE_HVAC_MODEL in prompt and not baseline_hvac_model_exists():
+        pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
+    elif BASELINE_MODEL in prompt and not baseline_model_exists():
         pytest.skip("Baseline model not found — run test_01_setup first")
 
     result = run_claude(
-        case["prompt"],
+        prompt,
         timeout=case.get("timeout", 120),
         max_turns=case.get("max_turns"),
     )
@@ -254,3 +470,11 @@ def test_workflow(case):
         assert any(t in tool_names for t in case["any_of"]), (
             f"None of {case['any_of']} found. Tools: {tool_names}"
         )
+
+    if "min_calls" in case:
+        for tool, min_count in case["min_calls"].items():
+            actual = tool_names.count(tool)
+            assert actual >= min_count, (
+                f"Expected {tool} >= {min_count} times, got {actual}. "
+                f"Tools: {tool_names}"
+            )

@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 127 MCP tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
+**23 skills &bull; 134 tools &bull; 6 prompts &bull; 4 resources &bull; 390 integration tests**
 
 ---
 
@@ -17,6 +17,7 @@ Ask your AI assistant to do things like:
 - *"Switch the HVAC from VAV to VRF heat pumps and compare energy use"*
 - *"Add R-30 roof insulation and see how it affects the cooling load"*
 - *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing"*
+- *"Write a custom measure to set all lights to 8 W/m2, test it, apply it, and compare the EUI"*
 - *"Apply the AEDG Small Office measure from my local measures directory"*
 
 The server handles all the OpenStudio/EnergyPlus complexity behind MCP tool calls.
@@ -72,7 +73,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 127 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 134 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -84,7 +85,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 127 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 134 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Other MCP Hosts
 
@@ -94,7 +95,7 @@ The AI reads your prompt, picks the right tools from the 127 available, calls th
 
 ## Claude Code Skills
 
-When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 10 bundled skills provide workflow automation and domain knowledge:
+When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 11 bundled skills provide workflow automation and domain knowledge:
 
 | Skill | Type | Description |
 |-------|------|-------------|
@@ -105,6 +106,7 @@ When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/
 | `/new-building` | Workflow | Full model creation from scratch |
 | `/retrofit` | Workflow | Before/after ECM analysis |
 | `/view` | Task | Quick 3D model visualization |
+| `measure-authoring` | Knowledge | Custom measure creation, testing, before/after comparison (auto-loaded) |
 | `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection criteria (auto-loaded) |
 | `openstudio-patterns` | Knowledge | Tool dependencies and model relationships (auto-loaded) |
 | `tool-workflows` | Knowledge | Multi-tool recipes for common operations (auto-loaded) |
@@ -122,7 +124,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (127 total)
+## Skills & Tools (134 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |
@@ -136,22 +138,34 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `get_server_status` | Server health check |
 | `get_versions` | OpenStudio, EnergyPlus, Ruby versions |
 
-### Model Management (6 tools)
+### Model Creation (5 tools)
+
+Primary tools for creating building energy models. `create_new_building` is the recommended starting point for most workflows.
+
 | Tool | Description |
 |------|-------------|
-| `create_example_osm` | Create single-zone example model |
-| `create_baseline_osm` | Create 10-zone baseline with ASHRAE system 1-10 |
+| `create_new_building` | Create complete building end-to-end (geometry + weather + typical template) |
+| `create_bar_building` | Create bar building geometry from building type, floor area, and aspect ratio |
+| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry |
+| `create_example_osm` | Create minimal single-zone example (testing/demos) |
+| `create_baseline_osm` | Create 10-zone baseline with ASHRAE system 1-10 (testing/demos) |
+
+### Model Management (4 tools)
+| Tool | Description |
+|------|-------------|
 | `inspect_osm_summary` | Quick structural summary of OSM file |
 | `load_osm_model` | Load OSM into memory for querying/editing |
 | `save_osm_model` | Save in-memory model to disk |
 | `list_files` | Discover files in /inputs and /runs (OSM, EPW, results) |
 
-### Building (3 tools)
+### Building (2 tools)
+
+List building stories via `list_model_objects("BuildingStory")`.
+
 | Tool | Description |
 |------|-------------|
 | `get_building_info` | Building name, area, volume, orientation |
 | `get_model_summary` | Object counts by category |
-| `list_building_stories` | List building stories with spaces |
 
 ### Spaces (6 tools)
 | Tool | Description |
@@ -163,7 +177,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `create_space` | Create space with optional story/space type |
 | `create_thermal_zone` | Create thermal zone, assign spaces |
 
-### Geometry (8 tools)
+### Geometry (9 tools)
 | Tool | Description |
 |------|-------------|
 | `list_surfaces` | List surfaces (walls, floors, roofs) |
@@ -174,21 +188,26 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `create_space_from_floor_print` | Extrude floor polygon into space with all surfaces |
 | `match_surfaces` | Intersect + match shared walls between adjacent spaces |
 | `set_window_to_wall_ratio` | Add centered window by glazing ratio (e.g. 0.4 = 40%) |
+| `import_floorspacejs` | Import custom geometry from FloorSpaceJS JSON file |
 
-### Constructions (6 tools)
+### Constructions (5 tools)
+
+List constructions via `list_model_objects("Construction")`, construction sets via `list_model_objects("DefaultConstructionSet")`.
+
 | Tool | Description |
 |------|-------------|
 | `list_materials` | List materials with thermal properties |
-| `list_constructions` | List constructions with layers |
-| `list_construction_sets` | List default construction sets |
+| `get_construction_details` | Construction layers with thermal properties |
 | `create_standard_opaque_material` | Create material with conductivity/density |
 | `create_construction` | Create layered construction from materials |
 | `assign_construction_to_surface` | Assign construction to surface |
 
-### Schedules (3 tools)
+### Schedules (2 tools)
+
+List schedules via `list_model_objects("ScheduleRuleset")`.
+
 | Tool | Description |
 |------|-------------|
-| `list_schedule_rulesets` | List schedule rulesets |
 | `get_schedule_details` | Schedule type, values, rules |
 | `create_schedule_ruleset` | Create constant schedule (Fractional/Temp/OnOff) |
 
@@ -203,24 +222,25 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `list_zone_hvac_equipment` | List zone-level HVAC equipment |
 | `get_zone_hvac_details` | Zone equipment details |
 
-### Loads (10 tools)
+### Loads (6 tools)
+
+List loads via `list_model_objects("People")`, `list_model_objects("Lights")`, etc. Use `get_object_fields` for definition details.
+
 | Tool | Description |
 |------|-------------|
-| `list_people_loads` | List people/occupancy definitions |
-| `list_lighting_loads` | List lighting definitions |
-| `list_electric_equipment` | List electric equipment |
-| `list_gas_equipment` | List gas equipment |
-| `list_infiltration` | List infiltration definitions |
+| `get_load_details` | Get detailed info for any load by name (type dispatcher) |
 | `create_people_definition` | Create people load (by area or count) |
 | `create_lights_definition` | Create lighting load (by area or wattage) |
 | `create_electric_equipment` | Create electric equipment load |
 | `create_gas_equipment` | Create gas equipment load |
 | `create_infiltration` | Create infiltration (by area or ACH) |
 
-### Space Types (2 tools)
+### Space Types (1 tool)
+
+List space types via `list_model_objects("SpaceType")`.
+
 | Tool | Description |
 |------|-------------|
-| `list_space_types` | List space types with default loads |
 | `get_space_type_details` | Space type loads, schedules, standards |
 
 ### Simulation (7 tools)
@@ -238,8 +258,8 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | Tool | Description |
 |------|-------------|
 | `extract_summary_metrics` | Extract EUI, energy, unmet hours from results |
-| `read_run_artifact` | Read simulation output file contents |
-| `copy_run_artifact` | Copy large artifact to host-mounted path |
+| `read_file` | Read any file by absolute path (all mounts) |
+| `copy_file` | Copy file to host-mounted path |
 | `extract_end_use_breakdown` | Energy breakdown by end use and fuel type (IP/SI) |
 | `extract_envelope_summary` | Opaque + fenestration U-values and areas |
 | `extract_hvac_sizing` | Autosized zone and system HVAC capacities |
@@ -265,33 +285,46 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `add_vrf_system` | Add VRF multi-zone heat pump system |
 | `add_radiant_system` | Add low-temperature radiant heating/cooling |
 
-### Component Properties (6 tools)
+### Component Properties (10 tools)
+
+List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail tools, etc.
+
 | Tool | Description |
 |------|-------------|
-| `list_hvac_components` | List all HVAC components (15 types: coils, plant, fans, pumps) |
 | `get_component_properties` | Read all properties of a named component |
 | `set_component_properties` | Modify properties on a named component |
 | `set_economizer_properties` | Modify OA economizer settings on air loop |
 | `set_sizing_properties` | Modify plant loop sizing (exit temp, delta-T) |
-| `set_setpoint_manager_properties` | Modify setpoint manager min/max temps |
+| `set_sizing_system_properties` | Set air loop SizingSystem properties (SAT, OA, flow methods) |
+| `get_sizing_system_properties` | Read all SizingSystem properties for air loop |
+| `set_sizing_zone_properties` | Set SizingZone properties (bulk, supports zone lists) |
+| `get_sizing_zone_properties` | Read all SizingZone properties for a zone |
+| `get_setpoint_manager_properties` | Read SPM properties (7 types supported) |
+| `set_setpoint_manager_properties` | Modify SPM properties (7 types supported) |
 
-### Loop Operations (5 tools)
+### Loop Operations (9 tools)
 | Tool | Description |
 |------|-------------|
+| `create_plant_loop` | Create plant loop with pump, bypass, and SPM |
 | `add_supply_equipment` | Add boiler/chiller/tower to plant loop supply |
 | `remove_supply_equipment` | Remove equipment from plant loop supply |
+| `add_demand_component` | Add coil/heater to plant loop demand side |
+| `remove_demand_component` | Remove component from plant loop demand |
 | `add_zone_equipment` | Add baseboard/unit heater to thermal zone |
 | `remove_zone_equipment` | Remove equipment from thermal zone |
 | `remove_all_zone_equipment` | Batch-remove ALL equipment from multiple zones |
+| `set_zone_equipment_priority` | Reorder zone equipment cooling/heating priority |
 
-### Object Management (3 tools)
+### Object Management (5 tools)
 | Tool | Description |
 |------|-------------|
 | `delete_object` | Delete any named object (28+ supported types) |
 | `rename_object` | Rename any named object |
-| `list_model_objects` | List all objects of a given type |
+| `list_model_objects` | List objects of any type (CamelCase, IDD colon, or underscore formats) |
+| `get_object_fields` | Read all properties of any object via introspection — returns values + available setters |
+| `set_object_property` | Write any property on any object via official setters — auto-coerces value types |
 
-### Weather & Simulation Config (7 tools)
+### Weather & Simulation Config (6 tools)
 | Tool | Description |
 |------|-------------|
 | `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
@@ -307,16 +340,26 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `list_measure_arguments` | List measure arguments with defaults and choices |
 | `apply_measure` | Apply OpenStudio measure to in-memory model |
 
-### ComStock Measures (2 tools)
+### Measure Authoring (4 tools)
 
-~61 bundled [ComStock](https://github.com/NREL/ComStock) measures (openstudio-standards-based templates for space types, constructions, HVAC, schedules). Pre-installed in Docker image.
+Create custom OpenStudio measures with AI-generated code, test them, and apply to models. See [Example 1](docs/examples/01_custom_measure_lighting.md) and [Example 2](docs/examples/02_custom_measure_hvac.md).
+
+| Tool | Description |
+|------|-------------|
+| `list_custom_measures` | List all custom measures created with create_measure |
+| `create_measure` | Create custom Ruby/Python ModelMeasure with user-provided code |
+| `test_measure` | Run tests for a custom measure (auto-detects language) |
+| `edit_measure` | Edit an existing custom measure's code or arguments |
+
+### ComStock Measures (1 tool)
+
+~61 bundled [ComStock](https://github.com/NREL/ComStock) measures (openstudio-standards-based templates for space types, constructions, HVAC, schedules). Pre-installed in Docker image. Creation tools that use these measures are listed in [Model Creation](#model-creation-5-tools) above.
 
 | Tool | Description |
 |------|-------------|
 | `list_comstock_measures` | List bundled measures with category filter (baseline/upgrade/setup) |
-| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry |
 
-### Common Measures (21 tools)
+### Common Measures (20 tools)
 
 ~79 bundled [openstudio-common-measures-gem](https://github.com/NREL/openstudio-common-measures-gem) measures (reporting, thermostats, envelope, renewables, visualization, model cleanup). Pre-installed in Docker image. 20 curated measures with 21 dedicated wrapper tools.
 
@@ -331,7 +374,6 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 | `replace_window_constructions` | Bulk-replace all exterior window constructions |
 | `enable_ideal_air_loads` | Enable ideal air loads on all zones (quick sizing studies) |
 | `clean_unused_objects` | Remove orphan objects and unused resources |
-| `inject_idf` | Inject raw IDF objects from external file |
 | `change_building_location` | Set weather file + climate zone + design days |
 | `set_thermostat_schedules` | Apply thermostat schedules from library |
 | `replace_thermostat_schedules` | Replace existing thermostat schedules |
@@ -386,12 +428,12 @@ The component properties tools can query and modify these 15 HVAC component type
 
 | # | Example | Description |
 |---|---------|-------------|
-| 1 | [Baseline Comparison](docs/examples/01_baseline_comparison.md) | Compare ASHRAE System 3 vs System 7 EUI |
-| 2 | [HVAC Design Exploration](docs/examples/02_hvac_design_exploration.md) | DOAS + fan coils, tune setpoints, resize components |
-| 3 | [Envelope Retrofit](docs/examples/03_envelope_retrofit.md) | Upgrade wall insulation, measure heating impact |
-| 4 | [Internal Loads](docs/examples/04_internal_loads.md) | People, lighting, plug loads with schedules |
-| 5 | [Apply a Measure](docs/examples/05_apply_measure.md) | Run a BCL measure from a local directory |
-| 6 | [Model Cleanup](docs/examples/06_model_cleanup.md) | Rename/delete objects to organize a model |
+| 1 | [Custom Measure: Lighting](docs/examples/01_custom_measure_lighting.md) | Write a measure to reduce lighting, compare before/after EUI |
+| 2 | [Custom Measure: Chilled Beams](docs/examples/02_custom_measure_hvac.md) | Write a complex HVAC measure, replace terminals, compare energy |
+| 3 | [Baseline Comparison](docs/examples/03_baseline_comparison.md) | Compare ASHRAE System 3 vs System 7 EUI |
+| 4 | [HVAC Design Exploration](docs/examples/04_hvac_design_exploration.md) | DOAS + fan coils, tune setpoints, resize components |
+| 5 | [Envelope Retrofit](docs/examples/05_envelope_retrofit.md) | Upgrade wall insulation, measure heating impact |
+| 6 | [Internal Loads](docs/examples/06_internal_loads.md) | People, lighting, plug loads with schedules |
 | 7 | [Full Building Model](docs/examples/07_full_building.md) | Spaces, zones, HVAC, loads, weather, simulate |
 | 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | Floor-print extrusion, surface matching, glazing |
 | 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | Per-orientation window-to-wall ratios |

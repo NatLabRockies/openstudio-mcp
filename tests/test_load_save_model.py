@@ -98,7 +98,7 @@ def test_save_osm_model():
                 # Save to new location
                 # Use forward slashes for Docker/Linux paths
                 new_path = f"{out_dir}/saved_copy.osm"
-                save2_resp = await session.call_tool("save_osm_model", {"save_path": new_path})
+                save2_resp = await session.call_tool("save_osm_model", {"osm_path": new_path})
                 save2_result = unwrap(save2_resp)
                 print("save_osm_model (new path):", save2_result)
 
@@ -185,37 +185,38 @@ def test_list_files():
                 assert create_result.get("ok") is True
 
                 # List all files — should find the OSM we just created
-                list_resp = await session.call_tool("list_files", {})
+                list_resp = await session.call_tool("list_files", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 print("list_files (all):", list_result)
                 assert list_result.get("ok") is True
-                assert list_result.get("total_files", 0) >= 1
-                names = [f["name"] for f in list_result["files"]]
+                assert list_result.get("count", 0) >= 1
+                names = [f["name"] for f in list_result["items"]]
                 assert "example_model.osm" in names
 
                 # Filter by pattern
-                osm_resp = await session.call_tool("list_files", {"pattern": "*.osm"})
+                osm_resp = await session.call_tool("list_files", {"pattern": "*.osm", "max_results": 0})
                 osm_result = unwrap(osm_resp)
                 print("list_files (*.osm):", osm_result)
                 assert osm_result.get("ok") is True
-                assert all(f["extension"] == ".osm" for f in osm_result["files"])
+                osm_files = [f for f in osm_result["items"] if f["type"] == "file"]
+                assert all(f["name"].endswith(".osm") for f in osm_files)
 
                 # Filter by pattern with no matches
-                epw_resp = await session.call_tool("list_files", {"pattern": "*.xyz_no_match"})
+                epw_resp = await session.call_tool("list_files", {"pattern": "*.xyz_no_match", "max_results": 0})
                 epw_result = unwrap(epw_resp)
                 print("list_files (no match):", epw_result)
                 assert epw_result.get("ok") is True
-                assert epw_result.get("total_files") == 0
+                assert epw_result.get("count") == 0
 
                 # Specific directory
-                runs_resp = await session.call_tool("list_files", {"directory": "/runs"})
+                runs_resp = await session.call_tool("list_files", {"directory": "/runs", "max_results": 0})
                 runs_result = unwrap(runs_resp)
                 print("list_files (/runs):", runs_result)
                 assert runs_result.get("ok") is True
-                assert runs_result.get("total_files", 0) >= 1
+                assert runs_result.get("count", 0) >= 1
 
                 # Disallowed directory
-                bad_resp = await session.call_tool("list_files", {"directory": "/etc"})
+                bad_resp = await session.call_tool("list_files", {"directory": "/etc", "max_results": 0})
                 bad_result = unwrap(bad_resp)
                 print("list_files (/etc):", bad_result)
                 assert bad_result.get("ok") is False

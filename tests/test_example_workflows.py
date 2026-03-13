@@ -83,7 +83,7 @@ def test_workflow_baseline_with_weather():
                 # Step 6: Save model
                 save_path = f"/runs/{name}_with_weather.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 
@@ -136,7 +136,7 @@ def test_workflow_hvac_design_exploration():
                 assert lr.get("ok") is True
 
                 # Step 2: Get zone names
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 assert zones.get("ok") is True
                 zone_names = [z["name"] for z in zones["thermal_zones"][:3]]
 
@@ -153,16 +153,26 @@ def test_workflow_hvac_design_exploration():
                     assert details.get("ok") is True
 
                 # Step 5: List HVAC components to find a boiler
-                comps = unwrap(await s.call_tool("list_hvac_components", {}))
+                comps = unwrap(await s.call_tool("list_model_objects", {
+                    "object_type": "BoilerHotWater", "max_results": 0,
+                }))
                 assert comps.get("ok") is True
-                # Find a boiler
-                boilers = [c for c in comps["components"] if "Boiler" in c.get("type", "")]
+                # All results are boilers (filtered by object_type)
+                boilers = comps["objects"]
                 if boilers:
                     # Step 6: Get and modify boiler properties
                     bp = unwrap(await s.call_tool("get_component_properties", {
                         "component_name": boilers[0]["name"],
                     }))
                     assert bp.get("ok") is True
+
+                    # Step 6b: Generic access — get_object_fields on same boiler
+                    fields = unwrap(await s.call_tool("get_object_fields", {
+                        "object_name": boilers[0]["name"],
+                        "object_type": "BoilerHotWater",
+                    }))
+                    assert fields.get("ok") is True
+                    assert "properties" in fields
 
     asyncio.run(_run())
 
@@ -190,11 +200,11 @@ def test_workflow_envelope_retrofit():
                 assert lr.get("ok") is True
 
                 # Step 2: List current constructions
-                cons = unwrap(await s.call_tool("list_constructions", {}))
+                cons = unwrap(await s.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0}))
                 assert cons.get("ok") is True
 
                 # Step 3: List surfaces to find an exterior wall
-                surfs = unwrap(await s.call_tool("list_surfaces", {}))
+                surfs = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
                 assert surfs.get("ok") is True
                 walls = [s for s in surfs["surfaces"] if s.get("surface_type") == "Wall"
                          and s.get("outside_boundary_condition") == "Outdoors"]
@@ -261,7 +271,7 @@ def test_workflow_internal_loads():
                 assert lr.get("ok") is True
 
                 # Find a space
-                spaces = unwrap(await s.call_tool("list_spaces", {}))
+                spaces = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 space_name = spaces["spaces"][0]["name"]
 
                 # Step 2: Create occupancy schedule
@@ -298,13 +308,26 @@ def test_workflow_internal_loads():
                 assert equip.get("ok") is True
 
                 # Step 6: Verify loads are present
-                pl = unwrap(await s.call_tool("list_people_loads", {}))
+                pl = unwrap(await s.call_tool("list_model_objects", {
+                    "object_type": "People", "max_results": 0,
+                }))
                 assert pl.get("ok") is True
-                assert any("Office People" in p.get("name", "") for p in pl["people_loads"])
+                people_obj = [p for p in pl["objects"] if "Office People" in p.get("name", "")]
+                assert len(people_obj) >= 1
 
-                ll = unwrap(await s.call_tool("list_lighting_loads", {}))
+                # Step 6b: Generic access — inspect people definition fields
+                fields = unwrap(await s.call_tool("get_object_fields", {
+                    "object_name": people_obj[0]["name"],
+                    "object_type": "People",
+                }))
+                assert fields.get("ok") is True
+                assert "properties" in fields
+
+                ll = unwrap(await s.call_tool("list_model_objects", {
+                    "object_type": "Lights", "max_results": 0,
+                }))
                 assert ll.get("ok") is True
-                assert any("Office Lights" in l.get("name", "") for l in ll["lighting_loads"])
+                assert any("Office Lights" in l.get("name", "") for l in ll["objects"])
 
     asyncio.run(_run())
 
@@ -380,7 +403,7 @@ def test_workflow_model_cleanup():
                 assert lr.get("ok") is True
 
                 # Step 2: Rename the thermal zone
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 old_zone = zones["thermal_zones"][0]["name"]
                 rename = unwrap(await s.call_tool("rename_object", {
                     "object_name": old_zone,
@@ -390,7 +413,7 @@ def test_workflow_model_cleanup():
 
                 # Step 3: Create a temporary space and delete it
                 unwrap(await s.call_tool("create_space", {"name": "TempSpace"}))
-                spaces_before = unwrap(await s.call_tool("list_spaces", {}))
+                spaces_before = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 count_before = spaces_before["count"]
 
                 delete = unwrap(await s.call_tool("delete_object", {
@@ -399,10 +422,10 @@ def test_workflow_model_cleanup():
                 assert delete.get("ok") is True
 
                 # Step 4: Verify
-                spaces_after = unwrap(await s.call_tool("list_spaces", {}))
+                spaces_after = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 assert spaces_after["count"] == count_before - 1
 
-                zones_after = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones_after = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 assert any(z["name"] == "Renamed Zone WF" for z in zones_after["thermal_zones"])
 
     asyncio.run(_run())
@@ -435,7 +458,7 @@ def test_workflow_full_building():
                 assert lr.get("ok") is True
 
                 # Step 2: Find existing spaces (baseline has geometry+zones)
-                spaces = unwrap(await s.call_tool("list_spaces", {}))
+                spaces = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 assert spaces.get("ok") is True
                 space_name = spaces["spaces"][0]["name"]
 
@@ -464,7 +487,7 @@ def test_workflow_full_building():
                 # Step 6: Save the complete model
                 save_path = f"/runs/{name}_complete.osm"
                 save = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert save.get("ok") is True
 
@@ -562,7 +585,7 @@ def test_workflow_geometry_from_scratch():
                 assert match["matched_surfaces"] >= 2  # shared wall pair
 
                 # Step 6: List all surfaces — verify interior boundaries
-                surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
+                surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True, "max_results": 0}))
                 assert surfs.get("ok") is True
                 new_surfs = [sf for sf in surfs["surfaces"]
                              if sf["space"] in ("West Office", "East Office")]
@@ -587,7 +610,7 @@ def test_workflow_geometry_from_scratch():
                 assert wwr["num_subsurfaces"] >= 1
 
                 # Step 9: Verify subsurface exists
-                subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                 assert subs.get("ok") is True
                 assert subs["count"] >= 1
 
@@ -643,7 +666,7 @@ def test_workflow_fenestration_by_orientation():
                 assert lr.get("ok") is True
 
                 # Step 2: List all surfaces, filter to exterior walls
-                surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True}))
+                surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True, "max_results": 0}))
                 assert surfs.get("ok") is True
                 ext_walls = [sf for sf in surfs["surfaces"]
                              if sf["surface_type"] == "Wall"
@@ -682,7 +705,7 @@ def test_workflow_fenestration_by_orientation():
                 assert total_windows >= 4, f"Expected >= 4 windows, got {total_windows}"
 
                 # Step 5: Verify subsurfaces created
-                subs = unwrap(await s.call_tool("list_subsurfaces", {}))
+                subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
                 assert subs.get("ok") is True
                 assert subs["count"] == total_windows
 
@@ -765,14 +788,14 @@ def test_workflow_comstock_typical_building():
                 assert loops["count"] > 0, "Expected air loops after typical building"
 
                 # Step 7: List constructions
-                cons = unwrap(await s.call_tool("list_constructions", {}))
+                cons = unwrap(await s.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0}))
                 assert cons.get("ok") is True
                 assert cons["count"] > 0, "Expected constructions after typical building"
 
                 # Step 8: Save model
                 save_path = f"/runs/typical_office_{uuid.uuid4().hex[:8]}.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
-                    "save_path": save_path,
+                    "osm_path": save_path,
                 }))
                 assert sr.get("ok") is True
 

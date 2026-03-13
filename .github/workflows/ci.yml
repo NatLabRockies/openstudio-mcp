@@ -61,23 +61,23 @@ jobs:
           mkdir -p runs
           case ${{ matrix.shard }} in
             1)
-              # sim test + component/weather + loop ops + skill_simulate + skill_retrofit
-              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_skill_simulate.py tests/test_skill_retrofit.py tests/test_integration.py"
+              # sim test + component/weather + loop ops + skill_retrofit
+              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py"
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
             2)
-              # common_measures (20 tests), hvac_systems, geometry, zone terminal, skill_energy_report, skill_new_building, validation sys1-4 + sys7-8
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_bar_building.py tests/test_skill_energy_report.py tests/test_skill_new_building.py tests/test_hvac_validation_sys1_4.py tests/test_hvac_validation_sys7_8.py"
+              # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report, hvac_validation (consolidated)
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_bar_building.py tests/test_skill_energy_report.py tests/test_hvac_validation.py"
               EXTRA_ENV=""
               ;;
             3)
-              # controls, object mgmt, loads, building, doas, hvac, measures, skill_qaqc, skill_add_hvac, validation sys5-6
-              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_skill_qaqc.py tests/test_skill_add_hvac.py tests/test_hvac_validation_sys5_6.py tests/test_hvac_supply_wiring.py"
+              # controls, object mgmt, loads, building, doas, hvac, measures, measure_authoring, skill_qaqc, hvac_supply_wiring
+              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_generic_access.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_measure_authoring.py tests/test_skill_qaqc.py tests/test_hvac_supply_wiring.py"
               EXTRA_ENV=""
               ;;
             4)
-              # vrf, radiant, query skills, creation, air terminals, results extraction, validation sys9-10
-              FILES="tests/test_vrf_system.py tests/test_radiant_system.py tests/test_loads.py tests/test_spaces.py tests/test_space_types.py tests/test_schedules.py tests/test_constructions.py tests/test_create_space.py tests/test_create_thermal_zone.py tests/test_add_air_loop.py tests/test_create_schedule_ruleset.py tests/test_add_output_variable.py tests/test_add_output_meter.py tests/test_load_save_model.py tests/test_versions.py tests/test_create_example_osm.py tests/test_inspect_osm_summary.py tests/test_copy_run_artifact.py tests/test_replace_air_terminals.py tests/test_results_extraction.py tests/test_swig_memleak_cleanup.py tests/test_skill_view.py tests/test_skill_tools_integration.py tests/test_hvac_validation_sys9_10.py tests/test_stdio_smoke.py"
+              # vrf, radiant, query skills, creation, air terminals, results extraction
+              FILES="tests/test_vrf_system.py tests/test_radiant_system.py tests/test_loads.py tests/test_spaces.py tests/test_space_types.py tests/test_schedules.py tests/test_constructions.py tests/test_create_space.py tests/test_create_thermal_zone.py tests/test_add_air_loop.py tests/test_create_schedule_ruleset.py tests/test_add_output_variable.py tests/test_add_output_meter.py tests/test_load_save_model.py tests/test_versions.py tests/test_create_example_osm.py tests/test_inspect_osm_summary.py tests/test_copy_file.py tests/test_replace_air_terminals.py tests/test_results_extraction.py tests/test_swig_memleak_cleanup.py tests/test_skill_tools_integration.py tests/test_stdio_smoke.py tests/test_response_sizes.py"
               EXTRA_ENV=""
               ;;
             5)

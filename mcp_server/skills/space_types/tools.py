@@ -3,15 +3,11 @@ from __future__ import annotations
 
 from mcp_server.skills.space_types.operations import (
     get_space_type_details,
-    list_space_types,
 )
 
 
 def register(mcp):
-    @mcp.tool(name="list_space_types")
-    def list_space_types_tool():
-        """List all space types in the model."""
-        return list_space_types()
+    # list_space_types removed — use list_model_objects("SpaceType")
 
     @mcp.tool(name="get_space_type_details")
     def get_space_type_details_tool(space_type_name: str):

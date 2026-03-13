@@ -181,11 +181,11 @@ def load_osm_model(osm_path: str, version_translate: bool = True) -> dict[str, A
         return {"ok": False, "error": f"Failed to load OSM: {e}", "osm_path": str(p)}
 
 
-def save_osm_model(save_path: str | None = None) -> dict[str, Any]:
+def save_osm_model(osm_path: str | None = None) -> dict[str, Any]:
     """Save the currently loaded model to disk.
 
     Args:
-        save_path: Optional path to save to. If None, saves to the original load path.
+        osm_path: Optional path to save to. If None, saves to the original load path.
 
     Returns:
         Dict with ok=True and saved path on success, ok=False with error on failure
@@ -196,8 +196,8 @@ def save_osm_model(save_path: str | None = None) -> dict[str, Any]:
         return {"ok": False, "error": "No model loaded. Call load_osm_model first."}
 
     # Determine save path
-    if save_path is not None:
-        p = Path(save_path).resolve()
+    if osm_path is not None:
+        p = Path(osm_path).resolve()
     else:
         current_path = model_manager.get_model_path()
         if current_path is None:
@@ -230,47 +230,90 @@ def save_osm_model(save_path: str | None = None) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to save model: {e}", "osm_path": str(p)}
 
 
-def list_files(directory: str | None = None, pattern: str = "*") -> dict[str, Any]:
-    """List files in mounted directories (/inputs and /runs).
+def list_files(
+    directory: str | None = None,
+    pattern: str = "*",
+    max_depth: int | None = None,
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """List files and directories in mounted directories.
+
+    Do not call list_files more than once for the same directory.
 
     Args:
         directory: Specific directory to list. If None, scans both /inputs and /runs.
         pattern: Glob pattern to filter files (e.g. "*.epw", "*.osm"). Default "*".
+        max_depth: Max directory depth (1 = top-level only, None = unlimited).
+        max_results: Max items to return (default 10, None = unlimited).
 
     Returns:
-        Dict with ok=True, total count, and file list.
+        Dict with ok=True, total count, and file/directory list.
     """
     import fnmatch
 
     # Determine which directories to scan
     if directory:
         scan_dirs = [Path(directory).resolve()]
-        # Only allow scanning known mount points
         for d in scan_dirs:
             if not is_path_allowed(d):
                 return {"ok": False, "error": f"Directory not allowed: {d}"}
     else:
         scan_dirs = [INPUT_ROOT, RUN_ROOT]
 
-    files: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
     for scan_dir in scan_dirs:
         if not scan_dir.exists():
             continue
-        for root, _dirs, filenames in os.walk(scan_dir):
+        for root, dirs, filenames in os.walk(scan_dir):
+            root_path = Path(root)
+            # Calculate current depth relative to scan_dir
+            try:
+                depth = len(root_path.resolve().relative_to(scan_dir.resolve()).parts)
+            except ValueError:
+                depth = 0
+
+            # Enforce max_depth
+            if max_depth is not None and depth >= max_depth:
+                dirs.clear()  # prevent os.walk from descending further
+                # Still process files at this level
+                if depth > max_depth:
+                    continue
+
+            # Skip measure internals (resources/, tests/) but keep 1 level into measures/
+            rel = str(root_path.resolve().relative_to(scan_dir.resolve())).replace("\\", "/")
+            if "/resources/" in rel or "/tests/" in rel:
+                dirs.clear()
+                continue
+
+            # Add directories at this level (only when no pattern filter)
+            if pattern == "*":
+                for dname in dirs:
+                    items.append({
+                        "name": dname,
+                        "path": str(root_path / dname),
+                        "type": "dir",
+                    })
+
+            # Add files
             for fname in filenames:
                 if pattern != "*" and not fnmatch.fnmatch(fname, pattern):
                     continue
-                full = Path(root) / fname
-                size = full.stat().st_size
-                files.append({
+                items.append({
                     "name": fname,
-                    "path": str(full),
-                    "size_bytes": size,
-                    "extension": full.suffix,
+                    "path": str(root_path / fname),
+                    "type": "file",
                 })
 
-    files.sort(key=lambda f: f["name"])
-    return {"ok": True, "total_files": len(files), "files": files}
+    items.sort(key=lambda f: f["name"])
+    total = len(items)
+    resp: dict[str, Any] = {"ok": True}
+    if max_results is not None and total > max_results:
+        items = items[:max_results]
+        resp["total_available"] = total
+        resp["truncated"] = True
+    resp["count"] = len(items)
+    resp["items"] = items
+    return resp
 
 
 def create_baseline_osm(

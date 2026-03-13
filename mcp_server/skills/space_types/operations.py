@@ -8,7 +8,10 @@ from __future__ import annotations
 from typing import Any
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import fetch_object, list_all_as_dicts, optional_name
+from mcp_server.osm_helpers import build_list_response, fetch_object, list_all_as_dicts, optional_name
+
+# Max nested load items in get_space_type_details before truncation
+_MAX_NESTED = 10
 
 
 def _extract_space_type(model, space_type) -> dict[str, Any]:
@@ -29,16 +32,24 @@ def _extract_space_type(model, space_type) -> dict[str, Any]:
     }
 
 
-def list_space_types() -> dict[str, Any]:
+def _cap_list(items: list, max_items: int = _MAX_NESTED) -> list:
+    """Cap a list and append truncation hint if needed."""
+    if len(items) <= max_items:
+        return items
+    result = items[:max_items]
+    result.append({"_truncated": f"...and {len(items) - max_items} more"})
+    return result
+
+
+def list_space_types(max_results: int | None = 10) -> dict[str, Any]:
     """List all space types in the model."""
     try:
         model = get_model()
         space_types = list_all_as_dicts(model, "getSpaceTypes", _extract_space_type)
-        return {
-            "ok": True,
-            "count": len(space_types),
-            "space_types": space_types,
-        }
+        total = len(space_types)
+        if max_results is not None:
+            space_types = space_types[:max_results]
+        return build_list_response("space_types", space_types, total, max_results)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
@@ -57,77 +68,43 @@ def get_space_type_details(space_type_name: str) -> dict[str, Any]:
         # Get basic info
         result = _extract_space_type(model, space_type)
 
-        # Add detailed load information
+        # Brief nested loads: [{name, schedule}] capped at _MAX_NESTED
         people_loads = []
         for people in space_type.people():
-            load_info = {
+            people_loads.append({
                 "name": people.nameString(),
-                "activity_level_schedule": optional_name(people.activityLevelSchedule()),
-            }
-            try:
-                if hasattr(people, "peopleDefinition") and people.peopleDefinition().is_initialized():
-                    definition = people.peopleDefinition().get()
-                    if hasattr(definition, "peopleperSpaceFloorArea") and definition.peopleperSpaceFloorArea().is_initialized():
-                        load_info["people_per_floor_area"] = float(definition.peopleperSpaceFloorArea().get())
-            except Exception:
-                pass
-            people_loads.append(load_info)
+                "schedule": optional_name(people.activityLevelSchedule()),
+            })
 
         lighting_loads = []
         for lights in space_type.lights():
-            load_info = {
+            lighting_loads.append({
                 "name": lights.nameString(),
                 "schedule": optional_name(lights.schedule()),
-            }
-            try:
-                if hasattr(lights, "lightsDefinition") and lights.lightsDefinition().is_initialized():
-                    definition = lights.lightsDefinition().get()
-                    if hasattr(definition, "wattsperSpaceFloorArea") and definition.wattsperSpaceFloorArea().is_initialized():
-                        load_info["watts_per_floor_area_w_m2"] = float(definition.wattsperSpaceFloorArea().get())
-            except Exception:
-                pass
-            lighting_loads.append(load_info)
+            })
 
         electric_equipment_loads = []
         for equipment in space_type.electricEquipment():
-            load_info = {
+            electric_equipment_loads.append({
                 "name": equipment.nameString(),
                 "schedule": optional_name(equipment.schedule()),
-            }
-            try:
-                if hasattr(equipment, "electricEquipmentDefinition") and equipment.electricEquipmentDefinition().is_initialized():
-                    definition = equipment.electricEquipmentDefinition().get()
-                    if hasattr(definition, "wattsperSpaceFloorArea") and definition.wattsperSpaceFloorArea().is_initialized():
-                        load_info["watts_per_floor_area_w_m2"] = float(definition.wattsperSpaceFloorArea().get())
-            except Exception:
-                pass
-            electric_equipment_loads.append(load_info)
+            })
 
         gas_equipment_loads = []
         for equipment in space_type.gasEquipment():
-            load_info = {
+            gas_equipment_loads.append({
                 "name": equipment.nameString(),
                 "schedule": optional_name(equipment.schedule()),
-            }
-            try:
-                if hasattr(equipment, "gasEquipmentDefinition") and equipment.gasEquipmentDefinition().is_initialized():
-                    definition = equipment.gasEquipmentDefinition().get()
-                    if hasattr(definition, "wattsperSpaceFloorArea") and definition.wattsperSpaceFloorArea().is_initialized():
-                        load_info["watts_per_floor_area_w_m2"] = float(definition.wattsperSpaceFloorArea().get())
-            except Exception:
-                pass
-            gas_equipment_loads.append(load_info)
+            })
 
-        # Add spaces using this type
-        spaces = []
-        for space in space_type.spaces():
-            spaces.append(space.nameString())
+        # Spaces using this type — names only, capped
+        spaces = [space.nameString() for space in space_type.spaces()]
 
-        result["people_loads"] = people_loads
-        result["lighting_loads"] = lighting_loads
-        result["electric_equipment_loads"] = electric_equipment_loads
-        result["gas_equipment_loads"] = gas_equipment_loads
-        result["spaces"] = spaces
+        result["people_loads"] = _cap_list(people_loads)
+        result["lighting_loads"] = _cap_list(lighting_loads)
+        result["electric_equipment_loads"] = _cap_list(electric_equipment_loads)
+        result["gas_equipment_loads"] = _cap_list(gas_equipment_loads)
+        result["spaces"] = _cap_list(spaces)
 
         return {
             "ok": True,

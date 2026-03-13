@@ -34,7 +34,7 @@ def test_radiant_floor():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -85,7 +85,7 @@ def test_radiant_ceiling():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -128,7 +128,7 @@ def test_radiant_with_doas():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -173,7 +173,7 @@ def test_radiant_without_doas():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -209,7 +209,7 @@ def test_radiant_loop_temps():
                     "osm_path": create_data["osm_path"],
                 })
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]  # Use all zones
 
@@ -261,7 +261,7 @@ def test_radiant_multi_zone_baseline():
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
                 assert unwrap(lr).get("ok") is True
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
                 assert len(zone_names) == 10
@@ -303,7 +303,7 @@ def test_radiant_json_string_zones():
                 create_data = unwrap(create_resp)
                 await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
 
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
 
                 system_resp = await session.call_tool("add_radiant_system", {

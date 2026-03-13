@@ -42,8 +42,6 @@ _CATEGORY_MAP: dict[str, str] = {
     "AddCostPerFloorAreaToBuilding": "cost",
     # Tier 1 — cleanup
     "remove_orphan_objects_and_unused_resources": "cleanup",
-    # Tier 1 — idf
-    "inject_idf_objects": "idf",
     # Tier 1 — visualization
     "view_model": "visualization",
     "view_data": "visualization",
@@ -77,17 +75,14 @@ def list_common_measures(category: str | None = None) -> dict[str, Any]:
         entry: dict[str, Any] = {
             "name": d.name,
             "category": cat,
-            "path": str(d),
         }
         try:
             with suppress_openstudio_warnings():
                 bcl = openstudio.BCLMeasure(openstudio.toPath(str(d)))
             entry["display_name"] = bcl.name()
-            entry["description"] = bcl.description()[:200]
             entry["num_arguments"] = len(bcl.arguments())
         except Exception:
             entry["display_name"] = d.name
-            entry["description"] = ""
             entry["num_arguments"] = -1
 
         results.append(entry)

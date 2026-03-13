@@ -38,7 +38,7 @@ def test_rename_space():
                 await s.initialize()
                 await setup_example(s, _unique())
                 # Get first space name
-                spaces = unwrap(await s.call_tool("list_spaces", {}))
+                spaces = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 old_name = spaces["spaces"][0]["name"]
                 # Rename
                 res = unwrap(await s.call_tool("rename_object", {
@@ -48,7 +48,7 @@ def test_rename_space():
                 assert res["old_name"] == old_name
                 assert res["new_name"] == "Renamed Space"
                 # Verify
-                spaces2 = unwrap(await s.call_tool("list_spaces", {}))
+                spaces2 = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 assert any(sp["name"] == "Renamed Space" for sp in spaces2["spaces"])
     asyncio.run(_run())
 
@@ -63,7 +63,7 @@ def test_rename_thermal_zone():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 await setup_example(s, _unique())
-                zones = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 old_name = zones["thermal_zones"][0]["name"]
                 res = unwrap(await s.call_tool("rename_object", {
                     "object_name": old_name, "new_name": "Renamed Zone",
@@ -72,7 +72,7 @@ def test_rename_thermal_zone():
                 assert res["type"] == "ThermalZone"
 
                 # Independent query verification
-                zones2 = unwrap(await s.call_tool("list_thermal_zones", {}))
+                zones2 = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 names = [z["name"] for z in zones2["thermal_zones"]]
                 assert "Renamed Zone" in names
                 assert old_name not in names
@@ -93,7 +93,7 @@ def test_delete_space():
                 await setup_example(s, _unique())
                 # Create a new space to delete (don't delete model's original)
                 unwrap(await s.call_tool("create_space", {"name": "ToDelete"}))
-                spaces_before = unwrap(await s.call_tool("list_spaces", {}))
+                spaces_before = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 count_before = spaces_before["count"]
                 # Delete
                 res = unwrap(await s.call_tool("delete_object", {
@@ -102,7 +102,7 @@ def test_delete_space():
                 assert res.get("ok") is True
                 assert res["type"] == "Space"
                 # Verify count decreased
-                spaces_after = unwrap(await s.call_tool("list_spaces", {}))
+                spaces_after = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
                 assert spaces_after["count"] == count_before - 1
     asyncio.run(_run())
 
@@ -125,45 +125,7 @@ def test_delete_nonexistent():
     asyncio.run(_run())
 
 
-# ---- List tests ----
-
-@pytest.mark.integration
-def test_list_objects_by_type():
-    if not integration_enabled():
-        pytest.skip("integration disabled")
-
-    async def _run():
-        async with stdio_client(server_params()) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                await setup_example(s, _unique())
-                res = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "Space",
-                }))
-                assert res.get("ok") is True
-                assert res["type"] == "Space"
-                assert res["count"] > 0
-                assert "name" in res["objects"][0]
-    asyncio.run(_run())
-
-
-@pytest.mark.integration
-def test_list_objects_invalid_type():
-    if not integration_enabled():
-        pytest.skip("integration disabled")
-
-    async def _run():
-        async with stdio_client(server_params()) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                await setup_example(s, _unique())
-                res = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "FakeType",
-                }))
-                assert res.get("ok") is False
-                assert "Unsupported" in res["error"]
-    asyncio.run(_run())
-
+# list_model_objects tests are in test_generic_access.py
 
 # ---- Baseline model tests ----
 
@@ -179,7 +141,7 @@ def test_delete_boiler():
                 # System 7 has boiler
                 await _setup_baseline(s, _unique(), ashrae_sys_num="07")
                 boilers = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "BoilerHotWater",
+                    "object_type": "BoilerHotWater", "max_results": 0,
                 }))
                 assert boilers.get("ok") is True and boilers["count"] > 0
                 boiler_name = boilers["objects"][0]["name"]
@@ -190,7 +152,7 @@ def test_delete_boiler():
 
                 # Independent query verification
                 boilers2 = unwrap(await s.call_tool("list_model_objects", {
-                    "object_type": "BoilerHotWater",
+                    "object_type": "BoilerHotWater", "max_results": 0,
                 }))
                 assert boilers2["count"] < boilers["count"]
     asyncio.run(_run())
@@ -244,8 +206,8 @@ def test_delete_with_type_hint():
                 assert res["type"] == "ScheduleRuleset"
 
                 # Independent query verification
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {}))
-                names = [sr["name"] for sr in scheds["schedule_rulesets"]]
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                names = [sr["name"] for sr in scheds["objects"]]
                 assert "TempSched" not in names
     asyncio.run(_run())
 
@@ -271,8 +233,8 @@ def test_rename_schedule():
                 assert res["new_name"] == "NewSched"
 
                 # Independent query verification
-                scheds = unwrap(await s.call_tool("list_schedule_rulesets", {}))
-                names = [sr["name"] for sr in scheds["schedule_rulesets"]]
+                scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
+                names = [sr["name"] for sr in scheds["objects"]]
                 assert "NewSched" in names
                 assert "OldSched" not in names
     asyncio.run(_run())

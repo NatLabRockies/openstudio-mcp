@@ -78,7 +78,7 @@ def test_add_air_loop_with_zones():
                 assert load_result.get("ok") is True
 
                 # Get existing thermal zones
-                zones_resp = await session.call_tool("list_thermal_zones", {})
+                zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_result = unwrap(zones_resp)
                 assert len(zones_result["thermal_zones"]) > 0
                 zone_names = [zones_result["thermal_zones"][0]["name"]]
