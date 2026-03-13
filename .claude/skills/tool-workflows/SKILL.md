@@ -93,6 +93,33 @@ apply_measure(measure_dir="/inputs/measures/my_measure",
 
 Note: All measure arguments are strings. Booleans → `"true"` / `"false"`. Numbers → `"42"`.
 
+## Write and Apply a Custom Measure
+
+Full chain: create → test → apply → simulate → compare results.
+
+```
+# 1. Baseline simulation
+save_osm_model(save_path="/runs/baseline.osm")
+run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
+extract_summary_metrics(run_id=<baseline_id>)
+
+# 2. Create custom measure
+create_measure(name="my_measure", description="...",
+    language="Ruby", run_body="    model.get...each { |x| ... }")
+test_measure(measure_dir="/runs/custom_measures/my_measure")
+
+# 3. Reload original model, apply measure, re-simulate
+load_osm_model(osm_path="<original>")
+apply_measure(measure_dir="/runs/custom_measures/my_measure")
+save_osm_model(save_path="/runs/retrofit.osm")
+run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
+extract_summary_metrics(run_id=<retrofit_id>)
+
+# 4. Compare baseline vs retrofit EUI
+```
+
+See the `measure-authoring` skill for run_body patterns and language guidance.
+
 ## Object Cleanup
 
 ```

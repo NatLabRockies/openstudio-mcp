@@ -50,9 +50,10 @@ DEFAULT_SYSTEM_PROMPT = (
 class ClaudeResult:
     """Parsed result from a Claude Code CLI invocation."""
 
-    def __init__(self, messages: list[dict], result: dict):
+    def __init__(self, messages: list[dict], result: dict, raw_ndjson: str = ""):
         self.messages = messages
         self.result = result
+        self.raw_ndjson = raw_ndjson
 
     @property
     def tool_calls(self) -> list[dict]:
@@ -219,7 +220,7 @@ def _parse_stream_json(raw: str) -> ClaudeResult:
         else:
             messages.append(obj)
 
-    return ClaudeResult(messages=messages, result=result_obj)
+    return ClaudeResult(messages=messages, result=result_obj, raw_ndjson=raw)
 
 
 def _write_mcp_config() -> Path:

@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 129 tools &bull; 6 prompts &bull; 4 resources &bull; 377 integration tests**
+**23 skills &bull; 134 tools &bull; 6 prompts &bull; 4 resources &bull; 390 integration tests**
 
 ---
 
@@ -17,6 +17,7 @@ Ask your AI assistant to do things like:
 - *"Switch the HVAC from VAV to VRF heat pumps and compare energy use"*
 - *"Add R-30 roof insulation and see how it affects the cooling load"*
 - *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing"*
+- *"Write a custom measure to set all lights to 8 W/m2, test it, apply it, and compare the EUI"*
 - *"Apply the AEDG Small Office measure from my local measures directory"*
 
 The server handles all the OpenStudio/EnergyPlus complexity behind MCP tool calls.
@@ -72,7 +73,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 129 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 134 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -84,7 +85,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 129 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 134 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Other MCP Hosts
 
@@ -94,7 +95,7 @@ The AI reads your prompt, picks the right tools from the 129 available, calls th
 
 ## Claude Code Skills
 
-When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 10 bundled skills provide workflow automation and domain knowledge:
+When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 11 bundled skills provide workflow automation and domain knowledge:
 
 | Skill | Type | Description |
 |-------|------|-------------|
@@ -105,6 +106,7 @@ When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/
 | `/new-building` | Workflow | Full model creation from scratch |
 | `/retrofit` | Workflow | Before/after ECM analysis |
 | `/view` | Task | Quick 3D model visualization |
+| `measure-authoring` | Knowledge | Custom measure creation, testing, before/after comparison (auto-loaded) |
 | `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection criteria (auto-loaded) |
 | `openstudio-patterns` | Knowledge | Tool dependencies and model relationships (auto-loaded) |
 | `tool-workflows` | Knowledge | Multi-tool recipes for common operations (auto-loaded) |
@@ -122,7 +124,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (129 total)
+## Skills & Tools (134 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |
@@ -300,7 +302,7 @@ List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail too
 | `get_setpoint_manager_properties` | Read SPM properties (7 types supported) |
 | `set_setpoint_manager_properties` | Modify SPM properties (7 types supported) |
 
-### Loop Operations (8 tools)
+### Loop Operations (9 tools)
 | Tool | Description |
 |------|-------------|
 | `create_plant_loop` | Create plant loop with pump, bypass, and SPM |
@@ -311,6 +313,7 @@ List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail too
 | `add_zone_equipment` | Add baseboard/unit heater to thermal zone |
 | `remove_zone_equipment` | Remove equipment from thermal zone |
 | `remove_all_zone_equipment` | Batch-remove ALL equipment from multiple zones |
+| `set_zone_equipment_priority` | Reorder zone equipment cooling/heating priority |
 
 ### Object Management (5 tools)
 | Tool | Description |
@@ -321,7 +324,7 @@ List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail too
 | `get_object_fields` | Read all properties of any object via introspection — returns values + available setters |
 | `set_object_property` | Write any property on any object via official setters — auto-coerces value types |
 
-### Weather & Simulation Config (7 tools)
+### Weather & Simulation Config (6 tools)
 | Tool | Description |
 |------|-------------|
 | `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
@@ -336,6 +339,17 @@ List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail too
 |------|-------------|
 | `list_measure_arguments` | List measure arguments with defaults and choices |
 | `apply_measure` | Apply OpenStudio measure to in-memory model |
+
+### Measure Authoring (4 tools)
+
+Create custom OpenStudio measures with AI-generated code, test them, and apply to models. See [Example 1](docs/examples/01_custom_measure_lighting.md) and [Example 2](docs/examples/02_custom_measure_hvac.md).
+
+| Tool | Description |
+|------|-------------|
+| `list_custom_measures` | List all custom measures created with create_measure |
+| `create_measure` | Create custom Ruby/Python ModelMeasure with user-provided code |
+| `test_measure` | Run tests for a custom measure (auto-detects language) |
+| `edit_measure` | Edit an existing custom measure's code or arguments |
 
 ### ComStock Measures (1 tool)
 
@@ -414,12 +428,12 @@ The component properties tools can query and modify these 15 HVAC component type
 
 | # | Example | Description |
 |---|---------|-------------|
-| 1 | [Baseline Comparison](docs/examples/01_baseline_comparison.md) | Compare ASHRAE System 3 vs System 7 EUI |
-| 2 | [HVAC Design Exploration](docs/examples/02_hvac_design_exploration.md) | DOAS + fan coils, tune setpoints, resize components |
-| 3 | [Envelope Retrofit](docs/examples/03_envelope_retrofit.md) | Upgrade wall insulation, measure heating impact |
-| 4 | [Internal Loads](docs/examples/04_internal_loads.md) | People, lighting, plug loads with schedules |
-| 5 | [Apply a Measure](docs/examples/05_apply_measure.md) | Run a BCL measure from a local directory |
-| 6 | [Model Cleanup](docs/examples/06_model_cleanup.md) | Rename/delete objects to organize a model |
+| 1 | [Custom Measure: Lighting](docs/examples/01_custom_measure_lighting.md) | Write a measure to reduce lighting, compare before/after EUI |
+| 2 | [Custom Measure: Chilled Beams](docs/examples/02_custom_measure_hvac.md) | Write a complex HVAC measure, replace terminals, compare energy |
+| 3 | [Baseline Comparison](docs/examples/03_baseline_comparison.md) | Compare ASHRAE System 3 vs System 7 EUI |
+| 4 | [HVAC Design Exploration](docs/examples/04_hvac_design_exploration.md) | DOAS + fan coils, tune setpoints, resize components |
+| 5 | [Envelope Retrofit](docs/examples/05_envelope_retrofit.md) | Upgrade wall insulation, measure heating impact |
+| 6 | [Internal Loads](docs/examples/06_internal_loads.md) | People, lighting, plug loads with schedules |
 | 7 | [Full Building Model](docs/examples/07_full_building.md) | Spaces, zones, HVAC, loads, weather, simulate |
 | 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | Floor-print extrusion, surface matching, glazing |
 | 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | Per-orientation window-to-wall ratios |
