@@ -14,7 +14,6 @@ import openstudio
 
 from mcp_server.config import is_path_allowed
 from mcp_server.model_manager import get_model
-from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def _parse_climate_zone_from_stat(stat_path: Path) -> str | None:
@@ -163,44 +162,43 @@ def add_design_day(
 
         model = get_model()
 
-        with suppress_openstudio_warnings():
-            dd = openstudio.model.DesignDay(model)
-            dd.setName(name)
-            dd.setDayType(day_type)
-            dd.setMonth(month)
-            dd.setDayOfMonth(day)
-            dd.setMaximumDryBulbTemperature(dry_bulb_max_c)
-            dd.setDailyDryBulbTemperatureRange(dry_bulb_range_c)
+        dd = openstudio.model.DesignDay(model)
+        dd.setName(name)
+        dd.setDayType(day_type)
+        dd.setMonth(month)
+        dd.setDayOfMonth(day)
+        dd.setMaximumDryBulbTemperature(dry_bulb_max_c)
+        dd.setDailyDryBulbTemperatureRange(dry_bulb_range_c)
 
-            # Humidity (use non-deprecated API: setHumidityConditionType, OS 3.3+)
-            ht = humidity_type or "WetBulb"
-            dd.setHumidityConditionType(ht)
-            if humidity_value is not None:
-                dd.setWetBulbOrDewPointAtMaximumDryBulb(humidity_value)
+        # Humidity (use non-deprecated API: setHumidityConditionType, OS 3.3+)
+        ht = humidity_type or "WetBulb"
+        dd.setHumidityConditionType(ht)
+        if humidity_value is not None:
+            dd.setWetBulbOrDewPointAtMaximumDryBulb(humidity_value)
 
-            # Wind
-            if wind_speed_ms is not None:
-                dd.setWindSpeed(wind_speed_ms)
+        # Wind
+        if wind_speed_ms is not None:
+            dd.setWindSpeed(wind_speed_ms)
 
-            # Pressure
-            if barometric_pressure_pa is not None:
-                dd.setBarometricPressure(barometric_pressure_pa)
+        # Pressure
+        if barometric_pressure_pa is not None:
+            dd.setBarometricPressure(barometric_pressure_pa)
 
-            # Read back
-            result = {
-                "name": dd.nameString(),
-                "day_type": dd.dayType(),
-                "month": dd.month(),
-                "day_of_month": dd.dayOfMonth(),
-                "max_dry_bulb_c": float(dd.maximumDryBulbTemperature()),
-                "daily_dry_bulb_range_c": float(dd.dailyDryBulbTemperatureRange()),
-                "humidity_type": dd.humidityConditionType(),
-                "wind_speed_ms": float(dd.windSpeed()),
-                "barometric_pressure_pa": float(dd.barometricPressure()),
-            }
+        # Read back
+        result = {
+            "name": dd.nameString(),
+            "day_type": dd.dayType(),
+            "month": dd.month(),
+            "day_of_month": dd.dayOfMonth(),
+            "max_dry_bulb_c": float(dd.maximumDryBulbTemperature()),
+            "daily_dry_bulb_range_c": float(dd.dailyDryBulbTemperatureRange()),
+            "humidity_type": dd.humidityConditionType(),
+            "wind_speed_ms": float(dd.windSpeed()),
+            "barometric_pressure_pa": float(dd.barometricPressure()),
+        }
 
-            # Count total design days
-            total = len(model.getDesignDays())
+        # Count total design days
+        total = len(model.getDesignDays())
 
         return {"ok": True, "design_day": result, "total_design_days": total}
 

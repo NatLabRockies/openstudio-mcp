@@ -18,7 +18,6 @@ import openstudio
 
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
 from mcp_server.model_manager import get_model, load_model
-from mcp_server.stdout_suppression import suppress_openstudio_warnings
 from mcp_server.util import resolve_run_dir
 
 
@@ -34,8 +33,7 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
             return {"ok": False, "error": f"Measure directory not found: {measure_dir}"}
 
         # Load BCLMeasure to read metadata
-        with suppress_openstudio_warnings():
-            bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_path)))
+        bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_path)))
 
         # Extract arguments from the measure XML
         args = []
@@ -126,8 +124,7 @@ def apply_measure(
 
         # Save current model to temp OSM
         temp_osm = run_dir / "in.osm"
-        with suppress_openstudio_warnings():
-            model.save(str(temp_osm), True)
+        model.save(str(temp_osm), True)
 
         # Copy measure into run dir so OSW can reference it by relative path
         measures_dir = run_dir / "measures"
@@ -143,15 +140,14 @@ def apply_measure(
         # Collect file_paths for the OSW — include weather file directory
         # so the runner can find EPW files referenced by the model
         file_paths = []
-        with suppress_openstudio_warnings():
-            epw_file = model.weatherFile()
-            if epw_file.is_initialized():
-                epw_path = epw_file.get().path()
-                if epw_path.is_initialized():
-                    epw_str = str(epw_path.get())
-                    epw_resolved = Path(epw_str)
-                    if epw_resolved.is_file():
-                        file_paths.append(str(epw_resolved.parent))
+        epw_file = model.weatherFile()
+        if epw_file.is_initialized():
+            epw_path = epw_file.get().path()
+            if epw_path.is_initialized():
+                epw_str = str(epw_path.get())
+                epw_resolved = Path(epw_str)
+                if epw_resolved.is_file():
+                    file_paths.append(str(epw_resolved.parent))
 
         # Also add directories of any EPW paths passed as arguments
         # (e.g. ChangeBuildingLocation's weather_file_name argument).
@@ -258,8 +254,7 @@ def apply_measure(
             return {"ok": False, "error": "Output OSM not found after measure run"}
 
         # Reload model
-        with suppress_openstudio_warnings():
-            load_model(output_osm)
+        load_model(output_osm)
 
         return {
             "ok": True,

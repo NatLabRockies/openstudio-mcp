@@ -22,12 +22,10 @@ def _ensure_climate_zone() -> None:
     """
     try:
         from mcp_server.model_manager import get_model
-        from mcp_server.stdout_suppression import suppress_openstudio_warnings
-        with suppress_openstudio_warnings():
-            model = get_model()
-            czs = model.getClimateZones()
-            if len(czs.getClimateZones("ASHRAE")) == 0:
-                czs.setClimateZone("ASHRAE", "5A")
+        model = get_model()
+        czs = model.getClimateZones()
+        if len(czs.getClimateZones("ASHRAE")) == 0:
+            czs.setClimateZone("ASHRAE", "5A")
     except RuntimeError:
         pass  # no model loaded yet
 
@@ -331,12 +329,10 @@ def _resolve_handle(name: str) -> str:
     returns its handle. Falls back to returning the name if not found.
     """
     from mcp_server.model_manager import get_model
-    from mcp_server.stdout_suppression import suppress_openstudio_warnings
-    with suppress_openstudio_warnings():
-        model = get_model()
-        obj = model.getModelObjectByName(name)
-        if obj.is_initialized():
-            return str(obj.get().handle())
+    model = get_model()
+    obj = model.getModelObjectByName(name)
+    if obj.is_initialized():
+        return str(obj.get().handle())
     return name
 
 

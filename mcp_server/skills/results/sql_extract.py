@@ -108,6 +108,59 @@ def extract_eui(sql_path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Output variable discovery
+# ---------------------------------------------------------------------------
+
+def list_output_variables(sql_path: Path) -> dict:
+    """Query ReportDataDictionary for available variables and meters."""
+    conn = sqlite3.connect(str(sql_path))
+    try:
+        rows = _q(conn, """
+            SELECT Name, KeyValue, ReportingFrequency, Units, IsMeter
+            FROM ReportDataDictionary
+            ORDER BY IsMeter, ReportingFrequency, Name
+        """)
+        if not rows:
+            return {"ok": True, "variables": {}, "meters": {},
+                    "message": "No output variables found. Add variables via add_output_variable before simulation."}
+
+        variables: dict[str, list[dict[str, Any]]] = {}
+        meters: dict[str, list[dict[str, Any]]] = {}
+
+        # Group by name+frequency, collect key_values
+        seen: dict[tuple[str, str, int], dict[str, Any]] = {}
+        for r in rows:
+            name = (r["Name"] or "").strip()
+            freq = (r["ReportingFrequency"] or "").strip()
+            is_meter = int(r["IsMeter"] or 0)
+            key = (name, freq, is_meter)
+
+            if key not in seen:
+                seen[key] = {
+                    "name": name,
+                    "units": (r["Units"] or "").strip(),
+                    "key_values": [],
+                }
+            kv = (r["KeyValue"] or "").strip()
+            if kv and kv not in seen[key]["key_values"]:
+                seen[key]["key_values"].append(kv)
+
+        for (_name, freq, is_meter), entry in seen.items():
+            target = meters if is_meter else variables
+            target.setdefault(freq, []).append(entry)
+
+        return {
+            "ok": True,
+            "variables": variables,
+            "meters": meters,
+            "variable_count": sum(len(v) for v in variables.values()),
+            "meter_count": sum(len(v) for v in meters.values()),
+        }
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Tier 1: Tabular report extractors
 # ---------------------------------------------------------------------------
 

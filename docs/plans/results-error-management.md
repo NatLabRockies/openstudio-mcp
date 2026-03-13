@@ -128,4 +128,4 @@ LLM_TESTS_ENABLED=1 pytest tests/llm/test_04_workflows.py -k "measure_" -v
 - `extract_simulation_errors`: parse openstudio.log for measure failures too, or just eplusout.err?
 - `validate_model`: new skill or add to simulation skill?
 - `extract_summary_metrics` warnings: always-on or opt-in flag?
-- Parametric/batch runs — separate phase or scope here?
+- Parametric/batch runs — separate phase or scope here? no scope here yet

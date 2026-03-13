@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from mcp_server.skills import register_all_skills
+from mcp_server.stdout_suppression import create_suppression_middleware
 
 mcp = FastMCP(
     "openstudio-mcp",
+    middleware=[create_suppression_middleware()],
     instructions=(
         "Building energy simulation server (OpenStudio SDK) with 138 tools for "
         "creating, modifying, simulating, and analyzing building energy models. "

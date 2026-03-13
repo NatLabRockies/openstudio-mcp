@@ -20,7 +20,7 @@ import pytest
 from .conftest import (
     BASELINE_MODEL, BASELINE_HVAC_MODEL,
     baseline_model_exists, baseline_hvac_model_exists, get_tier,
-    get_sim_run_id,
+    get_retrofit_run_id, get_sim_run_id,
 )
 from .runner import run_claude
 

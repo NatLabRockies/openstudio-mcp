@@ -49,6 +49,23 @@ def suppress_openstudio_warnings():
         os.close(saved_stdout_fd)
 
 
+def create_suppression_middleware():
+    """Create a FastMCP middleware that wraps ALL tool calls in stdout suppression.
+
+    Returns a Middleware instance. Factory function avoids importing fastmcp
+    at module level (this module is also used by model_manager which loads
+    before the server).
+    """
+    from fastmcp.server.middleware import Middleware
+
+    class _StdoutSuppressionMiddleware(Middleware):
+        async def on_call_tool(self, context, call_next):
+            with suppress_openstudio_warnings():
+                return await call_next(context)
+
+    return _StdoutSuppressionMiddleware()
+
+
 def _redirect_stdout_to_stderr_at_exit():
     """Redirect stdout to stderr during Python cleanup to catch SWIG warnings.
 

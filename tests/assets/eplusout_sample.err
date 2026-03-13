@@ -1,0 +1,37 @@
+Program Version,EnergyPlus, Version 24.2.0-1b6ab9b785, YMD=2025.01.15 09:30
+   ** Warning ** Weather file location will be used rather than entered (IDF) Location object.
+   **   ~~~   ** ..Location object=CHICAGO_IL_USA TMY2-94846
+   ** Warning ** GetSurfaceData: There are 3 window/glass door(s) that may cause inaccurate daylighting.
+   ** Warning ** CalcDoe2DXCoil: Coil:Cooling:DX:SingleSpeed "COIL COOLING DX 1" - Full loadass
+   **   ~~~   ** rated sensible cooling capacity adjusted to account for supply air fan heat
+   ** Warning ** Output:Meter: invalid Key Name="MISSINGMETER"
+   ** Warning ** GetHTSurfaceData: Surfaces with interface to Ground found but no ground temperatures were input.
+   ** Warning ** CheckUsedConstructions: There are 2 nominally unused constructions in input.
+   ** Warning ** The Standard Ratings is calculated for Coil:Cooling:DX:SingleSpeed = COIL COOLING DX 1
+   ** Warning ** CalcDoe2DXCoil: Coil:Cooling:DX:SingleSpeed "COIL COOLING DX 2" - Rated total capacity
+   **   ~~~   ** is less than the rated sensible capacity at design conditions
+   ** Warning ** GetInternalHeatGains: People="CORE_ZN PEOPLE" occupancy density is extremely high.
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** Temperature (dry-bulb) out of range [-70.00,70.00] (PsychTwbFnTdbWPb)
+   ** Warning ** GetSurfaceData: Surface="SURFACE 999" has an out-of-range vertex
+   ** Severe  ** GetDXCoils: Coil:Cooling:DX:TwoSpeed "COIL COOLING DX TWO SPEED" - not found
+   **   ~~~   ** referenced from AirLoopHVAC:UnitarySystem "UNITARY SYSTEM 1"
+   ** Severe  ** Node connection error: orphaned node "ORPHAN NODE 1"
+   ** Fatal  ** GetDXCoils: Errors found in getting Coil:Cooling:DX input. Preceding condition(s) cause termination.
+   ************* Warning Summary found during warmup={0}, during sizing={2}, during simulation={23}
+   ************* EnergyPlus Warmup Error Summary. During Warmup: 0 Warning; 0 Severe Errors.
+   ************* EnergyPlus Sizing Error Summary. During Sizing: 2 Warning; 0 Severe Errors.
+   ************* EnergyPlus Completed Successfully-- 25 Warning; 2 Severe Errors; Elapsed Time=00hr 02min  3.45sec

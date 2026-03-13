@@ -21,7 +21,7 @@ import pytest
 
 import re
 
-from .conftest import BASELINE_MODEL, save_sim_run_id
+from .conftest import BASELINE_MODEL, save_retrofit_run_id, save_sim_run_id
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
@@ -162,3 +162,50 @@ def test_run_baseline_simulation():
         save_sim_run_id(run_id)
 
     assert not result.is_error, f"Simulation failed: {result.final_text}"
+
+
+def test_run_retrofit_simulation():
+    """Run a modified simulation (thermostat +2F cooling) for compare_runs tests.
+
+    Loads baseline, sets weather, adjusts thermostat, runs sim, saves
+    retrofit run_id for use by compare_runs progressive tests.
+    """
+    boston_epw = (
+        "/opt/comstock-measures/ChangeBuildingLocation"
+        "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+    )
+    result = run_claude(
+        f"Load the model at {BASELINE_MODEL} using load_osm_model. "
+        f"Then set the weather using change_building_location with "
+        f"weather_file {boston_epw}. "
+        "Then adjust thermostat setpoints using adjust_thermostat_setpoints "
+        "with cooling_offset 2. "
+        "Then run a simulation using run_simulation. "
+        "Wait for it to complete by checking get_run_status. "
+        "Report the run_id when done.",
+        timeout=420,
+        max_turns=20,
+    )
+
+    tool_names = result.tool_names
+    assert "run_simulation" in tool_names, (
+        f"run_simulation not called. Tools: {tool_names}"
+    )
+
+    # Extract run_id from tool call inputs
+    run_id = None
+    for call in result.mcp_tool_calls:
+        if call["tool"].endswith("get_run_status"):
+            run_id = call["input"].get("run_id", "")
+            break
+
+    # Fallback: extract from final text
+    if not run_id:
+        match = re.search(r"sim_[a-f0-9]{12}", result.final_text)
+        if match:
+            run_id = match.group(0)
+
+    if run_id:
+        save_retrofit_run_id(run_id)
+
+    assert not result.is_error, f"Retrofit simulation failed: {result.final_text}"

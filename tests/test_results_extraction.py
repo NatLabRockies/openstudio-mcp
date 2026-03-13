@@ -373,6 +373,72 @@ class TestEndUseConversionFactor:
         pytest.skip("No non-zero SI values found to verify conversion")
 
 
+# ---------------------------------------------------------------------------
+# list_output_variables
+# ---------------------------------------------------------------------------
+
+class TestListOutputVariables:
+    def test_happy_path(self, sql_path):
+        from mcp_server.skills.results.sql_extract import list_output_variables
+        result = list_output_variables(sql_path)
+        assert result["ok"] is True
+        # Should have either variables or meters (SEB4 has output data)
+        total = result.get("variable_count", 0) + result.get("meter_count", 0)
+        assert total > 0
+
+    def test_has_frequency_grouping(self, sql_path):
+        from mcp_server.skills.results.sql_extract import list_output_variables
+        result = list_output_variables(sql_path)
+        assert result["ok"] is True
+        # At least one frequency bucket should exist
+        all_freqs = list(result.get("variables", {}).keys()) + list(result.get("meters", {}).keys())
+        assert len(all_freqs) > 0
+
+    def test_entry_structure(self, sql_path):
+        from mcp_server.skills.results.sql_extract import list_output_variables
+        result = list_output_variables(sql_path)
+        # Pick first entry from first frequency
+        for freq, entries in result.get("variables", {}).items():
+            if entries:
+                e = entries[0]
+                assert "name" in e
+                assert "units" in e
+                assert "key_values" in e
+                return
+        for freq, entries in result.get("meters", {}).items():
+            if entries:
+                e = entries[0]
+                assert "name" in e
+                assert "units" in e
+                return
+
+
+# ---------------------------------------------------------------------------
+# extract_summary_metrics warnings
+# ---------------------------------------------------------------------------
+
+class TestSummaryMetricsWarnings:
+    def test_high_unmet_warning(self, sql_path):
+        """SEB4 has ~1808 unmet heating hours — should trigger warning."""
+        from mcp_server.skills.results.operations import extract_summary_metrics
+        # We need a run_dir with the SQL in it
+        import shutil, tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir) / "test_run"
+            (run_dir / "run").mkdir(parents=True)
+            shutil.copy(sql_path, run_dir / "run" / "eplusout.sql")
+            # Monkey-patch resolve_run_dir for this test
+            import mcp_server.skills.results.operations as ops
+            orig = ops.resolve_run_dir
+            ops.resolve_run_dir = lambda root, rid: run_dir
+            try:
+                result = extract_summary_metrics("test_run")
+                assert result["ok"] is True
+                assert any("Unmet hours" in w for w in result.get("warnings", []))
+            finally:
+                ops.resolve_run_dir = orig
+
+
 class TestMissingSql:
     def test_end_use_bad_path(self):
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown

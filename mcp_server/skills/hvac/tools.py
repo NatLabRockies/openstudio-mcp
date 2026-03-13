@@ -16,10 +16,11 @@ from mcp_server.skills.hvac.operations import (
 def register(mcp):
     @mcp.tool(name="list_air_loops")
     def list_air_loops_tool(detailed: bool = False):
-        """List all air loops. Default brief: name, num_thermal_zones. Use get_air_loop_details for full info.
+        """List all air loops. Default brief: name, zone count, zone names, terminal type.
+        Use detailed=True only when you need full supply component lists and OA system info.
 
         Args:
-            detailed: Return all fields (thermal_zones list, supply_components, OA system, setpoint managers)
+            detailed: Add supply_components, demand_terminals per zone, OA system, setpoint managers
         """
         return list_air_loops(detailed=detailed)
 
@@ -34,10 +35,11 @@ def register(mcp):
 
     @mcp.tool(name="list_plant_loops")
     def list_plant_loops_tool(detailed: bool = False):
-        """List all plant loops. Default brief: name, component counts. Use get_plant_loop_details for full info.
+        """List all plant loops. Default brief: name, component counts, primary equipment type.
+        Use detailed=True only when you need full supply/demand component lists.
 
         Args:
-            detailed: Return all fields (supply/demand component lists with types and names)
+            detailed: Add full supply/demand component lists with types and names
         """
         return list_plant_loops(detailed=detailed)
 

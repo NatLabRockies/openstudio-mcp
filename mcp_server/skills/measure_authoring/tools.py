@@ -112,19 +112,27 @@ def register(mcp):
     def test_measure_tool(
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
+        model_path: str | None = None,
     ):
         """Run tests for a custom OpenStudio measure.
 
         Auto-detects language: Python → pytest, Ruby → minitest.
-        Uses the test framework in the measure's tests/ dir.
+        Tests run against a real model (not an empty model) so measures
+        that depend on HVAC, plant loops, zones, etc. can be tested.
+
+        Model priority: explicit model_path > currently loaded model >
+        built-in SystemD_baseline.osm (44 zones, DOAS, CHW/HW/SWH loops).
 
         Workflow: create_measure → test_measure → apply_measure.
 
         Args:
             measure_dir: Path to the measure directory (from create_measure result)
             arguments: Optional test argument values (for good-args test)
+            model_path: Optional path to OSM file to test against (default: current model)
         """
-        return test_measure_op(measure_dir=measure_dir, arguments=arguments)
+        return test_measure_op(
+            measure_dir=measure_dir, arguments=arguments, model_path=model_path,
+        )
 
     @mcp.tool(name="edit_measure")
     def edit_measure_tool(

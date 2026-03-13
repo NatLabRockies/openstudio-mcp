@@ -419,6 +419,10 @@ WORKFLOW_CASES = [
 ]
 
 
+# Path to complex model (44 zones, 2 DOAS, 3 plant loops) via test-assets volume
+SYSTEMD_MODEL = "/repo/tests/assets/SystemD_baseline.osm"
+
+
 @pytest.mark.parametrize("case", WORKFLOW_CASES, ids=[c["id"] for c in WORKFLOW_CASES])
 def test_workflow(case):
     """Agent loads model and completes a multi-step workflow.
@@ -478,3 +482,40 @@ def test_workflow(case):
                 f"Expected {tool} >= {min_count} times, got {actual}. "
                 f"Tools: {tool_names}"
             )
+
+
+def test_complex_model_multi_query():
+    """Load 44-zone complex model and run multiple query tools — transport regression test.
+
+    Reproduces the failure mode from Claude Desktop: SWIG stdout warnings on
+    large models corrupt MCP JSON-RPC, causing "No result received" timeouts.
+    The agent must successfully complete all 4 queries without transport errors.
+    """
+    tier = get_tier()
+    if tier not in ("all", "2"):
+        pytest.skip("Tier 2 not selected")
+
+    prompt = (
+        f"Load the model at {SYSTEMD_MODEL} using load_osm_model. Then:\n"
+        "1. Call get_building_info to get building details.\n"
+        "2. Call list_air_loops with max_results=0 to list all air loops.\n"
+        "3. Call list_plant_loops with max_results=0 to list all plant loops.\n"
+        "4. Call list_thermal_zones with max_results=5.\n"
+        "Report a summary of what you found. Use MCP tools only."
+    )
+
+    result = run_claude(prompt, timeout=120)
+    tool_names = result.tool_names
+
+    assert "load_osm_model" in tool_names, f"Missing load_osm_model. Tools: {tool_names}"
+    assert "get_building_info" in tool_names, f"Missing get_building_info. Tools: {tool_names}"
+
+    # At least 2 of the 3 list tools should succeed (agent may reorder or skip one)
+    list_tools = {"list_air_loops", "list_plant_loops", "list_thermal_zones"}
+    found = list_tools & set(tool_names)
+    assert len(found) >= 2, (
+        f"Expected >=2 of {list_tools}, got: {found}. Tools: {tool_names}"
+    )
+
+    # Verify no error in final text (transport failures show up as error messages)
+    assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"

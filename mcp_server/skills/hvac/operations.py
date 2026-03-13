@@ -117,14 +117,24 @@ def _extract_setpoint_managers(air_loop) -> list[dict[str, Any]]:
 def _extract_air_loop(model, air_loop, detailed: bool = True) -> dict[str, Any]:
     """Extract air loop HVAC attributes to dict.
 
-    When detailed=False, returns only name and num_thermal_zones.
+    Brief (detailed=False): name, zone count, zone names, terminal type.
+    Detailed: adds full supply components, demand terminals per zone,
+    OA system, setpoint managers.
     """
-    num_zones = len(air_loop.thermalZones())
+    zones = air_loop.thermalZones()
+    num_zones = len(zones)
     result = {
         "name": air_loop.nameString(),
         "num_thermal_zones": num_zones,
     }
     if not detailed:
+        # Include zone names and terminal type in brief mode —
+        # enough for most planning without the full component dump
+        result["thermal_zones"] = [z.nameString() for z in zones]
+        if zones:
+            t_opt = zones[0].airLoopHVACTerminal()
+            if t_opt.is_initialized():
+                result["terminal_type"] = t_opt.get().iddObjectType().valueName()
         return result
 
     # Get thermal zone names
@@ -166,7 +176,8 @@ def _extract_air_loop(model, air_loop, detailed: bool = True) -> dict[str, Any]:
 def _extract_plant_loop(model, plant_loop, detailed: bool = True) -> dict[str, Any]:
     """Extract plant loop attributes to dict.
 
-    When detailed=False, returns only name + component counts.
+    Brief (detailed=False): name, component counts, primary equipment type.
+    Detailed: adds full supply/demand component lists with types and names.
     """
     supply_components = list(plant_loop.supplyComponents())
     demand_components = list(plant_loop.demandComponents())
@@ -176,6 +187,16 @@ def _extract_plant_loop(model, plant_loop, detailed: bool = True) -> dict[str, A
         "num_demand_components": len(demand_components),
     }
     if not detailed:
+        # Include primary supply equipment type in brief mode —
+        # enough to identify CHW/HW/condenser without full component dump
+        for c in supply_components:
+            t = c.iddObjectType().valueName()
+            if t.startswith("OS_") and t not in (
+                "OS_Node", "OS_Connector_Splitter", "OS_Connector_Mixer",
+                "OS_Pipe_Adiabatic",
+            ):
+                result["primary_equipment"] = t
+                break
         return result
 
     result.update({

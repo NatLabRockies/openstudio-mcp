@@ -172,6 +172,24 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
     if include_raw:
         metrics["raw"] = {"unmet": unmet, "eui": eui}
 
+    # Sanity warnings
+    warnings_list: list[str] = []
+    eui_val = metrics.get("eui_kBtu_ft2")
+    if eui_val is not None and eui_val <= 0:
+        warnings_list.append("EUI is zero or negative — simulation may not have completed")
+    elif eui_val is None:
+        area_ok = metrics["total_site_energy"].get("value") is not None
+        if area_ok:
+            warnings_list.append("No conditioned floor area — EUI cannot be computed")
+
+    heating_unmet = metrics.get("unmet_hours_heating")
+    cooling_unmet = metrics.get("unmet_hours_cooling")
+    total_unmet = (heating_unmet or 0) + (cooling_unmet or 0)
+    if total_unmet > 300:
+        warnings_list.append(
+            f"Unmet hours ({total_unmet:.0f}) exceed 300 — HVAC may be undersized",
+        )
+
     return {
         "ok": True,
         "run_id": run_id,
@@ -181,6 +199,7 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
             "html": str(html_path) if html_path else None,
         },
         "metrics": metrics,
+        "warnings": warnings_list,
     }
 
 
@@ -330,10 +349,96 @@ def query_timeseries_op(
     )
 
 
+def extract_simulation_errors_op(run_id: str) -> dict[str, Any]:
+    """Parse eplusout.err into categorized Fatal/Severe/Warning lists."""
+    from mcp_server.skills.results.err_parser import parse_err_file
+    try:
+        run_dir = resolve_run_dir(RUN_ROOT, run_id)
+    except FileNotFoundError:
+        return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
+
+    err_path = run_dir / "run" / "eplusout.err"
+    if not err_path.exists():
+        err_path = run_dir / "energyplus.err"
+    if not err_path.exists():
+        return {"ok": False, "error": "no_err_file", "message": "No eplusout.err found"}
+
+    parsed = parse_err_file(err_path.read_text(errors="replace"))
+    return {"ok": True, "run_id": run_id, "path": str(err_path), **parsed}
+
+
+def list_output_variables_op(run_id: str) -> dict[str, Any]:
+    """List available output variables and meters from a completed simulation."""
+    from mcp_server.skills.results.sql_extract import list_output_variables
+    sql_path, err = _resolve_sql(run_id)
+    if err:
+        return err
+    return list_output_variables(sql_path)
+
+
+def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any]:
+    """Compare two runs — EUI delta, unmet hours delta, per-end-use breakdown."""
+    from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+
+    base_metrics = extract_summary_metrics(baseline_run_id)
+    retro_metrics = extract_summary_metrics(retrofit_run_id)
+
+    if not base_metrics.get("ok"):
+        return {"ok": False, "error": f"baseline: {base_metrics.get('error', 'extraction failed')}"}
+    if not retro_metrics.get("ok"):
+        return {"ok": False, "error": f"retrofit: {retro_metrics.get('error', 'extraction failed')}"}
+
+    b = base_metrics["metrics"]
+    r = retro_metrics["metrics"]
+
+    b_eui = b.get("eui_kBtu_ft2")
+    r_eui = r.get("eui_kBtu_ft2")
+    delta_eui = (r_eui - b_eui) if (b_eui is not None and r_eui is not None) else None
+    delta_pct = (delta_eui / b_eui * 100) if (delta_eui is not None and b_eui) else None
+
+    b_unmet = (b.get("unmet_hours_heating") or 0) + (b.get("unmet_hours_cooling") or 0)
+    r_unmet = (r.get("unmet_hours_heating") or 0) + (r.get("unmet_hours_cooling") or 0)
+
+    # End-use deltas (both in IP/kBtu)
+    b_sql, _b_err = _resolve_sql(baseline_run_id)
+    r_sql, _r_err = _resolve_sql(retrofit_run_id)
+    end_use_deltas: list[dict[str, Any]] = []
+    if b_sql and r_sql:
+        b_eu = extract_end_use_breakdown(b_sql, units="IP")
+        r_eu = extract_end_use_breakdown(r_sql, units="IP")
+        if b_eu.get("ok") and r_eu.get("ok"):
+            b_map = {e["name"]: e for e in b_eu["end_uses"]}
+            r_map = {e["name"]: e for e in r_eu["end_uses"]}
+            all_cats = list(dict.fromkeys(list(b_map.keys()) + list(r_map.keys())))
+            for cat in all_cats:
+                b_total = sum(v for k, v in b_map.get(cat, {}).items()
+                              if k != "name" and isinstance(v, (int, float)))
+                r_total = sum(v for k, v in r_map.get(cat, {}).items()
+                              if k != "name" and isinstance(v, (int, float)))
+                d = r_total - b_total
+                d_pct = (d / b_total * 100) if b_total else None
+                end_use_deltas.append({
+                    "category": cat, "baseline_kBtu": round(b_total, 2),
+                    "retrofit_kBtu": round(r_total, 2),
+                    "delta_kBtu": round(d, 2), "delta_pct": round(d_pct, 1) if d_pct is not None else None,
+                })
+
+    return {
+        "ok": True,
+        "baseline": {"run_id": baseline_run_id, "eui_kBtu_ft2": b_eui, "unmet_hours": b_unmet},
+        "retrofit": {"run_id": retrofit_run_id, "eui_kBtu_ft2": r_eui, "unmet_hours": r_unmet},
+        "delta_eui_kBtu_ft2": round(delta_eui, 2) if delta_eui is not None else None,
+        "delta_eui_pct": round(delta_pct, 1) if delta_pct is not None else None,
+        "delta_unmet_hours": round(r_unmet - b_unmet, 1),
+        "end_use_deltas": end_use_deltas,
+    }
+
+
 def copy_file(file_path: str, destination: str = "/runs/exports") -> dict[str, Any]:
-    """Copy a file to an accessible location without streaming through MCP.
+    """Copy a file or directory to an accessible location.
 
     Bypasses the MCP 1MB transport limit for large files like HTML reports.
+    Supports both individual files and entire directories (e.g. measure dirs).
     Both source and destination must be within allowed roots.
     """
     from mcp_server.config import is_path_allowed
@@ -345,8 +450,8 @@ def copy_file(file_path: str, destination: str = "/runs/exports") -> dict[str, A
             "message": f"Source not in allowed roots: {file_path}",
         }
 
-    if not full.exists() or not full.is_file():
-        return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
+    if not full.exists():
+        return {"ok": False, "error": "not_found", "message": f"Not found: {file_path}"}
 
     dest_dir = Path(destination)
     if not is_path_allowed(dest_dir):
@@ -355,10 +460,23 @@ def copy_file(file_path: str, destination: str = "/runs/exports") -> dict[str, A
             "message": f"Destination not in allowed roots: {destination}",
         }
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    if full.is_dir():
+        dest_path = dest_dir / full.name
+        if dest_path.exists():
+            shutil.rmtree(str(dest_path))
+        shutil.copytree(str(full), str(dest_path))
+        file_count = sum(1 for _ in dest_path.rglob("*") if _.is_file())
+        return {
+            "ok": True,
+            "source": str(full),
+            "destination": str(dest_path),
+            "type": "directory",
+            "file_count": file_count,
+        }
+
     dest_file = dest_dir / full.name
-
     shutil.copy2(str(full), str(dest_file))
-
     return {
         "ok": True,
         "source": str(full),

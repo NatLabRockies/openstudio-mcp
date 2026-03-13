@@ -6,16 +6,25 @@ script with user-provided arguments and run() body.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import openstudio
 
-from mcp_server.config import RUN_ROOT
-from mcp_server.stdout_suppression import suppress_openstudio_warnings
+from mcp_server.config import INPUT_ROOT, RUN_ROOT
 
 CUSTOM_MEASURES_DIR = RUN_ROOT / "custom_measures"
+
+# Default test model for measure tests — rich model with HVAC, plant loops,
+# constructions, schedules.  Searched in order; first hit wins.
+_TEST_MODEL_CANDIDATES = [
+    Path("/repo/tests/assets/SystemD_baseline.osm"),   # Docker (CI / dev)
+    INPUT_ROOT / "SystemD_baseline.osm",                # Claude Desktop
+]
+
+_MEASURE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,99}$")
 
 # Argument type -> SDK factory method name suffix
 _ARG_MAKERS = {
@@ -32,6 +41,35 @@ _MAX_BODY_SIZE = 20 * 1024
 # Markers for replaceable sections
 _BEGIN_MARKER = "# --- begin user logic ---"
 _END_MARKER = "# --- end user logic ---"
+
+
+def _validate_measure_name(name: str) -> str | None:
+    """Validate measure name is a safe identifier. Returns error string or None."""
+    if not _MEASURE_NAME_RE.fullmatch(name):
+        return (
+            "name must be alphanumeric + underscores, start with a letter, "
+            "max 100 chars (e.g. 'set_lights_8w')"
+        )
+    return None
+
+
+def _find_test_model() -> Path | None:
+    """Find the best available test model OSM for measure tests."""
+    # 1. Currently loaded model — save to temp file
+    try:
+        from mcp_server.model_manager import get_model
+        model = get_model()
+        tmp = CUSTOM_MEASURES_DIR / "_test_model.osm"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        model.save(openstudio.toPath(str(tmp)), True)
+        return tmp
+    except Exception:
+        pass
+    # 2. Search known locations for SystemD_baseline.osm
+    for p in _TEST_MODEL_CANDIDATES:
+        if p.is_file():
+            return p
+    return None
 
 
 def _to_class_name(snake: str) -> str:
@@ -267,7 +305,11 @@ def _update_measure_xml(measure_dir: Path, language: str):
 
 
 def _generate_ruby_test(class_name: str, args: list[dict]) -> str:
-    """Generate a Ruby minitest file for the custom measure."""
+    """Generate a Ruby minitest file for the custom measure.
+
+    Uses tests/test_model.osm if present (copied by test_measure_op),
+    falls back to empty model.
+    """
     args_hash_lines = []
     for a in args:
         dv = a.get("default_value", "")
@@ -288,9 +330,19 @@ require 'minitest/autorun'
 require_relative '../measure'
 
 class {class_name}Test < Minitest::Test
+  def load_test_model
+    test_model = File.join(File.dirname(__FILE__), 'test_model.osm')
+    if File.exist?(test_model)
+      vt = OpenStudio::OSVersion::VersionTranslator.new
+      model = vt.loadModel(OpenStudio::Path.new(test_model))
+      return model.get if model.is_initialized
+    end
+    OpenStudio::Model::Model.new
+  end
+
   def test_number_of_arguments
     measure = {class_name}.new
-    model = OpenStudio::Model::Model.new
+    model = load_test_model
     arguments = measure.arguments(model)
     assert_equal({len(args)}, arguments.size)
   end
@@ -299,7 +351,7 @@ class {class_name}Test < Minitest::Test
     measure = {class_name}.new
     osw = OpenStudio::WorkflowJSON.new
     runner = OpenStudio::Measure::OSRunner.new(osw)
-    model = OpenStudio::Model::Model.new
+    model = load_test_model
     arguments = measure.arguments(model)
     argument_map = OpenStudio::Measure.convertOSArgumentVectorToMap(arguments)
     args_hash = {{}}
@@ -321,7 +373,11 @@ end
 
 
 def _generate_python_test(class_name: str, args: list[dict]) -> str:
-    """Generate a Python pytest file for the custom measure."""
+    """Generate a Python pytest file for the custom measure.
+
+    Uses tests/test_model.osm if present (copied by test_measure_op),
+    falls back to empty model.
+    """
     args_dict_lines = []
     for a in args:
         dv = a.get("default_value", "")
@@ -335,16 +391,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from measure import {class_name}
 
 
+def load_test_model():
+    test_model = os.path.join(os.path.dirname(__file__), "test_model.osm")
+    if os.path.exists(test_model):
+        vt = openstudio.osversion.VersionTranslator()
+        result = vt.loadModel(openstudio.toPath(test_model))
+        if result.is_initialized():
+            return result.get()
+    return openstudio.model.Model()
+
+
 class Test{class_name}:
     def test_number_of_arguments(self):
         measure = {class_name}()
-        model = openstudio.model.Model()
+        model = load_test_model()
         arguments = measure.arguments(model)
         assert len(arguments) == {len(args)}
 
     def test_good_argument_values(self):
         measure = {class_name}()
-        model = openstudio.model.Model()
+        model = load_test_model()
         osw = openstudio.WorkflowJSON()
         runner = openstudio.measure.OSRunner(osw)
         arguments = measure.arguments(model)
@@ -365,19 +431,25 @@ class Test{class_name}:
 
 def _write_test_file(measure_dir: Path, class_name: str, args: list[dict],
                      language: str):
-    """Write a custom test file replacing the SDK-generated one."""
+    """Write a custom test file replacing the SDK-generated one.
+
+    Filename uses the measure dir name (snake_case), not class_name.lower(),
+    so it matches what `openstudio measure -u` writes into measure.xml.
+    """
     test_dir = measure_dir / "tests"
     test_dir.mkdir(exist_ok=True)
+    # Use snake_case dir name so filename matches measure.xml <files> section
+    base_name = measure_dir.name
     if language == "Ruby":
         # Remove SDK-generated tests
         for f in test_dir.glob("*_test.rb"):
             f.unlink()
-        test_path = test_dir / f"{class_name.lower()}_test.rb"
+        test_path = test_dir / f"{base_name}_test.rb"
         test_path.write_text(_generate_ruby_test(class_name, args), encoding="utf-8")
     else:
         for f in test_dir.glob("test_*.py"):
             f.unlink()
-        test_path = test_dir / f"test_{class_name.lower()}.py"
+        test_path = test_dir / f"test_{base_name}.py"
         test_path.write_text(_generate_python_test(class_name, args), encoding="utf-8")
 
 
@@ -394,6 +466,9 @@ def create_measure_op(
 ) -> dict[str, Any]:
     """Scaffold a new OpenStudio measure and inject user code."""
     try:
+        err = _validate_measure_name(name)
+        if err:
+            return {"ok": False, "error": err}
         if len(run_body) > _MAX_BODY_SIZE:
             return {"ok": False, "error": f"run_body exceeds {_MAX_BODY_SIZE} bytes"}
         if language not in ("Ruby", "Python"):
@@ -402,24 +477,26 @@ def create_measure_op(
         args = arguments or []
         class_name = _to_class_name(name)
         measure_dir = CUSTOM_MEASURES_DIR / name
-        measure_dir.mkdir(parents=True, exist_ok=True)
+        # Clean existing dir for idempotent re-creation (safe: name is validated)
+        if measure_dir.exists():
+            shutil.rmtree(measure_dir)
+        measure_dir.mkdir(parents=True)
 
         # SDK scaffold
-        with suppress_openstudio_warnings():
-            lang_args = []
-            if language == "Python":
-                lang_args = [openstudio.MeasureLanguage("Python")]
-            bcl = openstudio.BCLMeasure(
-                name.replace("_", " ").title(),  # display name
-                class_name,
-                openstudio.toPath(str(measure_dir)),
-                taxonomy_tag,
-                openstudio.MeasureType("ModelMeasure"),
-                description,
-                modeler_description or description,
-                *lang_args,
-            )
-            bcl.save()
+        lang_args = []
+        if language == "Python":
+            lang_args = [openstudio.MeasureLanguage("Python")]
+        bcl = openstudio.BCLMeasure(
+            name.replace("_", " ").title(),  # display name
+            class_name,
+            openstudio.toPath(str(measure_dir)),
+            taxonomy_tag,
+            openstudio.MeasureType("ModelMeasure"),
+            description,
+            modeler_description or description,
+            *lang_args,
+        )
+        bcl.save()
 
         # Determine script file
         if language == "Ruby":
@@ -467,8 +544,17 @@ def create_measure_op(
 def test_measure_op(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
+    model_path: str | None = None,
 ) -> dict[str, Any]:
-    """Run tests for a measure using the appropriate test framework."""
+    """Run tests for a measure using the appropriate test framework.
+
+    Copies a real model into tests/test_model.osm so the measure runs
+    against a model with HVAC, plant loops, zones, etc.  Priority:
+    1. Explicit model_path argument
+    2. Currently loaded model (via model_manager)
+    3. SystemD_baseline.osm from tests/assets or /inputs
+    4. No test_model.osm → test template falls back to empty Model.new()
+    """
     try:
         mdir = Path(measure_dir)
         if not mdir.is_dir():
@@ -485,6 +571,18 @@ def test_measure_op(
         test_dir = mdir / "tests"
         if not test_dir.is_dir():
             return {"ok": False, "error": "No tests/ directory found"}
+
+        # Copy test model into tests/ so the test template can load it
+        test_model_dst = test_dir / "test_model.osm"
+        src_model = None
+        if model_path:
+            src = Path(model_path)
+            if src.is_file():
+                src_model = src
+        if not src_model:
+            src_model = _find_test_model()
+        if src_model:
+            shutil.copy2(str(src_model), str(test_model_dst))
 
         if language == "Python":
             proc = subprocess.run(
@@ -558,6 +656,9 @@ def edit_measure_op(
 ) -> dict[str, Any]:
     """Edit an existing custom measure's code, arguments, or description."""
     try:
+        err = _validate_measure_name(measure_name)
+        if err:
+            return {"ok": False, "error": err}
         measure_dir = CUSTOM_MEASURES_DIR / measure_name
         if not measure_dir.is_dir():
             return {"ok": False, "error": f"Measure not found: {measure_name}"}
@@ -647,10 +748,9 @@ def edit_measure_op(
             changes.append("description")
             # Also update measure.xml via BCLMeasure
             try:
-                with suppress_openstudio_warnings():
-                    bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_dir)))
-                    bcl.setDescription(description)
-                    bcl.save()
+                bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_dir)))
+                bcl.setDescription(description)
+                bcl.save()
             except Exception:
                 pass
 
