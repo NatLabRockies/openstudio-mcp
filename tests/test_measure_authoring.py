@@ -597,3 +597,174 @@ def test_measure_xml_checksums_valid():
                         f"XML says {expected_crc}, actual {actual_crc}"
                     )
     asyncio.run(_run())
+
+
+# ── ReportingMeasure tests ─────────────────────────────────────────────
+
+RUBY_REPORTING_BODY = (
+    '    query = "SELECT Value FROM TabularDataWithStrings '
+    "WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' "
+    "AND TableName='Site and Source Energy' "
+    "AND RowName='Total Site Energy' "
+    "AND ColumnName='Total Energy' "
+    "AND Units='GJ'\"\n"
+    "    val = sql.execAndReturnFirstDouble(query)\n"
+    "    if val.is_initialized\n"
+    '      runner.registerValue("total_site_energy_gj", val.get)\n'
+    '      runner.registerInfo("Total Site Energy: #{val.get} GJ")\n'
+    "    end\n"
+    '    runner.registerFinalCondition("Report complete")'
+)
+
+PYTHON_REPORTING_BODY = (
+    "        query = (\"SELECT Value FROM TabularDataWithStrings \"\n"
+    "                 \"WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' \"\n"
+    "                 \"AND TableName='Site and Source Energy' \"\n"
+    "                 \"AND RowName='Total Site Energy' \"\n"
+    "                 \"AND ColumnName='Total Energy' \"\n"
+    "                 \"AND Units='GJ'\")\n"
+    "        val = sql.execAndReturnFirstDouble(query)\n"
+    "        if val.is_initialized():\n"
+    "            runner.registerValue('total_site_energy_gj', val.get())\n"
+    "            runner.registerInfo(f'Total Site Energy: {val.get()} GJ')\n"
+    "        runner.registerFinalCondition('Report complete')"
+)
+
+
+@pytest.mark.integration
+def test_create_reporting_measure_ruby():
+    """Create a Ruby ReportingMeasure, verify correct class/signature."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_rb")
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Test reporting measure",
+                    "run_body": RUBY_REPORTING_BODY,
+                    "language": "Ruby",
+                    "measure_type": "ReportingMeasure",
+                }))
+                assert res.get("ok") is True, res
+                assert res["measure_type"] == "ReportingMeasure"
+                assert res["validation"]["syntax_ok"] is True
+                # Verify script content
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.rb",
+                }))
+                text = script["text"]
+                assert "ReportingMeasure" in text
+                assert "def run(runner, user_arguments)" in text
+                assert "super(runner, user_arguments)" in text
+                assert "lastOpenStudioModel" in text
+                assert "lastEnergyPlusSqlFilePath" in text
+                assert "energyPlusOutputRequests" in text
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_reporting_measure_python():
+    """Create a Python ReportingMeasure, verify correct class/signature."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_py")
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Test reporting measure",
+                    "run_body": PYTHON_REPORTING_BODY,
+                    "language": "Python",
+                    "measure_type": "ReportingMeasure",
+                }))
+                assert res.get("ok") is True, res
+                assert res["measure_type"] == "ReportingMeasure"
+                assert res["validation"]["syntax_ok"] is True
+                # Verify script content
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.py",
+                }))
+                text = script["text"]
+                assert "ReportingMeasure" in text
+                assert "def run(self, runner, user_arguments)" in text
+                assert "lastOpenStudioModel" in text
+                assert "lastEnergyPlusSqlFilePath" in text
+                assert "energyPlusOutputRequests" in text
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_test_reporting_measure_args_only():
+    """Test a ReportingMeasure without run_id — only arg validation runs."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_args")
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Reporting measure args test",
+                    "run_body": '    runner.registerInfo("hello")',
+                    "language": "Ruby",
+                    "measure_type": "ReportingMeasure",
+                    "arguments": [
+                        {"name": "report_title", "type": "String",
+                         "required": True, "default_value": "My Report"},
+                    ],
+                }))
+                assert create.get("ok") is True
+                # Test without run_id — should pass arg tests
+                res = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res.get("ok") is True, res.get("test_output", "")
+                assert res["passed"] > 0
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_edit_reporting_measure():
+    """Edit a ReportingMeasure run_body, verify correct signature preserved."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_edit")
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Editable reporting measure",
+                    "run_body": '    runner.registerInfo("v1")',
+                    "language": "Ruby",
+                    "measure_type": "ReportingMeasure",
+                }))
+                assert create.get("ok") is True
+                # Edit run_body
+                edit = unwrap(await s.call_tool("edit_measure", {
+                    "measure_name": name,
+                    "run_body": '    runner.registerInfo("v2")',
+                }))
+                assert edit.get("ok") is True
+                assert "run_body" in edit["changes_made"]
+                assert edit["validation"]["syntax_ok"] is True
+                # Verify ReportingMeasure signature still intact
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{edit['measure_dir']}/measure.rb",
+                }))
+                text = script["text"]
+                assert "ReportingMeasure" in text
+                assert "def run(runner, user_arguments)" in text
+                assert '"v2"' in text
+    asyncio.run(_run())

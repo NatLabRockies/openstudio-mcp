@@ -166,7 +166,7 @@ def _generate_python_extraction(args: list[dict]) -> str:
 
 
 def _build_ruby_run(args: list[dict], run_body: str) -> str:
-    """Build complete Ruby run() method."""
+    """Build complete Ruby run() method for ModelMeasure."""
     extraction = _generate_ruby_extraction(args)
     lines = [
         "  def run(model, runner, user_arguments)",
@@ -187,8 +187,39 @@ def _build_ruby_run(args: list[dict], run_body: str) -> str:
     return "\n".join(lines)
 
 
+def _build_ruby_reporting_run(args: list[dict], run_body: str) -> str:
+    """Build complete Ruby run() method for ReportingMeasure."""
+    extraction = _generate_ruby_extraction(args)
+    lines = [
+        "  def run(runner, user_arguments)",
+        "    super(runner, user_arguments)",
+        "    if !runner.validateUserArguments(arguments, user_arguments)",
+        "      return false",
+        "    end",
+    ]
+    if extraction:
+        lines.append(extraction)
+    lines += [
+        "    model = runner.lastOpenStudioModel",
+        "    if model.is_initialized",
+        "      model = model.get",
+        "    end",
+        "    sql_path = runner.lastEnergyPlusSqlFilePath",
+        "    if sql_path.is_initialized",
+        "      sql = OpenStudio::SqlFile.new(sql_path.get)",
+        "      model.setSqlFile(sql) if model",
+        "    end",
+        f"    {_BEGIN_MARKER}",
+        run_body,
+        f"    {_END_MARKER}",
+        "    return true",
+        "  end",
+    ]
+    return "\n".join(lines)
+
+
 def _build_python_run(args: list[dict], run_body: str) -> str:
-    """Build complete Python run() method."""
+    """Build complete Python run() method for ModelMeasure."""
     extraction = _generate_python_extraction(args)
     lines = [
         "    def run(self, model, runner, user_arguments):",
@@ -199,6 +230,33 @@ def _build_python_run(args: list[dict], run_body: str) -> str:
     if extraction:
         lines.append(extraction)
     lines += [
+        f"        {_BEGIN_MARKER}",
+        run_body,
+        f"        {_END_MARKER}",
+        "        return True",
+    ]
+    return "\n".join(lines)
+
+
+def _build_python_reporting_run(args: list[dict], run_body: str) -> str:
+    """Build complete Python run() method for ReportingMeasure."""
+    extraction = _generate_python_extraction(args)
+    lines = [
+        "    def run(self, runner, user_arguments):",
+        "        super().run(runner, user_arguments)",
+        "        if not runner.validateUserArguments(self.arguments(), user_arguments):",
+        "            return False",
+    ]
+    if extraction:
+        lines.append(extraction)
+    lines += [
+        "        model_opt = runner.lastOpenStudioModel()",
+        "        model = model_opt.get() if model_opt.is_initialized() else None",
+        "        sql_path = runner.lastEnergyPlusSqlFilePath()",
+        "        if sql_path.is_initialized():",
+        "            sql = openstudio.SqlFile(sql_path.get())",
+        "            if model:",
+        "                model.setSqlFile(sql)",
         f"        {_BEGIN_MARKER}",
         run_body,
         f"        {_END_MARKER}",
@@ -255,6 +313,85 @@ class {class_name}(openstudio.measure.ModelMeasure):
         return "{modeler_description}"
 
 {arguments_method}
+
+{run_method}
+
+
+{class_name}().registerWithApplication()
+"""
+
+
+def _build_ruby_reporting_script(class_name: str, name: str, description: str,
+                                  modeler_description: str, args: list[dict],
+                                  run_body: str) -> str:
+    """Build complete Ruby ReportingMeasure script."""
+    arguments_method = _generate_ruby_arguments(args)
+    # ReportingMeasure arguments() takes no args (not model)
+    arguments_method = arguments_method.replace(
+        "  def arguments(model)", "  def arguments",
+    )
+    run_method = _build_ruby_reporting_run(args, run_body)
+    return f"""class {class_name} < OpenStudio::Measure::ReportingMeasure
+  def name
+    return "{name}"
+  end
+
+  def description
+    return "{description}"
+  end
+
+  def modeler_description
+    return "{modeler_description}"
+  end
+
+{arguments_method}
+
+  def energyPlusOutputRequests(runner, user_arguments)
+    super(runner, user_arguments)
+    result = OpenStudio::IdfObjectVector.new
+    # Add output requests here if needed, e.g.:
+    # request = OpenStudio::IdfObject.load('Output:Variable,,Site Outdoor Air Drybulb Temperature,Timestep;').get
+    # result << request
+    return result
+  end
+
+{run_method}
+end
+
+{class_name}.new.registerWithApplication
+"""
+
+
+def _build_python_reporting_script(class_name: str, name: str, description: str,
+                                    modeler_description: str, args: list[dict],
+                                    run_body: str) -> str:
+    """Build complete Python ReportingMeasure script."""
+    arguments_method = _generate_python_arguments(args)
+    # ReportingMeasure arguments() takes no model param
+    arguments_method = arguments_method.replace(
+        "    def arguments(self, model=None):", "    def arguments(self):",
+    )
+    run_method = _build_python_reporting_run(args, run_body)
+    return f"""import openstudio
+
+
+class {class_name}(openstudio.measure.ReportingMeasure):
+    def name(self):
+        return "{name}"
+
+    def description(self):
+        return "{description}"
+
+    def modeler_description(self):
+        return "{modeler_description}"
+
+{arguments_method}
+
+    def energyPlusOutputRequests(self, runner, user_arguments):
+        super().energyPlusOutputRequests(runner, user_arguments)
+        result = openstudio.IdfObjectVector()
+        # Add output requests here if needed
+        return result
 
 {run_method}
 
@@ -429,8 +566,77 @@ class Test{class_name}:
 """
 
 
+def _ruby_arg_name_assertions(args: list[dict]) -> str:
+    """Build Ruby assertion lines checking argument names exist."""
+    if not args:
+        return "# no arguments to check"
+    lines = []
+    for a in args:
+        lines.append(
+            f'    assert(arguments.any? {{ |a| a.name == "{a["name"]}" }})',
+        )
+    return "\n".join(lines)
+
+
+def _generate_ruby_reporting_test(class_name: str, args: list[dict]) -> str:
+    """Generate a Ruby minitest file for a ReportingMeasure.
+
+    Tests argument count only — full run() test requires SQL artifacts
+    and must be done via test_measure_op with run_id.
+    """
+    return f"""require 'openstudio'
+require 'openstudio/measure/ShowRunnerOutput'
+require 'minitest/autorun'
+require_relative '../measure'
+
+class {class_name}Test < Minitest::Test
+  def test_number_of_arguments
+    measure = {class_name}.new
+    arguments = measure.arguments
+    assert_equal({len(args)}, arguments.size)
+  end
+
+  def test_argument_names
+    measure = {class_name}.new
+    arguments = measure.arguments
+    {_ruby_arg_name_assertions(args)}
+  end
+end
+"""
+
+
+def _generate_python_reporting_test(class_name: str, args: list[dict]) -> str:
+    """Generate a Python pytest file for a ReportingMeasure.
+
+    Tests argument count only — full run() requires SQL artifacts.
+    """
+    arg_names_check = "\n".join(
+        f'        assert any(a.name() == "{a["name"]}" for a in arguments)'
+        for a in args
+    ) if args else "        pass  # no arguments to check"
+
+    return f"""import openstudio
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from measure import {class_name}
+
+
+class Test{class_name}:
+    def test_number_of_arguments(self):
+        measure = {class_name}()
+        arguments = measure.arguments()
+        assert len(arguments) == {len(args)}
+
+    def test_argument_names(self):
+        measure = {class_name}()
+        arguments = measure.arguments()
+{arg_names_check}
+"""
+
+
 def _write_test_file(measure_dir: Path, class_name: str, args: list[dict],
-                     language: str):
+                     language: str, measure_type: str = "ModelMeasure"):
     """Write a custom test file replacing the SDK-generated one.
 
     Filename uses the measure dir name (snake_case), not class_name.lower(),
@@ -440,17 +646,20 @@ def _write_test_file(measure_dir: Path, class_name: str, args: list[dict],
     test_dir.mkdir(exist_ok=True)
     # Use snake_case dir name so filename matches measure.xml <files> section
     base_name = measure_dir.name
+    is_reporting = measure_type == "ReportingMeasure"
     if language == "Ruby":
         # Remove SDK-generated tests
         for f in test_dir.glob("*_test.rb"):
             f.unlink()
         test_path = test_dir / f"{base_name}_test.rb"
-        test_path.write_text(_generate_ruby_test(class_name, args), encoding="utf-8")
+        gen = _generate_ruby_reporting_test if is_reporting else _generate_ruby_test
+        test_path.write_text(gen(class_name, args), encoding="utf-8")
     else:
         for f in test_dir.glob("test_*.py"):
             f.unlink()
         test_path = test_dir / f"test_{base_name}.py"
-        test_path.write_text(_generate_python_test(class_name, args), encoding="utf-8")
+        gen = _generate_python_reporting_test if is_reporting else _generate_python_test
+        test_path.write_text(gen(class_name, args), encoding="utf-8")
 
 
 # ── Public operations ────────────────────────────────────────────────
@@ -463,6 +672,7 @@ def create_measure_op(
     arguments: list[dict] | None = None,
     taxonomy_tag: str = "Whole Building.Space Types",
     modeler_description: str = "",
+    measure_type: str = "ModelMeasure",
 ) -> dict[str, Any]:
     """Scaffold a new OpenStudio measure and inject user code."""
     try:
@@ -473,6 +683,8 @@ def create_measure_op(
             return {"ok": False, "error": f"run_body exceeds {_MAX_BODY_SIZE} bytes"}
         if language not in ("Ruby", "Python"):
             return {"ok": False, "error": "language must be 'Ruby' or 'Python'"}
+        if measure_type not in ("ModelMeasure", "ReportingMeasure"):
+            return {"ok": False, "error": "measure_type must be 'ModelMeasure' or 'ReportingMeasure'"}
 
         args = arguments or []
         class_name = _to_class_name(name)
@@ -491,34 +703,31 @@ def create_measure_op(
             class_name,
             openstudio.toPath(str(measure_dir)),
             taxonomy_tag,
-            openstudio.MeasureType("ModelMeasure"),
+            openstudio.MeasureType(measure_type),
             description,
             modeler_description or description,
             *lang_args,
         )
         bcl.save()
 
-        # Determine script file
+        # Determine script file — dispatch to reporting variants if needed
+        is_reporting = measure_type == "ReportingMeasure"
+        display_name = name.replace("_", " ").title()
+        mod_desc = modeler_description or description
         if language == "Ruby":
             script_path = measure_dir / "measure.rb"
-            script = _build_ruby_script(
-                class_name, name.replace("_", " ").title(),
-                description, modeler_description or description,
-                args, run_body,
-            )
+            builder = _build_ruby_reporting_script if is_reporting else _build_ruby_script
+            script = builder(class_name, display_name, description, mod_desc, args, run_body)
         else:
             script_path = measure_dir / "measure.py"
-            script = _build_python_script(
-                class_name, name.replace("_", " ").title(),
-                description, modeler_description or description,
-                args, run_body,
-            )
+            builder = _build_python_reporting_script if is_reporting else _build_python_script
+            script = builder(class_name, display_name, description, mod_desc, args, run_body)
 
         script_path.write_text(script, encoding="utf-8")
 
         # Write custom test file BEFORE updating XML (order matters —
         # _update_measure_xml re-hashes all files, so test must exist first)
-        _write_test_file(measure_dir, class_name, args, language)
+        _write_test_file(measure_dir, class_name, args, language, measure_type)
 
         # Sync measure.xml checksums with all current files
         _update_measure_xml(measure_dir, language)
@@ -534,6 +743,7 @@ def create_measure_op(
             "measure_dir": str(measure_dir),
             "class_name": class_name,
             "language": language,
+            "measure_type": measure_type,
             "script_file": script_path.name,
             "validation": validation,
         }
@@ -542,15 +752,134 @@ def create_measure_op(
         return {"ok": False, "error": f"Failed to create measure: {e}"}
 
 
+def _test_reporting_measure_with_run(
+    mdir: Path, language: str, run_id: str,
+    arguments: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run a ReportingMeasure against completed simulation artifacts via OSW.
+
+    Builds a minimal OSW, stages SQL/OSM/IDF from the completed run,
+    and runs ``openstudio run --postprocess_only``.
+    """
+    import json
+    import os
+    import uuid as _uuid
+
+    from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
+    from mcp_server.util import resolve_run_dir
+
+    try:
+        sim_dir = resolve_run_dir(RUN_ROOT, run_id)
+    except FileNotFoundError:
+        return {"ok": False, "error": f"Simulation run not found: {run_id}"}
+
+    sql_src = sim_dir / "run" / "eplusout.sql"
+    if not sql_src.is_file():
+        return {"ok": False, "error": f"No eplusout.sql in run {run_id} — simulation may not have completed"}
+
+    # Build temp run dir
+    test_run_id = _uuid.uuid4().hex[:12]
+    runs_dir = Path(os.environ.get("MCP_RUNS_DIR", "/runs"))
+    run_dir = runs_dir / f"measure_test_{test_run_id}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Stage simulation artifacts
+    ep_run = run_dir / "run"
+    ep_run.mkdir(exist_ok=True)
+    shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
+    for fname in ["in.osm", "in.idf"]:
+        src = sim_dir / "run" / fname
+        if src.is_file():
+            shutil.copy2(str(src), str(ep_run / fname))
+
+    # Copy seed model for OSW
+    osm_src = sim_dir / "run" / "in.osm"
+    temp_osm = run_dir / "in.osm"
+    if osm_src.is_file():
+        shutil.copy2(str(osm_src), str(temp_osm))
+    else:
+        # Fallback: create empty model
+        import openstudio as _os
+        m = _os.model.Model()
+        m.save(str(temp_osm), True)
+
+    # Copy measure
+    measures_dir = run_dir / "measures"
+    measures_dir.mkdir(exist_ok=True)
+    local_measure = measures_dir / mdir.name
+    shutil.copytree(str(mdir), str(local_measure), dirs_exist_ok=True)
+
+    # Build OSW
+    measure_args = {}
+    if arguments:
+        measure_args = {k: str(v) for k, v in arguments.items()}
+    osw = {
+        "seed_file": str(temp_osm),
+        "measure_paths": [str(measures_dir)],
+        "steps": [{
+            "measure_dir_name": mdir.name,
+            "arguments": measure_args,
+        }],
+    }
+    osw_path = run_dir / "workflow.osw"
+    osw_path.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+
+    # Run postprocess
+    cmd = [
+        "openstudio",
+        "--bundle", OSCLI_GEMFILE,
+        "--bundle_path", OSCLI_GEM_PATH,
+        "--bundle_without", "native_ext",
+        "run", "--postprocess_only", "-w", str(osw_path),
+    ]
+    log_path = run_dir / "openstudio.log"
+    with log_path.open("w", encoding="utf-8") as log_f:
+        proc = subprocess.run(
+            cmd, cwd=str(run_dir),
+            stdout=log_f, stderr=subprocess.STDOUT,
+            env=os.environ.copy(), timeout=120, check=False,
+        )
+
+    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    display = log_text[-2000:] if len(log_text) > 2000 else log_text
+
+    if proc.returncode != 0:
+        return {
+            "ok": False,
+            "passed": 0, "failed": 1, "errors": 0,
+            "test_output": f"ReportingMeasure test failed (exit {proc.returncode}):\n{display}",
+        }
+
+    return {
+        "ok": True,
+        "passed": 1, "failed": 0, "errors": 0,
+        "test_output": f"ReportingMeasure ran successfully via --postprocess_only:\n{display}",
+    }
+
+
+def _detect_measure_type(mdir: Path) -> str:
+    """Detect measure type from script content."""
+    for script in [mdir / "measure.rb", mdir / "measure.py"]:
+        if script.is_file():
+            content = script.read_text(encoding="utf-8", errors="replace")
+            if "ReportingMeasure" in content:
+                return "ReportingMeasure"
+    return "ModelMeasure"
+
+
 def test_measure_op(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
     model_path: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Run tests for a measure using the appropriate test framework.
 
-    Copies a real model into tests/test_model.osm so the measure runs
-    against a model with HVAC, plant loops, zones, etc.  Priority:
+    For ModelMeasures: copies a real model into tests/test_model.osm.
+    For ReportingMeasures: run_id required — builds OSW and runs
+    ``openstudio run --postprocess_only`` against simulation artifacts.
+
+    Model priority (ModelMeasure only):
     1. Explicit model_path argument
     2. Currently loaded model (via model_manager)
     3. SystemD_baseline.osm from tests/assets or /inputs
@@ -568,6 +897,12 @@ def test_measure_op(
             language = "Ruby"
         else:
             return {"ok": False, "error": "No measure.rb or measure.py found"}
+
+        detected_type = _detect_measure_type(mdir)
+
+        # ReportingMeasure with run_id: OSW-based integration test
+        if detected_type == "ReportingMeasure" and run_id:
+            return _test_reporting_measure_with_run(mdir, language, run_id, arguments)
 
         test_dir = mdir / "tests"
         if not test_dir.is_dir():
@@ -679,6 +1014,8 @@ def edit_measure_op(
             return {"ok": False, "error": "No measure script found"}
 
         content = script_path.read_text(encoding="utf-8")
+        detected_type = _detect_measure_type(measure_dir)
+        is_reporting = detected_type == "ReportingMeasure"
         changes = []
 
         # Replace run() body between markers
@@ -699,8 +1036,11 @@ def edit_measure_op(
         if arguments is not None:
             if language == "Ruby":
                 new_args = _generate_ruby_arguments(arguments)
+                if is_reporting:
+                    new_args = new_args.replace("  def arguments(model)", "  def arguments")
+                # Match both ModelMeasure and ReportingMeasure signatures
                 pattern = re.compile(
-                    r"  def arguments\(model\).*?  end",
+                    r"  def arguments(?:\(model\))?.*?  end",
                     re.DOTALL,
                 )
                 content = pattern.sub(new_args, content)
@@ -717,8 +1057,13 @@ def edit_measure_op(
                     content = pattern.sub(r"\1\3", content)
             else:
                 new_args = _generate_python_arguments(arguments)
+                if is_reporting:
+                    new_args = new_args.replace(
+                        "    def arguments(self, model=None):", "    def arguments(self):",
+                    )
+                # Match both ModelMeasure and ReportingMeasure signatures
                 pattern = re.compile(
-                    r"    def arguments\(self, model=None\):.*?(?=\n    def )",
+                    r"    def arguments\(self(?:, model=None)?\):.*?(?=\n    def )",
                     re.DOTALL,
                 )
                 content = pattern.sub(new_args + "\n", content)
@@ -733,7 +1078,8 @@ def edit_measure_op(
                 else:
                     content = pattern.sub(r"\1\3", content)
 
-            _write_test_file(measure_dir, _to_class_name(measure_name), arguments, language)
+            _write_test_file(measure_dir, _to_class_name(measure_name), arguments,
+                             language, detected_type)
             changes.append("arguments")
 
         # Update description in script

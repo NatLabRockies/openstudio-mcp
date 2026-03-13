@@ -33,8 +33,9 @@ def register(mcp):
         arguments: list[dict] | str | None = None,
         taxonomy_tag: str = "Whole Building.Space Types",
         modeler_description: str = "",
+        measure_type: str = "ModelMeasure",
     ):
-        """Create a new custom OpenStudio ModelMeasure with user-provided code.
+        """Create a new custom OpenStudio measure with user-provided code.
 
         Scaffolds via SDK, then injects arguments() and run() body. Output
         dir: /runs/custom_measures/<name>/. Idempotent — overwrites if exists.
@@ -52,8 +53,14 @@ def register(mcp):
                 type: Boolean | Double | Integer | String | Choice
             taxonomy_tag: BCL taxonomy (default: Whole Building.Space Types)
             modeler_description: Technical description for modelers
+            measure_type: "ModelMeasure" (default) or "ReportingMeasure".
+                ReportingMeasures run after simulation, accessing SQL results.
+                run() receives (runner, user_arguments) — no model param.
+                Model and SQL are available via runner.lastOpenStudioModel
+                and runner.lastEnergyPlusSqlFilePath (boilerplate auto-generated).
 
         Ruby common patterns for run_body:
+          ModelMeasure:
             model.getSurfaces.each { |s| ... }
             model.getThermalZones.each { |z| ... }
             model.getSpaces.each { |space| ... }
@@ -71,6 +78,11 @@ def register(mcp):
             zone.equipment.each { |eq| ... }
             node = loop.supplyOutletNode
             c.to_CoilHeatingWater.is_initialized → c.to_CoilHeatingWater.get
+          ReportingMeasure (model & sql already loaded in boilerplate):
+            total_site = sql.totalSiteEnergy; runner.registerValue("total_site_energy", total_site.get)
+            query = "SELECT Value FROM TabularDataWithStrings WHERE ..."
+            val = sql.execAndReturnFirstDouble(query)
+            runner.registerInfo("EUI: #{val.get} kBtu/ft2") if val.is_initialized
 
         Python common patterns for run_body:
             for s in model.getSurfaces(): ...
@@ -106,6 +118,7 @@ def register(mcp):
             name=name, description=description, run_body=run_body,
             language=language, arguments=arguments,
             taxonomy_tag=taxonomy_tag, modeler_description=modeler_description,
+            measure_type=measure_type,
         )
 
     @mcp.tool(name="test_measure")
@@ -113,6 +126,7 @@ def register(mcp):
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
         model_path: str | None = None,
+        run_id: str | None = None,
     ):
         """Run tests for a custom OpenStudio measure.
 
@@ -123,15 +137,23 @@ def register(mcp):
         Model priority: explicit model_path > currently loaded model >
         built-in SystemD_baseline.osm (44 zones, DOAS, CHW/HW/SWH loops).
 
+        For ReportingMeasures, provide run_id of a completed simulation.
+        The measure will be tested via `openstudio run --postprocess_only`
+        against that run's SQL results. Without run_id, only argument
+        validation tests run (no run() execution).
+
         Workflow: create_measure → test_measure → apply_measure.
 
         Args:
             measure_dir: Path to the measure directory (from create_measure result)
             arguments: Optional test argument values (for good-args test)
             model_path: Optional path to OSM file to test against (default: current model)
+            run_id: Optional completed simulation run_id (required for full
+                ReportingMeasure testing — provides SQL artifacts)
         """
         return test_measure_op(
-            measure_dir=measure_dir, arguments=arguments, model_path=model_path,
+            measure_dir=measure_dir, arguments=arguments,
+            model_path=model_path, run_id=run_id,
         )
 
     @mcp.tool(name="edit_measure")

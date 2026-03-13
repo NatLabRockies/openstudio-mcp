@@ -120,6 +120,26 @@ extract_summary_metrics(run_id=<retrofit_id>)
 
 See the `measure-authoring` skill for run_body patterns and language guidance.
 
+## Write and Apply a Custom ReportingMeasure
+
+ReportingMeasures run after simulation to analyze SQL results.
+
+```
+# 1. Run simulation first
+run_simulation(osm_path="/runs/model.osm", epw_path="<epw>")
+
+# 2. Create reporting measure
+create_measure(name="custom_report", description="...",
+    language="Ruby", measure_type="ReportingMeasure",
+    run_body="    val = sql.execAndReturnFirstDouble('SELECT ...')\n    runner.registerValue('metric', val.get) if val.is_initialized")
+
+# 3. Test against completed simulation
+test_measure(measure_dir="/runs/custom_measures/custom_report", run_id="<run_id>")
+
+# 4. Apply to completed simulation
+apply_measure(measure_dir="/runs/custom_measures/custom_report", run_id="<run_id>")
+```
+
 ## Object Cleanup
 
 ```
