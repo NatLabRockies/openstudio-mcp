@@ -118,6 +118,7 @@ def test_tool_references_valid():
         "outdoor_unit_capacity_w", "radiant_type", "ventilation_system",
         "terminal_type", "terminal_options", "thermal_zone_names",
         "fixed_windows", "operable_windows", "geometry_diagnostics",
+        "run_body",
     }
 
     all_errors = []
