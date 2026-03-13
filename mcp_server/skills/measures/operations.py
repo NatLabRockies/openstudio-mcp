@@ -112,10 +112,11 @@ def apply_measure(
         if not measure_path.is_dir():
             return {"ok": False, "error": f"Measure directory not found: {measure_dir}"}
 
-        # Check measure.rb exists
-        measure_rb = measure_path / "measure.rb"
-        if not measure_rb.is_file():
-            return {"ok": False, "error": f"No measure.rb found in {measure_dir}"}
+        # Check measure script exists (Ruby or Python)
+        has_rb = (measure_path / "measure.rb").is_file()
+        has_py = (measure_path / "measure.py").is_file()
+        if not has_rb and not has_py:
+            return {"ok": False, "error": f"No measure.rb or measure.py found in {measure_dir}"}
 
         # Create temp directory for the run
         measure_run_id = uuid.uuid4().hex[:12]
