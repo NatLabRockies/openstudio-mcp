@@ -311,6 +311,82 @@ WORKFLOW_CASES = [
         "max_turns": 25,
         "timeout": 180,
     },
+    {
+        # Full chain: write measure to set lighting → test → apply → sim → results
+        "id": "measure_set_lights_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Write a Ruby ModelMeasure that sets all LightsDefinition objects "
+            "to 8 W/m2 using setWattsperSpaceFloorArea. "
+            "Create it with create_measure, test it with test_measure, "
+            "apply it with apply_measure, save the model, run a simulation, "
+            "and extract the end use breakdown. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "max_turns": 30,
+        "timeout": 420,
+    },
+    {
+        # Full chain: write measure to set infiltration → test → apply → sim → results
+        "id": "measure_set_infiltration_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Write a Ruby ModelMeasure that sets all "
+            "SpaceInfiltrationDesignFlowRate objects to use "
+            "Flow/ExteriorArea method at 0.0003 m3/s-m2 "
+            "(setFlowperExteriorSurfaceArea). "
+            "Create it with create_measure, test it with test_measure, "
+            "apply it with apply_measure, save the model, run a simulation, "
+            "and extract the summary metrics. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "max_turns": 30,
+        "timeout": 420,
+    },
+    {
+        # Full chain: write measure to replace air terminals with FourPipeBeam
+        "id": "measure_replace_terminals_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Write a Ruby ModelMeasure that replaces all air terminals on "
+            "every air loop with 4-pipe active chilled beam terminals. "
+            "For each air loop, iterate thermalZones, removeBranchForZone, "
+            "create CoilCoolingFourPipeBeam + CoilHeatingFourPipeBeam, "
+            "wire coils to the CHW and HW plant loops, create "
+            "AirTerminalSingleDuctConstantVolumeFourPipeBeam, and reconnect "
+            "via addBranchForZone. "
+            "Create it with create_measure, test it with test_measure, "
+            "apply it with apply_measure, save the model, run a simulation, "
+            "and extract the end use breakdown. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "max_turns": 30,
+        "timeout": 420,
+    },
+    {
+        # Full chain: write measure to add baseboard heaters to all zones
+        "id": "measure_add_baseboards_full_chain",
+        "prompt": LOAD_HVAC + (
+            "Write a Ruby ModelMeasure that adds a "
+            "ZoneHVACBaseboardConvectiveElectric to every thermal zone "
+            "using addToThermalZone. Name each baseboard after its zone. "
+            "Create it with create_measure, test it with test_measure, "
+            "apply it with apply_measure, save the model, run a simulation, "
+            "and extract the end use breakdown. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "max_turns": 30,
+        "timeout": 420,
+    },
 ]
 
 
