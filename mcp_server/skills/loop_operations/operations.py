@@ -408,6 +408,82 @@ def remove_zone_equipment(zone_name: str, equipment_name: str) -> dict:
     }
 
 
+def set_zone_equipment_priority(zone_name: str, equipment_names: list[str]) -> dict:
+    """Reorder zone equipment. First in list = highest priority (served first).
+
+    Uses ZoneHVACEquipmentList.setCoolingPriority() / setHeatingPriority()
+    to set both cooling and heating priority for each equipment.
+    Requires ALL equipment on the zone to be listed.
+    """
+    try:
+        model = get_model()
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+
+    zone = fetch_object(model, "ThermalZone", name=zone_name)
+    if zone is None:
+        return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
+
+    # Find ZoneHVACEquipmentList for this zone
+    target_list = None
+    for equip_list in model.getZoneHVACEquipmentLists():
+        if equip_list.thermalZone().handle() == zone.handle():
+            target_list = equip_list
+            break
+
+    if target_list is None:
+        return {"ok": False, "error": f"No equipment list found for zone '{zone_name}'"}
+
+    # Build name→object map from current equipment
+    current_equip = {}
+    for eq in target_list.equipment():
+        name = eq.nameString() if hasattr(eq, "nameString") else str(eq.name())
+        current_equip[name] = eq
+
+    # Validate all names exist and list is complete
+    current_names = set(current_equip.keys())
+    requested_names = set(equipment_names)
+    missing = requested_names - current_names
+    if missing:
+        return {"ok": False, "error": f"Equipment not found on zone: {sorted(missing)}"}
+    extra = current_names - requested_names
+    if extra:
+        return {"ok": False, "error": f"Missing equipment from list (must include all): {sorted(extra)}"}
+
+    # Record old order
+    old_order = []
+    for eq in target_list.equipment():
+        name = eq.nameString() if hasattr(eq, "nameString") else str(eq.name())
+        old_order.append({
+            "name": name,
+            "cooling_priority": target_list.coolingPriority(eq),
+            "heating_priority": target_list.heatingPriority(eq),
+        })
+
+    # Set new priorities (1-based, first in list = highest priority)
+    for i, name in enumerate(equipment_names):
+        eq = current_equip[name]
+        target_list.setCoolingPriority(eq, i + 1)
+        target_list.setHeatingPriority(eq, i + 1)
+
+    # Record new order
+    new_order = []
+    for name in equipment_names:
+        eq = current_equip[name]
+        new_order.append({
+            "name": name,
+            "cooling_priority": target_list.coolingPriority(eq),
+            "heating_priority": target_list.heatingPriority(eq),
+        })
+
+    return {
+        "ok": True,
+        "zone": zone_name,
+        "old_order": old_order,
+        "new_order": new_order,
+    }
+
+
 def remove_all_zone_equipment(zone_names: list[str]) -> dict:
     """Remove ALL equipment from listed thermal zones in one call."""
     try:

@@ -277,6 +277,40 @@ WORKFLOW_CASES = [
         "required_tools": ["extract_summary_metrics", "extract_end_use_breakdown"],
         "timeout": 120,
     },
+    {
+        # Replace air terminals with CooledBeam, simulate, extract results
+        "id": "hvac_chilled_beam_comparison",
+        "prompt": LOAD_HVAC + (
+            "Get the current air loop details. "
+            "Replace all air terminals with CooledBeam type using replace_air_terminals. "
+            "Save the model and run a simulation. "
+            "Extract the end use breakdown. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "replace_air_terminals",
+                           "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "max_turns": 25,
+        "timeout": 300,
+    },
+    {
+        # Measure authoring lifecycle: create → test → apply
+        "id": "create_test_apply_measure",
+        "prompt": LOAD + (
+            "Create a Ruby custom measure named 'set_bldg_name_test' using "
+            "create_measure. It should set the building name to 'LLM Test'. "
+            "Use language Ruby, and run_body: "
+            "\"    model.getBuilding.setName('LLM Test')\\n"
+            "    runner.registerInfo('Done')\". "
+            "Then test it using test_measure. "
+            "Then apply it using apply_measure with the measure_dir from create. "
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure"],
+        "max_turns": 25,
+        "timeout": 180,
+    },
 ]
 
 

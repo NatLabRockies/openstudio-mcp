@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.loop_operations import operations
 
 if TYPE_CHECKING:
@@ -170,6 +171,27 @@ def register(mcp: FastMCP) -> None:
         """
         return json.dumps(operations.remove_zone_equipment(
             zone_name, equipment_name,
+        ), indent=2)
+
+    @mcp.tool(name="set_zone_equipment_priority")
+    def set_zone_equipment_priority_tool(
+        zone_name: str,
+        equipment_names: list[str] | str,
+    ) -> str:
+        """Reorder zone HVAC equipment by priority (1 = highest, served first).
+
+        EnergyPlus simulates zone equipment in priority order. Use this to ensure
+        primary equipment (e.g., chilled beams) is served before secondary (e.g., fan coils).
+        Sets both cooling and heating priority.
+
+        Args:
+            zone_name: Thermal zone name
+            equipment_names: Equipment names in desired priority order (highest first).
+                            Must include ALL equipment on the zone.
+        """
+        return json.dumps(operations.set_zone_equipment_priority(
+            zone_name=zone_name,
+            equipment_names=parse_str_list(equipment_names),
         ), indent=2)
 
     @mcp.tool(name="remove_all_zone_equipment")

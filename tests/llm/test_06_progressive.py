@@ -338,6 +338,82 @@ PROGRESSIVE_CASES = [
         "L2": "Add EV charging load to the parking area.",
         "L3": "Add EV charging using add_ev_load.",
     },
+    # --- Measure authoring (Phase 9) ---
+    {
+        "id": "list_measures",
+        "needs_model": False,
+        "expected": ["list_custom_measures"],
+        "L1": "What custom measures do I have?",
+        "L2": "List all custom measures I've created.",
+        "L3": "List custom measures using list_custom_measures.",
+    },
+    {
+        "id": "create_measure",
+        "needs_model": False,
+        "expected": ["create_measure"],
+        "L1": "Write a custom measure that sets the building name.",
+        "L2": "Create a Ruby ModelMeasure that sets the building name to 'Test'.",
+        "L3": "Create a custom measure using create_measure with language Ruby "
+              "and run_body that calls model.getBuilding.setName.",
+    },
+    {
+        "id": "test_measure",
+        "needs_model": False,
+        "expected": ["test_measure"],
+        "L1": "Run the tests for my custom measure.",
+        "L2": "Run the test suite for the measure at /runs/custom_measures/my_measure.",
+        "L3": "Test the measure using test_measure with measure_dir "
+              "/runs/custom_measures/my_measure.",
+    },
+    {
+        "id": "apply_existing_measure",
+        "needs_model": True,
+        "expected": ["apply_measure", "list_measure_arguments"],
+        "L1": "Apply the set_building_name measure from /repo/tests/assets/measures/.",
+        "L2": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+              "with building_name 'New Name'.",
+        "L3": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+              "using apply_measure with arguments {building_name: 'New Name'}.",
+    },
+    # --- CooledBeam + zone priority ---
+    {
+        "id": "replace_terminals_cooled_beam",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["replace_air_terminals"],
+        "L1": "Replace the air terminals with cooling-only chilled beams.",
+        "L2": "Replace the air terminals on the air loop with CooledBeam type using replace_air_terminals.",
+        "L3": "Use replace_air_terminals with terminal_type='CooledBeam'.",
+    },
+    {
+        "id": "measure_replace_terminals",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["create_measure"],
+        "L1": "Write a custom measure that replaces VAV terminals with 4-pipe chilled beams on all air loops.",
+        "L2": "Create a Ruby measure using create_measure that walks air loops and replaces terminals with 4-pipe chilled beam terminals.",
+        "L3": "Use create_measure (language Ruby). run_body should iterate model.getAirLoopHVACs, removeBranchForZone for each zone, create AirTerminalSingleDuctConstantVolumeFourPipeBeam, reconnect via addBranchForZone.",
+    },
+    {
+        "id": "zone_equipment_priority",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["set_zone_equipment_priority", "add_zone_equipment"],
+        "L1": "Add a baseboard heater to the first zone, then reorder zone equipment priority.",
+        "L2": "Add a ZoneHVACBaseboardConvectiveElectric to the first zone using add_zone_equipment, "
+              "then use set_zone_equipment_priority to change the serving order.",
+        "L3": "Use add_zone_equipment to add a ZoneHVACBaseboardConvectiveElectric to the first zone. "
+              "Then call set_zone_equipment_priority to set the baseboard as highest priority.",
+    },
+    {
+        "id": "edit_measure",
+        "needs_model": False,
+        "expected": ["edit_measure", "list_custom_measures"],
+        "L1": "Update my custom measure to also log the old building name.",
+        "L2": "Edit the run body of custom measure my_measure to add logging.",
+        "L3": "Edit measure my_measure using edit_measure with run_body "
+              "'    runner.registerInfo(\"updated\")'.",
+    },
 ]
 
 SUFFIX = " Use MCP tools only."

@@ -79,6 +79,7 @@ EXPECTED_TOOLS = {
     "add_zone_equipment",
     "remove_zone_equipment",
     "remove_all_zone_equipment",
+    "set_zone_equipment_priority",
     # Phase 6A: Loads
     "get_load_details",
     "create_people_definition",
@@ -102,6 +103,10 @@ EXPECTED_TOOLS = {
     # Phase 6D: Measures
     "list_measure_arguments",
     "apply_measure",
+    "list_custom_measures",
+    "create_measure",
+    "test_measure",
+    "edit_measure",
     # ComStock + geometry workflows
     "list_comstock_measures",
     "create_typical_building",

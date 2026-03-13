@@ -272,6 +272,7 @@ Validation results included in tool response under `"validation"` key.
 | `Radiant` | Low-temp radiant panels (floor/ceiling) | CHW + HW |
 | `ChilledBeams` | Passive/active chilled beams (cooling only) | CHW only |
 | `FourPipeBeam` | 4-pipe active chilled beams (heating + cooling) | CHW + HW |
+| `CooledBeam` | 2-pipe cooled beams (cooling only) | CHW only |
 
 ## API Reference
 
