@@ -2,12 +2,12 @@
 
 ## Overview
 
-**~468 tests across 60 files**, split into two categories:
+**~689 tests across 58 files**, split into two categories:
 
 | Category | Count | Requires Docker | Marker |
 |----------|-------|-----------------|--------|
-| Integration | 317 | Yes | `@pytest.mark.integration` |
-| Unit | 151 | No | (none) |
+| Integration | 377 | Yes | `@pytest.mark.integration` |
+| Unit | 312 | No | (none) |
 
 CI runs 5 parallel shards, each ~200s. Total wall time ~6 min.
 

@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**22 skills &bull; 131 tools &bull; 6 prompts &bull; 4 resources &bull; 450+ integration tests**
+**22 skills &bull; 129 tools &bull; 6 prompts &bull; 4 resources &bull; 377 integration tests**
 
 ---
 
@@ -72,7 +72,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 131 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 129 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -84,7 +84,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 136 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 129 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Other MCP Hosts
 
@@ -122,7 +122,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (136 total)
+## Skills & Tools (129 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |
