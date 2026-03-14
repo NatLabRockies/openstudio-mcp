@@ -733,6 +733,57 @@ def test_test_reporting_measure_args_only():
 
 
 @pytest.mark.integration
+def test_create_with_choice_values():
+    """Create a measure with Choice argument that has values list."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("choice_vals")
+                choice_args = [
+                    {"name": "insulation_type", "display_name": "Insulation Type",
+                     "type": "Choice", "required": True,
+                     "default_value": "fiberglass",
+                     "values": ["fiberglass", "foam", "mineral_wool"]},
+                    {"name": "thickness", "display_name": "Thickness (in)",
+                     "type": "Double", "required": True, "default_value": "3.5"},
+                ]
+                body = (
+                    '    insulation_type = runner.getStringArgumentValue("insulation_type", user_arguments)\n'
+                    '    thickness = runner.getDoubleArgumentValue("thickness", user_arguments)\n'
+                    '    runner.registerInfo("Using #{insulation_type} at #{thickness} in")'
+                )
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Measure with choice values",
+                    "run_body": body,
+                    "language": "Ruby",
+                    "arguments": choice_args,
+                }))
+                assert res.get("ok") is True, res
+                assert res["validation"]["syntax_ok"] is True
+                # Verify the generated script contains addChoice calls
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.rb",
+                }))
+                text = script["text"]
+                assert '"fiberglass"' in text
+                assert '"foam"' in text
+                assert '"mineral_wool"' in text
+                assert "StringVector" in text
+                # Test the measure runs
+                test = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": res["measure_dir"],
+                }))
+                assert test.get("ok") is True, test.get("test_output", "")
+                assert test["passed"] > 0
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_edit_reporting_measure():
     """Edit a ReportingMeasure run_body, verify correct signature preserved."""
     if not integration_enabled():

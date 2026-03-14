@@ -42,6 +42,21 @@ def register(mcp):
 
         Workflow: create_measure → test_measure → apply_measure.
 
+        ARGUMENT STRATEGY — Make measures reusable:
+        - Parameterize anything model-specific: zone/space names, setpoint values,
+          schedule names, material properties, thresholds, equipment names
+        - Hard-code only measure logic (traversal patterns, formulas, output structure)
+        - Use descriptive display_names so users understand each argument
+        - Always provide sensible default_value for optional arguments
+        - Common argument patterns:
+            Setpoints/thresholds → Double with default (e.g. R-value, watts/m2)
+            Object names/filters → String (zone name, space type, schedule name)
+            Enable/disable features → Boolean with default true
+            Predefined options → Choice with values list
+        - Example: a wall insulation measure should parameterize target_r_value (Double),
+          surface_filter (String, default ""), and construction_name (String) rather
+          than hard-coding R-19 for "Exterior Wall" surfaces
+
         Args:
             name: snake_case measure name (becomes dir name + class name)
             description: What the measure does (plain English)
@@ -49,8 +64,10 @@ def register(mcp):
                 Ruby: 4 spaces (e.g. "    model.getBuilding.setName('X')")
                 Python: 8 spaces (e.g. "        model.getBuilding().setName('X')")
             language: "Ruby" or "Python" (required — user chooses)
-            arguments: List of argument dicts [{name, display_name, type, required, default_value}].
+            arguments: List of argument dicts [{name, display_name, type, required,
+                default_value, values}].
                 type: Boolean | Double | Integer | String | Choice
+                values: (Choice only) list of allowed values, e.g. ["low", "medium", "high"]
             taxonomy_tag: BCL taxonomy (default: Whole Building.Space Types)
             modeler_description: Technical description for modelers
             measure_type: "ModelMeasure" (default) or "ReportingMeasure".
@@ -171,11 +188,15 @@ def register(mcp):
 
         After editing, run test_measure to verify, then apply_measure to use.
 
+        Tip: use this to add arguments to an existing measure that hard-codes
+        values — makes it reusable across different models and scenarios.
+
         Args:
             measure_name: Name of existing custom measure (snake_case dir name)
             run_body: New run() method body (replaces between markers).
                 Ruby: indent 4 spaces. Python: indent 8 spaces.
-            arguments: New argument spec [{name, display_name, type, required, default_value}]
+            arguments: New argument spec [{name, display_name, type, required,
+                default_value, values}]. values is for Choice type only.
             description: Updated description
         """
         if isinstance(arguments, str):

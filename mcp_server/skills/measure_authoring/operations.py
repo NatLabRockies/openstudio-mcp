@@ -89,7 +89,16 @@ def _generate_ruby_arguments(args: list[dict]) -> str:
         required = a.get("required", True)
         req_str = "true" if required else "false"
         maker = _ARG_MAKERS.get(atype, "String")
-        lines.append(f'    {name} = OpenStudio::Measure::OSArgument.make{maker}Argument("{name}", {req_str})')
+        if atype == "Choice" and "values" in a:
+            # Choice args require values at construction time
+            vals = a["values"]
+            choices_arr = ", ".join(f'"{v}"' for v in vals)
+            lines.append(f"    {name}_choices = OpenStudio::StringVector.new")
+            for v in vals:
+                lines.append(f'    {name}_choices << "{v}"')
+            lines.append(f'    {name} = OpenStudio::Measure::OSArgument.makeChoiceArgument("{name}", {name}_choices, {name}_choices, {req_str})')
+        else:
+            lines.append(f'    {name} = OpenStudio::Measure::OSArgument.make{maker}Argument("{name}", {req_str})')
         if "display_name" in a:
             lines.append(f'    {name}.setDisplayName("{a["display_name"]}")')
         else:
@@ -122,7 +131,15 @@ def _generate_python_arguments(args: list[dict]) -> str:
         required = a.get("required", True)
         req_str = "True" if required else "False"
         maker = _ARG_MAKERS.get(atype, "String")
-        lines.append(f'        {name} = openstudio.measure.OSArgument.make{maker}Argument("{name}", {req_str})')
+        if atype == "Choice" and "values" in a:
+            # Choice args require values at construction time
+            vals = a["values"]
+            lines.append(f"        {name}_choices = openstudio.StringVector()")
+            for v in vals:
+                lines.append(f'        {name}_choices.append("{v}")')
+            lines.append(f'        {name} = openstudio.measure.OSArgument.makeChoiceArgument("{name}", {name}_choices, {name}_choices, {req_str})')
+        else:
+            lines.append(f'        {name} = openstudio.measure.OSArgument.make{maker}Argument("{name}", {req_str})')
         if "display_name" in a:
             lines.append(f'        {name}.setDisplayName("{a["display_name"]}")')
         else:
@@ -149,7 +166,8 @@ def _generate_ruby_extraction(args: list[dict]) -> str:
     for a in args:
         name = a["name"]
         atype = a.get("type", "String")
-        getter = _ARG_MAKERS.get(atype, "String")
+        # Choice args are extracted as strings at runtime
+        getter = "String" if atype == "Choice" else _ARG_MAKERS.get(atype, "String")
         lines.append(f'    {name} = runner.get{getter}ArgumentValue("{name}", user_arguments)')
     return "\n".join(lines)
 
@@ -160,7 +178,8 @@ def _generate_python_extraction(args: list[dict]) -> str:
     for a in args:
         name = a["name"]
         atype = a.get("type", "String")
-        getter = _ARG_MAKERS.get(atype, "String")
+        # Choice args are extracted as strings at runtime
+        getter = "String" if atype == "Choice" else _ARG_MAKERS.get(atype, "String")
         lines.append(f'        {name} = runner.get{getter}ArgumentValue("{name}", user_arguments)')
     return "\n".join(lines)
 
