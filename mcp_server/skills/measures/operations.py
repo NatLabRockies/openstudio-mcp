@@ -83,6 +83,38 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list measure arguments: {e}"}
 
 
+def _parse_runner_messages(out_osw_path: Path) -> dict[str, Any] | None:
+    """Extract runner messages from out.osw step results.
+
+    Returns dict with result, initial_condition, final_condition,
+    info, warnings, errors — or None on parse failure.
+    """
+    try:
+        if not out_osw_path.is_file():
+            return None
+        osw = json.loads(out_osw_path.read_text(encoding="utf-8", errors="replace"))
+        steps = osw.get("steps", [])
+        if not steps:
+            return None
+        step = steps[0]
+        result = step.get("result", {})
+        msgs: dict[str, Any] = {
+            "result": result.get("step_result", ""),
+        }
+        for key in ("step_initial_condition", "step_final_condition"):
+            val = result.get(key)
+            if val:
+                # Strip "step_" prefix for cleaner output
+                msgs[key.replace("step_", "")] = val
+        for key, osw_key in [("info", "step_info"), ("warnings", "step_warnings"), ("errors", "step_errors")]:
+            items = result.get(osw_key, [])
+            if items:
+                msgs[key] = items
+        return msgs
+    except Exception:
+        return None
+
+
 def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
@@ -236,14 +268,20 @@ def apply_measure(
                 "log_tail": tail,
             }
 
+        # Parse runner messages from out.osw
+        runner_messages = _parse_runner_messages(run_dir / "out.osw")
+
         # For reporting measures, don't reload model — just return artifacts
         if postprocess:
-            return {
+            result = {
                 "ok": True,
                 "measure_dir": str(measure_path),
                 "run_dir": str(run_dir),
                 "arguments_applied": measure_args,
             }
+            if runner_messages:
+                result["runner_messages"] = runner_messages
+            return result
 
         # Find the output model — OpenStudio puts it in run/in.osm
         output_osm = run_dir / "run" / "in.osm"
@@ -256,12 +294,15 @@ def apply_measure(
         # Reload model
         load_model(output_osm)
 
-        return {
+        result = {
             "ok": True,
             "measure_dir": str(measure_path),
             "run_dir": str(run_dir),
             "arguments_applied": measure_args,
         }
+        if runner_messages:
+            result["runner_messages"] = runner_messages
+        return result
 
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Measure run timed out (5 min)"}

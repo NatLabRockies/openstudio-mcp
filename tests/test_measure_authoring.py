@@ -597,3 +597,325 @@ def test_measure_xml_checksums_valid():
                         f"XML says {expected_crc}, actual {actual_crc}"
                     )
     asyncio.run(_run())
+
+
+# ── ReportingMeasure tests ─────────────────────────────────────────────
+
+RUBY_REPORTING_BODY = (
+    '    query = "SELECT Value FROM TabularDataWithStrings '
+    "WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' "
+    "AND TableName='Site and Source Energy' "
+    "AND RowName='Total Site Energy' "
+    "AND ColumnName='Total Energy' "
+    "AND Units='GJ'\"\n"
+    "    val = sql.execAndReturnFirstDouble(query)\n"
+    "    if val.is_initialized\n"
+    '      runner.registerValue("total_site_energy_gj", val.get)\n'
+    '      runner.registerInfo("Total Site Energy: #{val.get} GJ")\n'
+    "    end\n"
+    '    runner.registerFinalCondition("Report complete")'
+)
+
+PYTHON_REPORTING_BODY = (
+    "        query = (\"SELECT Value FROM TabularDataWithStrings \"\n"
+    "                 \"WHERE ReportName='AnnualBuildingUtilityPerformanceSummary' \"\n"
+    "                 \"AND TableName='Site and Source Energy' \"\n"
+    "                 \"AND RowName='Total Site Energy' \"\n"
+    "                 \"AND ColumnName='Total Energy' \"\n"
+    "                 \"AND Units='GJ'\")\n"
+    "        val = sql.execAndReturnFirstDouble(query)\n"
+    "        if val.is_initialized():\n"
+    "            runner.registerValue('total_site_energy_gj', val.get())\n"
+    "            runner.registerInfo(f'Total Site Energy: {val.get()} GJ')\n"
+    "        runner.registerFinalCondition('Report complete')"
+)
+
+
+@pytest.mark.integration
+def test_create_reporting_measure_ruby():
+    """Create a Ruby ReportingMeasure, verify correct class/signature."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_rb")
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Test reporting measure",
+                    "run_body": RUBY_REPORTING_BODY,
+                    "language": "Ruby",
+                    "measure_type": "ReportingMeasure",
+                }))
+                assert res.get("ok") is True, res
+                assert res["measure_type"] == "ReportingMeasure"
+                assert res["validation"]["syntax_ok"] is True
+                # Verify script content
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.rb",
+                }))
+                text = script["text"]
+                assert "ReportingMeasure" in text
+                assert "def run(runner, user_arguments)" in text
+                assert "super(runner, user_arguments)" in text
+                assert "lastOpenStudioModel" in text
+                assert "lastEnergyPlusSqlFilePath" in text
+                assert "energyPlusOutputRequests" in text
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_reporting_measure_python():
+    """Create a Python ReportingMeasure, verify correct class/signature."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_py")
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Test reporting measure",
+                    "run_body": PYTHON_REPORTING_BODY,
+                    "language": "Python",
+                    "measure_type": "ReportingMeasure",
+                }))
+                assert res.get("ok") is True, res
+                assert res["measure_type"] == "ReportingMeasure"
+                assert res["validation"]["syntax_ok"] is True
+                # Verify script content
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.py",
+                }))
+                text = script["text"]
+                assert "ReportingMeasure" in text
+                assert "def run(self, runner, user_arguments)" in text
+                assert "lastOpenStudioModel" in text
+                assert "lastEnergyPlusSqlFilePath" in text
+                assert "energyPlusOutputRequests" in text
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_test_reporting_measure_args_only():
+    """Test a ReportingMeasure without run_id — only arg validation runs."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_args")
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Reporting measure args test",
+                    "run_body": '    runner.registerInfo("hello")',
+                    "language": "Ruby",
+                    "measure_type": "ReportingMeasure",
+                    "arguments": [
+                        {"name": "report_title", "type": "String",
+                         "required": True, "default_value": "My Report"},
+                    ],
+                }))
+                assert create.get("ok") is True
+                # Test without run_id — should pass arg tests
+                res = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res.get("ok") is True, res.get("test_output", "")
+                assert res["passed"] > 0
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_with_choice_values():
+    """Create a measure with Choice argument that has values list."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("choice_vals")
+                choice_args = [
+                    {"name": "insulation_type", "display_name": "Insulation Type",
+                     "type": "Choice", "required": True,
+                     "default_value": "fiberglass",
+                     "values": ["fiberglass", "foam", "mineral_wool"]},
+                    {"name": "thickness", "display_name": "Thickness (in)",
+                     "type": "Double", "required": True, "default_value": "3.5"},
+                ]
+                body = (
+                    '    insulation_type = runner.getStringArgumentValue("insulation_type", user_arguments)\n'
+                    '    thickness = runner.getDoubleArgumentValue("thickness", user_arguments)\n'
+                    '    runner.registerInfo("Using #{insulation_type} at #{thickness} in")'
+                )
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Measure with choice values",
+                    "run_body": body,
+                    "language": "Ruby",
+                    "arguments": choice_args,
+                }))
+                assert res.get("ok") is True, res
+                assert res["validation"]["syntax_ok"] is True
+                # Verify the generated script contains addChoice calls
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.rb",
+                }))
+                text = script["text"]
+                assert '"fiberglass"' in text
+                assert '"foam"' in text
+                assert '"mineral_wool"' in text
+                assert "StringVector" in text
+                # Test the measure runs
+                test = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": res["measure_dir"],
+                }))
+                assert test.get("ok") is True, test.get("test_output", "")
+                assert test["passed"] > 0
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_edit_reporting_measure():
+    """Edit a ReportingMeasure run_body, verify correct signature preserved."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rpt_edit")
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Editable reporting measure",
+                    "run_body": '    runner.registerInfo("v1")',
+                    "language": "Ruby",
+                    "measure_type": "ReportingMeasure",
+                }))
+                assert create.get("ok") is True
+                # Edit run_body
+                edit = unwrap(await s.call_tool("edit_measure", {
+                    "measure_name": name,
+                    "run_body": '    runner.registerInfo("v2")',
+                }))
+                assert edit.get("ok") is True
+                assert "run_body" in edit["changes_made"]
+                assert edit["validation"]["syntax_ok"] is True
+                # Verify ReportingMeasure signature still intact
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{edit['measure_dir']}/measure.rb",
+                }))
+                text = script["text"]
+                assert "ReportingMeasure" in text
+                assert "def run(runner, user_arguments)" in text
+                assert '"v2"' in text
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_with_description_ruby():
+    """Argument description field emits setDescription() in Ruby."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("desc_rb")
+                args = [{
+                    "name": "r_value", "display_name": "R-Value",
+                    "description": "Insulation R-value in ft2-F-hr/Btu",
+                    "type": "Double", "required": True, "default_value": "19.0",
+                }]
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Description test",
+                    "run_body": '    runner.registerInfo("ok")',
+                    "language": "Ruby",
+                    "arguments": args,
+                }))
+                assert res.get("ok") is True
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.rb",
+                }))
+                assert 'setDescription("Insulation R-value in ft2-F-hr/Btu")' in script["text"]
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_with_description_python():
+    """Argument description field emits setDescription() in Python."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("desc_py")
+                args = [{
+                    "name": "wall_name", "display_name": "Wall Name",
+                    "description": "Name filter for wall surfaces",
+                    "type": "String", "required": False, "default_value": "exterior",
+                }]
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Description test",
+                    "run_body": '        runner.registerInfo("ok")',
+                    "language": "Python",
+                    "arguments": args,
+                }))
+                assert res.get("ok") is True
+                script = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{res['measure_dir']}/measure.py",
+                }))
+                assert 'setDescription("Name filter for wall surfaces")' in script["text"]
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_apply_measure_returns_runner_messages():
+    """apply_measure should include runner_messages from out.osw."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("runner_msg"))
+                name = _unique("msg_meas")
+                body = (
+                    '    runner.registerInitialCondition("Starting measure")\n'
+                    '    model.getBuilding.setName("RunnerMsgTest")\n'
+                    '    runner.registerInfo("Applied name change")\n'
+                    '    runner.registerFinalCondition("Measure complete")'
+                )
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Runner messages test",
+                    "run_body": body,
+                    "language": "Ruby",
+                }))
+                assert create.get("ok") is True
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res.get("ok") is True
+                msgs = res.get("runner_messages")
+                assert msgs is not None, f"No runner_messages in response: {res.keys()}"
+                assert msgs["result"] == "Success"
+                assert "initial_condition" in msgs
+                assert "final_condition" in msgs
+                assert "info" in msgs
+    asyncio.run(_run())

@@ -1,7 +1,7 @@
 # AGENTS.md — Codex CLI Instructions
 
 ## Project
-OpenStudio MCP server — 22 skills, 126 tools, ~14K prod lines.
+OpenStudio MCP server — 24 skills, 138 tools, ~18K prod lines.
 
 ## Architecture
 - `mcp_server/skills/<name>/tools.py` — MCP tool defs, calls operations
@@ -16,6 +16,7 @@ OpenStudio MCP server — 22 skills, 126 tools, ~14K prod lines.
 - No `getattr()` for OpenStudio API calls — every method must be explicit
 - No `shell=True` in subprocess calls
 - Tool functions use `_tool` suffix internally, MCP name strips it
+- `list[str]` params use `list[str] | str` type + `parse_str_list()` from `osm_helpers.py` (MCP clients may send JSON strings)
 
 ## Review Focus
 When reviewing code, check for:

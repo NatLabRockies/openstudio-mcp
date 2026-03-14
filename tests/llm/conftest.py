@@ -364,6 +364,8 @@ def pytest_runtest_logreport(report):
         tier = "tier4"
     elif "test_06" in report.nodeid:
         tier = "progressive"
+    elif "test_07" in report.nodeid:
+        tier = "tier2"
 
     # Check for retry info
     attempt = 1

@@ -418,6 +418,18 @@ WORKFLOW_CASES = [
         "timeout": 720,
     },
     {
+        # Reusable measure authoring: LLM should parameterize model-specific values
+        "id": "create_measure_with_args",
+        "prompt": (
+            "Create a Ruby ModelMeasure that increases wall insulation R-value. "
+            "Make it reusable — it should work on any model, not just one specific "
+            "building. Use create_measure. Use MCP tools only."
+        ),
+        "required_tools": ["create_measure"],
+        "timeout": 300,
+        "max_turns": 15,
+    },
+    {
         # Full chain: baseline sim → write measure → apply → retrofit sim → compare
         "id": "measure_add_baseboards_full_chain",
         "prompt": LOAD_HVAC + (
@@ -507,6 +519,93 @@ def test_workflow(case):
                 f"Expected {tool} >= {min_count} times, got {actual}. "
                 f"Tools: {tool_names}"
             )
+
+
+def test_create_measure_with_args_quality():
+    """LLM should create well-parameterized measures when asked for reusability.
+
+    Evaluates argument quality — not just presence, but whether the arguments
+    actually make the measure reusable:
+      1. Has arguments at all (vs hard-coding everything)
+      2. Includes a numeric param for the R-value (the core domain value)
+      3. Every argument has a name and type
+      4. At least one argument has a default_value (sensible defaults)
+      5. run_body references arguments (not ignoring them)
+    """
+    tier = get_tier()
+    if tier not in ("all", "2"):
+        pytest.skip("Tier 2 not selected")
+
+    prompt = (
+        "Create a Ruby ModelMeasure that increases wall insulation R-value. "
+        "Make it reusable — it should work on any model, not just one specific "
+        "building. Use create_measure. Use MCP tools only."
+    )
+    result = run_claude(prompt, timeout=300, max_turns=15)
+    tool_names = result.tool_names
+    assert "create_measure" in tool_names, f"Missing create_measure. Tools: {tool_names}"
+
+    # Find the create_measure call
+    prefix = "mcp__openstudio__"
+    create_input = None
+    for call in result.mcp_tool_calls:
+        if call["tool"].removeprefix(prefix) == "create_measure":
+            create_input = call["input"]
+            break
+    assert create_input is not None, "create_measure call not found"
+
+    args = create_input.get("arguments")
+    run_body = create_input.get("run_body", "")
+
+    # MCP clients may send arguments as JSON string
+    if isinstance(args, str):
+        import json
+        args = json.loads(args)
+
+    # 1. Has arguments — LLM didn't hard-code everything
+    assert args and len(args) > 0, (
+        f"No arguments — LLM hard-coded all values. Input keys: "
+        f"{list(create_input.keys())}"
+    )
+
+    # 2. Includes a numeric param for R-value (the core domain value)
+    #    Look for Double/Integer arg with name containing r, value, insul, thermal
+    arg_names_lower = [a.get("name", "").lower() for a in args]
+    arg_types = [a.get("type", "") for a in args]
+    has_numeric = any(t in ("Double", "Integer") for t in arg_types)
+    has_r_value_like = any(
+        any(kw in n for kw in ("r_val", "rval", "r_value", "insul", "thermal", "resist"))
+        for n in arg_names_lower
+    )
+    assert has_numeric, (
+        f"No numeric argument (Double/Integer) for R-value. "
+        f"Args: {[{k: a.get(k) for k in ('name', 'type')} for a in args]}"
+    )
+    assert has_r_value_like, (
+        f"No argument name suggests R-value/insulation/thermal resistance. "
+        f"Names: {arg_names_lower}"
+    )
+
+    # 3. Every argument has name and type (well-formed schema)
+    for i, a in enumerate(args):
+        assert "name" in a and a["name"], f"Arg {i} missing name: {a}"
+        assert "type" in a and a["type"], f"Arg {i} missing type: {a}"
+
+    # 4. At least one argument has a default_value (sensible defaults)
+    has_default = any("default_value" in a for a in args)
+    assert has_default, (
+        f"No argument has default_value — measure won't work out of the box. "
+        f"Args: {[a.get('name') for a in args]}"
+    )
+
+    # 5. run_body actually uses at least one argument variable
+    #    (not defining args then ignoring them)
+    arg_names = [a["name"] for a in args]
+    body_refs = sum(1 for n in arg_names if n in run_body)
+    assert body_refs > 0, (
+        f"run_body doesn't reference any argument variables. "
+        f"Arg names: {arg_names}, run_body preview: {run_body[:200]}"
+    )
 
 
 def test_complex_model_multi_query():
