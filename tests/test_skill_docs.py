@@ -60,11 +60,11 @@ def _find_skill_files() -> list[Path]:
 def _extract_tool_references(body: str) -> set[str]:
     """Extract tool names from backtick-quoted function calls in markdown.
 
-    Only matches `tool_name(` patterns — all SKILL.md tool references use
-    function-call style.  Standalone `snake_case` words are parameter names,
-    not tools.
+    Only matches `tool_name(` patterns where tool_name contains an underscore —
+    all MCP tool names use snake_case (e.g. create_measure), so this filters
+    out Ruby method refs like `run()` or `arguments()`.
     """
-    return set(re.findall(r"`(\w+)\(", body))
+    return {m for m in re.findall(r"`(\w+)\(", body) if "_" in m}
 
 
 # ---- tests ------------------------------------------------------------------
