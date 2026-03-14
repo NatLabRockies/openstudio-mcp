@@ -104,6 +104,8 @@ def _generate_ruby_arguments(args: list[dict]) -> str:
         else:
             display = name.replace("_", " ").title()
             lines.append(f'    {name}.setDisplayName("{display}")')
+        if "description" in a:
+            lines.append(f'    {name}.setDescription("{a["description"]}")')
         if "default_value" in a:
             dv = a["default_value"]
             if atype == "Double":
@@ -145,6 +147,8 @@ def _generate_python_arguments(args: list[dict]) -> str:
         else:
             display = name.replace("_", " ").title()
             lines.append(f'        {name}.setDisplayName("{display}")')
+        if "description" in a:
+            lines.append(f'        {name}.setDescription("{a["description"]}")')
         if "default_value" in a:
             dv = a["default_value"]
             if atype == "Double":

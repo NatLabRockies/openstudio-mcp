@@ -36,6 +36,7 @@ Use `edit_measure` to iterate on existing measures. Use `list_custom_measures` t
 {
   "name": "target_r_value",
   "display_name": "Target R-Value (ft2-F-hr/Btu)",
+  "description": "Units in ft2-F-hr/Btu. Applied to all matching surfaces.",
   "type": "Double",
   "required": true,
   "default_value": "19.0"
@@ -55,6 +56,8 @@ For Choice arguments, include `values`:
 ```
 
 Types: `Boolean` | `Double` | `Integer` | `String` | `Choice`
+
+**Auto-generated code:** Argument extraction (`runner.get*ArgumentValue`) is auto-generated above the `# --- begin user logic ---` marker. `run_body` should NOT include argument extraction — just reference the variables directly.
 
 ## Tools
 

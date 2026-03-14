@@ -64,10 +64,14 @@ def register(mcp):
                 Ruby: 4 spaces (e.g. "    model.getBuilding.setName('X')")
                 Python: 8 spaces (e.g. "        model.getBuilding().setName('X')")
             language: "Ruby" or "Python" (required — user chooses)
-            arguments: List of argument dicts [{name, display_name, type, required,
-                default_value, values}].
+            arguments: List of argument dicts [{name, display_name, description, type,
+                required, default_value, values}].
                 type: Boolean | Double | Integer | String | Choice
+                description: (optional) detailed help text for the argument
                 values: (Choice only) list of allowed values, e.g. ["low", "medium", "high"]
+                NOTE: argument extraction code (runner.get*ArgumentValue) is auto-generated
+                above the `# --- begin user logic ---` marker. run_body should NOT
+                include these calls — just reference variables by argument name.
             taxonomy_tag: BCL taxonomy (default: Whole Building.Space Types)
             modeler_description: Technical description for modelers
             measure_type: "ModelMeasure" (default) or "ReportingMeasure".
