@@ -47,7 +47,7 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=0 pytest tests/llm/ -v
 |------|------|-------|------|-------------|
 | setup | `test_01_setup.py` | 3 | ~1 min | Creates models for other tiers |
 | 1 | `test_02_tool_selection.py` | 14 | ~5 min | Single tool selection |
-| 2 | `test_04_workflows.py` | 25 | ~25 min | Multi-step tool chains |
+| 2 | `test_04_workflows.py` | 26 | ~30 min | Multi-step tool chains |
 | 3 | `test_03_eval_cases.py` | 27 | ~35 min | Skill eval prompts |
 | 4 | `test_05_guardrails.py` | 2 | ~3 min | Safety/refusal tests |
 | progressive | `test_06_progressive.py` | 132 | ~60 min | L1/L2/L3 specificity levels |
@@ -133,6 +133,8 @@ Logs are named by test ID (e.g. `measure_set_lights_full_chain.ndjson`). Retried
 
 ### Before/after comparison tests
 The 4 `measure_*_full_chain` workflow tests run two simulations: one baseline (unmodified model) and one after applying the custom measure. The test asserts `run_simulation` was called at least twice (`min_calls`). The agent is prompted to compare baseline vs retrofit EUI and report the difference.
+
+The `systemd_fourpipebeam_e2e` test is the most realistic — it uses natural language (no tool names) with the 44-zone SystemD model, matching an actual Claude Desktop user session. Expected results: baseline EUI ~28.21, retrofit ~28.44 kBtu/ft2, unmet hours drop from ~58.5 to ~34.5.
 
 ### Anti-loop guardrails
 The MCP server's `instructions` field (server.py) and `list_files` tool description prevent the agent from looping on `list_files` calls. This was the single biggest reliability improvement (44% -> 83% pass rate). The guardrails are native to the server so all MCP clients benefit. `runner.py` has a minimal system prompt that can be overridden per-test via `run_claude(system_prompt=...)`.

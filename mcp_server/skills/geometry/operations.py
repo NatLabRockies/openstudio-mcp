@@ -22,7 +22,6 @@ from mcp_server.osm_helpers import (
     list_paginated,
     optional_name,
 )
-from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def _extract_surface(model, surface, detailed: bool = True) -> dict[str, Any]:
@@ -209,14 +208,13 @@ def create_surface(
             return {"ok": False, "error": f"Space '{space_name}' not found"}
 
         poly = _to_point3d_vector(vertices)
-        with suppress_openstudio_warnings():
-            surface = openstudio.model.Surface(poly, model)
-            surface.setName(name)
-            surface.setSpace(space)
-            if surface_type is not None:
-                surface.setSurfaceType(surface_type)
-            if outside_boundary_condition is not None:
-                surface.setOutsideBoundaryCondition(outside_boundary_condition)
+        surface = openstudio.model.Surface(poly, model)
+        surface.setName(name)
+        surface.setSpace(space)
+        if surface_type is not None:
+            surface.setSurfaceType(surface_type)
+        if outside_boundary_condition is not None:
+            surface.setOutsideBoundaryCondition(outside_boundary_condition)
 
         return {"ok": True, "surface": _extract_surface(model, surface)}
     except RuntimeError as e:
@@ -246,11 +244,10 @@ def create_subsurface(
             return {"ok": False, "error": f"Surface '{parent_surface_name}' not found"}
 
         poly = _to_point3d_vector(vertices)
-        with suppress_openstudio_warnings():
-            sub = openstudio.model.SubSurface(poly, model)
-            sub.setName(name)
-            sub.setSurface(parent)
-            sub.setSubSurfaceType(subsurface_type)
+        sub = openstudio.model.SubSurface(poly, model)
+        sub.setName(name)
+        sub.setSurface(parent)
+        sub.setSubSurfaceType(subsurface_type)
 
         return {"ok": True, "subsurface": _extract_subsurface(model, sub)}
     except RuntimeError as e:
@@ -291,29 +288,28 @@ def create_space_from_floor_print(
             if normal.is_initialized() and normal.get().z() > 0:
                 poly = openstudio.reverse(poly)
 
-        with suppress_openstudio_warnings():
-            # fromFloorPrint returns an Optional<Space>
-            opt_space = openstudio.model.Space.fromFloorPrint(
-                poly, floor_to_ceiling_height, model,
-            )
-            if not opt_space.is_initialized():
-                return {"ok": False, "error": "Failed to create space from floor print"}
-            space = opt_space.get()
-            space.setName(name)
+        # fromFloorPrint returns an Optional<Space>
+        opt_space = openstudio.model.Space.fromFloorPrint(
+            poly, floor_to_ceiling_height, model,
+        )
+        if not opt_space.is_initialized():
+            return {"ok": False, "error": "Failed to create space from floor print"}
+        space = opt_space.get()
+        space.setName(name)
 
-            # Assign building story if provided
-            if building_story_name is not None:
-                story = fetch_object(model, "BuildingStory", name=building_story_name)
-                if story is None:
-                    return {"ok": False, "error": f"BuildingStory '{building_story_name}' not found"}
-                space.setBuildingStory(story)
+        # Assign building story if provided
+        if building_story_name is not None:
+            story = fetch_object(model, "BuildingStory", name=building_story_name)
+            if story is None:
+                return {"ok": False, "error": f"BuildingStory '{building_story_name}' not found"}
+            space.setBuildingStory(story)
 
-            # Assign thermal zone if provided
-            if thermal_zone_name is not None:
-                zone = fetch_object(model, "ThermalZone", name=thermal_zone_name)
-                if zone is None:
-                    return {"ok": False, "error": f"ThermalZone '{thermal_zone_name}' not found"}
-                space.setThermalZone(zone)
+        # Assign thermal zone if provided
+        if thermal_zone_name is not None:
+            zone = fetch_object(model, "ThermalZone", name=thermal_zone_name)
+            if zone is None:
+                return {"ok": False, "error": f"ThermalZone '{thermal_zone_name}' not found"}
+            space.setThermalZone(zone)
 
         # Count surfaces created
         surfaces = space.surfaces()
@@ -355,11 +351,10 @@ def match_surfaces() -> dict[str, Any]:
         for sp in model.getSpaces():
             space_vector.append(sp)
 
-        with suppress_openstudio_warnings():
-            # Intersect: split surfaces where spaces overlap
-            openstudio.model.intersectSurfaces(space_vector)
-            # Match: pair coincident surfaces as interior boundaries
-            openstudio.model.matchSurfaces(space_vector)
+        # Intersect: split surfaces where spaces overlap
+        openstudio.model.intersectSurfaces(space_vector)
+        # Match: pair coincident surfaces as interior boundaries
+        openstudio.model.matchSurfaces(space_vector)
 
         # Count matched pairs (boundary == "Surface")
         matched = 0
@@ -405,9 +400,8 @@ def set_window_to_wall_ratio(
         if ratio <= 0.0 or ratio >= 1.0:
             return {"ok": False, "error": f"Ratio must be between 0 and 1, got {ratio}"}
 
-        with suppress_openstudio_warnings():
-            # setWindowToWallRatio(ratio, sillHeight, startingFromBottom)
-            ok = surface.setWindowToWallRatio(ratio, sill_height_m, True)
+        # setWindowToWallRatio(ratio, sillHeight, startingFromBottom)
+        ok = surface.setWindowToWallRatio(ratio, sill_height_m, True)
 
         if not ok:
             return {"ok": False, "error": "setWindowToWallRatio returned false — wall may be too small"}
@@ -486,9 +480,8 @@ def import_floorspacejs(
         json_str = fp.read_text(encoding="utf-8")
 
         # Import via SDK FloorspaceReverseTranslator
-        with suppress_openstudio_warnings():
-            rt = openstudio.model.FloorspaceReverseTranslator()
-            model_opt = rt.modelFromFloorspace(json_str)
+        rt = openstudio.model.FloorspaceReverseTranslator()
+        model_opt = rt.modelFromFloorspace(json_str)
 
         if not model_opt.is_initialized():
             return {"ok": False, "error": "FloorspaceReverseTranslator failed to parse JSON"}
@@ -523,18 +516,17 @@ def import_floorspacejs(
             clg_sch = openstudio.model.ScheduleConstant(model)
             clg_sch.setName("Default Clg Setpoint")
             clg_sch.setValue(24.0)
-            with suppress_openstudio_warnings():
-                for space in model.getSpaces():
-                    if not space.thermalZone().is_initialized():
-                        zone = openstudio.model.ThermalZone(model)
-                        zone.setName(f"Zone {space.nameString()}")
-                        space.setThermalZone(zone)
-                        # Add thermostat so zone counts as "conditioned"
-                        tstat = openstudio.model.ThermostatSetpointDualSetpoint(model)
-                        tstat.setHeatingSetpointTemperatureSchedule(htg_sch)
-                        tstat.setCoolingSetpointTemperatureSchedule(clg_sch)
-                        zone.setThermostatSetpointDualSetpoint(tstat)
-                        zones_created += 1
+            for space in model.getSpaces():
+                if not space.thermalZone().is_initialized():
+                    zone = openstudio.model.ThermalZone(model)
+                    zone.setName(f"Zone {space.nameString()}")
+                    space.setThermalZone(zone)
+                    # Add thermostat so zone counts as "conditioned"
+                    tstat = openstudio.model.ThermostatSetpointDualSetpoint(model)
+                    tstat.setHeatingSetpointTemperatureSchedule(htg_sch)
+                    tstat.setCoolingSetpointTemperatureSchedule(clg_sch)
+                    zone.setThermostatSetpointDualSetpoint(tstat)
+                    zones_created += 1
 
         # Surface matching
         matched = 0
@@ -542,9 +534,8 @@ def import_floorspacejs(
             space_vector = openstudio.model.SpaceVector()
             for sp in model.getSpaces():
                 space_vector.append(sp)
-            with suppress_openstudio_warnings():
-                openstudio.model.intersectSurfaces(space_vector)
-                openstudio.model.matchSurfaces(space_vector)
+            openstudio.model.intersectSurfaces(space_vector)
+            openstudio.model.matchSurfaces(space_vector)
             for surface in model.getSurfaces():
                 if surface.outsideBoundaryCondition() == "Surface":
                     matched += 1
@@ -553,8 +544,7 @@ def import_floorspacejs(
         run_dir = RUN_ROOT / "examples" / "floorspacejs"
         run_dir.mkdir(parents=True, exist_ok=True)
         osm_path = run_dir / "imported.osm"
-        with suppress_openstudio_warnings():
-            model.save(str(osm_path), True)
+        model.save(str(osm_path), True)
         model_manager.load_model(osm_path)
 
         # Build summary

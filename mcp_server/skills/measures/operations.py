@@ -18,7 +18,6 @@ import openstudio
 
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
 from mcp_server.model_manager import get_model, load_model
-from mcp_server.stdout_suppression import suppress_openstudio_warnings
 from mcp_server.util import resolve_run_dir
 
 
@@ -34,8 +33,7 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
             return {"ok": False, "error": f"Measure directory not found: {measure_dir}"}
 
         # Load BCLMeasure to read metadata
-        with suppress_openstudio_warnings():
-            bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_path)))
+        bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_path)))
 
         # Extract arguments from the measure XML
         args = []
@@ -85,6 +83,38 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list measure arguments: {e}"}
 
 
+def _parse_runner_messages(out_osw_path: Path) -> dict[str, Any] | None:
+    """Extract runner messages from out.osw step results.
+
+    Returns dict with result, initial_condition, final_condition,
+    info, warnings, errors — or None on parse failure.
+    """
+    try:
+        if not out_osw_path.is_file():
+            return None
+        osw = json.loads(out_osw_path.read_text(encoding="utf-8", errors="replace"))
+        steps = osw.get("steps", [])
+        if not steps:
+            return None
+        step = steps[0]
+        result = step.get("result", {})
+        msgs: dict[str, Any] = {
+            "result": result.get("step_result", ""),
+        }
+        for key in ("step_initial_condition", "step_final_condition"):
+            val = result.get(key)
+            if val:
+                # Strip "step_" prefix for cleaner output
+                msgs[key.replace("step_", "")] = val
+        for key, osw_key in [("info", "step_info"), ("warnings", "step_warnings"), ("errors", "step_errors")]:
+            items = result.get(osw_key, [])
+            if items:
+                msgs[key] = items
+        return msgs
+    except Exception:
+        return None
+
+
 def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
@@ -126,8 +156,7 @@ def apply_measure(
 
         # Save current model to temp OSM
         temp_osm = run_dir / "in.osm"
-        with suppress_openstudio_warnings():
-            model.save(str(temp_osm), True)
+        model.save(str(temp_osm), True)
 
         # Copy measure into run dir so OSW can reference it by relative path
         measures_dir = run_dir / "measures"
@@ -143,15 +172,14 @@ def apply_measure(
         # Collect file_paths for the OSW — include weather file directory
         # so the runner can find EPW files referenced by the model
         file_paths = []
-        with suppress_openstudio_warnings():
-            epw_file = model.weatherFile()
-            if epw_file.is_initialized():
-                epw_path = epw_file.get().path()
-                if epw_path.is_initialized():
-                    epw_str = str(epw_path.get())
-                    epw_resolved = Path(epw_str)
-                    if epw_resolved.is_file():
-                        file_paths.append(str(epw_resolved.parent))
+        epw_file = model.weatherFile()
+        if epw_file.is_initialized():
+            epw_path = epw_file.get().path()
+            if epw_path.is_initialized():
+                epw_str = str(epw_path.get())
+                epw_resolved = Path(epw_str)
+                if epw_resolved.is_file():
+                    file_paths.append(str(epw_resolved.parent))
 
         # Also add directories of any EPW paths passed as arguments
         # (e.g. ChangeBuildingLocation's weather_file_name argument).
@@ -240,14 +268,20 @@ def apply_measure(
                 "log_tail": tail,
             }
 
+        # Parse runner messages from out.osw
+        runner_messages = _parse_runner_messages(run_dir / "out.osw")
+
         # For reporting measures, don't reload model — just return artifacts
         if postprocess:
-            return {
+            result = {
                 "ok": True,
                 "measure_dir": str(measure_path),
                 "run_dir": str(run_dir),
                 "arguments_applied": measure_args,
             }
+            if runner_messages:
+                result["runner_messages"] = runner_messages
+            return result
 
         # Find the output model — OpenStudio puts it in run/in.osm
         output_osm = run_dir / "run" / "in.osm"
@@ -258,15 +292,17 @@ def apply_measure(
             return {"ok": False, "error": "Output OSM not found after measure run"}
 
         # Reload model
-        with suppress_openstudio_warnings():
-            load_model(output_osm)
+        load_model(output_osm)
 
-        return {
+        result = {
             "ok": True,
             "measure_dir": str(measure_path),
             "run_dir": str(run_dir),
             "arguments_applied": measure_args,
         }
+        if runner_messages:
+            result["runner_messages"] = runner_messages
+        return result
 
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Measure run timed out (5 min)"}

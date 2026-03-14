@@ -38,7 +38,33 @@ pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
+SYSTEMD = "/repo/tests/assets/SystemD_baseline.osm"
+BOSTON_EPW_DIR = "/repo/tests/assets"
+
 WORKFLOW_CASES = [
+    {
+        # End-to-end retrofit from user perspective: load model, set weather,
+        # baseline sim, author measure, apply, retrofit sim, compare, save measure.
+        # Mimics a real Claude Desktop session with natural language.
+        "id": "systemd_fourpipebeam_e2e",
+        "prompt": (
+            f"I have a model at {SYSTEMD}. "
+            f"I want you to run the model with Boston-Logan weather file — "
+            f"files are in {BOSTON_EPW_DIR}. "
+            "After that, create a measure for me that changes the air terminals "
+            "to 4-pipe chilled beams, apply that measure to the model, "
+            "run the model, and compare the results for me. "
+            "Save the measure in the same location as the model so I have a copy."
+        ),
+        "required_tools": ["load_osm_model", "change_building_location",
+                           "save_osm_model", "run_simulation",
+                           "create_measure", "apply_measure"],
+        "any_of": ["compare_runs", "extract_summary_metrics",
+                    "extract_end_use_breakdown"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 40,
+        "timeout": 720,
+    },
     {
         # Add ASHRAE System 7 (VAV with reheat) — the most common baseline system
         "id": "add_vav_reheat",
@@ -392,6 +418,18 @@ WORKFLOW_CASES = [
         "timeout": 720,
     },
     {
+        # Reusable measure authoring: LLM should parameterize model-specific values
+        "id": "create_measure_with_args",
+        "prompt": (
+            "Create a Ruby ModelMeasure that increases wall insulation R-value. "
+            "Make it reusable — it should work on any model, not just one specific "
+            "building. Use create_measure. Use MCP tools only."
+        ),
+        "required_tools": ["create_measure"],
+        "timeout": 300,
+        "max_turns": 15,
+    },
+    {
         # Full chain: baseline sim → write measure → apply → retrofit sim → compare
         "id": "measure_add_baseboards_full_chain",
         "prompt": LOAD_HVAC + (
@@ -417,6 +455,9 @@ WORKFLOW_CASES = [
         "timeout": 600,
     },
 ]
+
+
+SYSTEMD_MODEL = SYSTEMD  # alias for the standalone test below
 
 
 @pytest.mark.parametrize("case", WORKFLOW_CASES, ids=[c["id"] for c in WORKFLOW_CASES])
@@ -478,3 +519,127 @@ def test_workflow(case):
                 f"Expected {tool} >= {min_count} times, got {actual}. "
                 f"Tools: {tool_names}"
             )
+
+
+def test_create_measure_with_args_quality():
+    """LLM should create well-parameterized measures when asked for reusability.
+
+    Evaluates argument quality — not just presence, but whether the arguments
+    actually make the measure reusable:
+      1. Has arguments at all (vs hard-coding everything)
+      2. Includes a numeric param for the R-value (the core domain value)
+      3. Every argument has a name and type
+      4. At least one argument has a default_value (sensible defaults)
+      5. run_body references arguments (not ignoring them)
+    """
+    tier = get_tier()
+    if tier not in ("all", "2"):
+        pytest.skip("Tier 2 not selected")
+
+    prompt = (
+        "Create a Ruby ModelMeasure that increases wall insulation R-value. "
+        "Make it reusable — it should work on any model, not just one specific "
+        "building. Use create_measure. Use MCP tools only."
+    )
+    result = run_claude(prompt, timeout=300, max_turns=15)
+    tool_names = result.tool_names
+    assert "create_measure" in tool_names, f"Missing create_measure. Tools: {tool_names}"
+
+    # Find the create_measure call
+    prefix = "mcp__openstudio__"
+    create_input = None
+    for call in result.mcp_tool_calls:
+        if call["tool"].removeprefix(prefix) == "create_measure":
+            create_input = call["input"]
+            break
+    assert create_input is not None, "create_measure call not found"
+
+    args = create_input.get("arguments")
+    run_body = create_input.get("run_body", "")
+
+    # MCP clients may send arguments as JSON string
+    if isinstance(args, str):
+        import json
+        args = json.loads(args)
+
+    # 1. Has arguments — LLM didn't hard-code everything
+    assert args and len(args) > 0, (
+        f"No arguments — LLM hard-coded all values. Input keys: "
+        f"{list(create_input.keys())}"
+    )
+
+    # 2. Includes a numeric param for R-value (the core domain value)
+    #    Look for Double/Integer arg with name containing r, value, insul, thermal
+    arg_names_lower = [a.get("name", "").lower() for a in args]
+    arg_types = [a.get("type", "") for a in args]
+    has_numeric = any(t in ("Double", "Integer") for t in arg_types)
+    has_r_value_like = any(
+        any(kw in n for kw in ("r_val", "rval", "r_value", "insul", "thermal", "resist"))
+        for n in arg_names_lower
+    )
+    assert has_numeric, (
+        f"No numeric argument (Double/Integer) for R-value. "
+        f"Args: {[{k: a.get(k) for k in ('name', 'type')} for a in args]}"
+    )
+    assert has_r_value_like, (
+        f"No argument name suggests R-value/insulation/thermal resistance. "
+        f"Names: {arg_names_lower}"
+    )
+
+    # 3. Every argument has name and type (well-formed schema)
+    for i, a in enumerate(args):
+        assert "name" in a and a["name"], f"Arg {i} missing name: {a}"
+        assert "type" in a and a["type"], f"Arg {i} missing type: {a}"
+
+    # 4. At least one argument has a default_value (sensible defaults)
+    has_default = any("default_value" in a for a in args)
+    assert has_default, (
+        f"No argument has default_value — measure won't work out of the box. "
+        f"Args: {[a.get('name') for a in args]}"
+    )
+
+    # 5. run_body actually uses at least one argument variable
+    #    (not defining args then ignoring them)
+    arg_names = [a["name"] for a in args]
+    body_refs = sum(1 for n in arg_names if n in run_body)
+    assert body_refs > 0, (
+        f"run_body doesn't reference any argument variables. "
+        f"Arg names: {arg_names}, run_body preview: {run_body[:200]}"
+    )
+
+
+def test_complex_model_multi_query():
+    """Load 44-zone complex model and run multiple query tools — transport regression test.
+
+    Reproduces the failure mode from Claude Desktop: SWIG stdout warnings on
+    large models corrupt MCP JSON-RPC, causing "No result received" timeouts.
+    The agent must successfully complete all 4 queries without transport errors.
+    """
+    tier = get_tier()
+    if tier not in ("all", "2"):
+        pytest.skip("Tier 2 not selected")
+
+    prompt = (
+        f"Load the model at {SYSTEMD_MODEL} using load_osm_model. Then:\n"
+        "1. Call get_building_info to get building details.\n"
+        "2. Call list_air_loops with max_results=0 to list all air loops.\n"
+        "3. Call list_plant_loops with max_results=0 to list all plant loops.\n"
+        "4. Call list_thermal_zones with max_results=5.\n"
+        "Report a summary of what you found. Use MCP tools only."
+    )
+
+    result = run_claude(prompt, timeout=120)
+    tool_names = result.tool_names
+
+    assert "load_osm_model" in tool_names, f"Missing load_osm_model. Tools: {tool_names}"
+    assert "get_building_info" in tool_names, f"Missing get_building_info. Tools: {tool_names}"
+
+    # At least 2 of the 3 list tools should succeed (agent may reorder or skip one)
+    list_tools = {"list_air_loops", "list_plant_loops", "list_thermal_zones"}
+    found = list_tools & set(tool_names)
+    assert len(found) >= 2, (
+        f"Expected >=2 of {list_tools}, got: {found}. Tools: {tool_names}"
+    )
+
+    # Verify no error in final text (transport failures show up as error messages)
+    assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"

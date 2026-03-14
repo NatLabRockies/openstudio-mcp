@@ -237,6 +237,7 @@ def _write_mcp_config() -> Path:
                     "run", "--rm", "-i",
                     "-v", f"{runs_dir}:/runs",
                     "-v", f"{assets_dir}:/test-assets:ro",
+                    "-v", f"{assets_dir}:/inputs:ro",
                     "-e", "OPENSTUDIO_MCP_MODE=prod",
                     "openstudio-mcp:dev",
                     "openstudio-mcp",

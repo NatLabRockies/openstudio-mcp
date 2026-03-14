@@ -74,6 +74,11 @@ FLAKY_TESTS = frozenset({
     # Measure authoring — L1 may trigger related tools instead
     "test_measure_L1",
     "edit_measure_L1",
+    # Phase 10 — L1 prompts ambiguous for new results/validation tools
+    "extract_errors_L1",
+    "validate_model_L1",
+    "compare_runs_L1",
+    "list_variables_L1",
 })
 
 
@@ -137,6 +142,23 @@ def get_sim_run_id() -> str | None:
 def sim_run_exists() -> bool:
     """Check if a simulation run_id has been saved."""
     return get_sim_run_id() is not None
+
+
+# File where test_01_setup saves the retrofit run_id for compare_runs tests
+_RETROFIT_RUN_ID_FILE = _RUNS_DIR / "llm-test-retrofit-run-id.txt"
+RETROFIT_RUN_ID_FILE = "/runs/llm-test-retrofit-run-id.txt"
+
+
+def save_retrofit_run_id(run_id: str) -> None:
+    """Save the retrofit simulation run_id to disk."""
+    _RETROFIT_RUN_ID_FILE.write_text(run_id.strip())
+
+
+def get_retrofit_run_id() -> str | None:
+    """Read the saved retrofit run_id, or None if not available."""
+    if _RETROFIT_RUN_ID_FILE.exists():
+        return _RETROFIT_RUN_ID_FILE.read_text().strip() or None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +364,8 @@ def pytest_runtest_logreport(report):
         tier = "tier4"
     elif "test_06" in report.nodeid:
         tier = "progressive"
+    elif "test_07" in report.nodeid:
+        tier = "tier2"
 
     # Check for retry info
     attempt = 1

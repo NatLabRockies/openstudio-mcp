@@ -34,6 +34,9 @@ create_measure(
 ```
 test_measure(measure_dir="/runs/custom_measures/set_lights_8w")
 ```
+Tests run against the currently loaded model (or SystemD_baseline.osm fallback),
+so measures that depend on HVAC, plant loops, or zones will work correctly.
+Use `model_path` to test against a specific model.
 
 ### 3. Apply to Model
 ```
@@ -102,6 +105,40 @@ extract_summary_metrics(run_id=<retrofit_id>)   # compare to baseline
 ```
 
 WARNING: Beams are AIR TERMINALS (connect via `air_loop.addBranchForZone`), NOT zone equipment (`addToThermalZone`).
+
+## ReportingMeasures
+
+ReportingMeasures run **after simulation** and access SQL results. Use when the user wants to
+generate custom reports, extract specific metrics, or post-process simulation output.
+
+### Create a ReportingMeasure
+```
+create_measure(
+    name="custom_eui_report",
+    description="Extract and report custom EUI breakdown",
+    language="Ruby",
+    measure_type="ReportingMeasure",
+    run_body='    query = "SELECT Value FROM TabularDataWithStrings WHERE ReportName=\'AnnualBuildingUtilityPerformanceSummary\' AND TableName=\'Site and Source Energy\' AND RowName=\'Total Site Energy\' AND ColumnName=\'Total Energy\' AND Units=\'GJ\'"\n    val = sql.execAndReturnFirstDouble(query)\n    if val.is_initialized\n      runner.registerValue("total_site_energy_gj", val.get)\n      runner.registerInfo("Total Site Energy: #{val.get} GJ")\n    end\n    runner.registerFinalCondition("Report complete")'
+)
+```
+
+### Test with Simulation Results
+```
+# ReportingMeasures need SQL — provide run_id from a completed sim
+test_measure(measure_dir="/runs/custom_measures/custom_eui_report", run_id="<completed_run_id>")
+```
+Without `run_id`, only argument validation tests run (no `run()` execution).
+
+### Apply to Completed Simulation
+```
+apply_measure(measure_dir="/runs/custom_measures/custom_eui_report", run_id="<completed_run_id>")
+```
+
+### Key Differences from ModelMeasure
+- `run()` signature: `(runner, user_arguments)` — no `model` param
+- Model & SQL boilerplate is auto-generated: `model` and `sql` variables are available in run_body
+- `arguments()` takes no params (not `model`)
+- Includes empty `energyPlusOutputRequests()` stub (edit via `edit_measure` if needed)
 
 ## Notes
 

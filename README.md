@@ -342,7 +342,7 @@ List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail too
 
 ### Measure Authoring (4 tools)
 
-Create custom OpenStudio measures with AI-generated code, test them, and apply to models. See [Example 1](docs/examples/01_custom_measure_lighting.md) and [Example 2](docs/examples/02_custom_measure_hvac.md).
+Create custom OpenStudio measures with AI-generated code, test them, and apply to models. See [Example 1](docs/examples/01_custom_measure_lighting.md), [Example 2](docs/examples/02_custom_measure_hvac.md), and [Example 19](docs/examples/19_systemd_fourpipebeam_retrofit.md) (full E2E retrofit).
 
 | Tool | Description |
 |------|-------------|
@@ -424,7 +424,7 @@ The component properties tools can query and modify these 15 HVAC component type
 
 ## Examples
 
-18 worked examples with full tool-call sequences — click to expand:
+19 worked examples with full tool-call sequences — click to expand:
 
 | # | Example | Description |
 |---|---------|-------------|
@@ -446,6 +446,7 @@ The component properties tools can query and modify these 15 HVAC component type
 | 16 | [`/new-building`](docs/examples/16_new_building.md) | Full model creation from scratch |
 | 17 | [`/retrofit`](docs/examples/17_retrofit.md) | Before/after ECM analysis |
 | 18 | [`/view`](docs/examples/18_view.md) | Interactive 3D model visualization |
+| 19 | [SystemD Four-Pipe Beam Retrofit](docs/examples/19_systemd_fourpipebeam_retrofit.md) | End-to-end: load 44-zone model, baseline sim, author measure, retrofit sim, compare |
 
 ---
 

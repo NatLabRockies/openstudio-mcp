@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
-<measure xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<measure>
   <schema_version>3.1</schema_version>
   <name>set_building_name</name>
   <uid>00000000-0000-0000-0000-000000000001</uid>
-  <version_id>00000000-0000-0000-0000-000000000002</version_id>
-  <version_modified>2024-01-01T00:00:00Z</version_modified>
-  <xml_checksum>00000000</xml_checksum>
+  <version_id>866586fa-d930-4874-8771-821c259407ba</version_id>
+  <version_modified>2026-03-13T18:51:28Z</version_modified>
+  <xml_checksum>2C38F48B</xml_checksum>
   <class_name>SetBuildingName</class_name>
   <display_name>Set Building Name</display_name>
   <description>Sets the building name to a user-specified value.</description>
@@ -20,7 +20,8 @@
       <default_value>Test Building</default_value>
     </argument>
   </arguments>
-  <outputs/>
+  <outputs />
+  <provenances />
   <tags>
     <tag>Whole Building.Space Types</tag>
   </tags>
@@ -36,7 +37,7 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>00000000</checksum>
+      <checksum>C4C6684B</checksum>
     </file>
   </files>
 </measure>
