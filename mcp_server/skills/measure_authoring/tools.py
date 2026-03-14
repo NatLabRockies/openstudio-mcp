@@ -47,12 +47,14 @@ def register(mcp):
           schedule names, material properties, thresholds, equipment names
         - Hard-code only measure logic (traversal patterns, formulas, output structure)
         - Use descriptive display_names so users understand each argument
+        - Always include description for every argument (units, purpose, behavior)
         - Always provide sensible default_value for optional arguments
         - Common argument patterns:
             Setpoints/thresholds → Double with default (e.g. R-value, watts/m2)
             Object names/filters → String (zone name, space type, schedule name)
             Enable/disable features → Boolean with default true
             Predefined options → Choice with values list
+            Counts/hours/limits → Integer with default (e.g. max_zones, setback_hours)
         - Example: a wall insulation measure should parameterize target_r_value (Double),
           surface_filter (String, default ""), and construction_name (String) rather
           than hard-coding R-19 for "Exterior Wall" surfaces
@@ -67,7 +69,8 @@ def register(mcp):
             arguments: List of argument dicts [{name, display_name, description, type,
                 required, default_value, values}].
                 type: Boolean | Double | Integer | String | Choice
-                description: (optional) detailed help text for the argument
+                description: help text explaining the argument's purpose, units, and
+                    behavior — ALWAYS include this for every argument
                 values: (Choice only) list of allowed values, e.g. ["low", "medium", "high"]
                 NOTE: argument extraction code (runner.get*ArgumentValue) is auto-generated
                 above the `# --- begin user logic ---` marker. run_body should NOT
@@ -81,14 +84,31 @@ def register(mcp):
                 and runner.lastEnergyPlusSqlFilePath (boilerplate auto-generated).
 
         Ruby common patterns for run_body:
+          CRITICAL — error/applicability handling:
+            runner.registerError("msg") — MUST follow with `return false` (does NOT halt)
+            runner.registerAsNotApplicable("msg") + return true — guard clause when
+              measure doesn't apply (e.g. no windows found, already at target)
+            runner.registerInitialCondition("before summary")
+            runner.registerFinalCondition("after summary with counts")
+            runner.registerInfo("progress message")
+            runner.registerWarning("non-fatal issue")
+          CRITICAL — .name returns OptionalString:
+            obj.name.to_s — safe string comparison (returns "" if uninitialized)
+            WRONG: obj.name == "Foo" — crashes on OptionalString comparison
+            RIGHT: obj.name.to_s == "Foo" or obj.name.to_s.include?("Foo")
           ModelMeasure:
             model.getSurfaces.each { |s| ... }
+            model.getSubSurfaces.each { |ss| ... } — windows/doors
             model.getThermalZones.each { |z| ... }
             model.getSpaces.each { |space| ... }
             model.getBuilding.setName(name)
+            surface.outsideBoundaryCondition == "Outdoors" — exterior filter
+            ss.subSurfaceType — "FixedWindow", "OperableWindow", "Door", etc.
             opt = surface.construction; if opt.is_initialized then c = opt.get end
-            runner.registerInfo/Warning/Error("msg")
-            runner.registerInitialCondition/FinalCondition("msg")
+            OpenStudio.convert(val, "W/m^2", "Btu/hr*ft^2").get — unit conversion
+              Common: W/m^2↔Btu/hr*ft^2, m^2*K/W↔ft^2*hr*R/Btu, kWh/m^2↔kBtu/ft^2
+              See SKILL.md "Unit Conversion" table for full list
+            model.alwaysOnDiscreteSchedule — reusable schedule for constructors
           HVAC traversal (Ruby):
             model.getAirLoopHVACs.each { |loop| ... }
             loop.supplyComponents.each { |c| ... }
@@ -106,11 +126,20 @@ def register(mcp):
             runner.registerInfo("EUI: #{val.get} kBtu/ft2") if val.is_initialized
 
         Python common patterns for run_body:
+          CRITICAL — same error/applicability rules as Ruby:
+            runner.registerError("msg") — MUST follow with `return False`
+            runner.registerAsNotApplicable("msg") then return True
+          CRITICAL — .name() returns OptionalString:
+            str(obj.name()) or obj.name().get() — not bare obj.name()
+          ModelMeasure:
             for s in model.getSurfaces(): ...
+            for ss in model.getSubSurfaces(): ...
             for z in model.getThermalZones(): ...
             model.getBuilding().setName(name)
+            s.outsideBoundaryCondition() == "Outdoors"
             opt = surface.construction(); if opt.is_initialized(): c = opt.get()
-            runner.registerInfo/registerWarning/registerError("msg")
+            openstudio.convert(val, "W/m^2", "Btu/hr*ft^2").get()
+            model.alwaysOnDiscreteSchedule()
           HVAC traversal (Python):
             for loop in model.getAirLoopHVACs(): ...
             for c in loop.supplyComponents(): ...
@@ -199,8 +228,8 @@ def register(mcp):
             measure_name: Name of existing custom measure (snake_case dir name)
             run_body: New run() method body (replaces between markers).
                 Ruby: indent 4 spaces. Python: indent 8 spaces.
-            arguments: New argument spec [{name, display_name, type, required,
-                default_value, values}]. values is for Choice type only.
+            arguments: New argument spec [{name, display_name, description, type,
+                required, default_value, values}]. values is for Choice type only.
             description: Updated description
         """
         if isinstance(arguments, str):
