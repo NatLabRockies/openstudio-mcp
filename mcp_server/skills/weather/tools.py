@@ -6,12 +6,21 @@ from mcp_server.skills.weather.operations import (
     get_run_period,
     get_simulation_control,
     get_weather_info,
+    list_weather_files,
     set_run_period,
     set_simulation_control,
 )
 
 
 def register(mcp):
+    @mcp.tool(name="list_weather_files")
+    def list_weather_files_tool():
+        """List available EPW weather files. Use path with change_building_location.
+
+        Returns name, path, and whether .ddy/.stat companion files exist.
+        """
+        return list_weather_files()
+
     @mcp.tool(name="get_weather_info")
     def get_weather_info_tool():
         """Get weather file info (city, lat/lon, elevation, EPW URL)."""

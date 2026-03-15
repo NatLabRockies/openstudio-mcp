@@ -62,7 +62,7 @@ jobs:
           case ${{ matrix.shard }} in
             1)
               # sim test + component/weather + loop ops + skill_retrofit
-              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py"
+              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py"
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
             2)

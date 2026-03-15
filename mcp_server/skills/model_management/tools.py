@@ -70,18 +70,18 @@ def register(mcp):
     def list_files_tool(
         directory: str | None = None,
         pattern: str = "*",
-        max_depth: int | None = None,
+        max_depth: int = 2,
         max_results: int = 10,
     ):
-        """List files in /inputs and /runs. Default 10 results.
+        """List files in /inputs and /runs only. Default 10 results.
 
         Only call if you need to discover files. Do not call repeatedly
-        for the same directory.
+        for the same directory. For weather files, use list_weather_files instead.
 
         Args:
-            directory: Directory to list (e.g. "/runs/my_run"). If omitted, scans /inputs and /runs.
-            pattern: Glob pattern (e.g. "*.epw", "*.osm"). Default "*".
-            max_depth: Max directory depth (1 = top-level only). Default unlimited.
+            directory: Directory under /inputs or /runs (e.g. "/runs/my_run"). If omitted, scans both.
+            pattern: Glob pattern (e.g. "*.osm"). Default "*".
+            max_depth: Max directory depth (1 = top-level only). Default 2.
             max_results: Max items (default 10, 0=unlimited)
         """
         mr = None if max_results == 0 else max_results
