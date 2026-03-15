@@ -67,7 +67,7 @@ jobs:
               ;;
             2)
               # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_bar_building.py tests/test_skill_energy_report.py"
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py"
               EXTRA_ENV=""
               ;;
             3)
@@ -81,8 +81,8 @@ jobs:
               EXTRA_ENV=""
               ;;
             5)
-              # HVAC supply sim smoke tests + hvac_validation
-              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py"
+              # HVAC supply sim smoke tests + hvac_validation + bar_building
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py"
               EXTRA_ENV=""
               ;;
           esac
