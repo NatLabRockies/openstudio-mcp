@@ -454,6 +454,134 @@ WORKFLOW_CASES = [
         "max_turns": 35,
         "timeout": 600,
     },
+    {
+        # Complex measure with args: reduce plug loads — Ruby version
+        "id": "ruby_measure_reduce_plugloads",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that reduces electric equipment "
+            "power density. It must have these arguments:\n"
+            "   - space_type_filter: Choice (All, Office, Corridor, Lobby)\n"
+            "   - reduction_percent: Double, default 25.0\n"
+            "   - skip_empty_spaces: Boolean, default true\n"
+            "The measure should iterate ElectricEquipmentDefinition objects, "
+            "check the associated SpaceType name against the filter, "
+            "and reduce wattsPerSpaceFloorArea by the given percentage. "
+            "Register initial and final conditions with counts of modified "
+            "objects.\n"
+            "4. Create it with create_measure (language Ruby), test with "
+            "test_measure, apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
+    {
+        # Complex measure with args: reduce plug loads — Python version
+        "id": "python_measure_reduce_plugloads",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Python ModelMeasure that reduces electric equipment "
+            "power density. It must have these arguments:\n"
+            "   - space_type_filter: Choice (All, Office, Corridor, Lobby)\n"
+            "   - reduction_percent: Double, default 25.0\n"
+            "   - skip_empty_spaces: Boolean, default true\n"
+            "The measure should iterate ElectricEquipmentDefinition objects, "
+            "check the associated SpaceType name against the filter, "
+            "and reduce wattsPerSpaceFloorArea by the given percentage. "
+            "Register initial and final conditions with counts of modified "
+            "objects.\n"
+            "4. Create it with create_measure (language Python), test with "
+            "test_measure, apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
+    {
+        # Complex measure with args: upgrade boiler efficiency — Ruby version
+        "id": "ruby_measure_boiler_efficiency",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Ruby ModelMeasure that upgrades hot water boiler "
+            "efficiency. It must have these arguments:\n"
+            "   - target_efficiency: Double, default 0.95\n"
+            "   - fuel_type_filter: Choice (All, NaturalGas, Electricity)\n"
+            "   - skip_if_above_target: Boolean, default true\n"
+            "The measure should iterate BoilerHotWater objects, optionally "
+            "filter by fuel type, skip boilers already at or above the "
+            "target efficiency if the boolean is set, and call "
+            "setNominalThermalEfficiency on the rest. Register initial and "
+            "final conditions with counts of modified boilers.\n"
+            "4. Create it with create_measure (language Ruby), test with "
+            "test_measure, apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
+    {
+        # Complex measure with args: upgrade boiler efficiency — Python version
+        "id": "python_measure_boiler_efficiency",
+        "prompt": LOAD_HVAC + (
+            "Do these steps in order:\n"
+            "1. Save the model and run a baseline simulation. "
+            "Extract summary_metrics and note the total EUI.\n"
+            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
+            "3. Write a Python ModelMeasure that upgrades hot water boiler "
+            "efficiency. It must have these arguments:\n"
+            "   - target_efficiency: Double, default 0.95\n"
+            "   - fuel_type_filter: Choice (All, NaturalGas, Electricity)\n"
+            "   - skip_if_above_target: Boolean, default true\n"
+            "The measure should iterate BoilerHotWater objects, optionally "
+            "filter by fuel type, skip boilers already at or above the "
+            "target efficiency if the boolean is set, and call "
+            "setNominalThermalEfficiency on the rest. Register initial and "
+            "final conditions with counts of modified boilers.\n"
+            "4. Create it with create_measure (language Python), test with "
+            "test_measure, apply with apply_measure.\n"
+            "5. Save the model and run a second simulation. "
+            "Extract summary_metrics.\n"
+            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "Use MCP tools only."
+        ),
+        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+                           "apply_measure", "save_osm_model", "run_simulation"],
+        "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
+        "min_calls": {"run_simulation": 2},
+        "max_turns": 35,
+        "timeout": 600,
+    },
 ]
 
 
@@ -643,3 +771,182 @@ def test_complex_model_multi_query():
 
     # Verify no error in final text (transport failures show up as error messages)
     assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for measure argument quality checks
+# ---------------------------------------------------------------------------
+
+def _find_create_measure_input(result):
+    """Extract the input dict from the first create_measure call."""
+    prefix = "mcp__openstudio__"
+    for call in result.mcp_tool_calls:
+        if call["tool"].removeprefix(prefix) == "create_measure":
+            return call["input"]
+    return None
+
+
+def _parse_args(create_input):
+    """Return parsed arguments list from create_measure input."""
+    import json
+    args = create_input.get("arguments")
+    if isinstance(args, str):
+        args = json.loads(args)
+    return args
+
+
+def _check_measure_args_quality(
+    result, *, expected_language, expected_arg_types,
+    body_keywords, label,
+):
+    """Shared quality checks for measure-with-args tests.
+
+    Args:
+        result: ClaudeResult from run_claude
+        expected_language: "Ruby" or "Python" (case-insensitive match)
+        expected_arg_types: set of required arg types, e.g. {"Choice", "Double", "Boolean"}
+        body_keywords: list of strings — at least one must appear in run_body
+        label: human-readable test label for assertion messages
+    """
+    tool_names = result.tool_names
+    assert "create_measure" in tool_names, (
+        f"[{label}] Missing create_measure. Tools: {tool_names}"
+    )
+
+    create_input = _find_create_measure_input(result)
+    assert create_input is not None, f"[{label}] create_measure call not found"
+
+    # Language check
+    lang = create_input.get("language", "")
+    assert lang.lower() == expected_language.lower(), (
+        f"[{label}] Expected language={expected_language}, got {lang}"
+    )
+
+    args = _parse_args(create_input)
+    run_body = create_input.get("run_body", "")
+
+    # 1. Has arguments
+    assert args and len(args) > 0, (
+        f"[{label}] No arguments — LLM hard-coded all values"
+    )
+
+    # 2. Required argument types present
+    arg_types = {a.get("type", "") for a in args}
+    for t in expected_arg_types:
+        assert t in arg_types, (
+            f"[{label}] Missing arg type {t}. Types found: {arg_types}"
+        )
+
+    # 3. Choice arg has values list
+    for a in args:
+        if a.get("type") == "Choice":
+            vals = a.get("values", [])
+            assert len(vals) >= 2, (
+                f"[{label}] Choice arg '{a.get('name')}' needs >=2 values, "
+                f"got {vals}"
+            )
+
+    # 4. Every arg has name and type
+    for i, a in enumerate(args):
+        assert "name" in a and a["name"], f"[{label}] Arg {i} missing name: {a}"
+        assert "type" in a and a["type"], f"[{label}] Arg {i} missing type: {a}"
+
+    # 5. At least one arg has default_value
+    has_default = any("default_value" in a for a in args)
+    assert has_default, (
+        f"[{label}] No argument has default_value. "
+        f"Args: {[a.get('name') for a in args]}"
+    )
+
+    # 6. run_body references at least one body keyword
+    assert any(kw in run_body for kw in body_keywords), (
+        f"[{label}] run_body doesn't reference any of {body_keywords}. "
+        f"Preview: {run_body[:300]}"
+    )
+
+    # 7. run_body references at least one argument variable
+    arg_names = [a["name"] for a in args]
+    body_refs = sum(1 for n in arg_names if n in run_body)
+    assert body_refs > 0, (
+        f"[{label}] run_body doesn't use any argument variables. "
+        f"Arg names: {arg_names}, preview: {run_body[:200]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Quality checks: reduce plug loads (Ruby & Python)
+# ---------------------------------------------------------------------------
+
+_PLUGLOAD_BODY_KEYWORDS = [
+    "ElectricEquipment", "electricEquipment",
+    "wattsPerSpaceFloorArea", "watts_per_space_floor_area",
+    "getElectricEquipment", "getElectricEquipmentDefinition",
+]
+
+
+@pytest.mark.parametrize("language", ["Ruby", "Python"])
+def test_measure_reduce_plugloads_quality(language):
+    """LLM creates a well-parameterized plug-load reduction measure."""
+    tier = get_tier()
+    if tier not in ("all", "2"):
+        pytest.skip("Tier 2 not selected")
+
+    prompt = (
+        f"Create a {language} ModelMeasure that reduces electric equipment "
+        "power density. It must have these arguments:\n"
+        "  - space_type_filter: Choice (All, Office, Corridor, Lobby)\n"
+        "  - reduction_percent: Double, default 25.0\n"
+        "  - skip_empty_spaces: Boolean, default true\n"
+        "The measure should iterate ElectricEquipmentDefinition objects, "
+        "check the associated SpaceType name against the filter, "
+        "and reduce wattsPerSpaceFloorArea by the given percentage. "
+        f"Use create_measure with language {language}. Use MCP tools only."
+    )
+    result = run_claude(prompt, timeout=300, max_turns=15)
+    _check_measure_args_quality(
+        result,
+        expected_language=language,
+        expected_arg_types={"Choice", "Double", "Boolean"},
+        body_keywords=_PLUGLOAD_BODY_KEYWORDS,
+        label=f"plugloads_{language}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Quality checks: boiler efficiency (Ruby & Python)
+# ---------------------------------------------------------------------------
+
+_BOILER_BODY_KEYWORDS = [
+    "BoilerHotWater", "boilerHotWater",
+    "nominalThermalEfficiency", "nominal_thermal_efficiency",
+    "getBoilerHotWaters", "getBoilerHotWater",
+]
+
+
+@pytest.mark.parametrize("language", ["Ruby", "Python"])
+def test_measure_boiler_efficiency_quality(language):
+    """LLM creates a well-parameterized boiler efficiency measure."""
+    tier = get_tier()
+    if tier not in ("all", "2"):
+        pytest.skip("Tier 2 not selected")
+
+    prompt = (
+        f"Create a {language} ModelMeasure that upgrades hot water boiler "
+        "efficiency. It must have these arguments:\n"
+        "  - target_efficiency: Double, default 0.95\n"
+        "  - fuel_type_filter: Choice (All, NaturalGas, Electricity)\n"
+        "  - skip_if_above_target: Boolean, default true\n"
+        "The measure should iterate BoilerHotWater objects, optionally "
+        "filter by fuel type, skip boilers already at or above the target "
+        "efficiency if the boolean is set, and call "
+        "setNominalThermalEfficiency on the rest. "
+        f"Use create_measure with language {language}. Use MCP tools only."
+    )
+    result = run_claude(prompt, timeout=300, max_turns=15)
+    _check_measure_args_quality(
+        result,
+        expected_language=language,
+        expected_arg_types={"Choice", "Double", "Boolean"},
+        body_keywords=_BOILER_BODY_KEYWORDS,
+        label=f"boiler_{language}",
+    )
