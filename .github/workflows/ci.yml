@@ -66,8 +66,8 @@ jobs:
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
             2)
-              # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report, hvac_validation (consolidated)
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_bar_building.py tests/test_skill_energy_report.py tests/test_hvac_validation.py"
+              # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_bar_building.py tests/test_skill_energy_report.py"
               EXTRA_ENV=""
               ;;
             3)
@@ -81,8 +81,8 @@ jobs:
               EXTRA_ENV=""
               ;;
             5)
-              # HVAC supply wiring simulation smoke tests (DOAS, radiant, district, beams)
-              FILES="tests/test_hvac_supply_sim.py"
+              # HVAC supply sim smoke tests + hvac_validation
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py"
               EXTRA_ENV=""
               ;;
           esac
