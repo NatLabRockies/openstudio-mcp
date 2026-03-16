@@ -77,6 +77,16 @@ def _to_class_name(snake: str) -> str:
     return "".join(w.capitalize() for w in snake.split("_"))
 
 
+def _escape_ruby_str(s: str) -> str:
+    """Escape a string for safe embedding in a Ruby double-quoted string."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _escape_python_str(s: str) -> str:
+    """Escape a string for safe embedding in a Python double-quoted string."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _generate_ruby_arguments(args: list[dict]) -> str:
     """Generate Ruby arguments() method body."""
     lines = [
@@ -294,17 +304,19 @@ def _build_ruby_script(class_name: str, name: str, description: str,
     """Build complete Ruby measure script."""
     arguments_method = _generate_ruby_arguments(args)
     run_method = _build_ruby_run(args, run_body)
+    desc_safe = _escape_ruby_str(description)
+    mod_safe = _escape_ruby_str(modeler_description)
     return f"""class {class_name} < OpenStudio::Measure::ModelMeasure
   def name
     return "{name}"
   end
 
   def description
-    return "{description}"
+    return "{desc_safe}"
   end
 
   def modeler_description
-    return "{modeler_description}"
+    return "{mod_safe}"
   end
 
 {arguments_method}
@@ -322,6 +334,8 @@ def _build_python_script(class_name: str, name: str, description: str,
     """Build complete Python measure script."""
     arguments_method = _generate_python_arguments(args)
     run_method = _build_python_run(args, run_body)
+    desc_safe = _escape_python_str(description)
+    mod_safe = _escape_python_str(modeler_description)
     return f"""import openstudio
 
 
@@ -330,10 +344,10 @@ class {class_name}(openstudio.measure.ModelMeasure):
         return "{name}"
 
     def description(self):
-        return "{description}"
+        return "{desc_safe}"
 
     def modeler_description(self):
-        return "{modeler_description}"
+        return "{mod_safe}"
 
 {arguments_method}
 
@@ -354,17 +368,19 @@ def _build_ruby_reporting_script(class_name: str, name: str, description: str,
         "  def arguments(model)", "  def arguments",
     )
     run_method = _build_ruby_reporting_run(args, run_body)
+    desc_safe = _escape_ruby_str(description)
+    mod_safe = _escape_ruby_str(modeler_description)
     return f"""class {class_name} < OpenStudio::Measure::ReportingMeasure
   def name
     return "{name}"
   end
 
   def description
-    return "{description}"
+    return "{desc_safe}"
   end
 
   def modeler_description
-    return "{modeler_description}"
+    return "{mod_safe}"
   end
 
 {arguments_method}
@@ -395,6 +411,8 @@ def _build_python_reporting_script(class_name: str, name: str, description: str,
         "    def arguments(self, model=None):", "    def arguments(self):",
     )
     run_method = _build_python_reporting_run(args, run_body)
+    desc_safe = _escape_python_str(description)
+    mod_safe = _escape_python_str(modeler_description)
     return f"""import openstudio
 
 
@@ -403,10 +421,10 @@ class {class_name}(openstudio.measure.ReportingMeasure):
         return "{name}"
 
     def description(self):
-        return "{description}"
+        return "{desc_safe}"
 
     def modeler_description(self):
-        return "{modeler_description}"
+        return "{mod_safe}"
 
 {arguments_method}
 
@@ -462,6 +480,41 @@ def _update_measure_xml(measure_dir: Path, language: str):
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
+
+
+def _add_intended_software_tools(measure_dir: Path):
+    """Add Intended Software Tool attributes to measure.xml if missing.
+
+    Without these, the measure won't appear in OS App's Apply Measure Now
+    dialog or PAT.
+    """
+    xml_path = measure_dir / "measure.xml"
+    if not xml_path.is_file():
+        return
+    import xml.etree.ElementTree as ET
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        # Check if any Intended Software Tool attribute already exists
+        for attr in root.findall("attributes/attribute"):
+            name_el = attr.find("name")
+            if name_el is not None and name_el.text == "Intended Software Tool":
+                return  # already present
+        # Find or create <attributes> block
+        attrs_el = root.find("attributes")
+        if attrs_el is None:
+            attrs_el = ET.SubElement(root, "attributes")
+        for tool_name in ["Apply Measure Now", "OpenStudio Application", "Parametric Analysis Tool"]:
+            attr_el = ET.SubElement(attrs_el, "attribute")
+            n = ET.SubElement(attr_el, "name")
+            n.text = "Intended Software Tool"
+            v = ET.SubElement(attr_el, "value")
+            v.text = tool_name
+            d = ET.SubElement(attr_el, "datatype")
+            d.text = "string"
+        tree.write(xml_path, xml_declaration=True, encoding="utf-8")
+    except Exception:
+        pass  # best-effort
 
 
 def _generate_ruby_test(class_name: str, args: list[dict]) -> str:
@@ -755,11 +808,24 @@ def create_measure_op(
         # Sync measure.xml checksums with all current files
         _update_measure_xml(measure_dir, language)
 
-        # Syntax check
+        # Add Intended Software Tool attributes for OS App visibility
+        _add_intended_software_tools(measure_dir)
+
+        # Syntax check — return ok:false so LLMs know the measure is broken
         validation = {"syntax_ok": True}
         err = _syntax_check(script_path, language)
         if err:
             validation = err
+            return {
+                "ok": False,
+                "error": f"Generated measure has syntax error: {err.get('syntax_error', 'unknown')}",
+                "measure_dir": str(measure_dir),
+                "class_name": class_name,
+                "language": language,
+                "measure_type": measure_type,
+                "script_file": script_path.name,
+                "validation": validation,
+            }
 
         return {
             "ok": True,
@@ -1107,17 +1173,24 @@ def edit_measure_op(
 
         # Update description in script
         if description is not None:
+            desc_escaped = (_escape_ruby_str(description)
+                            if language == "Ruby"
+                            else _escape_python_str(description))
             if language == "Ruby":
                 content = re.sub(
-                    r'(  def description\n    return ").*?(")',
-                    rf"\g<1>{description}\2",
+                    r'  def description\n    return ".*?"\n  end',
+                    f'  def description\n    return "{desc_escaped}"\n  end',
                     content,
+                    count=1,
+                    flags=re.DOTALL,
                 )
             else:
                 content = re.sub(
-                    r'(    def description\(self\):\n        return ").*?(")',
-                    rf"\g<1>{description}\2",
+                    r'    def description\(self\):\n        return ".*?"\n',
+                    f'    def description(self):\n        return "{desc_escaped}"\n',
                     content,
+                    count=1,
+                    flags=re.DOTALL,
                 )
             changes.append("description")
             # Also update measure.xml via BCLMeasure
@@ -1135,11 +1208,18 @@ def edit_measure_op(
         # cause OS App Measure Manager to silently reject the measure.
         _update_measure_xml(measure_dir, language)
 
-        # Syntax check
+        # Syntax check — return ok:false so LLMs know the measure is broken
         validation = {"syntax_ok": True}
         err = _syntax_check(script_path, language)
         if err:
             validation = err
+            return {
+                "ok": False,
+                "error": f"Edited measure has syntax error: {err.get('syntax_error', 'unknown')}",
+                "measure_dir": str(measure_dir),
+                "changes_made": changes,
+                "validation": validation,
+            }
 
         return {
             "ok": True,

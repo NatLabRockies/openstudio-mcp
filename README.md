@@ -87,6 +87,23 @@ Try these prompts in order of complexity:
 
 The AI reads your prompt, picks the right tools from the 134 available, calls them in sequence, and summarizes the results — no scripting required.
 
+### Working with Your Own Files
+
+**Place files in the `/inputs` mount** (the host folder mapped to `/inputs` in the config above) rather than uploading them through the chat interface. This ensures the MCP tools can access them directly.
+
+```
+# Example: analyzing an EnergyPlus error file
+# 1. Copy to your inputs folder
+cp eplusout.err ./tests/assets/
+
+# 2. Reference by MCP path in your prompt
+"Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
+```
+
+**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 138 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
+
+For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
+
 ### Other MCP Hosts
 
 [Cursor](https://www.cursor.com/), [VS Code](https://code.visualstudio.com/), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
