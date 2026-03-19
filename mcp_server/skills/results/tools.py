@@ -22,6 +22,9 @@ def register(mcp):
     def read_file_tool(file_path: str, max_bytes: int | None = None, offset: int = 0):
         """Read any file by absolute path (works across all mounts: /runs, /inputs, /repo, etc.).
 
+        For EnergyPlus IDF/IDD files, prefer inspect_component, extract_component_sizing,
+        or get_object_fields which return structured data with less context usage.
+
         Default 50KB. Use offset+max_bytes for chunked reading of large files.
 
         Args:
@@ -80,10 +83,10 @@ def register(mcp):
 
     @mcp.tool(name="compare_runs")
     def compare_runs_tool(baseline_run_id: str, retrofit_run_id: str):
-        """Compare two simulation runs: EUI delta, unmet hours delta, and per-end-use breakdown.
+        """Compare two simulation runs: EUI delta, unmet hours delta, per-fuel end-use breakdown.
         Use after running baseline + retrofit simulations to quantify the impact.
-        Includes full end-use breakdown for both runs — no need to call
-        extract_end_use_breakdown separately.
+        Returns per-fuel deltas (not summed across fuels), fuel_totals,
+        energy_grand_total_kBtu (excludes Water), and water_use separately.
 
         Args:
             baseline_run_id: Run identifier for the baseline simulation

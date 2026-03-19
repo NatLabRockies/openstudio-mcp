@@ -185,6 +185,32 @@ def test_create_new_building_medium_office():
     asyncio.run(_run())
 
 
+# --- Test: create_new_building without climate_zone or weather returns clear error ---
+@pytest.mark.integration
+def test_create_new_building_no_climate_zone_error():
+    """create_new_building with no weather_file and no climate_zone returns ok:false."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = unwrap(await s.call_tool("create_new_building", {
+                    "building_type": "SmallOffice",
+                    "total_bldg_floor_area": 5000,
+                    "num_stories_above_grade": 1,
+                    "template": "90.1-2019",
+                    # No weather_file, no climate_zone
+                }))
+                assert res.get("ok") is False, f"Expected ok:false, got: {res}"
+                assert "climate_zone" in res.get("error", "").lower(), (
+                    f"Error should mention climate_zone: {res}"
+                )
+
+    asyncio.run(_run())
+
+
 # --- Test 7: SDDC Office seed model loads with FloorspaceJS geometry ---
 @pytest.mark.integration
 def test_sddc_office_seed_loads():

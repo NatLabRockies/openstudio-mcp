@@ -439,6 +439,90 @@ class TestSummaryMetricsWarnings:
                 ops.resolve_run_dir = orig
 
 
+# ---------------------------------------------------------------------------
+# compare_runs_op: per-fuel deltas, Water exclusion
+# ---------------------------------------------------------------------------
+
+class TestCompareRuns:
+    """compare_runs_op must return per-fuel deltas and exclude Water from energy totals."""
+
+    @pytest.fixture
+    def _patch_runs(self, sql_path):
+        """Set up two fake run dirs pointing to the same SQL for shape testing."""
+        import shutil, tempfile
+        import mcp_server.skills.results.operations as ops
+        tmpdir = tempfile.mkdtemp()
+        for rid in ("baseline_run", "retrofit_run"):
+            run_dir = Path(tmpdir) / rid
+            (run_dir / "run").mkdir(parents=True)
+            shutil.copy(sql_path, run_dir / "run" / "eplusout.sql")
+        orig = ops.resolve_run_dir
+        ops.resolve_run_dir = lambda root, rid: Path(tmpdir) / rid
+        yield
+        ops.resolve_run_dir = orig
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_output_shape(self, sql_path, _patch_runs):
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        assert result["ok"] is True
+        # Must have new per-fuel keys
+        assert "end_use_deltas" in result
+        assert "fuel_totals" in result
+        assert "water_use" in result
+        assert "energy_grand_total_kBtu" in result
+
+    def test_end_use_deltas_have_fuel_field(self, sql_path, _patch_runs):
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        for row in result["end_use_deltas"]:
+            assert "fuel" in row, f"Missing 'fuel' key in end_use_delta: {row}"
+            assert "category" in row
+            assert "baseline" in row
+            assert "retrofit" in row
+
+    def test_water_excluded_from_energy(self, sql_path, _patch_runs):
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        # No Water rows in end_use_deltas
+        for row in result["end_use_deltas"]:
+            assert "water" not in row["fuel"].lower(), (
+                f"Water found in end_use_deltas: {row}"
+            )
+        # Water rows go to water_use
+        for row in result["water_use"]:
+            assert "water" in row["fuel"].lower()
+
+    def test_fuel_totals_structure(self, sql_path, _patch_runs):
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        for row in result["fuel_totals"]:
+            assert "fuel" in row
+            assert "baseline_total" in row
+            assert "retrofit_total" in row
+            assert "delta" in row
+
+    def test_grand_total_excludes_water(self, sql_path, _patch_runs):
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        gt = result["energy_grand_total_kBtu"]
+        # Grand total should equal sum of non-water fuel_totals
+        expected = sum(
+            r["baseline_total"] for r in result["fuel_totals"]
+            if "water" not in r["fuel"].lower()
+        )
+        assert abs(gt["baseline"] - expected) < 0.1
+
+    def test_same_run_zero_deltas(self, sql_path, _patch_runs):
+        """Same SQL for both runs — all deltas should be zero."""
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        for row in result["end_use_deltas"]:
+            assert row["delta"] == 0.0, f"Non-zero delta for same run: {row}"
+        gt = result["energy_grand_total_kBtu"]
+        assert gt["delta"] == 0.0
+
+
 class TestMissingSql:
     def test_end_use_bad_path(self):
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown

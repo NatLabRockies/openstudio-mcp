@@ -37,6 +37,8 @@ def register(mcp):
     ):
         """Create a new custom OpenStudio measure with user-provided code.
 
+        TIP: call get_skill('measure-authoring') first for templates, API patterns, and common pitfalls.
+
         Scaffolds via SDK, then injects arguments() and run() body. Output
         dir: /runs/custom_measures/<name>/. Idempotent — overwrites if exists.
 
@@ -214,6 +216,8 @@ def register(mcp):
         description: str | None = None,
     ):
         """Edit an existing custom measure's code, arguments, or description.
+
+        TIP: call get_skill('measure-authoring') first for templates, API patterns, and common pitfalls.
 
         Looks up /runs/custom_measures/<measure_name>/. Replaces run() body
         between markers, regenerates arguments() method, updates test file.
