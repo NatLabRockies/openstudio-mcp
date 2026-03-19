@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 from datetime import datetime, timezone
@@ -393,7 +394,7 @@ def pytest_runtest_logreport(report):
     if _last_result and _last_result.raw_ndjson:
         log_dir = _RUNS_DIR / "ndjson_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_name = _short_test_id(report.nodeid).replace("/", "_")
+        log_name = re.sub(r'[<>:"/\\|?*]', '_', _short_test_id(report.nodeid))
         suffix = f"_attempt{attempt}" if attempt > 1 else ""
         (log_dir / f"{log_name}{suffix}.ndjson").write_text(
             _last_result.raw_ndjson, encoding="utf-8",

@@ -12,7 +12,7 @@ from mcp_server.skills.model_management.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="load_osm_model")
+    @mcp.tool(name="load_osm_model", tags={"core"})
     def load_osm_model_tool(osm_path: str, version_translate: bool = True):
         """Load an OSM and set as current model for query tools.
 
@@ -22,7 +22,7 @@ def register(mcp):
         """
         return load_osm_model(osm_path=osm_path, version_translate=version_translate)
 
-    @mcp.tool(name="save_osm_model")
+    @mcp.tool(name="save_osm_model", tags={"core"})
     def save_osm_model_tool(osm_path: str | None = None):
         """Save loaded model to disk.
 
@@ -31,13 +31,13 @@ def register(mcp):
         """
         return save_osm_model(osm_path=osm_path)
 
-    @mcp.tool(name="create_example_osm")
+    @mcp.tool(name="create_example_osm", tags={"geometry"})
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):
         """Create built-in OpenStudio example model (auto-loads into memory).
         Use this tool to create models. Do not write raw IDF/OSM files."""
         return create_example_osm(name=name, out_dir=out_dir)
 
-    @mcp.tool(name="create_baseline_osm")
+    @mcp.tool(name="create_baseline_osm", tags={"geometry"})
     def create_baseline_osm_tool(
         name: str | None = None,
         num_floors: int = 2,
@@ -66,7 +66,7 @@ def register(mcp):
             wwr=wwr,
         )
 
-    @mcp.tool(name="list_files")
+    @mcp.tool(name="list_files", tags={"core"})
     def list_files_tool(
         directory: str | None = None,
         pattern: str = "*",
@@ -74,6 +74,8 @@ def register(mcp):
         max_results: int = 10,
     ):
         """List files in /inputs and /runs only. Default 10 results.
+        /inputs contains user-provided models, weather files, and data files.
+        /runs contains simulation outputs. Both are inside the MCP container.
 
         Only call if you need to discover files. Do not call repeatedly
         for the same directory. For weather files, use list_weather_files instead.
@@ -88,7 +90,7 @@ def register(mcp):
         return list_files(directory=directory, pattern=pattern, max_depth=max_depth,
                          max_results=mr)
 
-    @mcp.tool(name="inspect_osm_summary")
+    @mcp.tool(name="inspect_osm_summary", tags={"core"})
     def inspect_osm_summary_tool(osm_path: str):
         """Inspect an OSM (no simulation) and return a simple summary."""
         return inspect_osm_summary(osm_path=osm_path)

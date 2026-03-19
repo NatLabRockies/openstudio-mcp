@@ -10,7 +10,7 @@ from mcp_server.skills.schedules.operations import (
 def register(mcp):
     # list_schedule_rulesets removed — use list_model_objects("ScheduleRuleset")
 
-    @mcp.tool(name="get_schedule_details")
+    @mcp.tool(tags={"loads"}, name="get_schedule_details")
     def get_schedule_details_tool(schedule_name: str):
         """Get detailed information about a specific schedule ruleset.
 
@@ -22,7 +22,7 @@ def register(mcp):
         """
         return get_schedule_details(schedule_name=schedule_name)
 
-    @mcp.tool(name="create_schedule_ruleset")
+    @mcp.tool(tags={"loads"}, name="create_schedule_ruleset")
     def create_schedule_ruleset_tool(name: str, schedule_type: str = "Fractional",
                                     default_value: float = 1.0):
         """Create a new schedule ruleset with a constant default day schedule.

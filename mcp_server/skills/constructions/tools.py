@@ -12,7 +12,7 @@ from mcp_server.skills.constructions.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_materials")
+    @mcp.tool(tags={"geometry"}, name="list_materials")
     def list_materials_tool(
         material_type: str | None = None,
         max_results: int = 10,
@@ -28,7 +28,7 @@ def register(mcp):
         mr = None if max_results == 0 else max_results
         return list_materials(material_type=material_type, max_results=mr)
 
-    @mcp.tool(name="get_construction_details")
+    @mcp.tool(tags={"geometry"}, name="get_construction_details")
     def get_construction_details_tool(construction_name: str):
         """Get detailed info for a construction including all material layers with thermal properties.
 
@@ -40,7 +40,7 @@ def register(mcp):
     # list_constructions removed — use list_model_objects("Construction")
     # list_construction_sets removed — use list_model_objects("DefaultConstructionSet")
 
-    @mcp.tool(name="create_standard_opaque_material")
+    @mcp.tool(tags={"geometry"}, name="create_standard_opaque_material")
     def create_standard_opaque_material_tool(name: str, roughness: str = "Smooth",
                                             thickness_m: float = 0.1,
                                             conductivity_w_m_k: float = 0.5,
@@ -63,7 +63,7 @@ def register(mcp):
                                               density_kg_m3=density_kg_m3,
                                               specific_heat_j_kg_k=specific_heat_j_kg_k)
 
-    @mcp.tool(name="create_construction")
+    @mcp.tool(tags={"geometry"}, name="create_construction")
     def create_construction_tool(name: str, material_names: list[str] | str):
         """Create a layered construction from materials.
 
@@ -74,7 +74,7 @@ def register(mcp):
         """
         return create_construction(name=name, material_names=parse_str_list(material_names))
 
-    @mcp.tool(name="assign_construction_to_surface")
+    @mcp.tool(tags={"geometry"}, name="assign_construction_to_surface")
     def assign_construction_to_surface_tool(surface_name: str, construction_name: str):
         """Assign a construction to a surface.
 

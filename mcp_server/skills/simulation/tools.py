@@ -14,7 +14,7 @@ from mcp_server.skills.simulation.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="validate_osw")
+    @mcp.tool(tags={"simulation"}, name="validate_osw")
     def validate_osw_tool(osw_path: str, epw_path: str | None = None):
         """Validate OSW JSON and referenced files (best-effort).
 
@@ -23,7 +23,7 @@ def register(mcp):
         """
         return validate_osw(osw_path, epw_path=epw_path)
 
-    @mcp.tool(name="run_osw")
+    @mcp.tool(tags={"simulation"}, name="run_osw")
     def run_osw_tool(
         osw_path: str,
         epw_path: str | None = None,
@@ -48,7 +48,7 @@ def register(mcp):
 
         return run_osw(osw_path=osw_path, epw_path=epw_path, name=name)
 
-    @mcp.tool(name="run_simulation")
+    @mcp.tool(tags={"core", "simulation"}, name="run_simulation")
     def run_simulation_tool(
         osm_path: str,
         epw_path: str | None = None,
@@ -65,7 +65,7 @@ def register(mcp):
         """
         return run_simulation(osm_path=osm_path, epw_path=epw_path, name=name)
 
-    @mcp.tool(name="get_run_status")
+    @mcp.tool(tags={"core", "simulation"}, name="get_run_status")
     def get_run_status_tool(run_id: str):
         """Get current status for a run.
 
@@ -74,22 +74,22 @@ def register(mcp):
         """
         return get_run_status(run_id)
 
-    @mcp.tool(name="get_run_logs")
+    @mcp.tool(tags={"simulation"}, name="get_run_logs")
     def get_run_logs_tool(run_id: str, tail: int | None = None, stream: str = "openstudio"):
         """Return tail of logs for a run (openstudio/energyplus)."""
         return get_run_logs(run_id, tail=tail, stream=stream)
 
-    @mcp.tool(name="get_run_artifacts")
+    @mcp.tool(tags={"simulation"}, name="get_run_artifacts")
     def get_run_artifacts_tool(run_id: str):
         """List important output artifacts for a run."""
         return get_run_artifacts(run_id)
 
-    @mcp.tool(name="cancel_run")
+    @mcp.tool(tags={"simulation"}, name="cancel_run")
     def cancel_run_tool(run_id: str):
         """Attempt to cancel a running job."""
         return cancel_run(run_id)
 
-    @mcp.tool(name="validate_model")
+    @mcp.tool(tags={"simulation"}, name="validate_model")
     def validate_model_tool():
         """Pre-simulation validation: weather file, design days, HVAC, constructions.
         Run before simulate to catch common issues early.

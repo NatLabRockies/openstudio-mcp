@@ -22,7 +22,7 @@ from mcp_server.skills.loads.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="get_load_details")
+    @mcp.tool(tags={"loads"}, name="get_load_details")
     def get_load_details_tool(load_name: str):
         """Get detailed info for any load object (people, lights, electric/gas equipment, infiltration).
 
@@ -35,7 +35,7 @@ def register(mcp):
 
     # --- Creation tools ---
 
-    @mcp.tool(name="create_people_definition")
+    @mcp.tool(tags={"loads"}, name="create_people_definition")
     def create_people_definition_tool(
         name: str,
         space_name: str,
@@ -58,7 +58,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_lights_definition")
+    @mcp.tool(tags={"loads"}, name="create_lights_definition")
     def create_lights_definition_tool(
         name: str,
         space_name: str,
@@ -81,7 +81,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_electric_equipment")
+    @mcp.tool(tags={"loads"}, name="create_electric_equipment")
     def create_electric_equipment_tool(
         name: str,
         space_name: str,
@@ -104,7 +104,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_gas_equipment")
+    @mcp.tool(tags={"loads"}, name="create_gas_equipment")
     def create_gas_equipment_tool(
         name: str,
         space_name: str,
@@ -127,7 +127,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_infiltration")
+    @mcp.tool(tags={"loads"}, name="create_infiltration")
     def create_infiltration_tool(
         name: str,
         space_name: str,

@@ -8,7 +8,7 @@ from mcp_server.skills.simulation_outputs.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="add_output_variable")
+    @mcp.tool(tags={"simulation"}, name="add_output_variable")
     def add_output_variable_tool(variable_name: str, key_value: str = "*",
                                  reporting_frequency: str = "Hourly"):
         """Add an EnergyPlus output variable to the model.
@@ -22,7 +22,7 @@ def register(mcp):
         return add_output_variable(variable_name=variable_name, key_value=key_value,
                                   reporting_frequency=reporting_frequency)
 
-    @mcp.tool(name="add_output_meter")
+    @mcp.tool(tags={"simulation"}, name="add_output_meter")
     def add_output_meter_tool(meter_name: str, reporting_frequency: str = "Hourly"):
         """Add an EnergyPlus output meter to the model.
 

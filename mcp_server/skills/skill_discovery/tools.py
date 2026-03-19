@@ -8,7 +8,7 @@ from mcp_server.skills.skill_discovery.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_skills")
+    @mcp.tool(name="list_skills", tags={"core"})
     def list_skills_tool():
         """IMPORTANT: Call this FIRST before starting any multi-step building
         energy modeling workflow. Lists step-by-step guides for creating
@@ -20,7 +20,7 @@ def register(mcp):
         """
         return list_skills_op()
 
-    @mcp.tool(name="get_skill")
+    @mcp.tool(name="get_skill", tags={"core"})
     def get_skill_tool(name: str):
         """Get step-by-step instructions for a workflow including exact tool
         names, parameter values, and execution order. Call before starting

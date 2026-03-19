@@ -14,7 +14,7 @@ from mcp_server.skills.hvac.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_air_loops")
+    @mcp.tool(tags={"hvac"}, name="list_air_loops")
     def list_air_loops_tool(detailed: bool = False):
         """List all air loops. Default brief: name, zone count, zone names, terminal type.
         Use detailed=True only when you need full supply component lists and OA system info.
@@ -24,7 +24,7 @@ def register(mcp):
         """
         return list_air_loops(detailed=detailed)
 
-    @mcp.tool(name="get_air_loop_details")
+    @mcp.tool(tags={"hvac"}, name="get_air_loop_details")
     def get_air_loop_details_tool(air_loop_name: str):
         """Get detailed information about a specific air loop HVAC system.
 
@@ -33,7 +33,7 @@ def register(mcp):
         """
         return get_air_loop_details(air_loop_name=air_loop_name)
 
-    @mcp.tool(name="list_plant_loops")
+    @mcp.tool(tags={"hvac"}, name="list_plant_loops")
     def list_plant_loops_tool(detailed: bool = False):
         """List all plant loops. Default brief: name, component counts, primary equipment type.
         Use detailed=True only when you need full supply/demand component lists.
@@ -43,7 +43,7 @@ def register(mcp):
         """
         return list_plant_loops(detailed=detailed)
 
-    @mcp.tool(name="list_zone_hvac_equipment")
+    @mcp.tool(tags={"hvac"}, name="list_zone_hvac_equipment")
     def list_zone_hvac_equipment_tool(
         thermal_zone_name: str | None = None,
         equipment_type: str | None = None,
@@ -63,7 +63,7 @@ def register(mcp):
         return list_zone_hvac_equipment(thermal_zone_name=thermal_zone_name,
                                        equipment_type=equipment_type, max_results=mr)
 
-    @mcp.tool(name="add_air_loop")
+    @mcp.tool(tags={"hvac"}, name="add_air_loop")
     def add_air_loop_tool(name: str, thermal_zone_names: list[str] | str | None = None):
         """Add a new air loop HVAC system to the loaded OpenStudio model.
 
@@ -74,7 +74,7 @@ def register(mcp):
         """
         return add_air_loop(name=name, thermal_zone_names=parse_str_list(thermal_zone_names))
 
-    @mcp.tool(name="get_plant_loop_details")
+    @mcp.tool(tags={"hvac"}, name="get_plant_loop_details")
     def get_plant_loop_details_tool(plant_loop_name: str):
         """Get detailed information about a specific plant loop.
 
@@ -83,7 +83,7 @@ def register(mcp):
         """
         return get_plant_loop_details(plant_loop_name=plant_loop_name)
 
-    @mcp.tool(name="get_zone_hvac_details")
+    @mcp.tool(tags={"hvac"}, name="get_zone_hvac_details")
     def get_zone_hvac_details_tool(equipment_name: str):
         """Get detailed information about specific zone HVAC equipment.
 

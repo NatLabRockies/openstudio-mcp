@@ -15,7 +15,7 @@ def register(mcp: FastMCP) -> None:
 
     # list_hvac_components removed in Phase C — use list_model_objects + loop detail tools
 
-    @mcp.tool(name="get_component_properties")
+    @mcp.tool(tags={"hvac"}, name="get_component_properties")
     def get_component_properties_tool(component_name: str) -> str:
         """Get all readable properties for a named HVAC component.
 
@@ -24,7 +24,7 @@ def register(mcp: FastMCP) -> None:
         """
         return json.dumps(operations.get_component_properties(component_name), indent=2)
 
-    @mcp.tool(name="set_component_properties")
+    @mcp.tool(tags={"hvac"}, name="set_component_properties")
     def set_component_properties_tool(component_name: str, properties: str) -> str:
         """Set one or more properties on a named HVAC component.
 
@@ -41,7 +41,7 @@ def register(mcp: FastMCP) -> None:
 
     # --- 5B: Controls & Setpoints ---
 
-    @mcp.tool(name="set_economizer_properties")
+    @mcp.tool(tags={"hvac"}, name="set_economizer_properties")
     def set_economizer_properties_tool(air_loop_name: str, properties: str) -> str:
         """Modify outdoor air economizer properties on an air loop.
 
@@ -61,7 +61,7 @@ def register(mcp: FastMCP) -> None:
             return json.dumps({"ok": False, "error": f"Invalid JSON: {e}"})
         return json.dumps(operations.set_economizer_properties(air_loop_name, props), indent=2)
 
-    @mcp.tool(name="set_sizing_properties")
+    @mcp.tool(tags={"hvac"}, name="set_sizing_properties")
     def set_sizing_properties_tool(loop_name: str, properties: str) -> str:
         """Modify sizing properties on a plant loop.
 
@@ -80,7 +80,7 @@ def register(mcp: FastMCP) -> None:
             return json.dumps({"ok": False, "error": f"Invalid JSON: {e}"})
         return json.dumps(operations.set_sizing_properties(loop_name, props), indent=2)
 
-    @mcp.tool(name="set_sizing_system_properties")
+    @mcp.tool(tags={"hvac"}, name="set_sizing_system_properties")
     def set_sizing_system_properties_tool(air_loop_name: str, properties: str) -> str:
         """Set SizingSystem properties on an air loop.
 
@@ -98,7 +98,7 @@ def register(mcp: FastMCP) -> None:
             return json.dumps({"ok": False, "error": f"Invalid JSON: {e}"})
         return json.dumps(operations.set_sizing_system_properties(air_loop_name, props), indent=2)
 
-    @mcp.tool(name="get_sizing_system_properties")
+    @mcp.tool(tags={"hvac"}, name="get_sizing_system_properties")
     def get_sizing_system_properties_tool(air_loop_name: str) -> str:
         """Get all SizingSystem properties for an air loop.
 
@@ -107,7 +107,7 @@ def register(mcp: FastMCP) -> None:
         """
         return json.dumps(operations.get_sizing_system_properties(air_loop_name), indent=2)
 
-    @mcp.tool(name="set_sizing_zone_properties")
+    @mcp.tool(tags={"hvac"}, name="set_sizing_zone_properties")
     def set_sizing_zone_properties_tool(zone_names: str, properties: str) -> str:
         """Set SizingZone properties on one or more thermal zones.
 
@@ -133,7 +133,7 @@ def register(mcp: FastMCP) -> None:
             names = [zone_names]
         return json.dumps(operations.set_sizing_zone_properties(names, props), indent=2)
 
-    @mcp.tool(name="get_sizing_zone_properties")
+    @mcp.tool(tags={"hvac"}, name="get_sizing_zone_properties")
     def get_sizing_zone_properties_tool(zone_name: str) -> str:
         """Get all SizingZone properties for a thermal zone.
 
@@ -142,7 +142,7 @@ def register(mcp: FastMCP) -> None:
         """
         return json.dumps(operations.get_sizing_zone_properties(zone_name), indent=2)
 
-    @mcp.tool(name="get_setpoint_manager_properties")
+    @mcp.tool(tags={"hvac"}, name="get_setpoint_manager_properties")
     def get_setpoint_manager_properties_tool(setpoint_name: str) -> str:
         """Get all properties for a named setpoint manager.
 
@@ -154,7 +154,7 @@ def register(mcp: FastMCP) -> None:
         """
         return json.dumps(operations.get_setpoint_manager_properties(setpoint_name), indent=2)
 
-    @mcp.tool(name="set_setpoint_manager_properties")
+    @mcp.tool(tags={"hvac"}, name="set_setpoint_manager_properties")
     def set_setpoint_manager_properties_tool(setpoint_name: str, properties: str) -> str:
         """Modify setpoint manager properties.
 

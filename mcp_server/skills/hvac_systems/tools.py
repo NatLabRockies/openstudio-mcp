@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def register(mcp: FastMCP) -> None:
     """Register HVAC systems tools with MCP server."""
 
-    @mcp.tool(name="add_baseline_system")
+    @mcp.tool(tags={"hvac"}, name="add_baseline_system")
     def add_baseline_system_tool(
         system_type: int,
         thermal_zone_names: list[str] | str,
@@ -47,19 +47,19 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="list_baseline_systems")
+    @mcp.tool(tags={"hvac"}, name="list_baseline_systems")
     def list_baseline_systems_tool() -> str:
         """List all 10 ASHRAE 90.1 Appendix G baseline system types with descriptions and technologies."""
         result = operations.list_baseline_systems()
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="get_baseline_system_info")
+    @mcp.tool(tags={"hvac"}, name="get_baseline_system_info")
     def get_baseline_system_info_tool(system_type: int) -> str:
         """Get detailed info for a specific ASHRAE baseline system type (1-10)."""
         result = operations.get_baseline_system_info(system_type)
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="replace_air_terminals")
+    @mcp.tool(tags={"hvac"}, name="replace_air_terminals")
     def replace_air_terminals_tool(
         air_loop_name: str,
         terminal_type: str,
@@ -81,7 +81,7 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="replace_zone_terminal")
+    @mcp.tool(tags={"hvac"}, name="replace_zone_terminal")
     def replace_zone_terminal_tool(
         zone_name: str,
         terminal_type: str,
@@ -103,7 +103,7 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="add_doas_system")
+    @mcp.tool(tags={"hvac"}, name="add_doas_system")
     def add_doas_system_tool(
         thermal_zone_names: list[str] | str,
         system_name: str = "DOAS",
@@ -137,7 +137,7 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="add_vrf_system")
+    @mcp.tool(tags={"hvac"}, name="add_vrf_system")
     def add_vrf_system_tool(
         thermal_zone_names: list[str] | str,
         system_name: str = "VRF",
@@ -162,7 +162,7 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="add_radiant_system")
+    @mcp.tool(tags={"hvac"}, name="add_radiant_system")
     def add_radiant_system_tool(
         thermal_zone_names: list[str] | str,
         system_name: str = "Radiant",

@@ -13,7 +13,7 @@ from mcp_server.skills.weather.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_weather_files")
+    @mcp.tool(tags={"core", "simulation"}, name="list_weather_files")
     def list_weather_files_tool():
         """List available EPW weather files. Use path with change_building_location.
 
@@ -21,12 +21,12 @@ def register(mcp):
         """
         return list_weather_files()
 
-    @mcp.tool(name="get_weather_info")
+    @mcp.tool(tags={"simulation"}, name="get_weather_info")
     def get_weather_info_tool():
         """Get weather file info (city, lat/lon, elevation, EPW URL)."""
         return get_weather_info()
 
-    @mcp.tool(name="add_design_day")
+    @mcp.tool(tags={"simulation"}, name="add_design_day")
     def add_design_day_tool(
         name: str,
         day_type: str,
@@ -61,12 +61,12 @@ def register(mcp):
             wind_speed_ms=wind_speed_ms, barometric_pressure_pa=barometric_pressure_pa,
         )
 
-    @mcp.tool(name="get_simulation_control")
+    @mcp.tool(tags={"simulation"}, name="get_simulation_control")
     def get_simulation_control_tool():
         """Get SimulationControl flags and timestep."""
         return get_simulation_control()
 
-    @mcp.tool(name="set_simulation_control")
+    @mcp.tool(tags={"simulation"}, name="set_simulation_control")
     def set_simulation_control_tool(
         do_zone_sizing: bool | None = None,
         do_system_sizing: bool | None = None,
@@ -95,12 +95,12 @@ def register(mcp):
             timesteps_per_hour=timesteps_per_hour,
         )
 
-    @mcp.tool(name="get_run_period")
+    @mcp.tool(tags={"simulation"}, name="get_run_period")
     def get_run_period_tool():
         """Get RunPeriod begin/end dates."""
         return get_run_period()
 
-    @mcp.tool(name="set_run_period")
+    @mcp.tool(tags={"simulation"}, name="set_run_period")
     def set_run_period_tool(
         begin_month: int,
         begin_day: int,

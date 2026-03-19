@@ -13,7 +13,7 @@ from mcp_server.skills.spaces.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_spaces")
+    @mcp.tool(tags={"geometry"}, name="list_spaces")
     def list_spaces_tool(
         detailed: bool = False,
         thermal_zone_name: str | None = None,
@@ -39,7 +39,7 @@ def register(mcp):
                           building_story_name=building_story_name,
                           space_type_name=space_type_name, max_results=mr)
 
-    @mcp.tool(name="get_space_details")
+    @mcp.tool(tags={"geometry"}, name="get_space_details")
     def get_space_details_tool(space_name: str):
         """Get detailed information about a specific space.
 
@@ -48,7 +48,7 @@ def register(mcp):
         """
         return get_space_details(space_name=space_name)
 
-    @mcp.tool(name="list_thermal_zones")
+    @mcp.tool(tags={"geometry"}, name="list_thermal_zones")
     def list_thermal_zones_tool(
         detailed: bool = False,
         air_loop_name: str | None = None,
@@ -68,7 +68,7 @@ def register(mcp):
         return list_thermal_zones(detailed=detailed, air_loop_name=air_loop_name,
                                  max_results=mr)
 
-    @mcp.tool(name="get_thermal_zone_details")
+    @mcp.tool(tags={"geometry"}, name="get_thermal_zone_details")
     def get_thermal_zone_details_tool(zone_name: str):
         """Get detailed information about a specific thermal zone.
 
@@ -77,7 +77,7 @@ def register(mcp):
         """
         return get_thermal_zone_details(zone_name=zone_name)
 
-    @mcp.tool(name="create_space")
+    @mcp.tool(tags={"geometry"}, name="create_space")
     def create_space_tool(name: str, building_story_name: str | None = None,
                          space_type_name: str | None = None):
         """Create a new space in the loaded OpenStudio model.
@@ -91,7 +91,7 @@ def register(mcp):
         return create_space(name=name, building_story_name=building_story_name,
                           space_type_name=space_type_name)
 
-    @mcp.tool(name="create_thermal_zone")
+    @mcp.tool(tags={"geometry"}, name="create_thermal_zone")
     def create_thermal_zone_tool(name: str, space_names: list[str] | str | None = None):
         """Create a new thermal zone in the loaded OpenStudio model.
 

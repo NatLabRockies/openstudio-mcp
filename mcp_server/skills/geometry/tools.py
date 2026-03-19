@@ -15,7 +15,7 @@ from mcp_server.skills.geometry.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_surfaces")
+    @mcp.tool(tags={"geometry"}, name="list_surfaces")
     def list_surfaces_tool(
         detailed: bool = False,
         space_name: str | None = None,
@@ -42,7 +42,7 @@ def register(mcp):
                             surface_type=surface_type, boundary=boundary,
                             max_results=mr)
 
-    @mcp.tool(name="get_surface_details")
+    @mcp.tool(tags={"geometry"}, name="get_surface_details")
     def get_surface_details_tool(surface_name: str):
         """Get detailed information about a specific surface.
 
@@ -51,7 +51,7 @@ def register(mcp):
         """
         return get_surface_details(surface_name=surface_name)
 
-    @mcp.tool(name="list_subsurfaces")
+    @mcp.tool(tags={"geometry"}, name="list_subsurfaces")
     def list_subsurfaces_tool(
         surface_name: str | None = None,
         space_name: str | None = None,
@@ -75,7 +75,7 @@ def register(mcp):
         return list_subsurfaces(surface_name=surface_name, space_name=space_name,
                                subsurface_type=subsurface_type, max_results=mr)
 
-    @mcp.tool(name="create_surface")
+    @mcp.tool(tags={"geometry"}, name="create_surface")
     def create_surface_tool(
         name: str,
         vertices: list[list[float]],
@@ -99,7 +99,7 @@ def register(mcp):
             outside_boundary_condition=outside_boundary_condition,
         )
 
-    @mcp.tool(name="create_subsurface")
+    @mcp.tool(tags={"geometry"}, name="create_subsurface")
     def create_subsurface_tool(
         name: str,
         vertices: list[list[float]],
@@ -121,7 +121,7 @@ def register(mcp):
             subsurface_type=subsurface_type,
         )
 
-    @mcp.tool(name="create_space_from_floor_print")
+    @mcp.tool(tags={"geometry"}, name="create_space_from_floor_print")
     def create_space_from_floor_print_tool(
         name: str,
         floor_vertices: list[list[float]],
@@ -150,12 +150,12 @@ def register(mcp):
             thermal_zone_name=thermal_zone_name,
         )
 
-    @mcp.tool(name="match_surfaces")
+    @mcp.tool(tags={"geometry"}, name="match_surfaces")
     def match_surfaces_tool():
         """Intersect and match surfaces across all spaces, setting shared walls as interior boundaries."""
         return match_surfaces()
 
-    @mcp.tool(name="set_window_to_wall_ratio")
+    @mcp.tool(tags={"geometry"}, name="set_window_to_wall_ratio")
     def set_window_to_wall_ratio_tool(
         surface_name: str,
         ratio: float,
@@ -174,7 +174,7 @@ def register(mcp):
             sill_height_m=sill_height_m,
         )
 
-    @mcp.tool(name="import_floorspacejs")
+    @mcp.tool(tags={"geometry"}, name="import_floorspacejs")
     def import_floorspacejs_tool(
         floorplan_path: str,
         building_type: str = "SmallOffice",

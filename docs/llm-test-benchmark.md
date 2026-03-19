@@ -4,7 +4,7 @@
 
 | Run | Date | Model | Tests | Passed | Rate | Runtime | Notes |
 |-----|------|-------|-------|--------|------|---------|-------|
-| **7** | **2026-03-12** | **sonnet** | **159** | **155** | **97.5%** | **94 min** | **Test consolidation (no tool/prompt changes)** |
+| **9** | **2026-03-19** | **sonnet** | **9** | **9** | **100%** | **5 min** | **Tool routing A/B tests (test_09, post-docstring-hardening)** |
 
 *Cost is notional API pricing from Claude Code CLI — free on Claude Max.*
 
@@ -120,6 +120,9 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | 6 | 2026-03-11 | 159 | 153 | 96.2% | — | + 16 progressive cases, 4 workflows, sim setup |
 | 7 | 2026-03-12 | 159 | 155 | 97.5% | — | Test consolidation (no tool/prompt changes) |
 | 8* | 2026-03-13 | 25 | 23 | 92.0% | $3.01 | Measure authoring + cooled beam (separate runs) |
+| 9a | 2026-03-19 | 9 | 9 | 100% | $0.79 | Tool routing A/B baseline (pre-docstring-hardening) |
+| 9b | 2026-03-19 | 9 | 9 | 100% | $0.79 | Tool routing A/B post-hardening (neutral delta) |
+| 10 | 2026-03-19 | 172 | 166 | 96.5% | — | Full regression after tool routing (tags, recommend_tools, search_api, docstrings). No regressions — 6 failures all known flaky. |
 
 *Run 8 = combined results from two separate targeted runs (measure authoring 13/15 + cooled beam 10/10).*
 

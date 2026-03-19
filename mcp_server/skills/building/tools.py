@@ -8,12 +8,12 @@ from mcp_server.skills.building.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="get_building_info")
+    @mcp.tool(name="get_building_info", tags={"core"})
     def get_building_info_tool():
         """Get building-level attributes (floor area, people/lighting/equipment densities, orientation)."""
         return get_building_info()
 
-    @mcp.tool(name="get_model_summary")
+    @mcp.tool(name="get_model_summary", tags={"core"})
     def get_model_summary_tool():
         """Get object counts for all major categories (spaces, zones, geometry, HVAC, loads, schedules)."""
         return get_model_summary()

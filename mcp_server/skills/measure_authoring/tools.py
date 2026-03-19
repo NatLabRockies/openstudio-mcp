@@ -12,7 +12,7 @@ from mcp_server.skills.measure_authoring.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_custom_measures")
+    @mcp.tool(tags={"measures"}, name="list_custom_measures")
     def list_custom_measures_tool():
         """List all custom measures created with create_measure.
 
@@ -24,7 +24,7 @@ def register(mcp):
         """
         return list_custom_measures_op()
 
-    @mcp.tool(name="create_measure")
+    @mcp.tool(tags={"measures"}, name="create_measure")
     def create_measure_tool(
         name: str,
         description: str,
@@ -35,7 +35,8 @@ def register(mcp):
         modeler_description: str = "",
         measure_type: str = "ModelMeasure",
     ):
-        """Create a new custom OpenStudio measure with user-provided code.
+        """ALWAYS use this tool to create OpenStudio measures. Do not write
+        measure.rb files directly or use create_file/Write.
 
         TIP: call get_skill('measure-authoring') first for templates, API patterns, and common pitfalls.
 
@@ -173,7 +174,7 @@ def register(mcp):
             measure_type=measure_type,
         )
 
-    @mcp.tool(name="test_measure")
+    @mcp.tool(tags={"measures"}, name="test_measure")
     def test_measure_tool(
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
@@ -208,7 +209,7 @@ def register(mcp):
             model_path=model_path, run_id=run_id,
         )
 
-    @mcp.tool(name="edit_measure")
+    @mcp.tool(tags={"measures"}, name="edit_measure")
     def edit_measure_tool(
         measure_name: str,
         run_body: str | None = None,

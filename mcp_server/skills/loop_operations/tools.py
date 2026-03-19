@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def register(mcp: FastMCP) -> None:
     """Register loop operations tools with MCP server."""
 
-    @mcp.tool(name="create_plant_loop")
+    @mcp.tool(tags={"hvac"}, name="create_plant_loop")
     def create_plant_loop_tool(
         name: str,
         loop_type: str,
@@ -45,7 +45,7 @@ def register(mcp: FastMCP) -> None:
             pump_motor_eff=pump_motor_eff,
         ), indent=2)
 
-    @mcp.tool(name="add_demand_component")
+    @mcp.tool(tags={"hvac"}, name="add_demand_component")
     def add_demand_component_tool(
         component_name: str,
         plant_loop_name: str,
@@ -60,7 +60,7 @@ def register(mcp: FastMCP) -> None:
             component_name, plant_loop_name,
         ), indent=2)
 
-    @mcp.tool(name="remove_demand_component")
+    @mcp.tool(tags={"hvac"}, name="remove_demand_component")
     def remove_demand_component_tool(
         component_name: str,
         plant_loop_name: str,
@@ -75,7 +75,7 @@ def register(mcp: FastMCP) -> None:
             component_name, plant_loop_name,
         ), indent=2)
 
-    @mcp.tool(name="add_supply_equipment")
+    @mcp.tool(tags={"hvac"}, name="add_supply_equipment")
     def add_supply_equipment_tool(
         plant_loop_name: str,
         equipment_type: str,
@@ -108,7 +108,7 @@ def register(mcp: FastMCP) -> None:
             plant_loop_name, equipment_type, equipment_name, props,
         ), indent=2)
 
-    @mcp.tool(name="remove_supply_equipment")
+    @mcp.tool(tags={"hvac"}, name="remove_supply_equipment")
     def remove_supply_equipment_tool(
         plant_loop_name: str,
         equipment_name: str,
@@ -126,7 +126,7 @@ def register(mcp: FastMCP) -> None:
             plant_loop_name, equipment_name,
         ), indent=2)
 
-    @mcp.tool(name="add_zone_equipment")
+    @mcp.tool(tags={"hvac"}, name="add_zone_equipment")
     def add_zone_equipment_tool(
         zone_name: str,
         equipment_type: str,
@@ -158,7 +158,7 @@ def register(mcp: FastMCP) -> None:
             zone_name, equipment_type, equipment_name, props,
         ), indent=2)
 
-    @mcp.tool(name="remove_zone_equipment")
+    @mcp.tool(tags={"hvac"}, name="remove_zone_equipment")
     def remove_zone_equipment_tool(
         zone_name: str,
         equipment_name: str,
@@ -173,7 +173,7 @@ def register(mcp: FastMCP) -> None:
             zone_name, equipment_name,
         ), indent=2)
 
-    @mcp.tool(name="set_zone_equipment_priority")
+    @mcp.tool(tags={"hvac"}, name="set_zone_equipment_priority")
     def set_zone_equipment_priority_tool(
         zone_name: str,
         equipment_names: list[str] | str,
@@ -194,7 +194,7 @@ def register(mcp: FastMCP) -> None:
             equipment_names=parse_str_list(equipment_names),
         ), indent=2)
 
-    @mcp.tool(name="remove_all_zone_equipment")
+    @mcp.tool(tags={"hvac"}, name="remove_all_zone_equipment")
     def remove_all_zone_equipment_tool(zone_names: str) -> str:
         """Remove ALL equipment from multiple thermal zones in one call.
 
