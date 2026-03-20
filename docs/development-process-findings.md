@@ -214,6 +214,9 @@ count or splitting into multiple servers.
 
 ## Research Citations
 
+See [research-tool-discovery-at-scale.md](research-tool-discovery-at-scale.md)
+for comprehensive industry survey (13 papers, 30+ projects, empirical benchmarks).
+
 ### Tool Overload
 - RAG-MCP (arxiv:2505.03275): 100+ tools → 13.6% accuracy, semantic
   retrieval → 43%. Sweet spot ≤30 tools (>90%).

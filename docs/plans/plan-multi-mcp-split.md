@@ -206,6 +206,12 @@ confusion — needs testing.
 - MCP context overload analysis: https://eclipsesource.com/blogs/2026/01/22/mcp-context-overload/
 - Redis solving MCP tool overload: https://redis.io/blog/from-reasoning-to-retrieval-solving-the-mcp-tool-overload-problem/
 
+## Related Research
+
+See [../research-tool-discovery-at-scale.md](../research-tool-discovery-at-scale.md)
+for full industry survey on tool discovery patterns, empirical accuracy data,
+and gateway/proxy landscape.
+
 ## Decision Criteria
 
 Implement this plan when ANY of:
