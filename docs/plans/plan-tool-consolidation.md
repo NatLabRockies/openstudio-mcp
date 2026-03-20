@@ -1,179 +1,136 @@
-# Plan: Tool Consolidation & Discovery Optimization
+# Plan: Tool Description Enrichment
 
 **Date:** 2026-03-20
 **Branch:** optimize
 **Status:** planning
 
+## Context: What We Already Did
+
+| Commit | What | Effect |
+|--------|------|--------|
+| `a78d308` | Compressed all 127 tool descriptions ~30% | Reduced context but hurt ToolSearch discovery |
+| `65bee92` | Built generic tools (list_model_objects, get_object_fields, set_object_property) | Universal replacements for typed tools |
+| `cbfba81` | Removed 6 redundant list tools (Phase C) | 142→136 tools, replaced with generic access |
+| `39d7608` | Added tags to all tools, recommend_tools, search_api | Tags inert (not in MCP spec), recommend_tools works |
+| `c09d6ee` | Enriched search_api + search_wiring_patterns descriptions | Both now discoverable by ToolSearch |
+
+**The irony:** We compressed descriptions to reduce context, then discovered
+ToolSearch (which defers tools from context entirely). Now short descriptions
+hurt discovery because ToolSearch matches on keywords in descriptions.
+
 ## Problem
 
-142 tools. Cursor caps at 40, Windsurf at 100, OpenAI recommends ~10.
-Even with ToolSearch (Claude Code), 95.9% pass rate masks that vague
-prompts still fail — the LLM uses wrong tools, not that it can't find any.
+85/142 tools have first-line descriptions under 60 chars. ToolSearch can't
+find them with natural language queries. The tools work — the LLM just
+can't discover them.
 
-Tags do nothing — they're FastMCP server-side metadata, never sent over
-the wire, not in MCP spec, not used by any client. Keep for future-proofing
-but they're not a discovery mechanism.
+We already proved enriched descriptions work: `search_api` went from
+invisible to 1st-result after adding use cases, examples, and keywords.
 
-## Energy Modeler Use Cases
+## What NOT to do
 
-| Persona | What they do | Tools needed |
-|---------|-------------|-------------|
-| **Building Designer** | Geometry, envelope, loads, weather | model, geometry, constructions, loads, weather |
-| **HVAC Engineer** | Systems, loops, components, controls | HVAC systems, components, sizing, SPMs |
-| **Energy Analyst** | Run sims, extract results, compare | simulation, results, reporting |
-| **Measure Developer** | Author custom measures | measure authoring, API reference |
-| **Full-Stack Modeler** | Everything | All tools |
+- **Don't remove typed tools** (list_spaces, get_space_details, etc.).
+  We already removed 6 in Phase C. The remaining typed tools are MORE
+  discoverable than their generic equivalents. `list_spaces` is findable;
+  `list_model_objects("Space")` requires knowing the generic tool exists.
 
-Most sessions use one persona. Full-stack sessions are rare but must work.
+- **Don't consolidate get/set pairs** into single tools. Separate tools
+  are more discoverable — "get sizing properties" finds `get_sizing_system_properties`
+  but won't find a combined tool as easily.
 
-## Architecture Options
+- **Don't add back removed tools.** Phase C removals were correct — those
+  tools had true duplicates in generic access.
 
-### Option A: Consolidate to ~80 tools (single server)
+## What to do: Enrich Descriptions
 
-Merge redundant tools. Keep single MCP server. Works with all clients
-except Cursor (40 cap). ToolSearch handles discovery.
+Restore keyword-rich descriptions without restoring bloat. The old
+descriptions had useful content (field lists, use cases) mixed with
+noise ("Requires a model to be loaded"). Keep the useful, drop the noise.
 
-**Consolidation targets:**
+### Pattern
 
-| Merge | Before | After | How |
-|-------|--------|-------|-----|
-| Typed list tools → `list_model_objects` | 10 | 0 | `list_spaces` = `list_model_objects("Space")` |
-| Typed detail tools → `get_object_fields` | 10 | 0 | `get_space_details` = `get_object_fields("Space", name)` |
-| get/set property pairs | 8 | 4 | Merge each get+set into one tool with optional `properties` param |
-| Run info tools | 3 | 1 | `get_run_info(run_id, what="status|logs|artifacts")` |
-| Remove duplicate list tools | 2 | 0 | `list_baseline_systems` + `get_baseline_system_info` → docstring on `add_baseline_system` |
-| `inspect_osm_summary` → `get_model_summary` | 2 | 1 | Nearly identical |
-
-**Saves ~33 tools → ~109 total.** Still over Cursor's 40 limit.
-
-**Risk:** Typed tools have better descriptions for ToolSearch. `list_spaces`
-is more discoverable than `list_model_objects("Space")`. Losing typed tools
-may hurt discovery even as it reduces count.
-
-### Option B: Split into multiple MCP servers (~35 each)
-
-4 servers aligned with energy modeling phases. Under Cursor's 40 limit.
-Shared model state via filesystem (save/load between servers).
-
-```
-openstudio-model     (~35): create, load, save, geometry, constructions, loads, weather, schedules
-openstudio-hvac      (~35): HVAC systems, loops, components, sizing, controls, wiring patterns
-openstudio-simulate  (~25): run, status, results, reporting, comparison, visualization
-openstudio-measures  (~15): author, test, edit, apply, comstock, API reference
-+ shared:            (~10): list_model_objects, get_object_fields, set_object_property, delete, rename, list_files, list_skills, get_skill, recommend_tools, search_api
-```
-
-**Claude Desktop config:**
-```json
-{
-  "mcpServers": {
-    "openstudio-model": { "command": "docker", "args": ["run", ..., "openstudio-model"] },
-    "openstudio-hvac": { "command": "docker", "args": ["run", ..., "openstudio-hvac"] },
-    "openstudio-simulate": { "command": "docker", "args": ["run", ..., "openstudio-simulate"] },
-    "openstudio-measures": { "command": "docker", "args": ["run", ..., "openstudio-measures"] }
-  }
-}
-```
-
-**Shared state problem:** Each server is a separate Docker container with
-its own `model_manager` globals. Model changes in one server aren't visible
-to others until saved to disk and reloaded.
-
-**Workaround:** Auto-save after every mutation. Each server loads from disk
-on first tool call. Adds ~0.5s latency per cross-server transition.
-
-**Risk:** User must save model between phases. Error-prone. Multi-container
-setup is heavier (4x Docker processes). Tool names get prefixed
-(`openstudio-model__list_spaces`) which is ugly and harder for LLM.
-
-### Option C: FastMCP mount() composition (~35 per namespace)
-
-Single process, single Docker container. Mount sub-servers with namespaces.
-Model state shared via Python globals (current architecture).
-
+Before (compressed, commit a78d308):
 ```python
-main = FastMCP("openstudio-mcp")
-model_server = FastMCP("model")
-hvac_server = FastMCP("hvac")
-sim_server = FastMCP("simulate")
-measures_server = FastMCP("measures")
-
-# Register skills to appropriate sub-servers
-register_model_skills(model_server)
-register_hvac_skills(hvac_server)
-register_sim_skills(sim_server)
-register_measure_skills(measures_server)
-
-# Mount without namespace (tools keep original names)
-main.mount(model_server)
-main.mount(hvac_server)
-main.mount(sim_server)
-main.mount(measures_server)
+"""Get building-level attributes (floor area, people/lighting/equipment densities, orientation)."""
 ```
 
-**Problem:** All tools still appear in `tools/list` — no reduction.
-Mounting is organizational, not a discovery mechanism. Same 142 tools.
+After (enriched for ToolSearch):
+```python
+"""Get building-level attributes: floor area, conditioned area, exterior
+wall area, people density, lighting power density, equipment power density,
+infiltration rates, north axis orientation, standards building type.
 
-Could combine with `disable(tags=...)` at init + activation tools, but
-Claude Desktop/Code don't support `tools/list_changed`.
+Use this to check the building overview before simulation.
+"""
+```
 
-### Option D: Consolidate + split (hybrid)
+Key principles:
+- **First line:** concise summary (same as now)
+- **Second paragraph:** keyword-rich field list or use cases
+- **No boilerplate:** no "Requires model loaded", no "Returns dict with ok"
+- **Include domain terms** energy modelers would search for
 
-1. First consolidate: merge typed tools into generic ones (~109 tools)
-2. Then split into 3 servers (~35 each)
-3. Shared tools duplicated across servers (list_model_objects etc.)
+### Tools to Enrich (85 with short descriptions)
 
-Gets under Cursor's 40. Works with all clients. Model state is the
-only hard problem.
+Priority order — tools most likely searched by energy modelers:
 
-### Option E: Keep 142 tools, optimize descriptions only
+**High priority (core workflow tools):**
+- `run_simulation` — add "EnergyPlus", "annual", "design day"
+- `extract_summary_metrics` — add "EUI", "energy use intensity", "unmet hours"
+- `get_building_info` — add field list (floor area, densities, orientation)
+- `get_model_summary` — add "object counts", "spaces", "zones", "HVAC"
+- `load_osm_model` — add "open", "import", "version translate"
+- `save_osm_model` — add "export", "write", "save as"
+- `create_new_building` — add "office", "school", "retail", "DOE prototype"
+- `view_model` — add "3D", "Three.js", "geometry viewer"
+- `list_files` — add "/inputs", "/runs", "find", "discover"
 
-ToolSearch works when descriptions are rich. Instead of consolidating:
-- Enrich every tool description with use cases, keywords, examples
-- Ensure every tool is findable by natural language queries
-- Accept that Cursor users need manual tool disabling
+**Medium priority (HVAC tools):**
+- `add_baseline_system` — add all 10 system type names
+- `add_doas_system` — add "dedicated outdoor air", "ventilation"
+- `add_vrf_system` — add "variable refrigerant flow", "multi-zone"
+- `create_plant_loop` — add "hot water", "chilled water", "condenser"
+- `add_supply_equipment` — add "boiler", "chiller", "pump"
+- All get/set component/sizing/SPM tools — add property names
 
-**Lowest risk.** No architecture changes. Already partially done
-(search_api, search_wiring_patterns descriptions enriched).
+**Medium priority (results tools):**
+- `extract_end_use_breakdown` — add "heating", "cooling", "lighting", "by fuel"
+- `extract_hvac_sizing` — add "capacity", "airflow", "autosize"
+- `query_timeseries` — add "hourly", "timestep", "output variable"
+- `compare_runs` — add "baseline", "retrofit", "delta", "percent change"
 
-## Tool Name & Description Audit
+**Lower priority (geometry/loads/envelope):**
+- All list/detail tools — add field names they return
+- All create tools — add what they create and key parameters
 
-**Bad names (too generic for ToolSearch):**
-- `get_run_status` → "Get current status for a run" (47 chars)
-- `cancel_run` → "Attempt to cancel a running job" (31 chars)
-- `copy_file` → "Copy a file or directory" (24 chars)
+### Test Strategy
 
-**Bad descriptions (too short for ToolSearch matching):**
-- 85 tools have first-line descriptions under 60 chars
-- Short descriptions = fewer keywords = harder for ToolSearch to match
+Use existing `tests/test_tool_baseline.py` to measure:
+- `test_total_schema_chars` — will increase (expected, acceptable)
+- `test_core_schema_chars` — core ratio may change
 
-**Good examples (ToolSearch finds these easily):**
-- `create_measure` — 7024 chars, many keywords, examples
-- `get_object_fields` — 575 chars, "introspection", "properties", "setter methods"
-- `search_api` — enriched with use cases and examples
+New test: ToolSearch discoverability sweep
+- For each tool, query ToolSearch with a natural language prompt
+- Record which tools are findable vs invisible
+- Before/after comparison
 
-**Fix:** Enrich all tool descriptions. Doesn't reduce count but improves
-discovery. Compatible with any future consolidation.
+### Existing Tests to Verify
 
-## Recommendation
+- `tests/test_skill_registration.py` — tool count unchanged (142)
+- `tests/test_tool_routing.py` — recommend_tools accuracy unchanged (25/25)
+- `tests/test_wiring_recipes.py` — recipe search unchanged (17/17)
+- `tests/llm/test_09_tool_routing.py` — 12/12 should stay or improve
+- Full LLM suite — 164/171 should stay or improve
 
-**Phase 1 (now): Enrich all descriptions** — Option E. Zero risk, improves
-ToolSearch for all clients that support deferred loading. ~2 hours across
-22 tools.py files.
+## Implementation
 
-**Phase 2 (next sprint): Consolidate typed tools** — Option A partial.
-Remove typed list/detail tools that are redundant with generic access.
-Saves ~20 tools, gets to ~120. Test with ToolSearch to verify generic
-tools are still discoverable.
-
-**Phase 3 (if needed): Split servers** — Option D. Only if Cursor support
-is required or consolidation isn't enough. Requires solving model state
-sharing. Significant architecture change.
+~2 hours across 22 tools.py files. Mechanical work — no architecture
+changes, no new tools, no test changes except the new ToolSearch sweep.
 
 ## Unresolved
 
-- Does Cursor's 40-tool limit apply per-server or total across all MCP servers?
-- If we enrich all 142 descriptions, does ToolSearch handle them all well or is there a practical limit?
-- Would removing typed list tools (list_spaces etc.) hurt LLM test pass rates? Need to measure.
-- Model state sharing: auto-save on every mutation adds latency — is 0.5s acceptable?
-- Should shared tools (list_model_objects, get_object_fields) be duplicated across split servers or centralized?
+- How much description is too much? ToolSearch may have a sweet spot
+  between too-short (not findable) and too-long (dilutes keywords)
+- Should we measure ToolSearch hit rate per-tool before and after?
+- The old pre-compression descriptions (commit a78d308^) could be
+  partially restored — worth diffing to recover useful keywords
