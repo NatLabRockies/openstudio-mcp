@@ -3,11 +3,13 @@
 **Date:** 2026-03-19
 **Context:** 142 MCP tools causing LLM tool selection degradation (FM1)
 
-## Problem
+## Problem (Resolved)
 
 RAG-MCP paper (arxiv:2505.03275) shows selection accuracy drops to 13.6%
-at 100+ tools. Our LLM tests confirm: agent can't discover `search_api`
-or `search_wiring_patterns` among 142 tools even when explicitly prompted.
+at 100+ tools. Initially our LLM tests couldn't discover new tools —
+root cause was stale Docker image (ToolSearch indexes at build time).
+After Docker rebuild + enriched descriptions, all tools discoverable.
+LLM tests 12/12 pass.
 
 ## Approaches Investigated
 
@@ -135,9 +137,8 @@ specific capabilities.
 - Docstring hardening for bypass-prone tools
 - `search_api` + `search_wiring_patterns` for HVAC measure authoring
 
-**Result:** 96.5% pass rate on existing tests (no regression), but agent
-doesn't discover new tools (`search_api`, `search_wiring_patterns`) even
-with explicit prompts. The tools work — the LLM just can't find them.
+**Result:** 96.5% pass rate on existing tests (no regression). New tools
+are discoverable via ToolSearch after Docker rebuild. LLM tests 12/12 pass.
 
 ## Claude Code ToolSearch Testing (2026-03-19)
 
@@ -189,6 +190,6 @@ keyword-rich text to match likely search queries.
 2. **Always rebuild Docker** after adding new tools (CI does this already)
 3. **Enriched descriptions matter** — include use cases, examples, and
    keywords that match natural language queries
-4. **LLM test failures** may resolve now — re-run with rebuilt image
+4. **LLM tests pass** — 12/12 after rebuild (including search_api + search_wiring_patterns discovery)
 5. **Phase 4 (lazy loading) not needed** — ToolSearch handles the
    discovery problem when properly indexed
