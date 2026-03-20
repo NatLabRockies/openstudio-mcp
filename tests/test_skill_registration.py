@@ -94,6 +94,7 @@ EXPECTED_TOOLS = {
     "get_object_fields",
     "set_object_property",
     # Phase 6C: Weather, Design Days, SimControl, RunPeriod
+    "list_weather_files",
     "get_weather_info",
     "add_design_day",
     "get_simulation_control",
@@ -162,6 +163,11 @@ EXPECTED_TOOLS = {
     # Skill Discovery
     "list_skills",
     "get_skill",
+    # API Reference
+    "search_api",
+    "search_wiring_patterns",
+    # Tool Router
+    "recommend_tools",
 }
 
 
@@ -185,9 +191,8 @@ def test_all_tool_names_registered():
     registered_tools = {}
 
     class FakeMCP:
-        def tool(self, name=None):
+        def tool(self, name=None, **kwargs):
             def decorator(fn):
-                # Use explicit name if provided, otherwise function name
                 tool_name = name or fn.__name__
                 registered_tools[tool_name] = fn
                 return fn

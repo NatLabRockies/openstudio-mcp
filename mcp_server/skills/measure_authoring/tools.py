@@ -12,19 +12,18 @@ from mcp_server.skills.measure_authoring.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_custom_measures")
+    @mcp.tool(tags={"measures"}, name="list_custom_measures")
     def list_custom_measures_tool():
-        """List all custom measures created with create_measure.
+        """List custom measures in /runs/custom_measures/ created with create_measure.
 
-        Returns name, language, and measure_dir for each measure in
-        /runs/custom_measures/. Use measure_dir with test_measure or
-        apply_measure. Use name with edit_measure.
+        Returns name, language, and measure_dir for each. Use measure_dir
+        with test_measure or apply_measure. Use name with edit_measure.
 
-        Typical workflow: create_measure → test_measure → apply_measure.
+        Typical workflow: create_measure -> test_measure -> apply_measure.
         """
         return list_custom_measures_op()
 
-    @mcp.tool(name="create_measure")
+    @mcp.tool(tags={"measures"}, name="create_measure")
     def create_measure_tool(
         name: str,
         description: str,
@@ -35,7 +34,12 @@ def register(mcp):
         modeler_description: str = "",
         measure_type: str = "ModelMeasure",
     ):
-        """Create a new custom OpenStudio measure with user-provided code.
+        """ALWAYS use this tool to create OpenStudio measures. Do not write
+        measure.rb files directly or use create_file/Write.
+
+        TIP: call get_skill('measure-authoring') first for templates and pitfalls.
+        For HVAC measures: call search_api to verify methods exist, and
+        search_wiring_patterns for working connection code.
 
         Scaffolds via SDK, then injects arguments() and run() body. Output
         dir: /runs/custom_measures/<name>/. Idempotent — overwrites if exists.
@@ -171,16 +175,16 @@ def register(mcp):
             measure_type=measure_type,
         )
 
-    @mcp.tool(name="test_measure")
+    @mcp.tool(tags={"measures"}, name="test_measure")
     def test_measure_tool(
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
         model_path: str | None = None,
         run_id: str | None = None,
     ):
-        """Run tests for a custom OpenStudio measure.
+        """Run measure tests against a real model; auto-detect Ruby (minitest) or Python (pytest).
 
-        Auto-detects language: Python → pytest, Ruby → minitest.
+        Auto-detects language: Python -> pytest, Ruby -> minitest.
         Tests run against a real model (not an empty model) so measures
         that depend on HVAC, plant loops, zones, etc. can be tested.
 
@@ -206,14 +210,16 @@ def register(mcp):
             model_path=model_path, run_id=run_id,
         )
 
-    @mcp.tool(name="edit_measure")
+    @mcp.tool(tags={"measures"}, name="edit_measure")
     def edit_measure_tool(
         measure_name: str,
         run_body: str | None = None,
         arguments: list[dict] | str | None = None,
         description: str | None = None,
     ):
-        """Edit an existing custom measure's code, arguments, or description.
+        """Modify run() body, arguments, or description of an existing custom measure.
+
+        TIP: call get_skill('measure-authoring') first for templates, API patterns, and common pitfalls.
 
         Looks up /runs/custom_measures/<measure_name>/. Replaces run() body
         between markers, regenerates arguments() method, updates test file.

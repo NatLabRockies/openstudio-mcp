@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**23 skills &bull; 134 tools &bull; 6 prompts &bull; 4 resources &bull; 390 integration tests**
+**23 skills &bull; 142 tools &bull; 6 prompts &bull; 4 resources &bull; 480+ integration tests**
 
 ---
 
@@ -73,7 +73,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 134 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -85,33 +85,63 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 134 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 142 available, calls them in sequence, and summarizes the results — no scripting required.
+
+### Working with Your Own Files
+
+**Place files in the `/inputs` mount** (the host folder mapped to `/inputs` in the config above) rather than uploading them through the chat interface. This ensures the MCP tools can access them directly.
+
+```
+# Example: analyzing an EnergyPlus error file
+# 1. Copy to your inputs folder
+cp eplusout.err ./tests/assets/
+
+# 2. Reference by MCP path in your prompt
+"Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
+```
+
+**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 142 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
+
+For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
 
 ### Other MCP Hosts
 
-[Cursor](https://www.cursor.com/), [VS Code](https://code.visualstudio.com/), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+
+### Client Compatibility
+
+| Client | Status | Notes |
+|--------|--------|-------|
+| Claude Desktop | Full support | All 142 tools available |
+| Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
+| VS Code Copilot | Compatible | MCP support via config |
+| Windsurf | Compatible | Under 100-tool limit |
+| Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
+| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
+| OpenAI API | Compatible | Use defer_loading for best results |
 
 ---
 
 ## Claude Code Skills
 
-When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 11 bundled skills provide workflow automation and domain knowledge:
+When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 12 bundled skills provide workflow automation and domain knowledge:
 
 | Skill | Type | Description |
 |-------|------|-------------|
 | `/simulate` | Workflow | One-command simulate + results extraction |
 | `/energy-report` | Workflow | Comprehensive multi-category energy report |
 | `/qaqc` | Task | Pre-simulation model quality check |
-| `/add-hvac` | Task | Guided ASHRAE system selection |
+| `/add-hvac` | Task | Guided HVAC system selection |
 | `/new-building` | Workflow | Full model creation from scratch |
 | `/retrofit` | Workflow | Before/after ECM analysis |
 | `/view` | Task | Quick 3D model visualization |
-| `measure-authoring` | Knowledge | Custom measure creation, testing, before/after comparison (auto-loaded) |
+| `/troubleshoot` | Task | Diagnose simulation failures and unexpected results |
+| `measure-authoring` | Knowledge | Measure creation, SDK method verification, wiring patterns (auto-loaded) |
 | `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection criteria (auto-loaded) |
 | `openstudio-patterns` | Knowledge | Tool dependencies and model relationships (auto-loaded) |
 | `tool-workflows` | Knowledge | Multi-tool recipes for common operations (auto-loaded) |
 
-Workflow skills are invoked with `/skill-name`. Knowledge skills load automatically when relevant.
+Workflow/task skills are invoked with `/skill-name`. Knowledge skills load automatically when relevant.
 
 ### Workflow Guides for All MCP Clients
 
@@ -124,7 +154,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (134 total)
+## Skills & Tools (142 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |
@@ -243,7 +273,7 @@ List space types via `list_model_objects("SpaceType")`.
 |------|-------------|
 | `get_space_type_details` | Space type loads, schedules, standards |
 
-### Simulation (7 tools)
+### Simulation (8 tools)
 | Tool | Description |
 |------|-------------|
 | `validate_osw` | Validate OSW workflow file |
@@ -253,8 +283,9 @@ List space types via `list_model_objects("SpaceType")`.
 | `get_run_logs` | Tail simulation logs |
 | `get_run_artifacts` | List simulation output files |
 | `cancel_run` | Cancel running simulation |
+| `validate_model` | Pre-simulation check: weather, design days, HVAC, constructions |
 
-### Results (9 tools)
+### Results (12 tools)
 | Tool | Description |
 |------|-------------|
 | `extract_summary_metrics` | Extract EUI, energy, unmet hours from results |
@@ -266,6 +297,9 @@ List space types via `list_model_objects("SpaceType")`.
 | `extract_zone_summary` | Per-zone areas, conditions, multipliers |
 | `extract_component_sizing` | Autosized HVAC component values (filterable) |
 | `query_timeseries` | Time-series output variable data with date/cap filters |
+| `extract_simulation_errors` | Parse eplusout.err into Fatal/Severe/Warning lists |
+| `list_output_variables` | List available output variables from completed simulation |
+| `compare_runs` | Compare two runs: EUI delta, per-fuel end-use breakdown |
 
 ### Simulation Outputs (2 tools)
 | Tool | Description |
@@ -324,9 +358,10 @@ List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail too
 | `get_object_fields` | Read all properties of any object via introspection — returns values + available setters |
 | `set_object_property` | Write any property on any object via official setters — auto-coerces value types |
 
-### Weather & Simulation Config (6 tools)
+### Weather & Simulation Config (7 tools)
 | Tool | Description |
 |------|-------------|
+| `list_weather_files` | List available EPW files with companion .stat/.ddy files |
 | `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
 | `add_design_day` | Add heating/cooling design day |
 | `get_simulation_control` | Read sizing flags and timesteps per hour |
@@ -358,6 +393,17 @@ Create custom OpenStudio measures with AI-generated code, test them, and apply t
 | Tool | Description |
 |------|-------------|
 | `list_comstock_measures` | List bundled measures with category filter (baseline/upgrade/setup) |
+
+### API Reference (2 tools)
+| Tool | Description |
+|------|-------------|
+| `search_api` | Look up OpenStudio SDK classes and setter/getter methods — verify methods exist before calling |
+| `search_wiring_patterns` | Find Ruby wiring recipes for HVAC components (24 patterns: beams, DOAS, VRF, plant loops, etc.) |
+
+### Tool Router (1 tool)
+| Tool | Description |
+|------|-------------|
+| `recommend_tools` | Given a task description, recommend the relevant tool group |
 
 ### Common Measures (20 tools)
 

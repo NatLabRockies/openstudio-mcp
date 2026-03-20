@@ -15,7 +15,7 @@ from mcp_server.skills.geometry.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_surfaces")
+    @mcp.tool(tags={"geometry"}, name="list_surfaces")
     def list_surfaces_tool(
         detailed: bool = False,
         space_name: str | None = None,
@@ -23,7 +23,8 @@ def register(mcp):
         boundary: str | None = None,
         max_results: int = 10,
     ):
-        """List surfaces. Default 10 results; use filters to narrow.
+        """List surfaces — walls, floors, roofs, ceilings by type and boundary condition.
+        Default 10 results; use filters to narrow.
 
         Common filters:
         - Exterior walls: surface_type="Wall", boundary="Outdoors"
@@ -42,23 +43,24 @@ def register(mcp):
                             surface_type=surface_type, boundary=boundary,
                             max_results=mr)
 
-    @mcp.tool(name="get_surface_details")
+    @mcp.tool(tags={"geometry"}, name="get_surface_details")
     def get_surface_details_tool(surface_name: str):
-        """Get detailed information about a specific surface.
+        """Get surface details — vertices, area, tilt, azimuth, construction, adjacent surface.
 
         Args:
             surface_name: Name of the surface to retrieve
         """
         return get_surface_details(surface_name=surface_name)
 
-    @mcp.tool(name="list_subsurfaces")
+    @mcp.tool(tags={"geometry"}, name="list_subsurfaces")
     def list_subsurfaces_tool(
         surface_name: str | None = None,
         space_name: str | None = None,
         subsurface_type: str | None = None,
         max_results: int = 10,
     ):
-        """List subsurfaces (windows/doors). Default 10 results; use filters to narrow.
+        """List subsurfaces — windows, doors, skylights, glass doors.
+        Default 10 results; use filters to narrow.
 
         Common filters:
         - Windows on a wall: surface_name="Wall 1"
@@ -75,7 +77,7 @@ def register(mcp):
         return list_subsurfaces(surface_name=surface_name, space_name=space_name,
                                subsurface_type=subsurface_type, max_results=mr)
 
-    @mcp.tool(name="create_surface")
+    @mcp.tool(tags={"geometry"}, name="create_surface")
     def create_surface_tool(
         name: str,
         vertices: list[list[float]],
@@ -83,7 +85,7 @@ def register(mcp):
         surface_type: str | None = None,
         outside_boundary_condition: str | None = None,
     ):
-        """Create a surface with explicit vertices in a space.
+        """Create a wall, floor, or roof surface with 3D vertex coordinates in a space.
 
         Args:
             name: Surface name
@@ -99,14 +101,14 @@ def register(mcp):
             outside_boundary_condition=outside_boundary_condition,
         )
 
-    @mcp.tool(name="create_subsurface")
+    @mcp.tool(tags={"geometry"}, name="create_subsurface")
     def create_subsurface_tool(
         name: str,
         vertices: list[list[float]],
         parent_surface_name: str,
         subsurface_type: str = "FixedWindow",
     ):
-        """Create a subsurface (window/door) on a parent surface.
+        """Create a window, door, skylight, or glass door subsurface on a parent surface.
 
         Args:
             name: Subsurface name
@@ -121,7 +123,7 @@ def register(mcp):
             subsurface_type=subsurface_type,
         )
 
-    @mcp.tool(name="create_space_from_floor_print")
+    @mcp.tool(tags={"geometry"}, name="create_space_from_floor_print")
     def create_space_from_floor_print_tool(
         name: str,
         floor_vertices: list[list[float]],
@@ -129,11 +131,10 @@ def register(mcp):
         building_story_name: str | None = None,
         thermal_zone_name: str | None = None,
     ):
-        """Create a space by extruding a floor polygon to a given height.
+        """Extrude a 2D floor polygon into a 3D space with walls, floor, and ceiling.
 
-        Automatically creates floor, ceiling, and wall surfaces from the
-        polygon outline and height. This is the easiest way to create
-        geometry for a rectangular or polygonal zone.
+        Automatically creates all surfaces from the polygon outline and height.
+        Easiest way to create geometry for a rectangular or polygonal zone.
 
         Args:
             name: Space name
@@ -150,18 +151,18 @@ def register(mcp):
             thermal_zone_name=thermal_zone_name,
         )
 
-    @mcp.tool(name="match_surfaces")
+    @mcp.tool(tags={"geometry"}, name="match_surfaces")
     def match_surfaces_tool():
         """Intersect and match surfaces across all spaces, setting shared walls as interior boundaries."""
         return match_surfaces()
 
-    @mcp.tool(name="set_window_to_wall_ratio")
+    @mcp.tool(tags={"geometry"}, name="set_window_to_wall_ratio")
     def set_window_to_wall_ratio_tool(
         surface_name: str,
         ratio: float,
         sill_height_m: float = 0.9,
     ):
-        """Add a centered window to a wall surface by glazing ratio.
+        """Set glazing ratio on an exterior wall — adds a centered window by window-to-wall ratio.
 
         Args:
             surface_name: Name of the wall surface
@@ -174,7 +175,7 @@ def register(mcp):
             sill_height_m=sill_height_m,
         )
 
-    @mcp.tool(name="import_floorspacejs")
+    @mcp.tool(tags={"geometry"}, name="import_floorspacejs")
     def import_floorspacejs_tool(
         floorplan_path: str,
         building_type: str = "SmallOffice",

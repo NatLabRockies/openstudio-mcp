@@ -25,7 +25,7 @@ def _get_registered_tool_names() -> set[str]:
     registered = {}
 
     class FakeMCP:
-        def tool(self, name=None):
+        def tool(self, name=None, **kwargs):
             def decorator(fn):
                 tool_name = name or fn.__name__
                 registered[tool_name] = fn

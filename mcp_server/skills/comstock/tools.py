@@ -10,9 +10,9 @@ from mcp_server.skills.comstock.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="list_comstock_measures")
+    @mcp.tool(tags={"measures"}, name="list_comstock_measures")
     def list_comstock_measures_tool(category: str | None = None):
-        """List available ComStock measures bundled in the server.
+        """List ~61 bundled ComStock measures: baseline systems, upgrades, and setup.
 
         Args:
             category: Optional filter — "baseline", "upgrade", "setup", "other",
@@ -21,7 +21,7 @@ def register(mcp):
         """
         return list_comstock_measures(category=category)
 
-    @mcp.tool(name="create_bar_building")
+    @mcp.tool(tags={"core"}, name="create_bar_building")
     def create_bar_building_tool(
         building_type: str = "SmallOffice",
         total_bldg_floor_area: float = 10000,
@@ -37,7 +37,7 @@ def register(mcp):
         story_multiplier: str = "Basements Ground Mid Top",
         bar_width: float = 0,
     ):
-        """Create bar building geometry from building type and high-level parameters.
+        """Create bar geometry from building type, floor area, aspect ratio, number of stories.
 
         Creates spaces, surfaces, fenestration, thermal zones, building stories,
         and space types. Does NOT add constructions, loads, HVAC, or schedules —
@@ -82,7 +82,7 @@ def register(mcp):
             bar_width=bar_width,
         )
 
-    @mcp.tool(name="create_typical_building")
+    @mcp.tool(tags={"measures"}, name="create_typical_building")
     def create_typical_building_tool(
         template: str = "90.1-2019",
         building_type: str = "SmallOffice",
@@ -99,7 +99,7 @@ def register(mcp):
         add_thermostat: bool = True,
         remove_objects: bool = True,
     ):
-        """Create a typical building from the loaded model using openstudio-standards.
+        """Apply 90.1 template: constructions, loads, HVAC, SWH to model with geometry.
 
         Adds constructions, loads, HVAC, schedules, and service water heating
         to a model that already has geometry and space types assigned.
@@ -141,7 +141,7 @@ def register(mcp):
             remove_objects=remove_objects,
         )
 
-    @mcp.tool(name="create_new_building")
+    @mcp.tool(tags={"core"}, name="create_new_building")
     def create_new_building_tool(
         building_type: str = "SmallOffice",
         total_bldg_floor_area: float = 10000,
@@ -164,7 +164,7 @@ def register(mcp):
         add_hvac: bool = True,
         add_swh: bool = True,
     ):
-        """Create a complete building from scratch in one call.
+        """End-to-end: bar geometry + weather + 90.1 typical template in one call.
 
         Chains: empty model -> [change_building_location] -> create_bar -> create_typical.
         Creates geometry, space types, constructions, loads, HVAC, schedules, SWH.

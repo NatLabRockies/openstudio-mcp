@@ -13,12 +13,12 @@ from mcp_server.skills.object_management.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="delete_object")
+    @mcp.tool(name="delete_object", tags={"core"})
     def delete_object_tool(
         object_name: str,
         object_type: str | None = None,
     ):
-        """Delete a named object from the loaded model.
+        """Remove a space, zone, surface, HVAC component, or any named object from the model.
 
         Args:
             object_name: Name of the object to delete
@@ -29,13 +29,13 @@ def register(mcp):
         """
         return delete_object(object_name=object_name, object_type=object_type)
 
-    @mcp.tool(name="rename_object")
+    @mcp.tool(name="rename_object", tags={"core"})
     def rename_object_tool(
         object_name: str,
         new_name: str,
         object_type: str | None = None,
     ):
-        """Rename a named object in the loaded model.
+        """Change the name of any model object (space, zone, HVAC component, schedule, etc.).
 
         Args:
             object_name: Current name of the object
@@ -47,13 +47,14 @@ def register(mcp):
             object_name=object_name, new_name=new_name, object_type=object_type,
         )
 
-    @mcp.tool(name="list_model_objects")
+    @mcp.tool(name="list_model_objects", tags={"core"})
     def list_model_objects_tool(
         object_type: str,
         name_contains: str | None = None,
         max_results: int = 10,
     ):
         """List objects of a given type. Accepts ANY OpenStudio type. Default 10 results.
+        For common types, typed tools (list_spaces, list_air_loops) provide richer detail.
 
         Accepts type names in any format:
         - CamelCase: CoilCoolingFourPipeBeam
@@ -75,7 +76,7 @@ def register(mcp):
         return list_model_objects(object_type=object_type, name_contains=name_contains,
                                  max_results=mr)
 
-    @mcp.tool(name="get_object_fields")
+    @mcp.tool(name="get_object_fields", tags={"core"})
     def get_object_fields_tool(
         object_type: str,
         object_name: str | None = None,
@@ -101,7 +102,7 @@ def register(mcp):
             object_handle=object_handle,
         )
 
-    @mcp.tool(name="set_object_property")
+    @mcp.tool(name="set_object_property", tags={"core"})
     def set_object_property_tool(
         object_type: str,
         property_name: str,

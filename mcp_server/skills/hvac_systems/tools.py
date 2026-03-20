@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def register(mcp: FastMCP) -> None:
     """Register HVAC systems tools with MCP server."""
 
-    @mcp.tool(name="add_baseline_system")
+    @mcp.tool(tags={"hvac"}, name="add_baseline_system")
     def add_baseline_system_tool(
         system_type: int,
         thermal_zone_names: list[str] | str,
@@ -24,12 +24,11 @@ def register(mcp: FastMCP) -> None:
         system_name: str | None = None,
     ) -> str:
         """Add HVAC / heating and cooling system to the building.
+        ALWAYS use this for ASHRAE systems — do not write HVAC setup scripts.
 
-        Use this tool when a user wants to add HVAC, set up heating and cooling,
-        or add an air conditioning system. Implements ASHRAE 90.1 Appendix G
-        baseline systems 1-10: PTAC, PTHP, PSZ-AC, PSZ-HP, PkgVAV Reheat/PFP,
-        VAV Reheat/PFP, Gas/Elec UnitHtrs.
-        Call list_baseline_systems() to see all options with descriptions.
+        ASHRAE 90.1 Appendix G baseline systems 1-10: PTAC, PTHP, PSZ-AC,
+        PSZ-HP, packaged VAV reheat, PFP boxes, VAV reheat/PFP, unit heater,
+        DOAS, VRF, radiant. Call list_baseline_systems() for all options.
 
         Args:
             system_type: ASHRAE baseline system type (1-10). Call list_baseline_systems() to see options.
@@ -47,25 +46,28 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="list_baseline_systems")
+    @mcp.tool(tags={"hvac"}, name="list_baseline_systems")
     def list_baseline_systems_tool() -> str:
-        """List all 10 ASHRAE 90.1 Appendix G baseline system types with descriptions and technologies."""
+        """List all 10 ASHRAE 90.1 Appendix G baseline system types plus DOAS, VRF, radiant templates.
+        Returns system number, description, components, and applicable building types."""
         result = operations.list_baseline_systems()
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="get_baseline_system_info")
+    @mcp.tool(tags={"hvac"}, name="get_baseline_system_info")
     def get_baseline_system_info_tool(system_type: int) -> str:
-        """Get detailed info for a specific ASHRAE baseline system type (1-10)."""
+        """Get detailed info for a specific ASHRAE baseline system type (1-10).
+        Returns system description, zones served, components, and capacity."""
         result = operations.get_baseline_system_info(system_type)
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="replace_air_terminals")
+    @mcp.tool(tags={"hvac"}, name="replace_air_terminals")
     def replace_air_terminals_tool(
         air_loop_name: str,
         terminal_type: str,
         terminal_options: dict | None = None,
     ) -> str:
         """Replace all air terminals on an air loop with a new type.
+        Supports VAV, PIU/PFP, four-pipe beam, cooled beam, constant volume terminals.
 
         Args:
             air_loop_name: Name of air loop to modify
@@ -81,13 +83,14 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="replace_zone_terminal")
+    @mcp.tool(tags={"hvac"}, name="replace_zone_terminal")
     def replace_zone_terminal_tool(
         zone_name: str,
         terminal_type: str,
         terminal_options: dict | None = None,
     ) -> str:
-        """Replace the air terminal on a single zone (vs replace_air_terminals which does all zones on a loop).
+        """Replace the air terminal on a single zone (vs replace_air_terminals for all zones on a loop).
+        Supports VAV, PIU/PFP, four-pipe beam, cooled beam, constant volume terminals.
 
         Args:
             zone_name: Name of the thermal zone to modify
@@ -103,7 +106,7 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="add_doas_system")
+    @mcp.tool(tags={"hvac"}, name="add_doas_system")
     def add_doas_system_tool(
         thermal_zone_names: list[str] | str,
         system_name: str = "DOAS",
@@ -113,10 +116,9 @@ def register(mcp: FastMCP) -> None:
         heating_fuel: str = "NaturalGas",
         cooling_fuel: str = "Electricity",
     ) -> str:
-        """Add Dedicated Outdoor Air System with zone equipment.
-
-        Creates 100% OA ventilation loop with optional ERV, plus zone-level conditioning.
-        Plant loops auto-wired with supply equipment.
+        """Add dedicated outdoor air system (DOAS) with zone equipment.
+        Ventilation-only air loop with optional ERV, paired with fan coil, radiant,
+        or chilled beam zone conditioning. Plant loops auto-wired.
 
         Args:
             thermal_zone_names: List of thermal zone names to serve
@@ -137,15 +139,14 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="add_vrf_system")
+    @mcp.tool(tags={"hvac"}, name="add_vrf_system")
     def add_vrf_system_tool(
         thermal_zone_names: list[str] | str,
         system_name: str = "VRF",
         heat_recovery: bool = True,
         outdoor_unit_capacity_w: float | None = None,
     ) -> str:
-        """Add VRF multi-zone heat pump system.
-
+        """Add variable refrigerant flow (VRF) multi-zone heat pump system.
         Creates single outdoor unit with individual zone terminals. Heat recovery enables
         simultaneous heating/cooling across zones.
 
@@ -162,7 +163,7 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool(name="add_radiant_system")
+    @mcp.tool(tags={"hvac"}, name="add_radiant_system")
     def add_radiant_system_tool(
         thermal_zone_names: list[str] | str,
         system_name: str = "Radiant",
@@ -171,8 +172,7 @@ def register(mcp: FastMCP) -> None:
         heating_fuel: str = "NaturalGas",
         cooling_fuel: str = "Electricity",
     ) -> str:
-        """Add low-temperature radiant heating/cooling system.
-
+        """Add low-temperature radiant floor heating / ceiling cooling system.
         Creates hydronic radiant surfaces with low-temp plant loops (auto-wired).
         Optionally adds DOAS for ventilation.
 

@@ -37,6 +37,7 @@ BUILTIN_TOOLS = frozenset({
     "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite",
     "AskUserQuestion", "Skill", "EnterPlanMode", "ExitPlanMode",
     "EnterWorktree", "LSP", "ListMcpResourcesTool", "ReadMcpResourceTool",
+    "Agent",
 })
 
 

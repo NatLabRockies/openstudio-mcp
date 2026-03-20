@@ -14,7 +14,7 @@ from mcp_server.skills.simulation.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="validate_osw")
+    @mcp.tool(tags={"simulation"}, name="validate_osw")
     def validate_osw_tool(osw_path: str, epw_path: str | None = None):
         """Validate OSW JSON and referenced files (best-effort).
 
@@ -23,14 +23,14 @@ def register(mcp):
         """
         return validate_osw(osw_path, epw_path=epw_path)
 
-    @mcp.tool(name="run_osw")
+    @mcp.tool(tags={"simulation"}, name="run_osw")
     def run_osw_tool(
         osw_path: str,
         epw_path: str | None = None,
         name: str | None = None,
         validate_first: bool = True,
     ):
-        """Start an OpenStudio run asynchronously.
+        """Start an OpenStudio workflow (OSW) run asynchronously.
 
         By default, this performs the same checks as `validate_osw_tool` before
         starting a run. Set `validate_first=False` to skip validation.
@@ -48,50 +48,57 @@ def register(mcp):
 
         return run_osw(osw_path=osw_path, epw_path=epw_path, name=name)
 
-    @mcp.tool(name="run_simulation")
+    @mcp.tool(tags={"core", "simulation"}, name="run_simulation")
     def run_simulation_tool(
         osm_path: str,
         epw_path: str | None = None,
         name: str | None = None,
     ):
-        """Run an EnergyPlus simulation from an OSM model file.
+        """Run an EnergyPlus annual or design-day simulation from an OSM file.
 
-        Requires a weather file (EPW) and design days to be set on the model
-        first, or pass epw_path here. Without design days, HVAC sizing will fail.
+        IMPORTANT: requires weather file (EPW) and design days set on the model
+        first (via change_building_location), or pass epw_path here. Without
+        design days, HVAC sizing fails.
 
-        Creates a minimal OSW workflow automatically and starts the simulation.
-        Use get_run_status() to poll for completion, then
-        extract_summary_metrics() to get results.
+        Workflow: run_simulation → get_run_status (poll) → extract_summary_metrics.
         """
         return run_simulation(osm_path=osm_path, epw_path=epw_path, name=name)
 
-    @mcp.tool(name="get_run_status")
+    @mcp.tool(tags={"core", "simulation"}, name="get_run_status")
     def get_run_status_tool(run_id: str):
-        """Get current status for a run.
+        """Get current status of an EnergyPlus simulation run: queued, running,
+        completed, or failed. Returns progress percentage and elapsed time.
 
         Poll no more than once per minute. For long simulations (>2 min),
         poll every 2-3 minutes.
         """
         return get_run_status(run_id)
 
-    @mcp.tool(name="get_run_logs")
+    @mcp.tool(tags={"simulation"}, name="get_run_logs")
     def get_run_logs_tool(run_id: str, tail: int | None = None, stream: str = "openstudio"):
-        """Return tail of logs for a run (openstudio/energyplus)."""
+        """Return tail of OpenStudio or EnergyPlus log output for a simulation
+        run. Use to diagnose simulation failures, warnings, or errors.
+        """
         return get_run_logs(run_id, tail=tail, stream=stream)
 
-    @mcp.tool(name="get_run_artifacts")
+    @mcp.tool(tags={"simulation"}, name="get_run_artifacts")
     def get_run_artifacts_tool(run_id: str):
-        """List important output artifacts for a run."""
+        """List simulation output files: eplusout.sql, eplusout.err, HTML
+        report, OSM/IDF snapshots, measure output. Returns file paths and sizes.
+        """
         return get_run_artifacts(run_id)
 
-    @mcp.tool(name="cancel_run")
+    @mcp.tool(tags={"simulation"}, name="cancel_run")
     def cancel_run_tool(run_id: str):
-        """Attempt to cancel a running job."""
+        """Cancel a running EnergyPlus simulation. Only works while status is
+        'running' or 'queued'.
+        """
         return cancel_run(run_id)
 
-    @mcp.tool(name="validate_model")
+    @mcp.tool(tags={"simulation"}, name="validate_model")
     def validate_model_tool():
         """Pre-simulation validation: weather file, design days, HVAC, constructions.
-        Run before simulate to catch common issues early.
+        Use before run_simulation to catch common issues early.
+        For post-simulation QA/QC with ASHRAE compliance checks, use run_qaqc_checks instead.
         """
         return validate_model_op()

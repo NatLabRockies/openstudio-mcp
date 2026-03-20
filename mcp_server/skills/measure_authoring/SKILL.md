@@ -14,6 +14,15 @@ create_measure → test_measure → apply_measure
 
 Use `edit_measure` to iterate on existing measures. Use `list_custom_measures` to find previously created measures.
 
+## Before Writing HVAC Measures
+
+LLM training data may reference deprecated or nonexistent OpenStudio methods. Before writing SDK calls:
+
+1. **`search_api("CoilCoolingFourPipeBeam")`** — verify methods exist on the class. Returns real setters/getters grouped by category.
+2. **`search_wiring_patterns("four pipe beam")`** — get working Ruby code showing how to connect components to loops, terminals to air loops, etc.
+
+This prevents hallucinated method names (e.g. `setRatedCoolingCoefficientOfPerformance` does not exist on `CoilCoolingFourPipeBeam`) and incorrect wiring order.
+
 ## Argument Strategy — Make Measures Reusable
 
 **Parameterize anything model-specific.** Hard-code only measure logic (traversal, formulas, output structure).

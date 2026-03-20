@@ -6,18 +6,28 @@ from mcp_server.skills.weather.operations import (
     get_run_period,
     get_simulation_control,
     get_weather_info,
+    list_weather_files,
     set_run_period,
     set_simulation_control,
 )
 
 
 def register(mcp):
-    @mcp.tool(name="get_weather_info")
+    @mcp.tool(tags={"core", "simulation"}, name="list_weather_files")
+    def list_weather_files_tool():
+        """List available EPW weather files with companion .stat and .ddy files for simulation.
+
+        Use returned path with change_building_location.
+        Returns name, path, and whether .ddy/.stat companion files exist.
+        """
+        return list_weather_files()
+
+    @mcp.tool(tags={"simulation"}, name="get_weather_info")
     def get_weather_info_tool():
-        """Get weather file info (city, lat/lon, elevation, EPW URL)."""
+        """Get weather file info: city, state, latitude, longitude, timezone, elevation, EPW path."""
         return get_weather_info()
 
-    @mcp.tool(name="add_design_day")
+    @mcp.tool(tags={"simulation"}, name="add_design_day")
     def add_design_day_tool(
         name: str,
         day_type: str,
@@ -30,7 +40,7 @@ def register(mcp):
         wind_speed_ms: float | None = None,
         barometric_pressure_pa: float | None = None,
     ):
-        """Add a sizing design day to the loaded model.
+        """Add a heating or cooling sizing design day with temperature, humidity, and wind.
 
         Args:
             name: Design day name (e.g. "Chicago Winter 99%")
@@ -52,12 +62,12 @@ def register(mcp):
             wind_speed_ms=wind_speed_ms, barometric_pressure_pa=barometric_pressure_pa,
         )
 
-    @mcp.tool(name="get_simulation_control")
+    @mcp.tool(tags={"simulation"}, name="get_simulation_control")
     def get_simulation_control_tool():
-        """Get SimulationControl flags and timestep."""
+        """Get SimulationControl: zone/system sizing, run for sizing/weather periods, timestep."""
         return get_simulation_control()
 
-    @mcp.tool(name="set_simulation_control")
+    @mcp.tool(tags={"simulation"}, name="set_simulation_control")
     def set_simulation_control_tool(
         do_zone_sizing: bool | None = None,
         do_system_sizing: bool | None = None,
@@ -66,7 +76,7 @@ def register(mcp):
         run_for_weather_file: bool | None = None,
         timesteps_per_hour: int | None = None,
     ):
-        """Modify SimulationControl flags and/or Timestep on the loaded model.
+        """Enable/disable sizing calculations, set timesteps per hour on the loaded model.
 
         Args:
             do_zone_sizing: Enable zone sizing calculations
@@ -86,12 +96,12 @@ def register(mcp):
             timesteps_per_hour=timesteps_per_hour,
         )
 
-    @mcp.tool(name="get_run_period")
+    @mcp.tool(tags={"simulation"}, name="get_run_period")
     def get_run_period_tool():
-        """Get RunPeriod begin/end dates."""
+        """Get RunPeriod simulation start and end dates (month/day)."""
         return get_run_period()
 
-    @mcp.tool(name="set_run_period")
+    @mcp.tool(tags={"simulation"}, name="set_run_period")
     def set_run_period_tool(
         begin_month: int,
         begin_day: int,
@@ -99,7 +109,7 @@ def register(mcp):
         end_day: int,
         name: str | None = None,
     ):
-        """Set or modify the RunPeriod on the loaded model.
+        """Set annual or partial-year simulation start/end dates on the loaded model.
 
         Args:
             begin_month: Start month (1-12)

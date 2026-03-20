@@ -148,9 +148,10 @@ def test_create_bad_syntax():
                     "run_body": "    def def def broken",
                     "language": "Ruby",
                 }))
-                # Should still create but report syntax error
-                assert res.get("ok") is True
+                # Must return ok:false so LLMs know the measure is broken
+                assert res.get("ok") is False
                 assert res["validation"]["syntax_ok"] is False
+                assert "syntax error" in res.get("error", "").lower()
     asyncio.run(_run())
 
 
@@ -918,4 +919,139 @@ def test_apply_measure_returns_runner_messages():
                 assert "initial_condition" in msgs
                 assert "final_condition" in msgs
                 assert "info" in msgs
+    asyncio.run(_run())
+
+
+# ── Quote-escaping & XML attribute tests ─────────────────────────────
+
+
+@pytest.mark.integration
+def test_create_measure_with_quotes_in_description():
+    """Description containing double-quotes must not break Ruby/Python syntax.
+
+    Regression: create_measure injected unescaped quotes into Ruby string,
+    producing broken syntax that cascaded into 8 fix attempts.
+    """
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                desc_with_quotes = (
+                    'Fixes the "Zone outside air per person rate" warning '
+                    'and the "People comfort schedules" warning.'
+                )
+                for lang in ("Ruby", "Python"):
+                    name = _unique(f"quotes_{lang.lower()}")
+                    res = unwrap(await s.call_tool("create_measure", {
+                        "name": name,
+                        "description": desc_with_quotes,
+                        "modeler_description": 'Uses "isDefaulted" API method.',
+                        "run_body": ('    runner.registerInfo("ok")'
+                                     if lang == "Ruby"
+                                     else '        runner.registerInfo("ok")'),
+                        "language": lang,
+                    }))
+                    assert res.get("ok") is True, (
+                        f"{lang} measure with quotes failed: {res.get('error')}"
+                    )
+                    assert res["validation"]["syntax_ok"] is True
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_edit_description_with_quotes():
+    """edit_measure description update must handle existing and new quotes."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("edit_quotes")
+                # Create with quotes in description
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": 'Fixes "Zone OA" warnings.',
+                    "run_body": '    runner.registerInfo("ok")',
+                    "language": "Ruby",
+                }))
+                assert create.get("ok") is True
+                # Edit to new description also with quotes
+                edit = unwrap(await s.call_tool("edit_measure", {
+                    "measure_name": name,
+                    "description": 'Now fixes "DSOA" and "People" warnings.',
+                }))
+                assert edit.get("ok") is True, (
+                    f"edit_measure failed: {edit.get('error')}"
+                )
+                assert edit["validation"]["syntax_ok"] is True
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_measure_xml_has_intended_software_tool():
+    """measure.xml must include Intended Software Tool attributes."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        import xml.etree.ElementTree as ET
+
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("xml_tools")
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Intended Software Tool test",
+                    "run_body": '    runner.registerInfo("ok")',
+                    "language": "Ruby",
+                }))
+                assert create.get("ok") is True
+                xml_res = unwrap(await s.call_tool("read_file", {
+                    "file_path": f"{create['measure_dir']}/measure.xml",
+                }))
+                assert xml_res.get("ok") is True
+                root = ET.fromstring(xml_res["text"])
+                tool_values = []
+                for attr in root.findall(".//attribute"):
+                    n = attr.findtext("name")
+                    if n == "Intended Software Tool":
+                        tool_values.append(attr.findtext("value"))
+                assert "Apply Measure Now" in tool_values, (
+                    f"Missing 'Apply Measure Now', found: {tool_values}"
+                )
+                assert "OpenStudio Application" in tool_values
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_bad_syntax_returns_ok_false():
+    """create_measure with broken run_body must return ok:false + error message.
+
+    Regression: previously returned ok:true with syntax_ok:false, causing
+    LLMs to try edit_measure on a broken file, compounding the error.
+    """
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("bad_ok")
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": "Broken measure",
+                    "run_body": "    def def def broken",
+                    "language": "Ruby",
+                }))
+                assert res.get("ok") is False
+                assert "syntax error" in res.get("error", "").lower()
+                # Should still include measure_dir for debugging
+                assert "measure_dir" in res
     asyncio.run(_run())

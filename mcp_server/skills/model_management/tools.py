@@ -12,9 +12,12 @@ from mcp_server.skills.model_management.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="load_osm_model")
+    @mcp.tool(name="load_osm_model", tags={"core"})
     def load_osm_model_tool(osm_path: str, version_translate: bool = True):
-        """Load an OSM and set as current model for query tools.
+        """Load an OpenStudio model (.osm) and set as current model for all
+        query and modification tools. Supports version translation for older
+        models. After loading, use get_building_info, list_spaces,
+        list_thermal_zones, etc. to inspect the model.
 
         Args:
             osm_path: Path to the OSM file to load (absolute or relative)
@@ -22,22 +25,27 @@ def register(mcp):
         """
         return load_osm_model(osm_path=osm_path, version_translate=version_translate)
 
-    @mcp.tool(name="save_osm_model")
+    @mcp.tool(name="save_osm_model", tags={"core"})
     def save_osm_model_tool(osm_path: str | None = None):
-        """Save loaded model to disk.
+        """Save the currently loaded model to disk as an OSM file.
+        IMPORTANT: call after making changes to persist the model. Changes
+        are lost if you don't save before loading a different model.
 
         Args:
             osm_path: Optional path to save to. If not provided, saves to original load path.
         """
         return save_osm_model(osm_path=osm_path)
 
-    @mcp.tool(name="create_example_osm")
+    @mcp.tool(name="create_example_osm", tags={"geometry"})
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):
-        """Create built-in OpenStudio example model (auto-loads into memory).
-        Use this tool to create models. Do not write raw IDF/OSM files."""
+        """Create a minimal single-zone OpenStudio example model for testing
+        and demos. Auto-loads into memory. Saved under /runs/.
+        For multi-zone baseline, use create_baseline_osm. For production
+        models with DOE prototypes, use create_new_building.
+        """
         return create_example_osm(name=name, out_dir=out_dir)
 
-    @mcp.tool(name="create_baseline_osm")
+    @mcp.tool(name="create_baseline_osm", tags={"geometry"})
     def create_baseline_osm_tool(
         name: str | None = None,
         num_floors: int = 2,
@@ -46,8 +54,10 @@ def register(mcp):
         ashrae_sys_num: str | None = None,
         wwr: float | None = None,
     ):
-        """Create baseline 10-zone commercial building (auto-loads into memory).
-        Use this tool to create models. Do not write raw IDF/OSM files.
+        """Create a baseline 10-zone, 2-story commercial building with perimeter
+        and core zones, schedules, loads, constructions, and thermostats.
+        Optionally adds ASHRAE HVAC system 01-10 and windows. Auto-loads into
+        memory. For testing/demos only — for production models use create_new_building.
 
         Args:
             name: Model name (used for output directory)
@@ -66,29 +76,35 @@ def register(mcp):
             wwr=wwr,
         )
 
-    @mcp.tool(name="list_files")
+    @mcp.tool(name="list_files", tags={"core"})
     def list_files_tool(
         directory: str | None = None,
         pattern: str = "*",
-        max_depth: int | None = None,
+        max_depth: int = 2,
         max_results: int = 10,
     ):
-        """List files in /inputs and /runs. Default 10 results.
+        """List files in /inputs and /runs only. Default 10 results.
+        /inputs contains user-provided models, weather files, and data files.
+        /runs contains simulation outputs. Both are inside the MCP container.
 
         Only call if you need to discover files. Do not call repeatedly
-        for the same directory.
+        for the same directory. For weather files, use list_weather_files instead.
 
         Args:
-            directory: Directory to list (e.g. "/runs/my_run"). If omitted, scans /inputs and /runs.
-            pattern: Glob pattern (e.g. "*.epw", "*.osm"). Default "*".
-            max_depth: Max directory depth (1 = top-level only). Default unlimited.
+            directory: Directory under /inputs or /runs (e.g. "/runs/my_run"). If omitted, scans both.
+            pattern: Glob pattern (e.g. "*.osm"). Default "*".
+            max_depth: Max directory depth (1 = top-level only). Default 2.
             max_results: Max items (default 10, 0=unlimited)
         """
         mr = None if max_results == 0 else max_results
         return list_files(directory=directory, pattern=pattern, max_depth=max_depth,
                          max_results=mr)
 
-    @mcp.tool(name="inspect_osm_summary")
+    @mcp.tool(name="inspect_osm_summary", tags={"core"})
     def inspect_osm_summary_tool(osm_path: str):
-        """Inspect an OSM (no simulation) and return a simple summary."""
+        """Quick structural summary of an OSM file without loading it into
+        memory. Returns object counts, floor area, and zone info. Use to
+        preview a model before loading.
+        If model is already loaded, use get_model_summary instead.
+        """
         return inspect_osm_summary(osm_path=osm_path)

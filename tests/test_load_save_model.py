@@ -215,11 +215,24 @@ def test_list_files():
                 assert runs_result.get("ok") is True
                 assert runs_result.get("count", 0) >= 1
 
-                # Disallowed directory
+                # Disallowed directory — /etc
                 bad_resp = await session.call_tool("list_files", {"directory": "/etc", "max_results": 0})
                 bad_result = unwrap(bad_resp)
                 print("list_files (/etc):", bad_result)
                 assert bad_result.get("ok") is False
                 assert "not allowed" in bad_result.get("error", "").lower()
+
+                # Disallowed — /opt/comstock-measures (restricted to /inputs + /runs)
+                opt_resp = await session.call_tool("list_files", {"directory": "/opt/comstock-measures", "max_results": 0})
+                opt_result = unwrap(opt_resp)
+                print("list_files (/opt):", opt_result)
+                assert opt_result.get("ok") is False
+                assert "not allowed" in opt_result.get("error", "").lower()
+
+                # Verify no dir-type items in output
+                all_resp = await session.call_tool("list_files", {"max_results": 0})
+                all_result = unwrap(all_resp)
+                dir_items = [f for f in all_result.get("items", []) if f.get("type") == "dir"]
+                assert len(dir_items) == 0, f"Expected no dir items, got {dir_items}"
 
     asyncio.run(_run())
