@@ -95,10 +95,11 @@ def register(mcp):
         checks: list[str] | str | None = None,
     ):
         """Run ASHRAE QA/QC checks on simulation results. Requires a completed
-        simulation — call run_simulation first, then pass its run_id here.
+        simulation run_id. Use to check model quality, compliance, and issues
+        after simulation.
 
-        For pre-simulation model validation (no run_id needed), use
-        inspect_osm_summary or get_model_summary instead.
+        For pre-simulation validation (no run_id needed), use validate_model
+        instead.
 
         Args:
             run_id: Run ID from a completed simulation (required — provides SQL results)
@@ -123,7 +124,8 @@ def register(mcp):
         heating_offset_f: float = 0.0,
         alter_design_days: bool = False,
     ):
-        """Shift heating and cooling setpoint schedules by degrees F offset. Clones schedules.
+        """Shift heating and cooling setpoint schedules by degrees F offset.
+        Use to raise or lower thermostat setpoints across the whole building. Clones schedules.
 
         Args:
             cooling_offset_f: Degrees F to raise cooling setpoint
@@ -143,6 +145,7 @@ def register(mcp):
         operable_windows: bool = True,
     ):
         """Bulk-replace all exterior fixed and operable window constructions.
+        Use to upgrade windows, change glazing type, or apply a new window spec.
 
         Args:
             construction_name: Name of the window construction to apply
@@ -157,7 +160,9 @@ def register(mcp):
 
     @mcp.tool(tags={"envelope"}, name="enable_ideal_air_loads")
     def enable_ideal_air_loads_tool():
-        """Remove existing HVAC, add ideal air loads on all zones for quick load calculations."""
+        """Remove existing HVAC, add ideal air loads on all zones.
+        Use for quick load calculations, sizing studies, or when HVAC design is not needed.
+        """
         return enable_ideal_air_loads_op()
 
     @mcp.tool(tags={"envelope"}, name="clean_unused_objects")
@@ -225,6 +230,8 @@ def register(mcp):
         heating_schedule: str = "",
     ):
         """Apply specific heating/cooling schedule to a thermal zone thermostat.
+        Use to set schedules on zones without existing thermostats.
+        To overwrite existing schedules, use replace_thermostat_schedules.
 
         Args:
             zone_name: Thermal zone name
@@ -244,6 +251,7 @@ def register(mcp):
         heating_schedule: str = "",
     ):
         """Overwrite existing thermostat heating/cooling schedules on a zone.
+        To set on zones without thermostats, use set_thermostat_schedules instead.
 
         Args:
             zone_name: Thermal zone name

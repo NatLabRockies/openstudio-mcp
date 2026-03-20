@@ -24,6 +24,7 @@ def register(mcp: FastMCP) -> None:
         system_name: str | None = None,
     ) -> str:
         """Add HVAC / heating and cooling system to the building.
+        ALWAYS use this for ASHRAE systems — do not write HVAC setup scripts.
 
         ASHRAE 90.1 Appendix G baseline systems 1-10: PTAC, PTHP, PSZ-AC,
         PSZ-HP, packaged VAV reheat, PFP boxes, VAV reheat/PFP, unit heater,

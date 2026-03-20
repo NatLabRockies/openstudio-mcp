@@ -23,6 +23,7 @@ def register(mcp):
         building stories, surfaces, subsurfaces, shading, constructions,
         materials, people, lights, equipment, schedules, air loops, plant
         loops, zone HVAC equipment. Use to understand model scope.
+        Requires loaded model. To preview without loading, use inspect_osm_summary.
         """
         return get_model_summary()
 

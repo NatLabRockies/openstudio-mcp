@@ -12,6 +12,7 @@ def register(mcp):
     def add_output_variable_tool(variable_name: str, key_value: str = "*",
                                  reporting_frequency: str = "Hourly"):
         """Add an EnergyPlus output variable: zone temperature, surface heat flux, system flow rate, etc.
+        Use for zone/surface-level data. For whole-building energy meters, use add_output_meter.
 
         Args:
             variable_name: EnergyPlus output variable name (e.g., "Zone Mean Air Temperature")
@@ -25,6 +26,7 @@ def register(mcp):
     @mcp.tool(tags={"simulation"}, name="add_output_meter")
     def add_output_meter_tool(meter_name: str, reporting_frequency: str = "Hourly"):
         """Add an EnergyPlus energy meter: Electricity:Facility, Gas:Facility, district, etc.
+        Use for facility-level energy tracking. For zone/surface variables, use add_output_variable.
 
         Args:
             meter_name: EnergyPlus meter name (e.g., "Electricity:Facility", "Gas:Facility")

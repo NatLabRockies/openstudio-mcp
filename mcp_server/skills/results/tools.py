@@ -44,7 +44,9 @@ def register(mcp):
     def extract_summary_metrics_tool(run_id: str, include_raw: bool = False):
         """Extract EUI (energy use intensity, kBtu/ft2 and GJ/m2), total site
         energy, and unmet heating/cooling hours from simulation results.
-        The primary tool for checking simulation outcomes.
+        ALWAYS use this for EUI — do not parse eplusout.sql directly.
+        For per-category breakdown (heating, cooling, lighting), use
+        extract_end_use_breakdown instead.
 
         Args:
             run_id: Run identifier
@@ -55,6 +57,7 @@ def register(mcp):
     @mcp.tool(tags={"results"}, name="copy_file")
     def copy_file_tool(file_path: str, destination: str = "/runs/exports"):
         """Copy a file or directory to an accessible path under /runs.
+        Use to export files to the host. To read file contents, use read_file instead.
 
         Supports both individual files and entire directories (e.g. measure dirs).
 

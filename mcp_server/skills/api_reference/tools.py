@@ -14,9 +14,10 @@ def register(mcp):
     ) -> dict:
         """Look up OpenStudio SDK classes, setter methods, and getter methods.
 
+        IMPORTANT: call before writing measures that use SDK method calls.
         Introspects the live openstudio.model module to verify which methods
-        actually exist on a class. Essential for measure authoring — prevents
-        calling nonexistent methods like setRatedCoolingCoefficientOfPerformance.
+        actually exist on a class. Prevents calling nonexistent methods like
+        setRatedCoolingCoefficientOfPerformance.
 
         Use cases:
           - "What setters does CoilCoolingFourPipeBeam have?"

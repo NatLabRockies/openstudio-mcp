@@ -27,9 +27,9 @@ def register(mcp):
 
     @mcp.tool(name="save_osm_model", tags={"core"})
     def save_osm_model_tool(osm_path: str | None = None):
-        """Save the currently loaded model to disk as an OSM file. Use after
-        making changes (adding HVAC, modifying properties, applying measures)
-        to persist the model.
+        """Save the currently loaded model to disk as an OSM file.
+        IMPORTANT: call after making changes to persist the model. Changes
+        are lost if you don't save before loading a different model.
 
         Args:
             osm_path: Optional path to save to. If not provided, saves to original load path.
@@ -40,6 +40,8 @@ def register(mcp):
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):
         """Create a minimal single-zone OpenStudio example model for testing
         and demos. Auto-loads into memory. Saved under /runs/.
+        For multi-zone baseline, use create_baseline_osm. For production
+        models with DOE prototypes, use create_new_building.
         """
         return create_example_osm(name=name, out_dir=out_dir)
 
@@ -55,7 +57,7 @@ def register(mcp):
         """Create a baseline 10-zone, 2-story commercial building with perimeter
         and core zones, schedules, loads, constructions, and thermostats.
         Optionally adds ASHRAE HVAC system 01-10 and windows. Auto-loads into
-        memory.
+        memory. For testing/demos only — for production models use create_new_building.
 
         Args:
             name: Model name (used for output directory)
@@ -103,5 +105,6 @@ def register(mcp):
         """Quick structural summary of an OSM file without loading it into
         memory. Returns object counts, floor area, and zone info. Use to
         preview a model before loading.
+        If model is already loaded, use get_model_summary instead.
         """
         return inspect_osm_summary(osm_path=osm_path)

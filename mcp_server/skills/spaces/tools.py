@@ -43,6 +43,7 @@ def register(mcp):
     @mcp.tool(tags={"geometry"}, name="get_space_details")
     def get_space_details_tool(space_name: str):
         """Get space details — surfaces, loads, infiltration, space type, thermal zone.
+        Use for space geometry and zone assignment. For load values (W/m2, people), use get_load_details.
 
         Args:
             space_name: Name of the space to retrieve

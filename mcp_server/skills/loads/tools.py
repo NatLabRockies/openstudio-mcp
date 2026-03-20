@@ -25,6 +25,8 @@ def register(mcp):
     @mcp.tool(tags={"loads"}, name="get_load_details")
     def get_load_details_tool(load_name: str):
         """Get load details — people, lights, electric equipment, gas equipment, or infiltration.
+        Use to check watts/m2, people density, schedules, and definitions.
+        For space geometry and surfaces, use get_space_details instead.
 
         Tries each load type by name until found. Returns load_type + all fields.
 

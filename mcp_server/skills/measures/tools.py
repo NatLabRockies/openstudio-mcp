@@ -24,7 +24,8 @@ def register(mcp):
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
     ):
-        """Run an OpenStudio measure against the loaded model with argument overrides.
+        """Run an existing OpenStudio measure against the loaded model.
+        Use to apply a measure that already exists. To create a new measure, use create_measure.
 
         Args:
             measure_dir: Path to the measure directory (contains measure.rb)

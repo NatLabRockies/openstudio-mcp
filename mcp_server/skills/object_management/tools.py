@@ -54,6 +54,7 @@ def register(mcp):
         max_results: int = 10,
     ):
         """List objects of a given type. Accepts ANY OpenStudio type. Default 10 results.
+        For common types, typed tools (list_spaces, list_air_loops) provide richer detail.
 
         Accepts type names in any format:
         - CamelCase: CoilCoolingFourPipeBeam

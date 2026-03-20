@@ -56,9 +56,9 @@ def register(mcp):
     ):
         """Run an EnergyPlus annual or design-day simulation from an OSM file.
 
-        Creates a minimal OSW workflow and starts the simulation asynchronously.
-        Requires weather file (EPW) and design days on the model, or pass
-        epw_path. Without design days, HVAC sizing fails.
+        IMPORTANT: requires weather file (EPW) and design days set on the model
+        first (via change_building_location), or pass epw_path here. Without
+        design days, HVAC sizing fails.
 
         Workflow: run_simulation → get_run_status (poll) → extract_summary_metrics.
         """
@@ -98,6 +98,7 @@ def register(mcp):
     @mcp.tool(tags={"simulation"}, name="validate_model")
     def validate_model_tool():
         """Pre-simulation validation: weather file, design days, HVAC, constructions.
-        Run before simulate to catch common issues early.
+        Use before run_simulation to catch common issues early.
+        For post-simulation QA/QC with ASHRAE compliance checks, use run_qaqc_checks instead.
         """
         return validate_model_op()
