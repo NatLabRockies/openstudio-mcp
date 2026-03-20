@@ -17,7 +17,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="get_component_properties")
     def get_component_properties_tool(component_name: str) -> str:
-        """Get all readable properties for a named HVAC component.
+        """Get all readable properties for a named HVAC component (boiler efficiency, chiller COP, coil capacity, fan pressure, pump head, etc.).
 
         Args:
             component_name: Exact name of the HVAC component
@@ -26,7 +26,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="set_component_properties")
     def set_component_properties_tool(component_name: str, properties: str) -> str:
-        """Set one or more properties on a named HVAC component.
+        """Modify boiler, chiller, coil, fan, pump, or other HVAC component settings.
 
         Args:
             component_name: Exact name of the HVAC component
@@ -43,7 +43,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="set_economizer_properties")
     def set_economizer_properties_tool(air_loop_name: str, properties: str) -> str:
-        """Modify outdoor air economizer properties on an air loop.
+        """Modify outdoor air economizer settings: dry-bulb/enthalpy limit, damper control.
 
         Available properties:
         - economizer_control_type: "NoEconomizer", "DifferentialDryBulb",
@@ -63,7 +63,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="set_sizing_properties")
     def set_sizing_properties_tool(loop_name: str, properties: str) -> str:
-        """Modify sizing properties on a plant loop.
+        """Set plant loop sizing: exit temperature, temperature difference, loop type.
 
         Available properties:
         - loop_type: "Heating", "Cooling", "Condenser", "Both"
@@ -82,7 +82,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="set_sizing_system_properties")
     def set_sizing_system_properties_tool(air_loop_name: str, properties: str) -> str:
-        """Set SizingSystem properties on an air loop.
+        """Set air loop sizing: supply air temperature, outdoor air fraction, flow rate method, design day.
 
         Properties: type_of_load_to_size_on, central_cooling/heating_design_supply_air_temperature,
         central_cooling/heating_design_supply_air_humidity_ratio, all_outdoor_air_in_cooling/heating,
@@ -100,7 +100,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="get_sizing_system_properties")
     def get_sizing_system_properties_tool(air_loop_name: str) -> str:
-        """Get all SizingSystem properties for an air loop.
+        """Read air loop sizing parameters: supply air temperature, OA fraction, flow rate method.
 
         Args:
             air_loop_name: Name of the air loop
@@ -109,7 +109,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="set_sizing_zone_properties")
     def set_sizing_zone_properties_tool(zone_names: str, properties: str) -> str:
-        """Set SizingZone properties on one or more thermal zones.
+        """Set zone sizing: design air flow, cooling/heating supply air temperature.
 
         Properties: zone_cooling/heating_design_supply_air_temperature,
         zone_cooling/heating_sizing_factor, cooling_design_air_flow_method,
@@ -135,7 +135,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="get_sizing_zone_properties")
     def get_sizing_zone_properties_tool(zone_name: str) -> str:
-        """Get all SizingZone properties for a thermal zone.
+        """Read zone sizing parameters: design air flow, supply temperatures, DOAS settings.
 
         Args:
             zone_name: Name of the thermal zone
@@ -144,8 +144,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="get_setpoint_manager_properties")
     def get_setpoint_manager_properties_tool(setpoint_name: str) -> str:
-        """Get all properties for a named setpoint manager.
-
+        """Get setpoint manager properties: supply air temperature reset, OA reset, scheduled, follow OAT.
         Supports: SingleZoneReheat, Scheduled, Warmest, Coldest,
         FollowOutdoorAirTemperature, OutdoorAirReset, ScheduledDualSetpoint.
 
@@ -156,8 +155,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"hvac"}, name="set_setpoint_manager_properties")
     def set_setpoint_manager_properties_tool(setpoint_name: str, properties: str) -> str:
-        """Modify setpoint manager properties.
-
+        """Modify setpoint manager parameters (temperature reset, OA reset, schedule, follow OAT).
         Supports 7 SPM types: SingleZoneReheat, Scheduled, Warmest, Coldest,
         FollowOutdoorAirTemperature, OutdoorAirReset, ScheduledDualSetpoint.
         Use get_setpoint_manager_properties to see available properties per type.

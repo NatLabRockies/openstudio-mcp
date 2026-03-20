@@ -23,7 +23,8 @@ def register(mcp):
         boundary: str | None = None,
         max_results: int = 10,
     ):
-        """List surfaces. Default 10 results; use filters to narrow.
+        """List surfaces — walls, floors, roofs, ceilings by type and boundary condition.
+        Default 10 results; use filters to narrow.
 
         Common filters:
         - Exterior walls: surface_type="Wall", boundary="Outdoors"
@@ -44,7 +45,7 @@ def register(mcp):
 
     @mcp.tool(tags={"geometry"}, name="get_surface_details")
     def get_surface_details_tool(surface_name: str):
-        """Get detailed information about a specific surface.
+        """Get surface details — vertices, area, tilt, azimuth, construction, adjacent surface.
 
         Args:
             surface_name: Name of the surface to retrieve
@@ -58,7 +59,8 @@ def register(mcp):
         subsurface_type: str | None = None,
         max_results: int = 10,
     ):
-        """List subsurfaces (windows/doors). Default 10 results; use filters to narrow.
+        """List subsurfaces — windows, doors, skylights, glass doors.
+        Default 10 results; use filters to narrow.
 
         Common filters:
         - Windows on a wall: surface_name="Wall 1"
@@ -83,7 +85,7 @@ def register(mcp):
         surface_type: str | None = None,
         outside_boundary_condition: str | None = None,
     ):
-        """Create a surface with explicit vertices in a space.
+        """Create a wall, floor, or roof surface with 3D vertex coordinates in a space.
 
         Args:
             name: Surface name
@@ -106,7 +108,7 @@ def register(mcp):
         parent_surface_name: str,
         subsurface_type: str = "FixedWindow",
     ):
-        """Create a subsurface (window/door) on a parent surface.
+        """Create a window, door, skylight, or glass door subsurface on a parent surface.
 
         Args:
             name: Subsurface name
@@ -129,11 +131,10 @@ def register(mcp):
         building_story_name: str | None = None,
         thermal_zone_name: str | None = None,
     ):
-        """Create a space by extruding a floor polygon to a given height.
+        """Extrude a 2D floor polygon into a 3D space with walls, floor, and ceiling.
 
-        Automatically creates floor, ceiling, and wall surfaces from the
-        polygon outline and height. This is the easiest way to create
-        geometry for a rectangular or polygonal zone.
+        Automatically creates all surfaces from the polygon outline and height.
+        Easiest way to create geometry for a rectangular or polygonal zone.
 
         Args:
             name: Space name
@@ -161,7 +162,7 @@ def register(mcp):
         ratio: float,
         sill_height_m: float = 0.9,
     ):
-        """Add a centered window to a wall surface by glazing ratio.
+        """Set glazing ratio on an exterior wall — adds a centered window by window-to-wall ratio.
 
         Args:
             surface_name: Name of the wall surface

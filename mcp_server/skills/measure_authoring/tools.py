@@ -14,13 +14,12 @@ from mcp_server.skills.measure_authoring.operations import (
 def register(mcp):
     @mcp.tool(tags={"measures"}, name="list_custom_measures")
     def list_custom_measures_tool():
-        """List all custom measures created with create_measure.
+        """List custom measures in /runs/custom_measures/ created with create_measure.
 
-        Returns name, language, and measure_dir for each measure in
-        /runs/custom_measures/. Use measure_dir with test_measure or
-        apply_measure. Use name with edit_measure.
+        Returns name, language, and measure_dir for each. Use measure_dir
+        with test_measure or apply_measure. Use name with edit_measure.
 
-        Typical workflow: create_measure → test_measure → apply_measure.
+        Typical workflow: create_measure -> test_measure -> apply_measure.
         """
         return list_custom_measures_op()
 
@@ -183,9 +182,9 @@ def register(mcp):
         model_path: str | None = None,
         run_id: str | None = None,
     ):
-        """Run tests for a custom OpenStudio measure.
+        """Run measure tests against a real model; auto-detect Ruby (minitest) or Python (pytest).
 
-        Auto-detects language: Python → pytest, Ruby → minitest.
+        Auto-detects language: Python -> pytest, Ruby -> minitest.
         Tests run against a real model (not an empty model) so measures
         that depend on HVAC, plant loops, zones, etc. can be tested.
 
@@ -218,7 +217,7 @@ def register(mcp):
         arguments: list[dict] | str | None = None,
         description: str | None = None,
     ):
-        """Edit an existing custom measure's code, arguments, or description.
+        """Modify run() body, arguments, or description of an existing custom measure.
 
         TIP: call get_skill('measure-authoring') first for templates, API patterns, and common pitfalls.
 

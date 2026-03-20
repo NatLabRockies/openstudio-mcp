@@ -30,7 +30,7 @@ def register(mcp):
         name: str | None = None,
         validate_first: bool = True,
     ):
-        """Start an OpenStudio run asynchronously.
+        """Start an OpenStudio workflow (OSW) run asynchronously.
 
         By default, this performs the same checks as `validate_osw_tool` before
         starting a run. Set `validate_first=False` to skip validation.
@@ -54,20 +54,20 @@ def register(mcp):
         epw_path: str | None = None,
         name: str | None = None,
     ):
-        """Run an EnergyPlus simulation from an OSM model file.
+        """Run an EnergyPlus annual or design-day simulation from an OSM file.
 
-        Requires a weather file (EPW) and design days to be set on the model
-        first, or pass epw_path here. Without design days, HVAC sizing will fail.
+        Creates a minimal OSW workflow and starts the simulation asynchronously.
+        Requires weather file (EPW) and design days on the model, or pass
+        epw_path. Without design days, HVAC sizing fails.
 
-        Creates a minimal OSW workflow automatically and starts the simulation.
-        Use get_run_status() to poll for completion, then
-        extract_summary_metrics() to get results.
+        Workflow: run_simulation → get_run_status (poll) → extract_summary_metrics.
         """
         return run_simulation(osm_path=osm_path, epw_path=epw_path, name=name)
 
     @mcp.tool(tags={"core", "simulation"}, name="get_run_status")
     def get_run_status_tool(run_id: str):
-        """Get current status for a run.
+        """Get current status of an EnergyPlus simulation run: queued, running,
+        completed, or failed. Returns progress percentage and elapsed time.
 
         Poll no more than once per minute. For long simulations (>2 min),
         poll every 2-3 minutes.
@@ -76,17 +76,23 @@ def register(mcp):
 
     @mcp.tool(tags={"simulation"}, name="get_run_logs")
     def get_run_logs_tool(run_id: str, tail: int | None = None, stream: str = "openstudio"):
-        """Return tail of logs for a run (openstudio/energyplus)."""
+        """Return tail of OpenStudio or EnergyPlus log output for a simulation
+        run. Use to diagnose simulation failures, warnings, or errors.
+        """
         return get_run_logs(run_id, tail=tail, stream=stream)
 
     @mcp.tool(tags={"simulation"}, name="get_run_artifacts")
     def get_run_artifacts_tool(run_id: str):
-        """List important output artifacts for a run."""
+        """List simulation output files: eplusout.sql, eplusout.err, HTML
+        report, OSM/IDF snapshots, measure output. Returns file paths and sizes.
+        """
         return get_run_artifacts(run_id)
 
     @mcp.tool(tags={"simulation"}, name="cancel_run")
     def cancel_run_tool(run_id: str):
-        """Attempt to cancel a running job."""
+        """Cancel a running EnergyPlus simulation. Only works while status is
+        'running' or 'queued'.
+        """
         return cancel_run(run_id)
 
     @mcp.tool(tags={"simulation"}, name="validate_model")

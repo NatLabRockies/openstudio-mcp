@@ -116,3 +116,29 @@ def test_core_schema_chars():
     print(f"\nAll tools schema: {all_chars:,} chars (~{all_chars // 4:,} tokens)")
     print(f"Core tools schema: {core_chars:,} chars (~{core_chars // 4:,} tokens)")
     print(f"Core/All ratio: {ratio:.1f}%")
+
+
+def test_min_description_length():
+    """Every tool must have a first-line description of at least 40 chars.
+
+    Short descriptions hurt ToolSearch discovery — ToolSearch matches on
+    keywords in tool descriptions. Enriched descriptions with domain terms
+    are essential for discoverability.
+    """
+    tools = _register_tools_with_docs()
+    short = []
+    for name, t in sorted(tools.items()):
+        doc = t["doc"].strip()
+        first_line = doc.split("\n")[0] if doc else ""
+        if len(first_line) < 40:
+            short.append((name, len(first_line), first_line))
+
+    if short:
+        print(f"\nTools with short descriptions ({len(short)}):")
+        for name, length, desc in short:
+            print(f"  {name} ({length}): {desc}")
+
+    assert not short, (
+        f"{len(short)} tools have first-line description under 40 chars: "
+        f"{[s[0] for s in short[:10]]}"
+    )

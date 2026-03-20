@@ -12,7 +12,7 @@ from mcp_server.skills.measures.operations import (
 def register(mcp):
     @mcp.tool(tags={"measures"}, name="list_measure_arguments")
     def list_measure_arguments_tool(measure_dir: str):
-        """List arguments for an OpenStudio measure.
+        """List argument names, types, defaults, and choices for an OpenStudio measure.
 
         Args:
             measure_dir: Path to the measure directory (contains measure.rb)
@@ -24,7 +24,7 @@ def register(mcp):
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
     ):
-        """Apply an OpenStudio model measure to the loaded model.
+        """Run an OpenStudio measure against the loaded model with argument overrides.
 
         Args:
             measure_dir: Path to the measure directory (contains measure.rb)

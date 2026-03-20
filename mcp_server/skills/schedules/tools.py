@@ -12,7 +12,7 @@ def register(mcp):
 
     @mcp.tool(tags={"loads"}, name="get_schedule_details")
     def get_schedule_details_tool(schedule_name: str):
-        """Get detailed information about a specific schedule ruleset.
+        """Get schedule details — type limits, default day values, rules, time-value pairs.
 
         Returns all schedule rules. For schedules with many rules, use
         list_model_objects("ScheduleRuleset") first to check num_rules.
@@ -25,7 +25,7 @@ def register(mcp):
     @mcp.tool(tags={"loads"}, name="create_schedule_ruleset")
     def create_schedule_ruleset_tool(name: str, schedule_type: str = "Fractional",
                                     default_value: float = 1.0):
-        """Create a new schedule ruleset with a constant default day schedule.
+        """Create a constant-value schedule ruleset (Fractional 0-1, Temperature, or OnOff).
 
         Args:
             name: Name for the new schedule

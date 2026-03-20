@@ -4,7 +4,7 @@
 
 **Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
 
-**23 skills &bull; 134 tools &bull; 6 prompts &bull; 4 resources &bull; 390 integration tests**
+**23 skills &bull; 142 tools &bull; 6 prompts &bull; 4 resources &bull; 480+ integration tests**
 
 ---
 
@@ -73,7 +73,7 @@ Add (or merge into) the `mcpServers` block:
 
 ### Step 3: Verify Connection
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the 134 openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
 
 ### Step 4: Start Chatting
 
@@ -85,7 +85,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 134 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 142 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Working with Your Own Files
 
@@ -100,13 +100,25 @@ cp eplusout.err ./tests/assets/
 "Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
 ```
 
-**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 138 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
+**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 142 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
 
 For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
 
 ### Other MCP Hosts
 
-[Cursor](https://www.cursor.com/), [VS Code](https://code.visualstudio.com/), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+
+### Client Compatibility
+
+| Client | Status | Notes |
+|--------|--------|-------|
+| Claude Desktop | Full support | All 142 tools available |
+| Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
+| VS Code Copilot | Compatible | MCP support via config |
+| Windsurf | Compatible | Under 100-tool limit |
+| Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
+| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
+| OpenAI API | Compatible | Use defer_loading for best results |
 
 ---
 
@@ -141,7 +153,7 @@ Mount the skills directory when running the container: `-v ./.claude/skills:/ski
 
 ---
 
-## Skills & Tools (134 total)
+## Skills & Tools (142 total)
 
 ### Skill Discovery (2 tools)
 | Tool | Description |

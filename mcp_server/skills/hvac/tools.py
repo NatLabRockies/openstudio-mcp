@@ -16,8 +16,8 @@ from mcp_server.skills.hvac.operations import (
 def register(mcp):
     @mcp.tool(tags={"hvac"}, name="list_air_loops")
     def list_air_loops_tool(detailed: bool = False):
-        """List all air loops. Default brief: name, zone count, zone names, terminal type.
-        Use detailed=True only when you need full supply component lists and OA system info.
+        """List all air loops (AHUs / air handling units / central air systems).
+        Default brief: name, zone count, zone names, terminal type. Supply/return details with detailed=True.
 
         Args:
             detailed: Add supply_components, demand_terminals per zone, OA system, setpoint managers
@@ -26,7 +26,7 @@ def register(mcp):
 
     @mcp.tool(tags={"hvac"}, name="get_air_loop_details")
     def get_air_loop_details_tool(air_loop_name: str):
-        """Get detailed information about a specific air loop HVAC system.
+        """Get detailed air loop info: components, outdoor air system, sizing, supply temperature.
 
         Args:
             air_loop_name: Name of the air loop to retrieve
@@ -35,8 +35,8 @@ def register(mcp):
 
     @mcp.tool(tags={"hvac"}, name="list_plant_loops")
     def list_plant_loops_tool(detailed: bool = False):
-        """List all plant loops. Default brief: name, component counts, primary equipment type.
-        Use detailed=True only when you need full supply/demand component lists.
+        """List all plant loops (hot water, chilled water, condenser water, heating/cooling).
+        Default brief: name, component counts, primary equipment type. Full lists with detailed=True.
 
         Args:
             detailed: Add full supply/demand component lists with types and names
@@ -49,7 +49,8 @@ def register(mcp):
         equipment_type: str | None = None,
         max_results: int = 10,
     ):
-        """List zone HVAC equipment. Default 10 results; use filters to narrow.
+        """List zone HVAC equipment (baseboard, fan coil, PTAC, PTHP, unit heater, radiant).
+        Default 10 results; use filters to narrow.
 
         Common filters:
         - Equipment in a zone: thermal_zone_name="Zone 1"
@@ -65,7 +66,7 @@ def register(mcp):
 
     @mcp.tool(tags={"hvac"}, name="add_air_loop")
     def add_air_loop_tool(name: str, thermal_zone_names: list[str] | str | None = None):
-        """Add a new air loop HVAC system to the loaded OpenStudio model.
+        """Create a new air handling unit (air loop) and optionally connect thermal zones.
 
         Args:
             name: Name for the new air loop
@@ -76,7 +77,7 @@ def register(mcp):
 
     @mcp.tool(tags={"hvac"}, name="get_plant_loop_details")
     def get_plant_loop_details_tool(plant_loop_name: str):
-        """Get detailed information about a specific plant loop.
+        """Get plant loop details: supply equipment, demand components, pump, setpoint manager.
 
         Args:
             plant_loop_name: Name of the plant loop to retrieve
@@ -85,7 +86,7 @@ def register(mcp):
 
     @mcp.tool(tags={"hvac"}, name="get_zone_hvac_details")
     def get_zone_hvac_details_tool(equipment_name: str):
-        """Get detailed information about specific zone HVAC equipment.
+        """Get zone-level heating/cooling equipment properties and configuration.
 
         Args:
             equipment_name: Name of the zone HVAC equipment to retrieve

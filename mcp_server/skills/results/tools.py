@@ -42,7 +42,9 @@ def register(mcp):
 
     @mcp.tool(tags={"core", "results"}, name="extract_summary_metrics")
     def extract_summary_metrics_tool(run_id: str, include_raw: bool = False):
-        """Extract summary metrics (EUI + unmet hours) from outputs.
+        """Extract EUI (energy use intensity, kBtu/ft2 and GJ/m2), total site
+        energy, and unmet heating/cooling hours from simulation results.
+        The primary tool for checking simulation outcomes.
 
         Args:
             run_id: Run identifier
@@ -109,17 +111,23 @@ def register(mcp):
 
     @mcp.tool(tags={"results"}, name="extract_envelope_summary")
     def extract_envelope_summary_tool(run_id: str):
-        """Extract envelope U-values and areas (opaque + fenestration)."""
+        """Extract envelope thermal properties: wall/roof/floor U-values and
+        R-values, window U-factor and SHGC, opaque and fenestration areas.
+        """
         return extract_envelope_summary_op(run_id=run_id)
 
     @mcp.tool(tags={"results"}, name="extract_hvac_sizing")
     def extract_hvac_sizing_tool(run_id: str):
-        """Extract autosized zone and system HVAC capacities/airflows."""
+        """Extract autosized HVAC capacities and airflows: zone heating/cooling
+        design loads, system supply air flow rates, outdoor air flow rates.
+        """
         return extract_hvac_sizing_op(run_id=run_id)
 
     @mcp.tool(tags={"results"}, name="extract_zone_summary")
     def extract_zone_summary_tool(run_id: str):
-        """Extract per-zone areas, conditions, and multipliers."""
+        """Extract per-zone summary: floor area, conditioned status, zone
+        multiplier, heating/cooling setpoints, and volume for each thermal zone.
+        """
         return extract_zone_summary_op(run_id=run_id)
 
     @mcp.tool(tags={"results"}, name="extract_component_sizing")

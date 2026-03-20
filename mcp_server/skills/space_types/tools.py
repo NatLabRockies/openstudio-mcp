@@ -11,7 +11,7 @@ def register(mcp):
 
     @mcp.tool(tags={"loads"}, name="get_space_type_details")
     def get_space_type_details_tool(space_type_name: str):
-        """Get detailed information about a specific space type.
+        """Get space type details — assigned loads, schedules, default constructions, standards info.
 
         Args:
             space_type_name: Name of the space type to retrieve

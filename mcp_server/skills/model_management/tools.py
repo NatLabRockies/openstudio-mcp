@@ -14,7 +14,10 @@ from mcp_server.skills.model_management.operations import (
 def register(mcp):
     @mcp.tool(name="load_osm_model", tags={"core"})
     def load_osm_model_tool(osm_path: str, version_translate: bool = True):
-        """Load an OSM and set as current model for query tools.
+        """Load an OpenStudio model (.osm) and set as current model for all
+        query and modification tools. Supports version translation for older
+        models. After loading, use get_building_info, list_spaces,
+        list_thermal_zones, etc. to inspect the model.
 
         Args:
             osm_path: Path to the OSM file to load (absolute or relative)
@@ -24,7 +27,9 @@ def register(mcp):
 
     @mcp.tool(name="save_osm_model", tags={"core"})
     def save_osm_model_tool(osm_path: str | None = None):
-        """Save loaded model to disk.
+        """Save the currently loaded model to disk as an OSM file. Use after
+        making changes (adding HVAC, modifying properties, applying measures)
+        to persist the model.
 
         Args:
             osm_path: Optional path to save to. If not provided, saves to original load path.
@@ -33,8 +38,9 @@ def register(mcp):
 
     @mcp.tool(name="create_example_osm", tags={"geometry"})
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):
-        """Create built-in OpenStudio example model (auto-loads into memory).
-        Use this tool to create models. Do not write raw IDF/OSM files."""
+        """Create a minimal single-zone OpenStudio example model for testing
+        and demos. Auto-loads into memory. Saved under /runs/.
+        """
         return create_example_osm(name=name, out_dir=out_dir)
 
     @mcp.tool(name="create_baseline_osm", tags={"geometry"})
@@ -46,8 +52,10 @@ def register(mcp):
         ashrae_sys_num: str | None = None,
         wwr: float | None = None,
     ):
-        """Create baseline 10-zone commercial building (auto-loads into memory).
-        Use this tool to create models. Do not write raw IDF/OSM files.
+        """Create a baseline 10-zone, 2-story commercial building with perimeter
+        and core zones, schedules, loads, constructions, and thermostats.
+        Optionally adds ASHRAE HVAC system 01-10 and windows. Auto-loads into
+        memory.
 
         Args:
             name: Model name (used for output directory)
@@ -92,5 +100,8 @@ def register(mcp):
 
     @mcp.tool(name="inspect_osm_summary", tags={"core"})
     def inspect_osm_summary_tool(osm_path: str):
-        """Inspect an OSM (no simulation) and return a simple summary."""
+        """Quick structural summary of an OSM file without loading it into
+        memory. Returns object counts, floor area, and zone info. Use to
+        preview a model before loading.
+        """
         return inspect_osm_summary(osm_path=osm_path)

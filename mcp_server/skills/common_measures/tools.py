@@ -32,15 +32,15 @@ def register(mcp):
 
     @mcp.tool(tags={"measures"}, name="list_common_measures")
     def list_common_measures_tool(category: str | None = None):
-        """List available common measures bundled in the server.
+        """List ~79 bundled measures by category: reporting, thermostat, envelope,
+        loads, renewables, schedule, cost, cleanup, visualization.
 
         Args:
             category: Optional filter — "reporting", "thermostat", "envelope",
                       "location", "loads", "renewables", "schedule", "cost",
                       "cleanup", "idf", "visualization", "other", or omit for all
 
-        Returns categorized list of ~79 measures. Use paths with
-        list_measure_arguments and apply_measure for direct access.
+        Use returned paths with list_measure_arguments and apply_measure.
         """
         return list_common_measures(category=category)
 
@@ -123,7 +123,7 @@ def register(mcp):
         heating_offset_f: float = 0.0,
         alter_design_days: bool = False,
     ):
-        """Shift all thermostat setpoints by degree offsets. Clones schedules.
+        """Shift heating and cooling setpoint schedules by degrees F offset. Clones schedules.
 
         Args:
             cooling_offset_f: Degrees F to raise cooling setpoint
@@ -142,7 +142,7 @@ def register(mcp):
         fixed_windows: bool = True,
         operable_windows: bool = True,
     ):
-        """Replace all exterior window constructions with a named construction.
+        """Bulk-replace all exterior fixed and operable window constructions.
 
         Args:
             construction_name: Name of the window construction to apply
@@ -157,7 +157,7 @@ def register(mcp):
 
     @mcp.tool(tags={"envelope"}, name="enable_ideal_air_loads")
     def enable_ideal_air_loads_tool():
-        """Enable ideal air loads on all zones. Disconnects existing HVAC."""
+        """Remove existing HVAC, add ideal air loads on all zones for quick load calculations."""
         return enable_ideal_air_loads_op()
 
     @mcp.tool(tags={"envelope"}, name="clean_unused_objects")
@@ -168,7 +168,7 @@ def register(mcp):
         constructions: bool = True,
         curves: bool = True,
     ):
-        """Remove orphan objects and unused resources.
+        """Remove orphan space types, load definitions, schedules, constructions, and curves.
 
         Args:
             space_types: Remove unused space types
@@ -224,7 +224,7 @@ def register(mcp):
         cooling_schedule: str = "",
         heating_schedule: str = "",
     ):
-        """Set thermostat heating/cooling schedules on a specific zone.
+        """Apply specific heating/cooling schedule to a thermal zone thermostat.
 
         Args:
             zone_name: Thermal zone name
@@ -243,7 +243,7 @@ def register(mcp):
         cooling_schedule: str = "",
         heating_schedule: str = "",
     ):
-        """Replace thermostat schedules on a zone (overwrites existing).
+        """Overwrite existing thermostat heating/cooling schedules on a zone.
 
         Args:
             zone_name: Thermal zone name
@@ -261,7 +261,7 @@ def register(mcp):
         schedule_name: str = "",
         shift_hours: float = 1.0,
     ):
-        """Shift a schedule's profile times forward or backward.
+        """Shift schedule profile times forward or backward by hours (24hr wrap).
 
         Args:
             schedule_name: Name of the ScheduleRuleset to shift
@@ -278,7 +278,7 @@ def register(mcp):
         cell_efficiency: float = 0.18,
         inverter_efficiency: float = 0.98,
     ):
-        """Add rooftop PV panels as shading surfaces with photovoltaic generators.
+        """Add photovoltaic panels as rooftop shading surfaces with generators and inverter.
 
         Args:
             fraction_of_surface: Fraction of roof area covered (0-1)
@@ -297,7 +297,7 @@ def register(mcp):
         fraction: float = 0.5,
         cell_efficiency: float = 0.12,
     ):
-        """Add simple PV generators to existing shading surfaces by type.
+        """Add simple PV generators on existing building/site/space shading surfaces.
 
         Args:
             shading_type: "Building Shading", "Site Shading", or "Space Shading"
@@ -318,7 +318,7 @@ def register(mcp):
         ev_percent: float = 100.0,
         use_model_occupancy: bool = True,
     ):
-        """Add electric vehicle charging load to the building.
+        """Add electric vehicle charging: station type, charge behavior, EV percentage.
 
         Args:
             delay_type: "Min Delay", "Max Delay", or "Midnight"
@@ -342,7 +342,7 @@ def register(mcp):
         ventilation_type: str = "Natural",
         schedule_name: str = "",
     ):
-        """Add a zone ventilation design flow rate object.
+        """Add natural, exhaust, intake, or balanced ventilation design flow rate to a zone.
 
         Args:
             zone_name: Thermal zone name
@@ -361,7 +361,7 @@ def register(mcp):
     def set_lifecycle_cost_params_tool(
         study_period: int = 25,
     ):
-        """Set lifecycle cost analysis study period length.
+        """Set NIST lifecycle cost analysis study period (1-40 years).
 
         Args:
             study_period: Analysis period in years (1-40)
@@ -376,7 +376,7 @@ def register(mcp):
         lcc_name: str = "Building - Life Cycle Costs",
         remove_existing: bool = True,
     ):
-        """Add lifecycle cost per floor area to the building.
+        """Add material and O&M cost per floor area for lifecycle cost analysis.
 
         Args:
             material_cost: Material/installation cost per area ($/ft²)
@@ -403,7 +403,7 @@ def register(mcp):
         east_walls: bool = False,
         west_walls: bool = False,
     ):
-        """Set exterior surfaces to adiabatic boundary condition.
+        """Make exterior roof, floor, ground, or wall surfaces adiabatic boundary condition.
 
         Args:
             ext_roofs: Make exterior roof surfaces adiabatic

@@ -24,7 +24,7 @@ from mcp_server.skills.loads.operations import (
 def register(mcp):
     @mcp.tool(tags={"loads"}, name="get_load_details")
     def get_load_details_tool(load_name: str):
-        """Get detailed info for any load object (people, lights, electric/gas equipment, infiltration).
+        """Get load details — people, lights, electric equipment, gas equipment, or infiltration.
 
         Tries each load type by name until found. Returns load_type + all fields.
 
@@ -43,7 +43,7 @@ def register(mcp):
         num_people: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create a people (occupancy) load and assign to a space.
+        """Create occupancy load — people density (people/m2) or total count, assign to space.
 
         Args:
             name: Name for the people load
@@ -66,7 +66,7 @@ def register(mcp):
         lighting_level_w: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create a lighting load and assign to a space.
+        """Create lighting load — power density (W/m2) or total watts, assign to space.
 
         Args:
             name: Name for the lights load
@@ -89,7 +89,7 @@ def register(mcp):
         design_level_w: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create an electric equipment (plug load) and assign to a space.
+        """Create electric equipment / plug load — power density (W/m2) or total watts, assign to space.
 
         Args:
             name: Name for the equipment
@@ -112,7 +112,7 @@ def register(mcp):
         design_level_w: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create a gas equipment load and assign to a space.
+        """Create gas equipment load — power density (W/m2) or total watts, assign to space.
 
         Args:
             name: Name for the gas equipment
@@ -135,7 +135,7 @@ def register(mcp):
         ach: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create an infiltration load and assign to a space.
+        """Create infiltration — air leakage by flow/area (m3/s/m2) or air changes per hour (ACH).
 
         Args:
             name: Name for the infiltration object

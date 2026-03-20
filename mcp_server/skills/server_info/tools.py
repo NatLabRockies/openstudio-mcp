@@ -7,10 +7,10 @@ from mcp_server.skills.server_info.operations import get_server_status, get_vers
 def register(mcp):
     @mcp.tool(name="get_server_status", tags={"meta"})
     def get_server_status_tool():
-        """Return basic server health and configuration."""
+        """Server health check: run root path, max concurrency, loaded model status."""
         return get_server_status()
 
     @mcp.tool(name="get_versions", tags={"meta"})
     def get_versions_tool():
-        """Return OpenStudio and EnergyPlus versions detected in this container."""
+        """OpenStudio SDK, EnergyPlus, and Ruby interpreter versions in the container."""
         return get_versions()

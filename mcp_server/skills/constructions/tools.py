@@ -17,7 +17,8 @@ def register(mcp):
         material_type: str | None = None,
         max_results: int = 10,
     ):
-        """List materials. Default 10 results.
+        """List materials with conductivity, density, specific heat, thickness.
+        Default 10 results.
 
         Common filters: material_type="StandardOpaqueMaterial"
 
@@ -30,7 +31,7 @@ def register(mcp):
 
     @mcp.tool(tags={"geometry"}, name="get_construction_details")
     def get_construction_details_tool(construction_name: str):
-        """Get detailed info for a construction including all material layers with thermal properties.
+        """Get construction details — layers, R-value, U-factor, thermal mass for each material.
 
         Args:
             construction_name: Name of the construction
@@ -46,7 +47,7 @@ def register(mcp):
                                             conductivity_w_m_k: float = 0.5,
                                             density_kg_m3: float = 800.0,
                                             specific_heat_j_kg_k: float = 1000.0):
-        """Create a standard opaque material with thermal properties.
+        """Create a standard opaque material — conductivity, density, specific heat, thickness, roughness.
 
         Args:
             name: Name for the material
@@ -65,7 +66,7 @@ def register(mcp):
 
     @mcp.tool(tags={"geometry"}, name="create_construction")
     def create_construction_tool(name: str, material_names: list[str] | str):
-        """Create a layered construction from materials.
+        """Create a layered construction — ordered material layers from outside to inside.
 
         Args:
             name: Name for the construction
@@ -76,7 +77,7 @@ def register(mcp):
 
     @mcp.tool(tags={"geometry"}, name="assign_construction_to_surface")
     def assign_construction_to_surface_tool(surface_name: str, construction_name: str):
-        """Assign a construction to a surface.
+        """Apply a wall, roof, or floor construction to a surface.
 
         Args:
             surface_name: Name of the surface to modify

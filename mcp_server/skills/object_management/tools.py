@@ -18,7 +18,7 @@ def register(mcp):
         object_name: str,
         object_type: str | None = None,
     ):
-        """Delete a named object from the loaded model.
+        """Remove a space, zone, surface, HVAC component, or any named object from the model.
 
         Args:
             object_name: Name of the object to delete
@@ -35,7 +35,7 @@ def register(mcp):
         new_name: str,
         object_type: str | None = None,
     ):
-        """Rename a named object in the loaded model.
+        """Change the name of any model object (space, zone, HVAC component, schedule, etc.).
 
         Args:
             object_name: Current name of the object
