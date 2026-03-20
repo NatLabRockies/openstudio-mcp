@@ -124,23 +124,24 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 
 ## Claude Code Skills
 
-When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 11 bundled skills provide workflow automation and domain knowledge:
+When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 12 bundled skills provide workflow automation and domain knowledge:
 
 | Skill | Type | Description |
 |-------|------|-------------|
 | `/simulate` | Workflow | One-command simulate + results extraction |
 | `/energy-report` | Workflow | Comprehensive multi-category energy report |
 | `/qaqc` | Task | Pre-simulation model quality check |
-| `/add-hvac` | Task | Guided ASHRAE system selection |
+| `/add-hvac` | Task | Guided HVAC system selection |
 | `/new-building` | Workflow | Full model creation from scratch |
 | `/retrofit` | Workflow | Before/after ECM analysis |
 | `/view` | Task | Quick 3D model visualization |
-| `measure-authoring` | Knowledge | Custom measure creation, testing, before/after comparison (auto-loaded) |
+| `/troubleshoot` | Task | Diagnose simulation failures and unexpected results |
+| `measure-authoring` | Knowledge | Measure creation, SDK method verification, wiring patterns (auto-loaded) |
 | `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection criteria (auto-loaded) |
 | `openstudio-patterns` | Knowledge | Tool dependencies and model relationships (auto-loaded) |
 | `tool-workflows` | Knowledge | Multi-tool recipes for common operations (auto-loaded) |
 
-Workflow skills are invoked with `/skill-name`. Knowledge skills load automatically when relevant.
+Workflow/task skills are invoked with `/skill-name`. Knowledge skills load automatically when relevant.
 
 ### Workflow Guides for All MCP Clients
 
@@ -272,7 +273,7 @@ List space types via `list_model_objects("SpaceType")`.
 |------|-------------|
 | `get_space_type_details` | Space type loads, schedules, standards |
 
-### Simulation (7 tools)
+### Simulation (8 tools)
 | Tool | Description |
 |------|-------------|
 | `validate_osw` | Validate OSW workflow file |
@@ -282,8 +283,9 @@ List space types via `list_model_objects("SpaceType")`.
 | `get_run_logs` | Tail simulation logs |
 | `get_run_artifacts` | List simulation output files |
 | `cancel_run` | Cancel running simulation |
+| `validate_model` | Pre-simulation check: weather, design days, HVAC, constructions |
 
-### Results (9 tools)
+### Results (12 tools)
 | Tool | Description |
 |------|-------------|
 | `extract_summary_metrics` | Extract EUI, energy, unmet hours from results |
@@ -295,6 +297,9 @@ List space types via `list_model_objects("SpaceType")`.
 | `extract_zone_summary` | Per-zone areas, conditions, multipliers |
 | `extract_component_sizing` | Autosized HVAC component values (filterable) |
 | `query_timeseries` | Time-series output variable data with date/cap filters |
+| `extract_simulation_errors` | Parse eplusout.err into Fatal/Severe/Warning lists |
+| `list_output_variables` | List available output variables from completed simulation |
+| `compare_runs` | Compare two runs: EUI delta, per-fuel end-use breakdown |
 
 ### Simulation Outputs (2 tools)
 | Tool | Description |
@@ -353,9 +358,10 @@ List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail too
 | `get_object_fields` | Read all properties of any object via introspection — returns values + available setters |
 | `set_object_property` | Write any property on any object via official setters — auto-coerces value types |
 
-### Weather & Simulation Config (6 tools)
+### Weather & Simulation Config (7 tools)
 | Tool | Description |
 |------|-------------|
+| `list_weather_files` | List available EPW files with companion .stat/.ddy files |
 | `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
 | `add_design_day` | Add heating/cooling design day |
 | `get_simulation_control` | Read sizing flags and timesteps per hour |
@@ -387,6 +393,17 @@ Create custom OpenStudio measures with AI-generated code, test them, and apply t
 | Tool | Description |
 |------|-------------|
 | `list_comstock_measures` | List bundled measures with category filter (baseline/upgrade/setup) |
+
+### API Reference (2 tools)
+| Tool | Description |
+|------|-------------|
+| `search_api` | Look up OpenStudio SDK classes and setter/getter methods — verify methods exist before calling |
+| `search_wiring_patterns` | Find Ruby wiring recipes for HVAC components (24 patterns: beams, DOAS, VRF, plant loops, etc.) |
+
+### Tool Router (1 tool)
+| Tool | Description |
+|------|-------------|
+| `recommend_tools` | Given a task description, recommend the relevant tool group |
 
 ### Common Measures (20 tools)
 
