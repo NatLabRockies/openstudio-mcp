@@ -4,162 +4,156 @@
 **Branch:** optimize
 **Status:** planning
 
-## Problem
+## Context: Two Conflicting Sets of Anthropic Guidance
 
-Audit of 142 tool descriptions against Anthropic's best practices:
+**Pre-ToolSearch (mid-2024):** "Provide extremely detailed descriptions.
+This is by far the most important factor in tool performance. Aim for at
+least 3-4 sentences per tool description."
+Source: [How to implement tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use)
+Written for: all tools loaded in context simultaneously.
 
-| Criterion | Current | Target |
-|-----------|---------|--------|
-| No when-to-use guidance | 116/142 (82%) | 0 |
-| No negative scope | 132/142 (93%) | ~40-50 (tools with confusion targets) |
-| Short (<150 chars) | 26/142 (18%) | 0 |
-| Has emphasis keywords | 3/142 (2%) | ~15-20 (bypass-prone tools) |
-| Has examples | 48/142 (34%) | ~80+ |
+**Post-ToolSearch (Nov 2025):** "Write clear, descriptive tool names and
+descriptions. Use semantic keywords in descriptions that match how users
+describe tasks."
+Source: [Tool search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool)
+Written for: deferred tools discovered via keyword matching.
 
-Anthropic's guidance: "Provide extremely detailed descriptions. This is by
-far the most important factor in tool performance." Each description should
-cover what it does, when to use it, when NOT to use it, and parameter
-examples. Aim for 3-4 sentences minimum.
+**These were never reconciled by Anthropic.** With 142 tools, ToolSearch
+is always active (>10% context threshold in Claude Code). Our descriptions
+serve two purposes:
 
-## What to Add
+1. **Discovery** — ToolSearch matches keywords in name + description
+2. **In-context guidance** — once loaded, description guides tool selection
 
-### 1. When-to-use guidance (116 tools)
+Verbose usage guidance helps (2) but may hurt (1) by diluting keywords
+with filler. The keyword enrichment we already did targets (1). This plan
+targets (2) selectively — only where we have measured confusion.
 
-One line per tool: "Use when [scenario]." or "Use to [action]."
+## Revised Approach: Targeted, Not Exhaustive
 
-Not a formula — each should match the natural language an energy modeler
-would use. The L1 failure analysis shows the gap:
+Don't add usage guidance to all 116 tools. Instead:
+- **Confusion pairs** (16 tools) — add negative scope to disambiguate
+- **L1 failure tools** (7 tools) — add when-to-use matching vague prompts
+- **Bypass-prone tools** (8 tools) — add emphasis keywords
+- **Short descriptions** (12 tools) — expand the worst offenders only
 
-| L1 Failure | User says | Tool should say |
-|------------|-----------|----------------|
-| run_qaqc_L1 | "Check model for issues" | "Use after simulation to check model quality" |
-| check_loads_L1 | "What loads?" | "Use to inspect people, lights, equipment, infiltration on a space" |
-| replace_windows_L1 | "Upgrade the windows" | "Use to upgrade or replace all window constructions at once" |
-| thermostat_L1 | "Change thermostat settings" | "Use to raise or lower heating/cooling setpoints" |
+Total: **~35 tools to change** (down from 142).
 
-### 2. Negative scope (tools with confusion targets)
+## Changes
 
-Not every tool needs this — only where two tools could be confused:
+### 1. Confusion pairs — negative scope (16 tools, 8 pairs)
+
+These tools get confused with each other. Add one line: "For [X], use [Y]."
 
 | Tool | Confused with | Add |
 |------|-------------|-----|
-| `run_qaqc_checks` | `validate_model` | "Requires completed simulation. For pre-sim checks, use validate_model." |
-| `validate_model` | `run_qaqc_checks` | "Pre-simulation only. For post-sim QA/QC, use run_qaqc_checks." |
-| `get_load_details` | `get_space_details` | "Returns load-specific fields. For space geometry, use get_space_details." |
-| `get_object_fields` | `get_component_properties` | "Works with ANY type. For HVAC components with typed properties, get_component_properties is more structured." |
-| `list_model_objects` | typed list tools | "Works with any OpenStudio type. For common types, typed tools (list_spaces, list_air_loops) provide more detail." |
-| `extract_summary_metrics` | `extract_end_use_breakdown` | "Returns EUI + unmet hours only. For per-category breakdown, use extract_end_use_breakdown." |
-| `inspect_osm_summary` | `get_model_summary` | "Reads from disk without loading. If model already loaded, use get_model_summary." |
-| `copy_file` | `read_file` | "Copies to /runs for host access. To read contents, use read_file." |
-| `list_files` | `list_weather_files` | Already has this. |
-| `create_baseline_osm` | `create_new_building` | "For testing/demos. For production models, use create_new_building." |
+| `run_qaqc_checks` | `validate_model` | "Requires completed simulation run_id. For pre-sim checks, use validate_model." |
+| `validate_model` | `run_qaqc_checks` | "Pre-simulation only. For post-sim QA/QC with ASHRAE checks, use run_qaqc_checks." |
+| `get_load_details` | `get_space_details` | "Returns load-specific fields (watts, people, schedules). For space geometry, use get_space_details." |
+| `get_space_details` | `get_load_details` | "Returns space geometry, surfaces, zone. For load values (W/m2, people), use get_load_details." |
+| `inspect_osm_summary` | `get_model_summary` | "Reads from disk without loading into memory. If model already loaded, use get_model_summary." |
+| `get_model_summary` | `inspect_osm_summary` | "Requires loaded model. To preview an OSM without loading, use inspect_osm_summary." |
+| `create_baseline_osm` | `create_new_building` | "For testing and demos. For production models with DOE prototypes, use create_new_building." |
 | `create_example_osm` | `create_baseline_osm` | "Minimal single-zone demo. For multi-zone baseline, use create_baseline_osm." |
-| `apply_measure` | `create_measure` | "Runs an existing measure. To create a new measure, use create_measure." |
-| `set_thermostat_schedules` | `replace_thermostat_schedules` | "Sets schedules if none exist. To overwrite existing, use replace_thermostat_schedules." |
-| `replace_thermostat_schedules` | `set_thermostat_schedules` | "Overwrites existing schedules. To set on unassigned zones, use set_thermostat_schedules." |
+| `set_thermostat_schedules` | `replace_thermostat_schedules` | "Sets schedules on zones without existing thermostats. To overwrite existing, use replace_thermostat_schedules." |
+| `replace_thermostat_schedules` | `set_thermostat_schedules` | "Overwrites existing thermostat schedules. To set on unassigned zones, use set_thermostat_schedules." |
 | `add_output_variable` | `add_output_meter` | "For zone/surface-level variables. For whole-building energy meters, use add_output_meter." |
-| `add_output_meter` | `add_output_variable` | "For facility-level energy tracking. For zone/surface variables, use add_output_variable." |
+| `add_output_meter` | `add_output_variable` | "For facility-level energy meters. For zone/surface variables, use add_output_variable." |
+| `extract_summary_metrics` | `extract_end_use_breakdown` | "Returns EUI + unmet hours only. For per-category energy breakdown by fuel, use extract_end_use_breakdown." |
+| `copy_file` | `read_file` | "Copies to /runs for host access. To read file contents, use read_file." |
+| `apply_measure` | `create_measure` | "Runs an existing measure on the loaded model. To write a new measure, use create_measure." |
+| `list_model_objects` | typed list tools | "Works with any OpenStudio type. Typed tools (list_spaces, list_air_loops) return more detail for common types." |
 
-### 3. Emphasis keywords (bypass-prone tools)
+### 2. L1 failure tools — when-to-use (7 tools)
 
-Only on tools with known bypass patterns (FM1/FM2/FM3):
+Match the vague natural language that causes L1 failures:
 
-| Tool | Add |
-|------|-----|
+| Tool | L1 prompt that fails | Add |
+|------|---------------------|-----|
+| `run_qaqc_checks` | "Check model for issues" | (covered by confusion pair above) |
+| `get_load_details` | "What loads?" | (covered by confusion pair above) |
+| `replace_window_constructions` | "Upgrade the windows" | "Use to upgrade or replace all window constructions at once." |
+| `adjust_thermostat_setpoints` | "Change thermostat settings" | "Use to raise or lower all heating/cooling setpoints by a degree offset." |
+| `import_floorspacejs` | "Import the floor plan" | "Use to import geometry from a FloorSpaceJS JSON file." |
+| `save_osm_model` | "Save the model" | "IMPORTANT: call after making changes to persist the model to disk." |
+| `list_model_objects` | "What sizing parameters?" | (structural — prompt is too vague for any tool) |
+
+### 3. Bypass-prone tools — emphasis (8 tools)
+
+Only tools with known FM1/FM2/FM3 bypass patterns:
+
+| Tool | Emphasis to add |
+|------|----------------|
+| `extract_summary_metrics` | "ALWAYS use this for EUI — do not parse eplusout.sql directly." |
+| `add_baseline_system` | "ALWAYS use for ASHRAE systems 1-10 — do not write HVAC scripts." |
+| `search_api` | "IMPORTANT: call before writing measures that use SDK method calls." |
+| `run_simulation` | "IMPORTANT: requires weather file (EPW) and design days set on model." |
+| `save_osm_model` | "IMPORTANT: save after modifications to persist changes." |
 | `create_measure` | Already has "ALWAYS use this tool" |
-| `view_model` | Already has "Use this instead of writing matplotlib/plotly" |
-| `view_simulation_data` | Already has "Use this instead of..." |
-| `generate_results_report` | Already has "Use this instead of..." |
-| `read_file` | Already has "/inputs and /runs are inside the MCP container" |
-| `run_simulation` | Add "IMPORTANT: requires weather file and design days" |
-| `extract_summary_metrics` | Add "ALWAYS use this for EUI — do not parse eplusout.sql manually" |
-| `search_api` | Add "IMPORTANT: call before writing measures with SDK method calls" |
-| `add_baseline_system` | Add "ALWAYS use this for ASHRAE systems — do not write HVAC setup scripts" |
-| `save_osm_model` | Add "IMPORTANT: save after modifications to persist changes" |
-| `change_building_location` | Already has "IMPORTANT: EPW must have companion .stat and .ddy" |
-| `list_skills` | Already has "IMPORTANT: Call this FIRST" |
+| `view_model` | Already has "Use this instead of" |
+| `generate_results_report` | Already has "Use this instead of" |
 
-### 4. Short descriptions to expand (26 tools)
+### 4. Short descriptions to expand (12 worst)
 
-These need 1-2 additional lines:
+Only the ones under 100 chars — the 100-150 range are acceptable:
 
-**Simulation/run tools (9):**
-- `get_run_period`, `get_simulation_control`, `get_weather_info`,
-  `cancel_run`, `get_run_artifacts`, `get_run_logs`, `get_run_status` (already covered above),
-  `validate_model`
-
-**Detail/get tools (11):**
-- `get_air_loop_details`, `get_plant_loop_details`, `get_zone_hvac_details`,
-  `get_space_details`, `get_thermal_zone_details`, `get_surface_details`,
-  `get_construction_details`, `get_sizing_system_properties`,
-  `get_sizing_zone_properties`, `get_baseline_system_info`
-
-**Other (6):**
-- `get_server_status`, `get_versions`, `enable_ideal_air_loads`,
-  `match_surfaces`, `set_lifecycle_cost_params`, `create_example_osm`,
-  `extract_envelope_summary`, `extract_hvac_sizing`, `extract_zone_summary`
+| Tool | Current chars | Fix |
+|------|-------------|-----|
+| `get_run_period` | 57 | Add "annual or partial-year simulation start/end dates" |
+| `get_server_status` | 73 | Add "loaded model path, run root, concurrency limit" |
+| `get_versions` | 75 | Expand to mention "OpenStudio SDK 3.x, EnergyPlus 24.x" |
+| `enable_ideal_air_loads` | 83 | Add "for quick load calculations and sizing studies" |
+| `get_simulation_control` | 84 | Add "zone/system/plant sizing, run periods, timestep" |
+| `get_weather_info` | 87 | Already has fields listed |
+| `cancel_run` | 89 | Add "while status is 'running' or 'queued'" |
+| `match_surfaces` | 92 | Add "after creating adjacent spaces with shared walls" |
+| `set_lifecycle_cost_params` | 116 | Add "for NIST BLCC lifecycle cost analysis" |
+| `validate_model` | 124 | Covered by confusion pair above |
+| `create_example_osm` | 120 | Covered by confusion pair above |
+| `get_sizing_zone_properties` | 128 | Add "design air flow, supply temperatures, DOAS settings" |
 
 ## Files to Change
 
-All 22 `mcp_server/skills/*/tools.py` files — same set as the keyword
-enrichment pass. No new files, no architecture changes.
+~15 of the 22 tools.py files (only those containing the ~35 targeted tools):
 
-## Implementation Pattern
-
-For each tool, add 1-2 lines after the first-line summary:
-
-```python
-"""Get building-level attributes: total floor area, conditioned floor area,
-exterior wall area, people density, lighting power density, equipment power
-density, infiltration rate, north axis orientation, standards building type,
-number of stories.
-
-Use to check the building overview before simulation or compare densities.
-For detailed space-level info, use get_space_details instead.
-"""
-```
-
-Pattern:
-- Line 1: What it does (existing, keep)
-- Line 2-3: Keywords/fields (existing from enrichment, keep)
-- New line: "Use [when/to] [scenario]."
-- New line (where applicable): "For [alternative scenario], use [other tool] instead."
-
-## Prioritization
-
-**Tier 1 — Core workflow tools (23):** These are called in every session.
-When-to-use + negative scope where confusion exists.
-
-**Tier 2 — HVAC tools (35):** Most complex domain. When-to-use + emphasis
-on tools with bypass patterns (add_baseline_system).
-
-**Tier 3 — Results tools (15):** When-to-use + distinguish between the
-many extract_* tools.
-
-**Tier 4 — Everything else (69):** When-to-use line. Negative scope only
-where confusion targets exist.
+| File | Tools to change | Type |
+|------|----------------|------|
+| `results/tools.py` | extract_summary_metrics, copy_file | confusion + emphasis |
+| `simulation/tools.py` | run_simulation, validate_model, cancel_run, get_run_period | emphasis + confusion + short |
+| `common_measures/tools.py` | replace_window_constructions, adjust_thermostat_setpoints, set/replace_thermostat_schedules, enable_ideal_air_loads | L1 + confusion + short |
+| `model_management/tools.py` | save_osm_model, inspect_osm_summary, create_example_osm, create_baseline_osm | emphasis + confusion |
+| `building/tools.py` | get_model_summary | confusion |
+| `object_management/tools.py` | list_model_objects | confusion |
+| `hvac_systems/tools.py` | add_baseline_system | emphasis |
+| `loads/tools.py` | get_load_details | confusion |
+| `spaces/tools.py` | get_space_details | confusion |
+| `measures/tools.py` | apply_measure | confusion |
+| `geometry/tools.py` | import_floorspacejs, match_surfaces | L1 + short |
+| `simulation_outputs/tools.py` | add_output_variable, add_output_meter | confusion |
+| `weather/tools.py` | get_simulation_control, get_run_period | short |
+| `api_reference/tools.py` | search_api | emphasis |
+| `server_info/tools.py` | get_server_status, get_versions | short |
 
 ## Testing
 
-- `test_tool_baseline.py::test_min_description_length` — still passes (≥40 chars)
-- New: `test_when_to_use_coverage` — every tool has "use" in description
+- `test_tool_baseline.py` — all existing tests pass
+- New: `test_confusion_pairs_documented` — each confusion pair tool has "use [other tool]" in description
 - Full LLM suite — compare against Run 12 (163/170, 95.9%)
-- Targeted: re-run L1 failures to see if descriptions help
+- Targeted L1: re-run the 7 L1 failure cases
 
-## Risks
+## What NOT to Do
 
-- **Over-engineering descriptions** may dilute keywords for ToolSearch.
-  Each added line is more text to match against — could reduce precision.
-- **Diminishing returns** — Run 12 showed 95.9% unchanged after keyword
-  enrichment. Usage guidance may also plateau.
-- **Description bloat** — long descriptions consume more tokens when loaded
-  by ToolSearch. The auto-deferral threshold (10% context) may shift.
-- **False confidence** — "ALWAYS use this" on too many tools reduces
-  the signal strength of emphasis keywords.
+- Don't add when-to-use to all 116 tools — most are self-evident from name
+- Don't add negative scope to all 132 tools — only where confusion exists
+- Don't use IMPORTANT/ALWAYS on more than ~12 tools — dilutes the signal
+- Don't expand descriptions beyond ~300 chars for simple tools — hurts ToolSearch
 
-## Unresolved
+## Citations
 
-- Should we measure ToolSearch precision before/after? (adding text may hurt matching)
-- How many "IMPORTANT" markers before they lose effectiveness?
-- Should negative scope be "For X, use Y instead" or "Does not do X"?
-- Do L1 failures even matter? They're vague prompts where multiple tools are correct.
+- Pre-ToolSearch guidance (mid-2024): [implement-tool-use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use)
+- Post-ToolSearch guidance (Nov 2025): [tool-search-tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool)
+- "Writing effective tools for AI agents" (Sep 11, 2025): [blog](https://www.anthropic.com/engineering/writing-tools-for-agents)
+- "Advanced tool use" (Nov 24, 2025): [blog](https://www.anthropic.com/engineering/advanced-tool-use)
+- ToolSearch in Claude Code: v2.1.7 (Jan 14, 2026), ENABLE_TOOL_SEARCH env var
+- Tool use GA: May 30, 2024 (API release notes)
+- Tool Search GA: Feb 17, 2026 (API release notes)
