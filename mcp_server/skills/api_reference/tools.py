@@ -1,7 +1,7 @@
 """MCP tool registration for API reference skill."""
 from __future__ import annotations
 
-from .operations import search_api_op
+from .operations import search_api_op, search_wiring_patterns_op
 
 
 def register(mcp):
@@ -33,3 +33,22 @@ def register(mcp):
             max_classes=max_classes,
             include_base=include_base,
         )
+
+    @mcp.tool(tags={"hvac"}, name="search_wiring_patterns")
+    def search_wiring_patterns_tool(
+        pattern: str,
+        max_results: int = 3,
+    ) -> dict:
+        """Search HVAC wiring recipes showing how to connect components.
+
+        Returns Ruby code snippets from openstudio-resources showing how to
+        wire coils to loops, terminals to air loops, zone equipment to zones.
+        Use before authoring measures that create or modify HVAC systems.
+
+        Args:
+            pattern: Component type or keyword (e.g. "four pipe beam",
+                "DOAS", "boiler", "fan coil", "VRF", "PTAC", "unitary",
+                "plant loop", "chiller", "heat pump")
+            max_results: Max recipes to return (default 3)
+        """
+        return search_wiring_patterns_op(pattern, max_results=max_results)

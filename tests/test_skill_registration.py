@@ -165,6 +165,7 @@ EXPECTED_TOOLS = {
     "get_skill",
     # API Reference
     "search_api",
+    "search_wiring_patterns",
     # Tool Router
     "recommend_tools",
 }

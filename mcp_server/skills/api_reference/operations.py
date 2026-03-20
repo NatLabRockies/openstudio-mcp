@@ -104,3 +104,58 @@ def search_api_op(
         })
 
     return {"ok": True, "classes": results, "query": class_pattern}
+
+
+def search_wiring_patterns_op(
+    pattern: str,
+    max_results: int = 3,
+) -> dict:
+    """Search HVAC wiring recipes by component type or keyword.
+
+    Args:
+        pattern: Keyword or component type to search for (case-insensitive).
+            Examples: "four pipe beam", "DOAS", "boiler", "fan coil",
+            "plant loop", "VRF", "PTAC", "unitary"
+        max_results: Max recipes to return (default 3).
+
+    Returns:
+        {"ok": True, "recipes": [...], "available_recipes": [...]}
+    """
+    from .wiring_recipes import RECIPES
+
+    pattern_lower = pattern.lower()
+    tokens = set(re.findall(r"[a-z0-9]+", pattern_lower))
+
+    # Score each recipe by keyword overlap
+    scored = []
+    for key, recipe in RECIPES.items():
+        searchable = " ".join([
+            key,
+            recipe.get("component_type", ""),
+            " ".join(recipe.get("connections", [])),
+            recipe.get("notes", ""),
+        ]).lower()
+        # Count matching tokens
+        score = sum(1 for t in tokens if t in searchable)
+        if score > 0:
+            scored.append((score, key, recipe))
+
+    scored.sort(key=lambda x: -x[0])
+    matches = scored[:max_results]
+
+    results = []
+    for _, key, recipe in matches:
+        results.append({
+            "recipe_id": key,
+            "component_type": recipe["component_type"],
+            "connections": recipe["connections"],
+            "ruby": recipe["ruby"],
+            "notes": recipe["notes"],
+            "source": recipe.get("source", ""),
+        })
+
+    return {
+        "ok": True,
+        "recipes": results,
+        "available_recipes": sorted(RECIPES.keys()),
+    }

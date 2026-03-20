@@ -55,7 +55,7 @@ def test_tool_count():
     tools = _register_tools_with_docs()
     count = len(tools)
     print(f"\nTool count: {count}")
-    assert count == 141, f"Expected 141 tools, got {count}"
+    assert count == 142, f"Expected 142 tools, got {count}"
 
 
 def test_total_schema_chars():
