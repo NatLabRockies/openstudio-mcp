@@ -160,3 +160,95 @@ def test_read_file_uses_mcp_not_bash():
     assert "read_file" in result.tool_names, (
         f"Expected read_file, got: {result.tool_names}"
     )
+
+
+# ── API reference tool discovery ─────────────────────────────────────────
+
+# Valid tools the agent might call to research before authoring
+API_REFERENCE_TOOLS = {"search_api", "search_wiring_patterns", "get_skill"}
+
+
+def test_hvac_measure_uses_api_reference():
+    """Agent should call search_api or search_wiring_patterns when authoring
+    an HVAC measure that requires wiring components to loops.
+
+    This is aspirational — the agent may or may not discover these tools.
+    We check that it at least calls create_measure (primary) and ideally
+    also calls a reference tool (secondary).
+    """
+    tier = get_tier()
+    if tier not in ("all", "4"):
+        pytest.skip("Tier 4 not selected")
+
+    result = run_claude(
+        "Write a Ruby measure that replaces all zone terminals with "
+        "four-pipe beam terminals. The measure should create "
+        "CoilCoolingFourPipeBeam and CoilHeatingFourPipeBeam coils, "
+        "connect them to the chilled water and hot water plant loops, "
+        "and wire them into AirTerminalSingleDuctConstantVolumeFourPipeBeam. "
+        "Before writing the measure code, verify the API methods exist. "
+        "Use MCP tools only.",
+        timeout=300,
+    )
+
+    # Primary: must use create_measure
+    assert "create_measure" in result.tool_names, (
+        f"Expected create_measure, got: {result.tool_names}"
+    )
+
+    # Secondary: check if agent used any reference tool (informational)
+    used_reference = any(t in API_REFERENCE_TOOLS for t in result.tool_names)
+    if not used_reference:
+        print(f"NOTE: Agent did not call search_api/search_wiring_patterns. "
+              f"Tools used: {result.tool_names}")
+
+
+def test_search_api_for_method_verification():
+    """Agent should call search_api when asked to verify methods exist.
+
+    Also accepts get_object_fields as a reasonable alternative — both
+    accomplish method discovery. search_api is new and may not be in
+    the LLM's training data yet.
+    """
+    tier = get_tier()
+    if tier not in ("all", "4"):
+        pytest.skip("Tier 4 not selected")
+
+    result = run_claude(
+        "What setter methods are available on CoilCoolingFourPipeBeam? "
+        "Use the search_api tool to find out. Use MCP tools only.",
+        timeout=120,
+    )
+
+    valid = {"search_api", "get_object_fields", "get_component_properties"}
+    assert any(t in valid for t in result.tool_names), (
+        f"Expected search_api or get_object_fields, got: {result.tool_names}"
+    )
+    if "search_api" not in result.tool_names:
+        print(f"NOTE: Agent used {result.tool_names} instead of search_api")
+
+
+def test_search_wiring_patterns_for_hvac_wiring():
+    """Agent should call search_wiring_patterns when asked about wiring.
+
+    Also accepts get_skill as a reasonable alternative — both provide
+    HVAC wiring guidance. search_wiring_patterns is new and may not be
+    in the LLM's training data yet.
+    """
+    tier = get_tier()
+    if tier not in ("all", "4"):
+        pytest.skip("Tier 4 not selected")
+
+    result = run_claude(
+        "How do I wire a CoilCoolingFourPipeBeam to a chilled water plant "
+        "loop and an air terminal? Use the search_wiring_patterns tool to "
+        "find the wiring recipe. Use MCP tools only.",
+        timeout=120,
+    )
+
+    valid = {"search_wiring_patterns", "get_skill", "list_skills"}
+    assert any(t in valid for t in result.tool_names), (
+        f"Expected search_wiring_patterns or get_skill, got: {result.tool_names}"
+    )
+    if "search_wiring_patterns" not in result.tool_names:
+        print(f"NOTE: Agent used {result.tool_names} instead of search_wiring_patterns")
