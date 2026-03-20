@@ -164,17 +164,31 @@ invisible to it. Possible causes:
 - Tool names with underscores may not tokenize well for matching
 - ToolSearch may prioritize tools with longer/richer descriptions
 
-**Next steps to try:**
-- Improve tool descriptions (more keywords, richer text)
-- Rename tools to be more descriptive (e.g. `search_openstudio_sdk_methods`)
-- Test if adding the tool name verbatim in the description helps
+**Root cause found:** ToolSearch indexes tools at Docker image build time.
+Volume-mounted code registers new tools at runtime, but ToolSearch's index
+is stale. **Docker rebuild fixes everything.**
+
+After `docker build`:
+
+| Query | Finds tool? | Position |
+|-------|------------|----------|
+| "search_api" | search_api | 1st |
+| "SDK methods" | search_api | 1st |
+| "wiring patterns" | search_wiring_patterns | 1st |
+| "four pipe beam wiring" | search_wiring_patterns | 1st |
+| "HVAC recipe" | search_wiring_patterns | 4th |
+| "recommend tools" | recommend_tools | 1st |
+
+Enriched descriptions also helped — added use cases, examples, and
+keyword-rich text to match likely search queries.
 
 ## Recommendation
 
-1. **ToolSearch exists but doesn't find our tools** — need to optimize
-   tool names and descriptions for ToolSearch discoverability
-2. **`recommend_tools` is the best available option** but has the
-   chicken-and-egg problem (LLM must call it first)
-3. **Monitor `tools/list_changed` support** — when Claude Desktop adds it,
-   FastMCP namespace activation becomes viable
-4. **Tool consolidation** as last resort — merge overlapping tools
+1. **ToolSearch works** — all tools discoverable after Docker rebuild
+   with enriched descriptions
+2. **Always rebuild Docker** after adding new tools (CI does this already)
+3. **Enriched descriptions matter** — include use cases, examples, and
+   keywords that match natural language queries
+4. **LLM test failures** may resolve now — re-run with rebuilt image
+5. **Phase 4 (lazy loading) not needed** — ToolSearch handles the
+   discovery problem when properly indexed
