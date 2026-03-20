@@ -204,12 +204,7 @@ def test_hvac_measure_uses_api_reference():
 
 
 def test_search_api_for_method_verification():
-    """Agent should call search_api when asked to verify methods exist.
-
-    Also accepts get_object_fields as a reasonable alternative — both
-    accomplish method discovery. search_api is new and may not be in
-    the LLM's training data yet.
-    """
+    """Agent should call search_api when asked to verify methods exist."""
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -220,21 +215,13 @@ def test_search_api_for_method_verification():
         timeout=120,
     )
 
-    valid = {"search_api", "get_object_fields", "get_component_properties"}
-    assert any(t in valid for t in result.tool_names), (
-        f"Expected search_api or get_object_fields, got: {result.tool_names}"
+    assert "search_api" in result.tool_names, (
+        f"Expected search_api, got: {result.tool_names}"
     )
-    if "search_api" not in result.tool_names:
-        print(f"NOTE: Agent used {result.tool_names} instead of search_api")
 
 
 def test_search_wiring_patterns_for_hvac_wiring():
-    """Agent should call search_wiring_patterns when asked about wiring.
-
-    Also accepts get_skill as a reasonable alternative — both provide
-    HVAC wiring guidance. search_wiring_patterns is new and may not be
-    in the LLM's training data yet.
-    """
+    """Agent should call search_wiring_patterns when asked about wiring."""
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -246,9 +233,6 @@ def test_search_wiring_patterns_for_hvac_wiring():
         timeout=120,
     )
 
-    valid = {"search_wiring_patterns", "get_skill", "list_skills"}
-    assert any(t in valid for t in result.tool_names), (
-        f"Expected search_wiring_patterns or get_skill, got: {result.tool_names}"
+    assert "search_wiring_patterns" in result.tool_names, (
+        f"Expected search_wiring_patterns, got: {result.tool_names}"
     )
-    if "search_wiring_patterns" not in result.tool_names:
-        print(f"NOTE: Agent used {result.tool_names} instead of search_wiring_patterns")
