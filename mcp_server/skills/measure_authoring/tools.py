@@ -38,7 +38,9 @@ def register(mcp):
         """ALWAYS use this tool to create OpenStudio measures. Do not write
         measure.rb files directly or use create_file/Write.
 
-        TIP: call get_skill('measure-authoring') first for templates, API patterns, and common pitfalls.
+        TIP: call get_skill('measure-authoring') first for templates and pitfalls.
+        For HVAC measures: call search_api to verify methods exist, and
+        search_wiring_patterns for working connection code.
 
         Scaffolds via SDK, then injects arguments() and run() body. Output
         dir: /runs/custom_measures/<name>/. Idempotent — overwrites if exists.

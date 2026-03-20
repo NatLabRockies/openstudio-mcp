@@ -30,6 +30,8 @@ mcp = FastMCP(
         "or list_weather_files — never download or write weather files. "
         "- HVAC: use add_baseline_system, add_doas_system, add_vrf_system — "
         "never write OpenStudio SDK scripts to wire HVAC components. "
+        "For custom HVAC measures, call search_wiring_patterns to get working "
+        "Ruby wiring code, and search_api to verify methods exist. "
         "If a file path is given, use it directly. If a file operation fails, "
         "you may call list_files once to find the right path, then retry — "
         "do not call list_files more than once for the same file. "
