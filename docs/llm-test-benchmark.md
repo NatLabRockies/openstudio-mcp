@@ -124,6 +124,7 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | 9b | 2026-03-19 | 9 | 9 | 100% | $0.79 | Tool routing A/B post-hardening (neutral delta) |
 | 10 | 2026-03-19 | 172 | 166 | 96.5% | — | Full regression after tool routing (tags, recommend_tools, search_api, docstrings). No regressions — 6 failures all known flaky. |
 | 11 | 2026-03-20 | 171 | 164 | 95.9% | — | Full suite with ToolSearch + wiring recipes + enriched descriptions. 12/12 test_09 pass. 7 failures all known flaky (replace_windows_L1 new — agent called search_api instead). |
+| 12 | 2026-03-20 | 170 | 163 | 95.9% | — | Post description enrichment (all 142 tools ≥40 char). Same 7 flaky failures. No regression. |
 
 *Run 8 = combined results from two separate targeted runs (measure authoring 13/15 + cooled beam 10/10).*
 
