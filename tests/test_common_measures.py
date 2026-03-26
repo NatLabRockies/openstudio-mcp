@@ -371,11 +371,8 @@ def test_list_common_measures_filter_visualization():
 # --- Test 11: set_thermostat_schedules ---
 @pytest.mark.integration
 def test_set_thermostat_schedules():
-    """Set thermostat schedules on a zone using schedule names.
-
-    Note: OSW runner may reject Choice-type args as String — lenient assert.
-    """
-    # Validates: set_thermostat_schedules accepts zone+schedule names via MCP
+    """Set thermostat schedules on a zone using Temperature-type schedule."""
+    # Validates: set_thermostat_schedules applies cooling+heating schedules to a zone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -387,25 +384,51 @@ def test_set_thermostat_schedules():
 
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
+                # Measure requires Temperature-type schedules
                 scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
-                assert scheds["count"] > 0, "No schedules in baseline"
-                sched_name = scheds["objects"][0]["name"]
+                temp_scheds = [o["name"] for o in scheds["objects"]
+                               if any(k in o["name"].lower() for k in ("cool", "heat"))]
+                assert len(temp_scheds) >= 2, (
+                    f"Baseline needs cooling+heating schedules, got: "
+                    f"{[o['name'] for o in scheds['objects']]}"
+                )
+                cool_sched = next(n for n in temp_scheds if "cool" in n.lower())
+                heat_sched = next(n for n in temp_scheds if "heat" in n.lower())
 
                 res = unwrap(await s.call_tool("set_thermostat_schedules", {
                     "zone_name": zone_name,
-                    "cooling_schedule": sched_name,
-                    "heating_schedule": sched_name,
+                    "cooling_schedule": cool_sched,
+                    "heating_schedule": heat_sched,
                 }))
-                print("set_thermostat_schedules:", res)
-                # Choice args may fail with current OSW runner
-                if res["ok"] is True:
-                    pass  # No readback available for thermostat schedules
-                else:
-                    error = res.get("error", "")
-                    if any(k in error.lower() for k in ("choice", "argument", "osw", "measure run failed")):
-                        pytest.skip(f"Known OSW runner limitation: {error}")
-                    else:
-                        pytest.fail(f"set_thermostat_schedules failed unexpectedly: {error}")
+                assert res["ok"] is True, f"set_thermostat_schedules failed: {res.get('error')}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_set_thermostat_schedules_bad_type():
+    """Wrong schedule type returns clear validation error, not cryptic OSW failure."""
+    # Validates: wrapper rejects non-Temperature schedule with actionable error
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await _setup_baseline(s, _unique("therm_bad"))
+
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
+                zone_name = zones["thermal_zones"][0]["name"]
+                # Pick a non-Temperature schedule
+                res = unwrap(await s.call_tool("set_thermostat_schedules", {
+                    "zone_name": zone_name,
+                    "cooling_schedule": "Baseline Model Infiltration Schedule",
+                }))
+                assert res["ok"] is False
+                assert "unittype" in res["error"].lower() or "temperature" in res["error"].lower(), (
+                    f"Error should mention type mismatch, got: {res['error']}"
+                )
 
     asyncio.run(_run())
 
@@ -413,11 +436,8 @@ def test_set_thermostat_schedules():
 # --- Test 12: replace_thermostat_schedules ---
 @pytest.mark.integration
 def test_replace_thermostat_schedules():
-    """Replace thermostat schedules on a zone.
-
-    Note: OSW runner may reject Choice-type args as String — lenient assert.
-    """
-    # Validates: replace_thermostat_schedules accepts zone+schedule names via MCP
+    """Replace thermostat schedules on a zone using Temperature-type schedule."""
+    # Validates: replace_thermostat_schedules applies cooling+heating schedules to a zone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -430,23 +450,21 @@ def test_replace_thermostat_schedules():
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
                 scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
-                sched_name = scheds["objects"][0]["name"]
+                temp_scheds = [o["name"] for o in scheds["objects"]
+                               if any(k in o["name"].lower() for k in ("cool", "heat"))]
+                assert len(temp_scheds) >= 2, (
+                    f"Baseline needs cooling+heating schedules, got: "
+                    f"{[o['name'] for o in scheds['objects']]}"
+                )
+                cool_sched = next(n for n in temp_scheds if "cool" in n.lower())
+                heat_sched = next(n for n in temp_scheds if "heat" in n.lower())
 
                 res = unwrap(await s.call_tool("replace_thermostat_schedules", {
                     "zone_name": zone_name,
-                    "cooling_schedule": sched_name,
-                    "heating_schedule": sched_name,
+                    "cooling_schedule": cool_sched,
+                    "heating_schedule": heat_sched,
                 }))
-                print("replace_thermostat_schedules:", res)
-                # Choice args may fail with current OSW runner
-                if res["ok"] is True:
-                    pass  # No readback available for thermostat schedules
-                else:
-                    error = res.get("error", "")
-                    if any(k in error.lower() for k in ("choice", "argument", "osw", "measure run failed")):
-                        pytest.skip(f"Known OSW runner limitation: {error}")
-                    else:
-                        pytest.fail(f"replace_thermostat_schedules failed unexpectedly: {error}")
+                assert res["ok"] is True, f"replace_thermostat_schedules failed: {res.get('error')}"
 
     asyncio.run(_run())
 
@@ -592,11 +610,8 @@ def test_add_ev_load():
 # --- Test 17: add_zone_ventilation ---
 @pytest.mark.integration
 def test_add_zone_ventilation():
-    """Add zone ventilation to a thermal zone.
-
-    Note: Requires Choice args (zone, schedule) — may fail with OSW runner.
-    """
-    # Validates: add_zone_ventilation MCP contract returns ok field
+    """Add zone ventilation to a thermal zone with schedule."""
+    # Validates: add_zone_ventilation creates ventilation object on a zone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -608,9 +623,10 @@ def test_add_zone_ventilation():
 
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
-                # Provide a schedule (required arg)
+                # Measure requires a schedule with type limits
                 scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
-                sched_name = scheds["objects"][0]["name"] if scheds["count"] > 0 else ""
+                assert scheds["count"] > 0, "Baseline needs at least 1 schedule"
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("add_zone_ventilation", {
                     "zone_name": zone_name,
@@ -618,16 +634,35 @@ def test_add_zone_ventilation():
                     "ventilation_type": "Natural",
                     "schedule_name": sched_name,
                 }))
-                print("add_zone_ventilation:", res)
-                # Choice args may fail with current OSW runner
-                if res["ok"] is True:
-                    pass  # Zone ventilation added successfully
-                else:
-                    error = res.get("error", "")
-                    if any(k in error.lower() for k in ("choice", "argument", "osw", "measure run failed")):
-                        pytest.skip(f"Known OSW runner limitation: {error}")
-                    else:
-                        pytest.fail(f"add_zone_ventilation failed unexpectedly: {error}")
+                assert res["ok"] is True, f"add_zone_ventilation failed: {res.get('error')}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_add_zone_ventilation_no_schedule():
+    """Omitting schedule returns clear error, not cryptic OSW failure."""
+    # Validates: wrapper rejects missing schedule_name with actionable error
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await _setup_baseline(s, _unique("zone_vent_no"))
+
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
+                zone_name = zones["thermal_zones"][0]["name"]
+
+                res = unwrap(await s.call_tool("add_zone_ventilation", {
+                    "zone_name": zone_name,
+                    "design_flow_rate": 0.1,
+                }))
+                assert res["ok"] is False
+                assert "required" in res["error"].lower(), (
+                    f"Error should mention schedule is required, got: {res['error']}"
+                )
 
     asyncio.run(_run())
 
