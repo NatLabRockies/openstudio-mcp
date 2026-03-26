@@ -555,21 +555,20 @@ class TestSystem8:
         assert data["system"]["system"]["chilled_water_loop"] is not None
 
     def test_hot_water_loop(self, data):
-        # Validates: System 8 created ok (PFP uses electric reheat, HW loop optional)
-        assert data["system"]["ok"] is True
+        # Validates: System 8 PFP has hot water loop for heating coils
         sys = data["system"]["system"]
-        # System 8 PFP may or may not have HW loop depending on reheat type
-        if sys.get("hot_water_loop"):
-            assert sys["hot_water_loop"], "If HW loop exists, it should be non-empty"
-        # Either way, system must have created successfully
+        assert sys.get("hot_water_loop"), (
+            f"System 8 PFP should have HW loop, got keys: {list(sys.keys())}"
+        )
 
     def test_condenser_loop(self, data):
         # Validates: System 8 creates condenser water loop for heat rejection
         assert data["system"]["system"]["condenser_loop"] is not None
 
     def test_pfp_terminals(self, data):
-        # Validates: System 8 has PFP terminals on air loop
-        assert len(data["system"]["system"]["terminals"]) > 0
+        # Validates: System 8 creates one PFP terminal per zone
+        sys = data["system"]["system"]
+        assert len(sys["terminals"]) == len(data["zones"])
 
     def test_electric_reheat(self, data):
         # Validates: System 8 PFP terminals use electric reheat
@@ -634,9 +633,11 @@ class TestSystem9:
         return _run_setup("val_s9", 9, system_name="Gas Heaters")
 
     def test_unit_heaters(self, data):
-        # Validates: System 9 creates gas unit heaters with equipment list
+        # Validates: System 9 creates one gas unit heater per zone
         assert data["system"]["ok"] is True
-        assert len(data["system"]["system"]["equipment"]) > 0
+        equip = data["system"]["system"]["equipment"]
+        assert len(equip) >= len(data["zones"]), \
+            f"System 9 needs >= 1 heater/zone, got {len(equip)} for {len(data['zones'])} zones"
 
     def test_no_cooling(self, data):
         # Validates: System 9 is heating-only (no cooling)
@@ -656,9 +657,11 @@ class TestSystem10:
         return _run_setup("val_s10", 10, system_name="Electric Heaters")
 
     def test_unit_heaters(self, data):
-        # Validates: System 10 creates electric unit heaters with equipment list
+        # Validates: System 10 creates one electric unit heater per zone
         assert data["system"]["ok"] is True
-        assert len(data["system"]["system"]["equipment"]) > 0
+        equip = data["system"]["system"]["equipment"]
+        assert len(equip) >= len(data["zones"]), \
+            f"System 10 needs >= 1 heater/zone, got {len(equip)} for {len(data['zones'])} zones"
 
     def test_no_cooling(self, data):
         # Validates: System 10 is heating-only (no cooling)

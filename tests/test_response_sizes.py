@@ -107,13 +107,14 @@ class TestResponseSizes:
                     first_space = unwrap(
                         await session.call_tool("list_spaces", {"max_results": 1})
                     )
-                    if first_space.get("ok") and first_space["spaces"]:
-                        sp_name = first_space["spaces"][0]["name"]
-                        data["first_space_name"] = sp_name
-                        raw = await session.call_tool(
-                            "list_surfaces", {"space_name": sp_name, "max_results": 0},
-                        )
-                        data["surfaces_by_space"] = unwrap(raw)
+                    assert first_space.get("ok"), f"list_spaces failed: {first_space}"
+                    assert first_space.get("spaces"), "Baseline should have spaces"
+                    sp_name = first_space["spaces"][0]["name"]
+                    data["first_space_name"] = sp_name
+                    raw = await session.call_tool(
+                        "list_surfaces", {"space_name": sp_name, "max_results": 0},
+                    )
+                    data["surfaces_by_space"] = unwrap(raw)
 
                     # -- Filter: subsurfaces by type --
                     raw = await session.call_tool(
@@ -130,8 +131,10 @@ class TestResponseSizes:
                     data["spaces_by_type"] = unwrap(raw)
 
                     # -- Filter: thermal zones by air loop --
+                    # create_baseline_and_load doesn't add HVAC, so air loops may be empty
                     air_loops = unwrap(await session.call_tool("list_air_loops", {}))
-                    if air_loops.get("ok") and air_loops.get("air_loops"):
+                    assert air_loops.get("ok"), f"list_air_loops failed: {air_loops}"
+                    if air_loops.get("air_loops"):
                         al_name = air_loops["air_loops"][0]["name"]
                         data["first_air_loop"] = al_name
                         raw = await session.call_tool(
@@ -159,26 +162,28 @@ class TestResponseSizes:
                         await session.call_tool("list_model_objects",
                                                 {"object_type": "SpaceType", "max_results": 1}),
                     )
-                    if st_list.get("ok") and st_list.get("objects"):
-                        st_name = st_list["objects"][0]["name"]
-                        raw = await session.call_tool(
-                            "get_space_type_details", {"space_type_name": st_name},
-                        )
-                        data["space_type_details"] = unwrap(raw)
-                        data["space_type_name"] = st_name
+                    assert st_list.get("ok"), f"list_model_objects(SpaceType) failed: {st_list}"
+                    assert st_list.get("objects"), "Baseline should have SpaceType objects"
+                    st_name = st_list["objects"][0]["name"]
+                    raw = await session.call_tool(
+                        "get_space_type_details", {"space_type_name": st_name},
+                    )
+                    data["space_type_details"] = unwrap(raw)
+                    data["space_type_name"] = st_name
 
                     # -- read_file default (C1) --
                     raw = await session.call_tool("list_files", {})
                     files_resp = unwrap(raw)
-                    if files_resp.get("ok") and files_resp.get("items"):
-                        # Find a file (not dir) to read
-                        for item in files_resp["items"]:
-                            if item.get("type") == "file":
-                                raw = await session.call_tool(
-                                    "read_file", {"file_path": item["path"]},
-                                )
-                                data["read_file_default"] = unwrap(raw)
-                                break
+                    assert files_resp.get("ok"), f"list_files failed: {files_resp}"
+                    assert files_resp.get("items"), "Baseline run dir should have files"
+                    # Find a file (not dir) to read
+                    for item in files_resp["items"]:
+                        if item.get("type") == "file":
+                            raw = await session.call_tool(
+                                "read_file", {"file_path": item["path"]},
+                            )
+                            data["read_file_default"] = unwrap(raw)
+                            break
 
                     # -- Detail tools --
                     # get_construction_details (via list_model_objects)
@@ -186,26 +191,28 @@ class TestResponseSizes:
                         await session.call_tool("list_model_objects",
                                                 {"object_type": "Construction", "max_results": 1}),
                     )
-                    if constr_objs.get("ok") and constr_objs.get("objects"):
-                        c_name = constr_objs["objects"][0]["name"]
-                        raw = await session.call_tool(
-                            "get_construction_details", {"construction_name": c_name},
-                        )
-                        data["construction_details"] = unwrap(raw)
-                        data["construction_name"] = c_name
+                    assert constr_objs.get("ok"), f"list_model_objects(Construction) failed: {constr_objs}"
+                    assert constr_objs.get("objects"), "Baseline should have Construction objects"
+                    c_name = constr_objs["objects"][0]["name"]
+                    raw = await session.call_tool(
+                        "get_construction_details", {"construction_name": c_name},
+                    )
+                    data["construction_details"] = unwrap(raw)
+                    data["construction_name"] = c_name
 
                     # get_load_details — try lights (use list_model_objects)
                     lights_objs = unwrap(
                         await session.call_tool("list_model_objects",
                                                 {"object_type": "Lights", "max_results": 1}),
                     )
-                    if lights_objs.get("ok") and lights_objs.get("objects"):
-                        l_name = lights_objs["objects"][0]["name"]
-                        raw = await session.call_tool(
-                            "get_load_details", {"load_name": l_name},
-                        )
-                        data["load_details_lights"] = unwrap(raw)
-                        data["load_name_lights"] = l_name
+                    assert lights_objs.get("ok"), f"list_model_objects(Lights) failed: {lights_objs}"
+                    assert lights_objs.get("objects"), "Baseline should have Lights objects"
+                    l_name = lights_objs["objects"][0]["name"]
+                    raw = await session.call_tool(
+                        "get_load_details", {"load_name": l_name},
+                    )
+                    data["load_details_lights"] = unwrap(raw)
+                    data["load_name_lights"] = l_name
 
                     # get_load_details — infiltration
                     infil_objs = unwrap(
@@ -213,12 +220,13 @@ class TestResponseSizes:
                                                 {"object_type": "SpaceInfiltrationDesignFlowRate",
                                                  "max_results": 1}),
                     )
-                    if infil_objs.get("ok") and infil_objs.get("objects"):
-                        i_name = infil_objs["objects"][0]["name"]
-                        raw = await session.call_tool(
-                            "get_load_details", {"load_name": i_name},
-                        )
-                        data["load_details_infil"] = unwrap(raw)
+                    assert infil_objs.get("ok"), f"list_model_objects(Infiltration) failed: {infil_objs}"
+                    assert infil_objs.get("objects"), "Baseline should have infiltration objects"
+                    i_name = infil_objs["objects"][0]["name"]
+                    raw = await session.call_tool(
+                        "get_load_details", {"load_name": i_name},
+                    )
+                    data["load_details_infil"] = unwrap(raw)
 
                     # get_load_details — nonexistent name
                     raw = await session.call_tool(
@@ -307,8 +315,7 @@ class TestResponseSizes:
         default = session_data["defaults"]["list_surfaces"]
         unlimited = session_data["unlimited"]["list_surfaces"]
         total = unlimited["count"]
-        if total <= 10:
-            pytest.skip("Baseline has <= 10 surfaces, no truncation expected")
+        assert total > 10, f"Baseline should have > 10 surfaces, got {total}"
         assert default["truncated"] is True
         assert default["total_available"] == total
         assert default["count"] == 10
@@ -320,8 +327,7 @@ class TestResponseSizes:
         default = session_data["defaults"]["list_materials"]
         unlimited = session_data["unlimited"]["list_materials"]
         total = unlimited["count"]
-        if total <= 10:
-            pytest.skip("Baseline has <= 10 materials")
+        assert total > 10, f"Baseline should have > 10 materials, got {total}"
         assert default["truncated"] is True
         assert default["total_available"] == total
         assert default["count"] == 10
@@ -361,11 +367,11 @@ class TestResponseSizes:
         resp = session_data["surfaces_max5"]
         total = session_data["unlimited"]["list_surfaces"]["count"]
         assert resp["ok"] is True
-        if total > 5:
-            assert resp["count"] == 5
-            assert len(resp["surfaces"]) == 5
-            assert resp["truncated"] is True
-            assert resp["total_available"] == total
+        assert total > 5, f"Baseline should have > 5 surfaces, got {total}"
+        assert resp["count"] == 5
+        assert len(resp["surfaces"]) == 5
+        assert resp["truncated"] is True
+        assert resp["total_available"] == total
 
     def test_max_results_1(self, session_data):
         """max_results=1 limits to 1 item."""
@@ -373,10 +379,10 @@ class TestResponseSizes:
         resp = session_data["surfaces_max1"]
         total = session_data["unlimited"]["list_surfaces"]["count"]
         assert resp["ok"] is True
-        if total > 1:
-            assert resp["count"] == 1
-            assert len(resp["surfaces"]) == 1
-            assert resp["truncated"] is True
+        assert total > 1, f"Baseline should have > 1 surface, got {total}"
+        assert resp["count"] == 1
+        assert len(resp["surfaces"]) == 1
+        assert resp["truncated"] is True
 
     def test_unlimited_surfaces_more_than_10(self, session_data):
         """Baseline model has >10 surfaces (validates test premise)."""
@@ -403,6 +409,7 @@ class TestResponseSizes:
         # Validates: surface filter by type=RoofCeiling returns only roof/ceiling surfaces
         resp = session_data["surfaces_roofs"]
         assert resp["ok"] is True
+        assert resp["count"] > 0, "Baseline should have roof surfaces"
         for s in resp["surfaces"]:
             assert s["surface_type"] == "RoofCeiling"
 
@@ -500,8 +507,11 @@ class TestResponseSizes:
         resp = session_data["materials_opaque"]
         assert resp["ok"] is True
         all_count = session_data["unlimited"]["list_materials"]["count"]
-        # Opaque materials should be a subset (there are also air gap, etc.)
+        # Filtered count must be <= total (may be 0 if baseline has no StandardOpaqueMaterial)
         assert resp["count"] <= all_count
+        # If filter returned results, verify they are actually materials
+        for m in resp.get("materials", [])[:3]:
+            assert m.get("name"), f"Material missing name: {m}"
 
     # -----------------------------------------------------------------------
     # Detail tools
@@ -514,8 +524,8 @@ class TestResponseSizes:
         if resp is None:
             pytest.skip("No constructions in baseline model")
         assert resp["ok"] is True
-        assert resp.get("construction") or resp.get("name"), (
-            f"Missing construction data in response: {list(resp.keys())}"
+        assert "construction" in resp or "layers" in resp, (
+            f"Expected construction details, got: {list(resp.keys())}"
         )
 
     def test_get_construction_details_under_budget(self, session_data):
@@ -577,8 +587,7 @@ class TestResponseSizes:
         """list_files items have name, path, type fields."""
         # Validates: list_files items contain non-empty name, path, and type ("file" or "dir")
         resp = session_data["defaults"]["list_files"]
-        if resp["count"] == 0:
-            pytest.skip("No files in run dir")
+        assert resp["count"] > 0, "Baseline run dir should have files"
         item = resp["items"][0]
         assert "name" in item
         assert item["name"], f"File item should have non-empty name: {item}"
@@ -608,8 +617,7 @@ class TestResponseSizes:
         """Default (brief) surface items include outside_boundary_condition."""
         # Validates: brief surface format includes outside_boundary_condition field
         resp = session_data["defaults"]["list_surfaces"]
-        if resp["count"] == 0:
-            pytest.skip("No surfaces")
+        assert resp["count"] > 0, "Baseline should have surfaces"
         first = resp["surfaces"][0]
         assert "outside_boundary_condition" in first, (
             f"Brief surface missing outside_boundary_condition. Keys: {list(first.keys())}"

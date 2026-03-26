@@ -169,12 +169,13 @@ def test_set_setpoint_min_max_temp():
                 assert len(data["changes"]) > 0, f"No properties changed: {data}"
                 # Verify change values match what we sent
                 for prop_name, new_val in props.items():
-                    if prop_name in data["changes"]:
-                        actual = data["changes"][prop_name]["new"]
-                        if isinstance(new_val, float):
-                            assert actual == pytest.approx(new_val, abs=0.1)
-                        else:
-                            assert actual == new_val
+                    assert prop_name in data["changes"], \
+                        f"Property {prop_name} not in changes: {list(data['changes'].keys())}"
+                    actual = data["changes"][prop_name]["new"]
+                    if isinstance(new_val, float):
+                        assert actual == pytest.approx(new_val, abs=0.1)
+                    else:
+                        assert actual == new_val
     asyncio.run(_run())
 
 

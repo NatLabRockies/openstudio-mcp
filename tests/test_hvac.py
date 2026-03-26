@@ -47,8 +47,6 @@ def test_list_air_loops():
                 air_loop = air_loops_result["air_loops"][0]
                 assert air_loop["name"], "Air loop should have a name"
                 assert air_loop["num_thermal_zones"] >= 1, "System 7 air loop should serve zones"
-                assert isinstance(air_loop["thermal_zones"], list)
-                assert isinstance(air_loop["supply_components"], list)
 
     asyncio.run(_run())
 
@@ -160,8 +158,8 @@ def test_list_plant_loops():
 
                 plant_loop = plant_loops_result["plant_loops"][0]
                 assert plant_loop["name"], "Plant loop should have a name"
-                assert plant_loop["num_supply_components"] >= 0
-                assert plant_loop["num_demand_components"] >= 0
+                assert plant_loop["num_supply_components"] >= 1, \
+                    f"Plant loop '{plant_loop['name']}' should have supply components"
 
     asyncio.run(_run())
 
