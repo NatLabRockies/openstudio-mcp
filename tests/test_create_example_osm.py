@@ -73,6 +73,7 @@ def _unique_name(prefix: str = "pytest_example_model") -> str:
 
 @pytest.mark.integration
 def test_create_example_osm_smoke():
+    # Validates: create_example_osm returns ok with valid .osm path under /runs
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -88,11 +89,9 @@ def test_create_example_osm_smoke():
 
                 # Helpful for local debugging / CI logs
                 print("create_example_osm result:", result)
-                assert isinstance(result, dict), f"Unexpected tool result type: {type(result)}"
-                assert result.get("ok") is True, f"Tool returned ok!=true: {result}"
+                assert result["ok"] is True, f"Tool returned ok!=true: {result}"
 
-                osm_path = result.get("osm_path")
-                assert osm_path, f"No osm_path returned: {result}"
+                osm_path = result["osm_path"]
                 assert str(osm_path).endswith(".osm"), f"Expected .osm path, got: {osm_path}"
                 assert str(osm_path).startswith("/runs/"), f"Expected osm_path under /runs, got: {osm_path}"
 

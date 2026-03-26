@@ -117,7 +117,7 @@ IDENTITY_UNITS = [
 
 @pytest.mark.integration
 def test_unit_conversion_pairs():
-    """All documented from→to unit pairs must produce finite non-zero results."""
+    # Validates: all documented unit conversion pairs produce finite non-zero results via OpenStudio SDK
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -136,7 +136,7 @@ def test_unit_conversion_pairs():
 
 @pytest.mark.integration
 def test_unit_identity_conversions():
-    """All documented unit strings must parse (identity conversion)."""
+    # Validates: all documented unit strings are recognized by SDK (identity conversion = 1.0)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -155,7 +155,7 @@ def test_unit_identity_conversions():
 
 @pytest.mark.integration
 def test_temperature_conversions():
-    """Temperature conversions (absolute) need special handling — verify known values."""
+    # Validates: absolute temperature conversions match known values (0C=32F=273.15K, 100C=212F)
     if not integration_enabled():
         pytest.skip("integration disabled")
 

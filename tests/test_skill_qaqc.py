@@ -16,6 +16,7 @@ from mcp.client.stdio import stdio_client
 @pytest.mark.integration
 def test_skill_qaqc_workflow():
     """/qaqc skill: load model, inspect summary, check for missing elements."""
+    # Validates: QA/QC workflow — all inspection tools return ok on baseline model
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -29,31 +30,31 @@ def test_skill_qaqc_workflow():
                 cr = unwrap(await s.call_tool("create_baseline_osm", {
                     "name": name, "ashrae_sys_num": "03",
                 }))
-                assert cr.get("ok") is True
+                assert cr["ok"] is True
                 lr = unwrap(await s.call_tool("load_osm_model", {
                     "osm_path": cr["osm_path"],
                 }))
-                assert lr.get("ok") is True
+                assert lr["ok"] is True
 
                 # 2. Inspect model summary
                 summary = unwrap(await s.call_tool("inspect_osm_summary", {
                     "osm_path": cr["osm_path"],
                 }))
-                assert summary.get("ok") is True
+                assert summary["ok"] is True
 
                 # 3. Get model summary (object counts)
                 model_sum = unwrap(await s.call_tool("get_model_summary", {}))
-                assert model_sum.get("ok") is True
+                assert model_sum["ok"] is True
 
                 # 4. Check thermal zones exist and have equipment
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
-                assert zones.get("ok") is True
-                assert zones["count"] > 0, "No thermal zones found"
+                assert zones["ok"] is True
+                assert zones["count"] == 10, f"Baseline should have 10 zones, got {zones['count']}"
 
                 # 5. Check spaces are assigned to zones
                 spaces = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
-                assert spaces.get("ok") is True
-                assert spaces["count"] > 0, "No spaces found"
+                assert spaces["ok"] is True
+                assert spaces["count"] == 10, f"Baseline should have 10 spaces, got {spaces['count']}"
 
                 # 6. Check weather info (baseline model has no EPW)
                 weather = unwrap(await s.call_tool("get_weather_info", {}))
@@ -61,10 +62,10 @@ def test_skill_qaqc_workflow():
 
                 # 7. Check run period
                 rp = unwrap(await s.call_tool("get_run_period", {}))
-                assert rp.get("ok") is True
+                assert rp["ok"] is True
 
                 # 8. Check HVAC exists (baseline model should have it)
                 hvac = unwrap(await s.call_tool("list_zone_hvac_equipment", {"max_results": 0}))
-                assert hvac.get("ok") is True
+                assert hvac["ok"] is True
 
     asyncio.run(_run())

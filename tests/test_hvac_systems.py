@@ -11,6 +11,7 @@ pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration d
 
 def test_list_baseline_systems():
     """Test listing all ASHRAE baseline system types."""
+    # Validates: list_baseline_systems returns all 10 ASHRAE system types with System 1 = PTAC
     async def _run():
         sp = server_params()
 
@@ -22,9 +23,7 @@ def test_list_baseline_systems():
                 result = await session.call_tool("list_baseline_systems", {})
                 data = unwrap(result)
 
-                assert data.get("ok") is True
-                assert "baseline_systems" in data
-                assert "modern_templates" in data
+                assert data["ok"] is True
                 assert data["total_count"] > 0
 
                 # Verify we have 10 baseline systems
@@ -32,14 +31,14 @@ def test_list_baseline_systems():
 
                 # Verify System 1 is PTAC
                 sys1 = next((s for s in data["baseline_systems"] if s["system_type"] == 1), None)
-                assert sys1 is not None
-                assert sys1["name"] == "PTAC"
+                assert sys1["name"] == "PTAC", f"System 1 should be PTAC, got {sys1}"
 
     asyncio.run(_run())
 
 
 def test_get_baseline_system_info():
     """Test getting info for specific baseline system."""
+    # Validates: get_baseline_system_info returns PTAC name and heating/cooling fields for System 1
     async def _run():
         sp = server_params()
 
@@ -53,18 +52,18 @@ def test_get_baseline_system_info():
                 })
                 data = unwrap(result)
 
-                assert data.get("ok") is True
-                assert "system" in data
+                assert data["ok"] is True
                 assert data["system"]["name"] == "PTAC"
                 assert data["system"]["full_name"] == "Packaged Terminal Air Conditioner"
-                assert "heating" in data["system"]
-                assert "cooling" in data["system"]
+                assert data["system"]["heating"], "Missing heating field"
+                assert data["system"]["cooling"], "Missing cooling field"
 
     asyncio.run(_run())
 
 
 def test_add_baseline_system_1_ptac():
     """Test adding ASHRAE baseline System 1 (PTAC)."""
+    # Validates: System 1 PTAC creates one PTAC per zone with heating/cooling coils and fan
     name = "test_baseline_sys1"
 
     async def _run():
@@ -79,19 +78,19 @@ def test_add_baseline_system_1_ptac():
                     "name": name,
                 })
                 create_data = unwrap(create_resp)
-                assert create_data.get("ok") is True
+                assert create_data["ok"] is True
 
                 # Load model
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"],
                 })
                 load_data = unwrap(load_resp)
-                assert load_data.get("ok") is True
+                assert load_data["ok"] is True
 
                 # List thermal zones
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
-                assert zones_data.get("ok") is True
+                assert zones_data["ok"] is True
                 assert len(zones_data["thermal_zones"]) > 0
 
                 zone_names = [z["name"] for z in zones_data["thermal_zones"]]
@@ -107,32 +106,31 @@ def test_add_baseline_system_1_ptac():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "PTAC (Baseline System 1)"
                 assert system_data["system"]["system_number"] == 1
                 assert system_data["system"]["zones_served"] == len(zone_names)
-                assert "equipment" in system_data["system"]
                 assert len(system_data["system"]["equipment"]) == len(zone_names)
 
                 # Verify each zone got PTAC equipment
                 for equip in system_data["system"]["equipment"]:
-                    assert "zone" in equip
-                    assert "equipment" in equip
+                    assert equip["zone"], f"Missing zone in equipment: {equip}"
                     assert "PTAC" in equip["equipment"]
-                    assert "heating_coil" in equip
-                    assert "cooling_coil" in equip
-                    assert "fan" in equip
+                    assert equip["heating_coil"], f"Missing heating_coil: {equip}"
+                    assert equip["cooling_coil"], f"Missing cooling_coil: {equip}"
+                    assert equip["fan"], f"Missing fan: {equip}"
 
                 # Save model
                 save_resp = await session.call_tool("save_osm_model", {})
                 save_data = unwrap(save_resp)
-                assert save_data.get("ok") is True
+                assert save_data["ok"] is True
 
     asyncio.run(_run())
 
 
 def test_add_baseline_system_2_pthp():
     """Test adding ASHRAE baseline System 2 (PTHP)."""
+    # Validates: System 2 PTHP creates heat pump equipment with supplemental heating
     name = "test_baseline_sys2"
 
     async def _run():
@@ -147,12 +145,12 @@ def test_add_baseline_system_2_pthp():
                     "name": name,
                 })
                 create_data = unwrap(create_resp)
-                assert create_data.get("ok") is True
+                assert create_data["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"],
                 })
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 # Get zone names
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
@@ -167,20 +165,21 @@ def test_add_baseline_system_2_pthp():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "PTHP (Baseline System 2)"
                 assert system_data["system"]["heating"] == "Heat Pump"
                 assert system_data["system"]["cooling"] == "Heat Pump"
 
                 # Verify PTHP equipment has supplemental heating
                 for equip in system_data["system"]["equipment"]:
-                    assert "supplemental_heating_coil" in equip
+                    assert equip["supplemental_heating_coil"], f"Missing supplemental heating: {equip}"
 
     asyncio.run(_run())
 
 
 def test_add_baseline_system_3_psz_ac():
     """Test adding ASHRAE baseline System 3 (PSZ-AC)."""
+    # Validates: System 3 PSZ-AC creates air loop with gas furnace and economizer
     name = "test_baseline_sys3"
 
     async def _run():
@@ -195,12 +194,12 @@ def test_add_baseline_system_3_psz_ac():
                     "name": name,
                 })
                 create_data = unwrap(create_resp)
-                assert create_data.get("ok") is True
+                assert create_data["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"],
                 })
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 # Get first zone only (PSZ = single zone)
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
@@ -218,14 +217,14 @@ def test_add_baseline_system_3_psz_ac():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "PSZ-AC (Baseline System 3)"
                 assert system_data["system"]["equipment_type"] == "Packaged Rooftop Unit"
                 assert system_data["system"]["zones_served"] == 1
                 assert system_data["system"]["heating"] == "Gas Furnace"
                 assert system_data["system"]["economizer"] is True
-                assert "air_loop" in system_data["system"]
-                assert "outdoor_air_system" in system_data["system"]
+                assert system_data["system"]["air_loop"], "PSZ-AC should create an air loop"
+                assert system_data["system"]["outdoor_air_system"], "PSZ-AC should have OA system"
 
                 # Verify air loop was created
                 air_loops_resp = await session.call_tool("list_air_loops", {})
@@ -242,6 +241,7 @@ def test_add_baseline_system_json_string_zones():
     as JSON strings rather than native arrays. The _parse_str_list helper
     in tools.py handles this coercion.
     """
+    # Regression: MCP clients sent zone names as JSON string, caused TypeError
     import json
     name = "test_json_string_zones"
 
@@ -254,12 +254,12 @@ def test_add_baseline_system_json_string_zones():
 
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
-                assert create_data.get("ok") is True
+                assert create_data["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"],
                 })
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_name = unwrap(zones_resp)["thermal_zones"][0]["name"]
@@ -271,7 +271,7 @@ def test_add_baseline_system_json_string_zones():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True, (
+                assert system_data["ok"] is True, (
                     f"JSON-string zone names failed: {system_data.get('error')}"
                 )
                 assert system_data["system"]["zones_served"] == 1
@@ -281,6 +281,7 @@ def test_add_baseline_system_json_string_zones():
 
 def test_add_baseline_system_error_no_model():
     """Test error when adding system without loaded model."""
+    # Validates: add_baseline_system returns ok:false when no model loaded
     async def _run():
         sp = server_params()
 
@@ -295,14 +296,15 @@ def test_add_baseline_system_error_no_model():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is False
-                assert "error" in system_data
+                assert system_data["ok"] is False
+                assert "no model" in system_data["error"].lower()
 
     asyncio.run(_run())
 
 
 def test_add_baseline_system_error_invalid_zone():
     """Test error when specifying non-existent zone."""
+    # Validates: add_baseline_system returns ok:false for nonexistent zone name
     name = "test_invalid_zone"
 
     async def _run():
@@ -317,12 +319,12 @@ def test_add_baseline_system_error_invalid_zone():
                     "name": name,
                 })
                 create_data = unwrap(create_resp)
-                assert create_data.get("ok") is True
+                assert create_data["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {
                     "osm_path": create_data["osm_path"],
                 })
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 # Try to add system with non-existent zone
                 system_resp = await session.call_tool("add_baseline_system", {
@@ -331,7 +333,7 @@ def test_add_baseline_system_error_invalid_zone():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is False
+                assert system_data["ok"] is False
                 assert "not found" in system_data["error"]
 
     asyncio.run(_run())
@@ -343,6 +345,7 @@ def test_add_baseline_system_error_invalid_zone():
 
 def test_add_baseline_system_4_psz_hp():
     """Test adding System 4 (PSZ-HP) - basic success."""
+    # Validates: System 4 PSZ-HP creates heat pump air loop for single zone
     name = "test_sys4_basic"
 
     async def _run():
@@ -354,10 +357,10 @@ def test_add_baseline_system_4_psz_hp():
 
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
-                assert create_data.get("ok") is True
+                assert create_data["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
@@ -371,7 +374,7 @@ def test_add_baseline_system_4_psz_hp():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "PSZ-HP (Baseline System 4)"
                 assert system_data["system"]["heating"] == "Heat Pump"
                 assert system_data["system"]["cooling"] == "Heat Pump"
@@ -381,6 +384,7 @@ def test_add_baseline_system_4_psz_hp():
 
 def test_system_4_multi_zone_rejection():
     """Test System 4 rejects multiple zones."""
+    # Validates: PSZ systems (single-zone) reject multi-zone input with clear error
     name = "test_sys4_multi_zone"
 
     async def _run():
@@ -393,11 +397,11 @@ def test_system_4_multi_zone_rejection():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 # Create a second thermal zone
                 zone2_resp = await session.call_tool("create_thermal_zone", {"name": "Zone 2"})
-                assert unwrap(zone2_resp).get("ok") is True
+                assert unwrap(zone2_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
@@ -413,7 +417,7 @@ def test_system_4_multi_zone_rejection():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is False
+                assert system_data["ok"] is False
                 assert "requires exactly 1 zone" in system_data["error"]
 
     asyncio.run(_run())
@@ -421,6 +425,7 @@ def test_system_4_multi_zone_rejection():
 
 def test_add_baseline_system_5_vav_reheat():
     """Test adding System 5 (Packaged VAV w/ Reheat)."""
+    # Validates: System 5 packaged VAV creates hot water reheat terminals + HW loop
     name = "test_sys5_basic"
 
     async def _run():
@@ -433,7 +438,7 @@ def test_add_baseline_system_5_vav_reheat():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -446,17 +451,18 @@ def test_add_baseline_system_5_vav_reheat():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "Packaged VAV w/ Reheat (Baseline System 5)"
                 assert system_data["system"]["heating"] == "Hot Water Reheat"
-                assert "hot_water_loop" in system_data["system"]
-                assert "terminals" in system_data["system"]
+                assert system_data["system"]["hot_water_loop"], "System 5 needs HW loop"
+                assert system_data["system"]["terminals"], "System 5 needs reheat terminals"
 
     asyncio.run(_run())
 
 
 def test_add_baseline_system_6_vav_pfp():
     """Test adding System 6 (Packaged VAV w/ PFP)."""
+    # Validates: System 6 packaged VAV creates PFP terminals with electric reheat
     name = "test_sys6_basic"
 
     async def _run():
@@ -469,7 +475,7 @@ def test_add_baseline_system_6_vav_pfp():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -481,16 +487,17 @@ def test_add_baseline_system_6_vav_pfp():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "Packaged VAV w/ PFP (Baseline System 6)"
                 assert system_data["system"]["heating"] == "Electric Reheat in PFP Boxes"
-                assert "terminals" in system_data["system"]
+                assert system_data["system"]["terminals"], "System 6 needs PFP terminals"
 
     asyncio.run(_run())
 
 
 def test_unimplemented_system_type():
     """System types >10 should fail gracefully."""
+    # Validates: system_type > 10 returns ok:false with descriptive error
     name = "test_unimplemented"
 
     async def _run():
@@ -503,7 +510,7 @@ def test_unimplemented_system_type():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -515,7 +522,7 @@ def test_unimplemented_system_type():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is False
+                assert system_data["ok"] is False
                 assert "not yet implemented" in system_data["error"] or "Invalid system_type" in system_data["error"]
 
     asyncio.run(_run())
@@ -527,6 +534,7 @@ def test_unimplemented_system_type():
 
 def test_add_baseline_system_7_central_vav_reheat():
     """Test adding System 7 (Central VAV w/ Reheat) - basic success."""
+    # Validates: System 7 central VAV creates air+CHW+HW+condenser loops
     name = "test_sys7_basic"
 
     async def _run():
@@ -539,7 +547,7 @@ def test_add_baseline_system_7_central_vav_reheat():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -552,22 +560,23 @@ def test_add_baseline_system_7_central_vav_reheat():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "VAV w/ Reheat (Baseline System 7)"
                 assert system_data["system"]["equipment_type"] == "Built-up VAV"
                 assert system_data["system"]["heating"] == "Hot Water"
                 assert system_data["system"]["cooling"] == "Chilled Water"
-                assert "air_loop" in system_data["system"]
-                assert "chilled_water_loop" in system_data["system"]
-                assert "hot_water_loop" in system_data["system"]
-                assert "condenser_loop" in system_data["system"]
-                assert "terminals" in system_data["system"]
+                assert system_data["system"]["air_loop"], "System 7 needs air loop"
+                assert system_data["system"]["chilled_water_loop"], "System 7 needs CHW loop"
+                assert system_data["system"]["hot_water_loop"], "System 7 needs HW loop"
+                assert system_data["system"]["condenser_loop"], "System 7 needs condenser loop"
+                assert system_data["system"]["terminals"], "System 7 needs reheat terminals"
 
     asyncio.run(_run())
 
 
 def test_system_7_plant_loop_verification():
     """Verify System 7 creates all 3 plant loops."""
+    # Validates: System 7 creates 3 plant loops (Chilled Water + Hot Water + Condenser)
     name = "test_sys7_plants"
 
     async def _run():
@@ -580,7 +589,7 @@ def test_system_7_plant_loop_verification():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -591,7 +600,7 @@ def test_system_7_plant_loop_verification():
                     "system_name": "Central VAV",
                 })
                 system_data = unwrap(system_resp)
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
 
                 # Verify plant loops created
                 plant_loops_resp = await session.call_tool("list_plant_loops", {})
@@ -611,6 +620,7 @@ def test_system_7_plant_loop_verification():
 
 def test_add_baseline_system_8_central_vav_pfp():
     """Test adding System 8 (Central VAV w/ PFP) - basic success."""
+    # Validates: System 8 central VAV creates CHW+HW+condenser loops with PFP terminals
     name = "test_sys8_basic"
 
     async def _run():
@@ -623,7 +633,7 @@ def test_add_baseline_system_8_central_vav_pfp():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -635,21 +645,22 @@ def test_add_baseline_system_8_central_vav_pfp():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "VAV w/ PFP (Baseline System 8)"
                 assert system_data["system"]["equipment_type"] == "Built-up VAV"
                 assert system_data["system"]["heating"] == "Hot Water"
                 assert system_data["system"]["cooling"] == "Chilled Water"
-                assert "chilled_water_loop" in system_data["system"]
-                assert "hot_water_loop" in system_data["system"]
-                assert "condenser_loop" in system_data["system"]
-                assert "terminals" in system_data["system"]
+                assert system_data["system"]["chilled_water_loop"], "System 8 needs CHW loop"
+                assert system_data["system"]["hot_water_loop"], "System 8 needs HW loop"
+                assert system_data["system"]["condenser_loop"], "System 8 needs condenser loop"
+                assert system_data["system"]["terminals"], "System 8 needs PFP terminals"
 
     asyncio.run(_run())
 
 
 def test_system_8_pfp_terminals():
     """Verify System 8 creates PFP terminals (not VAV reheat)."""
+    # Validates: System 8 terminal names all contain "PFP Terminal"
     name = "test_sys8_pfp"
 
     async def _run():
@@ -662,7 +673,7 @@ def test_system_8_pfp_terminals():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -673,7 +684,7 @@ def test_system_8_pfp_terminals():
                     "system_name": "PFP System",
                 })
                 system_data = unwrap(system_resp)
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
 
                 # Verify terminals are PFP type
                 terminals = system_data["system"]["terminals"]
@@ -688,6 +699,7 @@ def test_system_8_pfp_terminals():
 
 def test_add_baseline_system_9_gas_unit_heaters():
     """Test adding System 9 (Gas Unit Heaters) - basic success."""
+    # Validates: System 9 creates gas unit heaters (heating only) for all zones
     name = "test_sys9_basic"
 
     async def _run():
@@ -700,7 +712,7 @@ def test_add_baseline_system_9_gas_unit_heaters():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -713,12 +725,11 @@ def test_add_baseline_system_9_gas_unit_heaters():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "Heating & Ventilation (Baseline System 9)"
                 assert system_data["system"]["equipment_type"] == "Zone Unit Heaters"
                 assert system_data["system"]["heating"] == "Gas Unit Heaters"
                 assert system_data["system"]["cooling"] == "None"
-                assert "equipment" in system_data["system"]
                 assert len(system_data["system"]["equipment"]) == len(zone_names)
 
     asyncio.run(_run())
@@ -730,6 +741,7 @@ def test_add_baseline_system_9_gas_unit_heaters():
 
 def test_add_baseline_system_10_electric_unit_heaters():
     """Test adding System 10 (Electric Unit Heaters) - basic success."""
+    # Validates: System 10 creates electric unit heaters (heating only) for all zones
     name = "test_sys10_basic"
 
     async def _run():
@@ -742,7 +754,7 @@ def test_add_baseline_system_10_electric_unit_heaters():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_data = unwrap(create_resp)
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_data["osm_path"]})
-                assert unwrap(load_resp).get("ok") is True
+                assert unwrap(load_resp)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zone_names = [z["name"] for z in unwrap(zones_resp)["thermal_zones"]]
@@ -755,12 +767,11 @@ def test_add_baseline_system_10_electric_unit_heaters():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "Heating & Ventilation (Baseline System 10)"
                 assert system_data["system"]["equipment_type"] == "Zone Unit Heaters"
                 assert system_data["system"]["heating"] == "Electric Unit Heaters"
                 assert system_data["system"]["cooling"] == "None"
-                assert "equipment" in system_data["system"]
                 assert len(system_data["system"]["equipment"]) == len(zone_names)
 
     asyncio.run(_run())
@@ -768,6 +779,7 @@ def test_add_baseline_system_10_electric_unit_heaters():
 
 def test_baseline_system_07_multi_zone():
     """Test System 7 (Central VAV) on 10-zone baseline model."""
+    # Validates: System 7 on 10-zone baseline serves all 10 zones with 3 plant loops
     import uuid
     name = f"test_sys7_bl_{uuid.uuid4().hex[:8]}"
 
@@ -779,9 +791,9 @@ def test_baseline_system_07_multi_zone():
 
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
@@ -796,7 +808,7 @@ def test_baseline_system_07_multi_zone():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["zones_served"] == 10
                 assert "chilled_water_loop" in system_data["system"]
                 assert "hot_water_loop" in system_data["system"]

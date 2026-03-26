@@ -19,6 +19,7 @@ def _unique_name(prefix: str = "pytest_construction") -> str:
 @pytest.mark.integration
 def test_create_standard_opaque_material():
     """Test creating a standard opaque material."""
+    # Validates: create_standard_opaque_material stores thickness/conductivity and appears in list
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -32,11 +33,11 @@ def test_create_standard_opaque_material():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create material
                 material_resp = await session.call_tool("create_standard_opaque_material", {
@@ -49,7 +50,7 @@ def test_create_standard_opaque_material():
                 })
                 material_result = unwrap(material_resp)
 
-                assert material_result.get("ok") is True
+                assert material_result["ok"] is True
                 assert material_result["material"]["name"] == "Test Concrete"
                 assert material_result["material"]["thickness_m"] == 0.2
                 assert material_result["material"]["conductivity_w_m_k"] == 1.7
@@ -65,6 +66,7 @@ def test_create_standard_opaque_material():
 @pytest.mark.integration
 def test_create_material_no_model_loaded():
     """Test error when no model is loaded."""
+    # Validates: create_standard_opaque_material returns error when no model loaded
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -77,8 +79,7 @@ def test_create_material_no_model_loaded():
                 material_resp = await session.call_tool("create_standard_opaque_material", {"name": "Should Fail"})
                 material_result = unwrap(material_resp)
 
-                assert material_result.get("ok") is False
-                assert "error" in material_result
+                assert material_result["ok"] is False
                 assert "No model loaded" in material_result["error"]
 
     asyncio.run(_run())
@@ -87,6 +88,7 @@ def test_create_material_no_model_loaded():
 @pytest.mark.integration
 def test_create_construction_from_materials():
     """Test creating a construction from materials."""
+    # Validates: create_construction assembles 3 material layers in correct order
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -100,31 +102,31 @@ def test_create_construction_from_materials():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create materials
                 mat1_resp = await session.call_tool("create_standard_opaque_material", {
                     "name": "Exterior Finish",
                     "thickness_m": 0.01,
                 })
-                assert unwrap(mat1_resp).get("ok") is True
+                assert unwrap(mat1_resp)["ok"] is True
 
                 mat2_resp = await session.call_tool("create_standard_opaque_material", {
                     "name": "Insulation",
                     "thickness_m": 0.1,
                     "conductivity_w_m_k": 0.04,
                 })
-                assert unwrap(mat2_resp).get("ok") is True
+                assert unwrap(mat2_resp)["ok"] is True
 
                 mat3_resp = await session.call_tool("create_standard_opaque_material", {
                     "name": "Interior Finish",
                     "thickness_m": 0.01,
                 })
-                assert unwrap(mat3_resp).get("ok") is True
+                assert unwrap(mat3_resp)["ok"] is True
 
                 # Create construction
                 construction_resp = await session.call_tool("create_construction", {
@@ -133,7 +135,7 @@ def test_create_construction_from_materials():
                 })
                 construction_result = unwrap(construction_resp)
 
-                assert construction_result.get("ok") is True
+                assert construction_result["ok"] is True
                 assert construction_result["construction"]["name"] == "Test Wall Construction"
                 assert construction_result["construction"]["num_layers"] == 3
                 assert construction_result["construction"]["layers"] == ["Exterior Finish", "Insulation", "Interior Finish"]
@@ -149,6 +151,7 @@ def test_create_construction_from_materials():
 @pytest.mark.integration
 def test_create_construction_invalid_material():
     """Test error when material doesn't exist."""
+    # Validates: create_construction rejects nonexistent material with clear error
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -162,11 +165,11 @@ def test_create_construction_invalid_material():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Try to create construction with non-existent material
                 construction_resp = await session.call_tool("create_construction", {
@@ -175,8 +178,7 @@ def test_create_construction_invalid_material():
                 })
                 construction_result = unwrap(construction_resp)
 
-                assert construction_result.get("ok") is False
-                assert "error" in construction_result
+                assert construction_result["ok"] is False
                 assert "not found" in construction_result["error"]
 
     asyncio.run(_run())
@@ -185,6 +187,7 @@ def test_create_construction_invalid_material():
 @pytest.mark.integration
 def test_assign_construction_to_surface():
     """Test assigning a construction to a surface."""
+    # Validates: assign_construction_to_surface persists on surface verified by independent query
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -198,11 +201,11 @@ def test_assign_construction_to_surface():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Get a surface name
                 surfaces_resp = await session.call_tool("list_surfaces", {"max_results": 0})
@@ -223,7 +226,7 @@ def test_assign_construction_to_surface():
                 })
                 assign_result = unwrap(assign_resp)
 
-                assert assign_result.get("ok") is True
+                assert assign_result["ok"] is True
                 assert assign_result["surface"]["name"] == surface_name
                 assert assign_result["surface"]["construction"] == construction_name
 
@@ -239,6 +242,7 @@ def test_assign_construction_to_surface():
 @pytest.mark.integration
 def test_assign_construction_invalid_surface():
     """Test error when surface doesn't exist."""
+    # Validates: assign_construction_to_surface rejects nonexistent surface with error
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -252,11 +256,11 @@ def test_assign_construction_invalid_surface():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Try to assign to non-existent surface
                 assign_resp = await session.call_tool("assign_construction_to_surface", {
@@ -265,8 +269,7 @@ def test_assign_construction_invalid_surface():
                 })
                 assign_result = unwrap(assign_resp)
 
-                assert assign_result.get("ok") is False
-                assert "error" in assign_result
+                assert assign_result["ok"] is False
                 assert "not found" in assign_result["error"]
 
     asyncio.run(_run())
@@ -275,6 +278,7 @@ def test_assign_construction_invalid_surface():
 @pytest.mark.integration
 def test_end_to_end_construction_workflow():
     """Test complete workflow: create materials -> construction -> assign to surface."""
+    # Validates: full materials->construction->surface assignment workflow with independent verification
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -288,11 +292,11 @@ def test_end_to_end_construction_workflow():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Step 1: Create materials
                 await session.call_tool("create_standard_opaque_material", {
@@ -317,7 +321,7 @@ def test_end_to_end_construction_workflow():
                     "material_names": ["Brick", "Foam Insulation", "Gypsum"],
                 })
                 construction_result = unwrap(construction_resp)
-                assert construction_result.get("ok") is True
+                assert construction_result["ok"] is True
 
                 # Step 3: Get a surface
                 surfaces_resp = await session.call_tool("list_surfaces", {"max_results": 0})
@@ -330,7 +334,7 @@ def test_end_to_end_construction_workflow():
                     "construction_name": "Insulated Brick Wall",
                 })
                 assign_result = unwrap(assign_resp)
-                assert assign_result.get("ok") is True
+                assert assign_result["ok"] is True
                 assert assign_result["surface"]["construction"] == "Insulated Brick Wall"
 
                 # Independent query verification
@@ -345,6 +349,7 @@ def test_end_to_end_construction_workflow():
 @pytest.mark.integration
 def test_create_construction_json_string_materials():
     """Test create_construction accepts material_names as JSON string."""
+    # Regression: MCP clients sent material_names as JSON string, caused parse failure
     import json
 
     if not integration_enabled():
@@ -374,7 +379,7 @@ def test_create_construction_json_string_materials():
                 })
                 result = unwrap(resp)
 
-                assert result.get("ok") is True, (
+                assert result["ok"] is True, (
                     f"JSON-string material_names failed: {result.get('error')}"
                 )
 

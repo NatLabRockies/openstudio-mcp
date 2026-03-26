@@ -271,6 +271,7 @@ def _host_path_exists_if_applicable(p: str) -> None:
 @pytest.mark.integration
 def test_mcp_run_seb4_2013_default_weather():
     """Run the default SEB4 OSW (2013 EPW via file_paths) and sanity-check EUI."""
+    # Validates: SEB4 2013 simulation completes and EUI matches expected 1875 MJ/m2 within 2%
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
@@ -294,6 +295,7 @@ def test_mcp_run_seb4_2013_default_weather():
 @pytest.mark.integration
 def test_mcp_run_seb4_2012_hardcoded_weather_in_osw():
     """Run workflow2.osw which hardcodes the 2012 EPW, and check EUI + total site energy."""
+    # Validates: SEB4 2012 hardcoded weather simulation EUI matches expected 1716 MJ/m2 within 2%
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
@@ -319,6 +321,7 @@ def test_mcp_run_seb4_2012_hardcoded_weather_in_osw():
 @pytest.mark.integration
 def test_mcp_run_seb4_2012_override_weather_via_tool_arg():
     """Run workflow.osw but override weather to the 2012 EPW via run_osw(epw_path)."""
+    # Validates: EPW override via run_osw(epw_path) produces same EUI as hardcoded 2012 weather
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
@@ -345,6 +348,7 @@ def test_mcp_run_seb4_2012_override_weather_via_tool_arg():
 @pytest.mark.integration
 def test_mcp_run_seb4_bad_weather_in_osw_fails_validation():
     """workflow3.osw references a missing EPW; server should fail fast with a clear error."""
+    # Validates: run_osw fails fast with weather/EPW error when OSW references missing EPW
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
@@ -354,8 +358,8 @@ def test_mcp_run_seb4_bad_weather_in_osw_fails_validation():
     result = asyncio.run(_run_once_and_wait(osw_path=DEFAULT_OSW_2013_BAD_WEATHER, epw_path=None, allow_failure=True))
 
     # allow_failure=True returns the raw run_osw response in `run_res`
-    run_res = result.get("run_res") if isinstance(result, dict) else None
-    assert isinstance(run_res, dict) and run_res.get("ok") is False
+    run_res = result.get("run_res")
+    assert run_res["ok"] is False, f"Expected ok=false for bad weather. run_res={run_res!r}"
     err = str(run_res.get("error") or "")
     issues = run_res.get("issues") or []
     joined = " | ".join(map(str, issues))
@@ -367,6 +371,7 @@ def test_mcp_run_seb4_bad_weather_in_osw_fails_validation():
 @pytest.mark.integration
 def test_mcp_run_seb4_bad_weather_in_osw_succeeds_with_epw_override():
     """workflow3.osw has a bad weather_file, but an explicit --epw override should still work."""
+    # Validates: epw_path override rescues OSW with missing weather_file and produces correct EUI
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
@@ -401,6 +406,7 @@ def test_mcp_run_seb4_bad_weather_in_osw_succeeds_with_epw_override():
 @pytest.mark.integration
 def test_mcp_bad_osw_path_fails_cleanly():
     """Regression guard: running a missing OSW should fail cleanly (no hang, no ExceptionGroup noise)."""
+    # Regression: missing OSW path caused ExceptionGroup noise instead of clean ok=False
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 
@@ -409,10 +415,8 @@ def test_mcp_bad_osw_path_fails_cleanly():
     # Use allow_failure=True so the helper returns a structured error instead of raising
     # and triggering AnyIO/ExceptionGroup TaskGroup noise in pytest output.
     result = asyncio.run(_run_once_and_wait(osw_path=missing, epw_path=None, allow_failure=True))
-    assert isinstance(result, dict), f"Unexpected result type: {type(result)} => {result!r}"
-
     run_res = result.get("run_res")
-    assert isinstance(run_res, dict) and run_res.get("ok") is False, f"Expected ok=false. run_res={run_res!r}"
+    assert run_res["ok"] is False, f"Expected ok=false. run_res={run_res!r}"
 
     err = str(run_res.get("error") or "").lower()
     assert ("osw" in err) or ("not found" in err), f"Unexpected error message: {run_res!r}"
@@ -421,6 +425,7 @@ def test_mcp_bad_osw_path_fails_cleanly():
 @pytest.mark.integration
 def test_validate_osw_valid():
     """validate_osw returns ok+valid for a good OSW."""
+    # Validates: validate_osw returns ok=True with 0 issues for well-formed OSW
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -429,10 +434,9 @@ def test_validate_osw_valid():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await _call_tool(session, "validate_osw", {"osw_path": DEFAULT_OSW_2013})
-                assert isinstance(result, dict)
-                assert result.get("ok") is True, result
+                assert result["ok"] is True, f"validate_osw failed: {result.get('error')}"
                 # Valid OSW: ok=True and no issues
-                assert len(result.get("issues", [])) == 0, result
+                assert len(result.get("issues", [])) == 0, f"Expected 0 issues, got: {result.get('issues')}"
 
     asyncio.run(_run())
 
@@ -440,6 +444,7 @@ def test_validate_osw_valid():
 @pytest.mark.integration
 def test_validate_osw_bad_weather():
     """validate_osw returns invalid for OSW with missing weather file."""
+    # Validates: validate_osw detects missing weather file (ok=False or valid=False)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -448,7 +453,6 @@ def test_validate_osw_bad_weather():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await _call_tool(session, "validate_osw", {"osw_path": DEFAULT_OSW_2013_BAD_WEATHER})
-                assert isinstance(result, dict)
                 # Should fail validation (bad weather) — ok=false or valid=false
                 if result.get("ok") is True:
                     assert result.get("valid") is False, result
@@ -461,6 +465,7 @@ def test_validate_osw_bad_weather():
 @pytest.mark.integration
 def test_cancel_run():
     """Start sim, immediately cancel, assert terminal state."""
+    # Validates: cancel_run transitions simulation to a terminal state
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -475,14 +480,13 @@ def test_cancel_run():
                 run_res = await _call_tool(session, "run_osw", {
                     "osw_path": DEFAULT_OSW_2013, "epw_path": None, "name": "cancel_test",
                 }, timeout=tool_timeout)
-                assert isinstance(run_res, dict) and run_res.get("ok") is not False, run_res
+                assert run_res.get("ok") is not False, f"run_osw failed: {run_res}"
 
                 run_id = run_res.get("run_id") or run_res.get("id")
                 assert run_id, f"No run_id: {run_res}"
 
                 # Immediately cancel
                 cancel = await _call_tool(session, "cancel_run", {"run_id": run_id}, timeout=tool_timeout)
-                assert isinstance(cancel, dict)
 
                 # Check final state is terminal
                 status = await _call_tool(session, "get_run_status", {"run_id": run_id}, timeout=tool_timeout)
@@ -496,6 +500,7 @@ def test_cancel_run():
 @pytest.mark.integration
 def test_get_run_artifacts():
     """After simulation completes, get_run_artifacts returns non-empty list."""
+    # Validates: get_run_artifacts returns at least one artifact after successful simulation
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -512,8 +517,7 @@ def test_get_run_artifacts():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 artifacts = await _call_tool(session, "get_run_artifacts", {"run_id": run_id})
-                assert isinstance(artifacts, dict)
-                assert artifacts.get("ok") is True, artifacts
+                assert artifacts["ok"] is True, f"get_run_artifacts failed: {artifacts.get('error')}"
                 items = artifacts.get("items") or artifacts.get("artifacts") or []
                 assert len(items) > 0, f"Expected artifacts, got: {artifacts}"
 

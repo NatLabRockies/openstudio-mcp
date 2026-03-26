@@ -17,15 +17,16 @@ Always use openstudio-mcp tools for BEM tasks:
 1. Keep files under ~250 lines — don't split artificially just to hit a number
 2. Every MCP tool must have an integration test. New behavior, bug fixes, and security hardening need tests too — not just the happy path
 3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 shards, keep balanced ~200s each)
-4. Operations return `{"ok": True/False, ...}` — never raise through MCP
-5. Use `openstudio` Python bindings directly
-6. All OpenStudio attribute access must handle `is_initialized()` checks
-7. `_extract_*` functions return dicts with `snake_case` keys matching OpenStudio attribute names
-8. Tool functions keep `_tool` suffix internally; MCP-visible names strip it via `@mcp.tool(name="...")`
-9. Never commit generated/temp files — `.gitignore` covers `__pycache__/`, `*.pyc`, `runs/`, `.claude/`, `.pytest_cache/`. Test artifacts go to `runs/`. Only permanent reference models go in `tests/assets/`
-10. Bundled measures get wrapper tools with typed args — don't expose raw `apply_measure` as primary interface
-11. No `getattr()` or string-based dispatch — every OpenStudio API method called directly (grepable, lintable, visible in stack traces)
-12. MCP clients may send `list[str]` as JSON strings — use `list[str] | str` type annotation + `parse_str_list()` from `osm_helpers.py`
+4. Follow testing rules in `.claude/rules/testing.md`. Critical: every test needs `# Regression:` or `# Validates:` comment; never delete failing tests or weaken assertions; assert exact values not existence; integration tests mock nothing; unit tests never import `openstudio`
+5. Operations return `{"ok": True/False, ...}` — never raise through MCP
+6. Use `openstudio` Python bindings directly
+7. All OpenStudio attribute access must handle `is_initialized()` checks
+8. `_extract_*` functions return dicts with `snake_case` keys matching OpenStudio attribute names
+9. Tool functions keep `_tool` suffix internally; MCP-visible names strip it via `@mcp.tool(name="...")`
+10. Never commit generated/temp files — `.gitignore` covers `__pycache__/`, `*.pyc`, `runs/`, `.claude/`, `.pytest_cache/`. Test artifacts go to `runs/`. Only permanent reference models go in `tests/assets/`
+11. Bundled measures get wrapper tools with typed args — don't expose raw `apply_measure` as primary interface
+12. No `getattr()` or string-based dispatch — every OpenStudio API method called directly (grepable, lintable, visible in stack traces)
+13. MCP clients may send `list[str]` as JSON strings — use `list[str] | str` type annotation + `parse_str_list()` from `osm_helpers.py`
 
 ## Architecture
 - Each skill lives in `mcp_server/skills/<name>/`

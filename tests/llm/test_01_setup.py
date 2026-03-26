@@ -28,16 +28,8 @@ pytestmark = [pytest.mark.llm, pytest.mark.tier1]
 
 
 def test_create_baseline_model():
-    """Create a 10-zone baseline model and save it for later tests.
-
-    Verifies:
-      - Agent calls create_baseline_osm (not create_example_osm or raw IDF)
-      - Agent saves the model (save_osm_model appears in tool calls)
-      - No error in final response
-
-    The saved model at /runs/llm-test-baseline/model.osm is used by all
-    Tier 1+ tests that need model state.
-    """
+    """Create a 10-zone baseline model and save it for later tests."""
+    # Validates: Claude uses create_baseline_osm (not create_example_osm or raw IDF) for baseline models
     result = run_claude(
         "Create a baseline building named 'llm-test-baseline' using "
         "create_baseline_osm. Use MCP tools only.",
@@ -54,6 +46,7 @@ def test_create_baseline_model():
 
 def test_create_baseline_with_hvac():
     """Create baseline + System 7 HVAC for component inspection tests."""
+    # Validates: Claude uses create_baseline_osm with ashrae_sys_num for HVAC-equipped baseline
     result = run_claude(
         "Create a baseline building named 'llm-test-baseline-hvac' using "
         "create_baseline_osm with ashrae_sys_num '07'. Use MCP tools only.",
@@ -66,15 +59,8 @@ def test_create_baseline_with_hvac():
 
 
 def test_create_example_model():
-    """Create an example SEB model for later tests.
-
-    Verifies:
-      - Agent calls create_example_osm (or create_baseline_osm as fallback)
-      - No error in final response
-
-    The example model is a Small Energy Building (SEB) used for tests
-    that need a different geometry from the baseline.
-    """
+    """Create an example SEB model for later tests."""
+    # Validates: Claude uses create_example_osm (or create_baseline_osm) for example models
     result = run_claude(
         "Create an example model named 'llm-test-example' using create_example_osm. "
         "Use MCP tools only.",
@@ -89,17 +75,8 @@ def test_create_example_model():
 
 
 def test_load_baseline_model():
-    """Verify the saved baseline model can be loaded and queried.
-
-    Depends on test_create_baseline_model having run first.
-    Verifies:
-      - Agent calls load_osm_model with the baseline path
-      - Agent calls list_thermal_zones to confirm model has zones
-      - This validates the model file is valid and loadable
-
-    If this test fails, all downstream Tier 1+ tests that use LOAD_PREFIX
-    will also fail.
-    """
+    """Verify the saved baseline model can be loaded and queried."""
+    # Validates: Claude uses load_osm_model + list_thermal_zones to load and inspect saved models
     result = run_claude(
         f"Load the model at {BASELINE_MODEL} using load_osm_model, "
         "then tell me how many thermal zones it has using list_thermal_zones.",
@@ -116,12 +93,8 @@ def test_load_baseline_model():
 
 
 def test_run_baseline_simulation():
-    """Set weather and run simulation on the baseline model, save run_id.
-
-    The baseline model has no weather file, so we set Boston weather first.
-    The run_id is saved to /runs/llm-test-sim-run-id.txt so results
-    extraction tests can reference it.
-    """
+    """Set weather and run simulation on the baseline model, save run_id."""
+    # Validates: Claude chains load → weather → run_simulation → get_run_status for full sim workflow
     boston_epw = (
         "/opt/comstock-measures/ChangeBuildingLocation"
         "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
@@ -165,11 +138,8 @@ def test_run_baseline_simulation():
 
 
 def test_run_retrofit_simulation():
-    """Run a modified simulation (thermostat +2F cooling) for compare_runs tests.
-
-    Loads baseline, sets weather, adjusts thermostat, runs sim, saves
-    retrofit run_id for use by compare_runs progressive tests.
-    """
+    """Run a modified simulation (thermostat +2F cooling) for compare_runs tests."""
+    # Validates: Claude chains load → weather → adjust_thermostat → run_simulation for retrofit workflow
     boston_epw = (
         "/opt/comstock-measures/ChangeBuildingLocation"
         "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"

@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 # Pre-baked SQL fixture from SEB4 baseboard simulation
 SQL_PATH = Path(__file__).parent / "assets" / "eplusout_seb4.sql"
 
@@ -25,34 +27,39 @@ def sql_path():
 
 class TestEndUseBreakdown:
     def test_happy_path_ip(self, sql_path):
+        # Validates: extract_end_use_breakdown IP returns Heating end-use in kBtu units
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
         result = extract_end_use_breakdown(sql_path, units="IP")
         assert result["ok"] is True
         assert len(result["end_uses"]) > 0
-        assert result["totals"]  # non-empty totals
-        # Should have Heating in some form
+        assert len(result["totals"]) > 0, "Totals should be non-empty"
         names = [e["name"] for e in result["end_uses"]]
         assert any("Heating" in n for n in names)
-        # IP units — values should be kBtu (large numbers)
-        assert "kBtu" in result.get("units_note", "")
+        assert "kBtu" in result["units_note"]
+        # Concrete value checks for SEB4 fixture
+        assert result["totals"]["Electricity"] > 0, "SEB4 should have positive Electricity total"
+        heating_entry = next(e for e in result["end_uses"] if "Heating" in e["name"])
+        heating_total = sum(v for k, v in heating_entry.items() if isinstance(v, (int, float)))
+        assert heating_total > 0, f"SEB4 Heating end-use should have non-zero values: {heating_entry}"
 
     def test_happy_path_si(self, sql_path):
+        # Validates: extract_end_use_breakdown SI returns end-uses with SI units note
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
         result = extract_end_use_breakdown(sql_path, units="SI")
         assert result["ok"] is True
         assert len(result["end_uses"]) > 0
-        assert "SI" in result.get("units_note", "")
+        assert "SI" in result["units_note"]
 
     def test_totals_match_sum(self, sql_path):
+        # Validates: Electricity total equals sum of individual Electricity end-use values
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
         result = extract_end_use_breakdown(sql_path, units="SI")
-        # Electricity total should roughly equal sum of individual electricity values
-        if "Electricity" in result["totals"]:
-            total_elec = result["totals"]["Electricity"]
-            sum_elec = sum(
-                e.get("Electricity", 0) for e in result["end_uses"]
-            )
-            assert abs(total_elec - sum_elec) < 0.1
+        assert "Electricity" in result["totals"], "SEB4 should have Electricity total"
+        total_elec = result["totals"]["Electricity"]
+        sum_elec = sum(
+            e.get("Electricity", 0) for e in result["end_uses"]
+        )
+        assert abs(total_elec - sum_elec) < 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -61,18 +68,17 @@ class TestEndUseBreakdown:
 
 class TestEnvelopeSummary:
     def test_happy_path(self, sql_path):
+        # Validates: extract_envelope_summary returns opaque and fenestration data with names
         from mcp_server.skills.results.sql_extract import extract_envelope_summary
         result = extract_envelope_summary(sql_path)
         assert result["ok"] is True
         assert len(result["opaque_exterior"]) > 0
         assert len(result["fenestration"]) > 0
-        # Opaque should have construction info
         first_opaque = result["opaque_exterior"][0]
-        assert "name" in first_opaque
+        assert len(first_opaque["name"]) > 0, "Opaque surface should have a name"
         assert "construction" in first_opaque or any("construct" in k for k in first_opaque)
-        # Fenestration should have glass properties
         first_fen = result["fenestration"][0]
-        assert "name" in first_fen
+        assert len(first_fen["name"]) > 0, "Fenestration should have a name"
 
 
 # ---------------------------------------------------------------------------
@@ -81,18 +87,18 @@ class TestEnvelopeSummary:
 
 class TestHVACSizing:
     def test_happy_path(self, sql_path):
+        # Validates: extract_hvac_sizing returns zone and system sizing with cooling/heating keys
         from mcp_server.skills.results.sql_extract import extract_hvac_sizing
         result = extract_hvac_sizing(sql_path)
         assert result["ok"] is True
         assert len(result["zone_sizing"]) > 0
         assert len(result["system_sizing"]) > 0
-        # Zone should have cooling/heating prefixed keys
         first_zone = result["zone_sizing"][0]
-        assert "zone" in first_zone
+        assert len(first_zone["zone"]) > 0, "Zone sizing should have zone name"
         cooling_keys = [k for k in first_zone if k.startswith("cooling_")]
         heating_keys = [k for k in first_zone if k.startswith("heating_")]
-        assert len(cooling_keys) > 0
-        assert len(heating_keys) > 0
+        assert len(cooling_keys) > 0, "Zone sizing should have cooling_ prefixed keys"
+        assert len(heating_keys) > 0, "Zone sizing should have heating_ prefixed keys"
 
 
 # ---------------------------------------------------------------------------
@@ -101,20 +107,20 @@ class TestHVACSizing:
 
 class TestZoneSummary:
     def test_happy_path(self, sql_path):
+        # Validates: extract_zone_summary returns zones with name and area data
         from mcp_server.skills.results.sql_extract import extract_zone_summary
         result = extract_zone_summary(sql_path)
         assert result["ok"] is True
         assert len(result["zones"]) > 0
         first_zone = result["zones"][0]
-        assert "zone" in first_zone
-        # Should have area info
-        assert any("area" in k for k in first_zone)
+        assert len(first_zone["zone"]) > 0, "Zone should have a name"
+        assert any("area" in k for k in first_zone), "Zone should have area data"
 
     def test_zone_count(self, sql_path):
+        # Validates: SEB4 model has at least 5 zones in zone summary
         from mcp_server.skills.results.sql_extract import extract_zone_summary
         result = extract_zone_summary(sql_path)
-        # SEB4 has 10 zones (from exploration)
-        assert len(result["zones"]) >= 5
+        assert len(result["zones"]) >= 5, f"SEB4 should have >= 5 zones, got {len(result['zones'])}"
 
 
 # ---------------------------------------------------------------------------
@@ -123,24 +129,26 @@ class TestZoneSummary:
 
 class TestComponentSizing:
     def test_happy_path(self, sql_path):
+        # Validates: extract_component_sizing returns components with type/name/properties
         from mcp_server.skills.results.sql_extract import extract_component_sizing
         result = extract_component_sizing(sql_path)
         assert result["ok"] is True
         assert len(result["components"]) > 0
         first = result["components"][0]
-        assert "type" in first
-        assert "name" in first
-        assert "properties" in first
+        assert len(first["type"]) > 0, "Component should have a type"
+        assert len(first["name"]) > 0, "Component should have a name"
+        assert len(first["properties"]) > 0, "Component should have sizing properties"
 
     def test_filter_by_type(self, sql_path):
+        # Validates: component_type filter returns only matching components
         from mcp_server.skills.results.sql_extract import extract_component_sizing
         result = extract_component_sizing(sql_path, component_type="Coil")
         assert result["ok"] is True
-        # All returned components should contain "Coil" in type
         for c in result["components"]:
-            assert "Coil" in c["type"] or "coil" in c["type"].lower()
+            assert "coil" in c["type"].lower(), f"Filter leaked non-Coil: {c['type']}"
 
     def test_filter_no_match(self, sql_path):
+        # Validates: nonexistent component_type filter returns empty list (not error)
         from mcp_server.skills.results.sql_extract import extract_component_sizing
         result = extract_component_sizing(sql_path, component_type="NonexistentWidget")
         assert result["ok"] is True
@@ -153,29 +161,30 @@ class TestComponentSizing:
 
 class TestQueryTimeseries:
     def test_happy_path_daily(self, sql_path):
+        # Validates: query_timeseries returns daily Electricity data with month/day/value
         from mcp_server.skills.results.sql_extract import query_timeseries
         result = query_timeseries(sql_path, variable_name="Electricity:Facility", frequency="Daily")
         assert result["ok"] is True
         assert result["count"] > 0
         assert len(result["data"]) > 0
-        # Each data point should have month/day/value
         first = result["data"][0]
-        assert "month" in first
-        assert "day" in first
-        assert "value" in first
+        assert isinstance(first["month"], int)
+        assert isinstance(first["day"], int)
+        assert isinstance(first["value"], (int, float))
 
     def test_date_range_filter(self, sql_path):
+        # Validates: start_month/end_month filter restricts data to January only
         from mcp_server.skills.results.sql_extract import query_timeseries
         result = query_timeseries(
             sql_path, variable_name="Electricity:Facility",
             frequency="Daily", start_month=1, end_month=1,
         )
         assert result["ok"] is True
-        # All data should be in January
         for pt in result["data"]:
-            assert pt["month"] == 1
+            assert pt["month"] == 1, f"Expected January data only, got month {pt['month']}"
 
     def test_cap_enforcement(self, sql_path):
+        # Validates: max_points caps output and sets truncated flag
         from mcp_server.skills.results.sql_extract import query_timeseries
         result = query_timeseries(
             sql_path, variable_name="Electricity",
@@ -187,6 +196,7 @@ class TestQueryTimeseries:
             assert result["truncated"] is True
 
     def test_no_match_variable(self, sql_path):
+        # Validates: nonexistent variable returns empty data (not error)
         from mcp_server.skills.results.sql_extract import query_timeseries
         result = query_timeseries(sql_path, variable_name="Nonexistent:Variable")
         assert result["ok"] is True
@@ -206,6 +216,7 @@ class TestExampleWorkflow:
     """Example 11: Results extraction workflow using pre-baked SQL."""
 
     def test_full_results_deep_dive(self, sql_path):
+        # Validates: full results extraction workflow (end-use -> envelope -> sizing -> zones -> coils -> timeseries)
         from mcp_server.skills.results.sql_extract import (
             extract_component_sizing,
             extract_end_use_breakdown,
@@ -251,16 +262,19 @@ class TestExampleWorkflow:
 
 class TestExtractEui:
     def test_total_site_energy_value(self, sql_path):
+        # Regression: extract_eui must return GJ total (6965.32) not MJ/m2 per-area
         from mcp_server.skills.results.sql_extract import extract_eui
         result = extract_eui(sql_path)
         assert result["total_site_energy"] == pytest.approx(6965.32, abs=0.1)
 
     def test_building_area(self, sql_path):
+        # Validates: extract_eui returns correct building area (10000 m2) from SEB4
         from mcp_server.skills.results.sql_extract import extract_eui
         result = extract_eui(sql_path)
         assert result["total_building_area"] == pytest.approx(10000.0, abs=1.0)
 
     def test_computed_eui(self, sql_path):
+        # Validates: computed EUI in GJ/m2, MJ/m2, and kBtu/ft2 match known SEB4 values
         from mcp_server.skills.results.sql_extract import extract_eui
         result = extract_eui(sql_path)
         assert result["computed_eui"] == pytest.approx(0.696532, rel=1e-3)
@@ -268,12 +282,13 @@ class TestExtractEui:
         assert result["eui_kBtu_ft2"] == pytest.approx(61.34, rel=1e-2)
 
     def test_units_are_gj(self, sql_path):
+        # Validates: total_site_energy_units is GJ (not MJ or kBtu)
         from mcp_server.skills.results.sql_extract import extract_eui
         result = extract_eui(sql_path)
         assert result["total_site_energy_units"] == "GJ"
 
     def test_decoy_column_ignored(self, sql_path, tmp_path):
-        """ColumnName='Area' filter must prevent LIMIT 1 from picking a decoy col."""
+        # Regression: ColumnName='Area' filter must prevent LIMIT 1 from picking a decoy col
         import shutil, sqlite3
         decoy_sql = tmp_path / "decoy.sql"
         shutil.copy(sql_path, decoy_sql)
@@ -322,11 +337,13 @@ class TestExtractEui:
 
 class TestExtractUnmetHours:
     def test_heating(self, sql_path):
+        # Regression: extract_unmet_hours must return numeric values (not None)
         from mcp_server.skills.results.sql_extract import extract_unmet_hours
         result = extract_unmet_hours(sql_path)
         assert result["heating"] == pytest.approx(1808.33, abs=0.1)
 
     def test_cooling(self, sql_path):
+        # Validates: SEB4 cooling unmet hours is 0.0 (baseboard heating-only system)
         from mcp_server.skills.results.sql_extract import extract_unmet_hours
         result = extract_unmet_hours(sql_path)
         assert result["cooling"] == pytest.approx(0.0, abs=0.1)
@@ -338,6 +355,7 @@ class TestExtractUnmetHours:
 
 class TestExtractTotalSiteEnergy:
     def test_returns_gj(self, sql_path):
+        # Regression: _extract_total_site_energy must use col='Total Energy' in GJ units
         from mcp_server.skills.results.operations import _extract_total_site_energy_from_sql
         result = _extract_total_site_energy_from_sql(sql_path)
         assert result["ok"] is True
@@ -350,7 +368,7 @@ class TestEndUseConversionFactor:
     """C-3 regression: GJ→kBtu factor must be 947.817, not 947817.12."""
 
     def test_ip_values_in_kbtu_range(self, sql_path):
-        """IP end-use values should be kBtu (hundreds to millions), not GBtu."""
+        # Regression: GJ->kBtu factor must be ~947.817 (IP/SI ratio ~948, not ~948000)
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
         si = extract_end_use_breakdown(sql_path, units="SI")
         ip = extract_end_use_breakdown(sql_path, units="IP")
@@ -379,38 +397,39 @@ class TestEndUseConversionFactor:
 
 class TestListOutputVariables:
     def test_happy_path(self, sql_path):
+        # Validates: list_output_variables returns variables or meters from SEB4 SQL
         from mcp_server.skills.results.sql_extract import list_output_variables
         result = list_output_variables(sql_path)
         assert result["ok"] is True
-        # Should have either variables or meters (SEB4 has output data)
         total = result.get("variable_count", 0) + result.get("meter_count", 0)
-        assert total > 0
+        assert total > 0, "SEB4 should have output variables or meters"
 
     def test_has_frequency_grouping(self, sql_path):
+        # Validates: output variables are grouped by frequency (at least one bucket)
         from mcp_server.skills.results.sql_extract import list_output_variables
         result = list_output_variables(sql_path)
         assert result["ok"] is True
-        # At least one frequency bucket should exist
         all_freqs = list(result.get("variables", {}).keys()) + list(result.get("meters", {}).keys())
-        assert len(all_freqs) > 0
+        assert len(all_freqs) > 0, "Should have at least one frequency grouping"
 
     def test_entry_structure(self, sql_path):
+        # Validates: output variable entries have name/units/key_values fields
         from mcp_server.skills.results.sql_extract import list_output_variables
         result = list_output_variables(sql_path)
-        # Pick first entry from first frequency
         for freq, entries in result.get("variables", {}).items():
             if entries:
                 e = entries[0]
-                assert "name" in e
-                assert "units" in e
-                assert "key_values" in e
+                assert len(e["name"]) > 0
+                assert len(e["units"]) > 0
+                assert isinstance(e["key_values"], list)
                 return
         for freq, entries in result.get("meters", {}).items():
             if entries:
                 e = entries[0]
-                assert "name" in e
-                assert "units" in e
+                assert len(e["name"]) > 0
+                assert len(e["units"]) > 0
                 return
+        pytest.fail("No variables or meters found to check structure")
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +438,7 @@ class TestListOutputVariables:
 
 class TestSummaryMetricsWarnings:
     def test_high_unmet_warning(self, sql_path):
-        """SEB4 has ~1808 unmet heating hours — should trigger warning."""
+        # Validates: SEB4 ~1808 unmet heating hours triggers "Unmet hours" warning
         from mcp_server.skills.results.operations import extract_summary_metrics
         # We need a run_dir with the SQL in it
         import shutil, tempfile
@@ -463,16 +482,17 @@ class TestCompareRuns:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_output_shape(self, sql_path, _patch_runs):
+        # Validates: compare_runs_op returns end_use_deltas/fuel_totals/water_use/grand_total keys
         from mcp_server.skills.results.operations import compare_runs_op
         result = compare_runs_op("baseline_run", "retrofit_run")
         assert result["ok"] is True
-        # Must have new per-fuel keys
-        assert "end_use_deltas" in result
-        assert "fuel_totals" in result
-        assert "water_use" in result
-        assert "energy_grand_total_kBtu" in result
+        assert isinstance(result["end_use_deltas"], list)
+        assert isinstance(result["fuel_totals"], list)
+        assert isinstance(result["water_use"], list)
+        assert isinstance(result["energy_grand_total_kBtu"], dict)
 
     def test_end_use_deltas_have_fuel_field(self, sql_path, _patch_runs):
+        # Validates: each end_use_delta row has fuel/category/baseline/retrofit fields
         from mcp_server.skills.results.operations import compare_runs_op
         result = compare_runs_op("baseline_run", "retrofit_run")
         for row in result["end_use_deltas"]:
@@ -482,31 +502,31 @@ class TestCompareRuns:
             assert "retrofit" in row
 
     def test_water_excluded_from_energy(self, sql_path, _patch_runs):
+        # Regression: Water rows must be excluded from energy deltas, placed in water_use
         from mcp_server.skills.results.operations import compare_runs_op
         result = compare_runs_op("baseline_run", "retrofit_run")
-        # No Water rows in end_use_deltas
         for row in result["end_use_deltas"]:
             assert "water" not in row["fuel"].lower(), (
                 f"Water found in end_use_deltas: {row}"
             )
-        # Water rows go to water_use
         for row in result["water_use"]:
             assert "water" in row["fuel"].lower()
 
     def test_fuel_totals_structure(self, sql_path, _patch_runs):
+        # Validates: fuel_totals rows have fuel/baseline_total/retrofit_total/delta
         from mcp_server.skills.results.operations import compare_runs_op
         result = compare_runs_op("baseline_run", "retrofit_run")
         for row in result["fuel_totals"]:
-            assert "fuel" in row
-            assert "baseline_total" in row
-            assert "retrofit_total" in row
-            assert "delta" in row
+            assert isinstance(row["fuel"], str)
+            assert isinstance(row["baseline_total"], (int, float))
+            assert isinstance(row["retrofit_total"], (int, float))
+            assert isinstance(row["delta"], (int, float))
 
     def test_grand_total_excludes_water(self, sql_path, _patch_runs):
+        # Validates: energy_grand_total equals sum of non-water fuel_totals
         from mcp_server.skills.results.operations import compare_runs_op
         result = compare_runs_op("baseline_run", "retrofit_run")
         gt = result["energy_grand_total_kBtu"]
-        # Grand total should equal sum of non-water fuel_totals
         expected = sum(
             r["baseline_total"] for r in result["fuel_totals"]
             if "water" not in r["fuel"].lower()
@@ -514,7 +534,7 @@ class TestCompareRuns:
         assert abs(gt["baseline"] - expected) < 0.1
 
     def test_same_run_zero_deltas(self, sql_path, _patch_runs):
-        """Same SQL for both runs — all deltas should be zero."""
+        # Validates: comparing same SQL produces zero deltas everywhere
         from mcp_server.skills.results.operations import compare_runs_op
         result = compare_runs_op("baseline_run", "retrofit_run")
         for row in result["end_use_deltas"]:
@@ -525,12 +545,13 @@ class TestCompareRuns:
 
 class TestMissingSql:
     def test_end_use_bad_path(self):
+        # Validates: extract_end_use_breakdown raises on nonexistent SQL path
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
-        # Nonexistent path should raise (sqlite3 error)
         with pytest.raises((sqlite3.OperationalError, OSError)):
             extract_end_use_breakdown(Path("/nonexistent/eplusout.sql"))
 
     def test_envelope_bad_path(self):
+        # Validates: extract_envelope_summary raises on nonexistent SQL path
         from mcp_server.skills.results.sql_extract import extract_envelope_summary
         with pytest.raises((sqlite3.OperationalError, OSError)):
             extract_envelope_summary(Path("/nonexistent/eplusout.sql"))

@@ -7,6 +7,8 @@ import pytest
 
 from mcp_server.skills.results.err_parser import parse_err_file
 
+pytestmark = pytest.mark.unit
+
 ERR_FIXTURE = Path(__file__).parent / "assets" / "eplusout_sample.err"
 
 
@@ -18,43 +20,49 @@ def err_text():
 
 class TestParseErrFile:
     def test_fatal_count(self, err_text):
+        # Validates: parser extracts exactly 1 fatal error from sample .err file
         result = parse_err_file(err_text)
         assert len(result["fatal"]) == 1
 
     def test_severe_count(self, err_text):
+        # Validates: parser extracts exactly 2 severe errors from sample .err file
         result = parse_err_file(err_text)
         assert len(result["severe"]) == 2
 
     def test_warning_count(self, err_text):
+        # Validates: parser counts all 25 warnings including those beyond max_warnings cap
         result = parse_err_file(err_text)
         assert result["warning_count"] == 25
 
     def test_continuation_lines_merged(self, err_text):
+        # Validates: multi-line severe messages (DX coil) merge continuation into single entry
         result = parse_err_file(err_text)
-        # Severe about DX coil should have continuation merged
         coil_severe = [s for s in result["severe"] if "GetDXCoils" in s]
         assert len(coil_severe) == 1
         assert "referenced from" in coil_severe[0]
 
     def test_warning_continuation_merged(self, err_text):
+        # Validates: multi-line warning messages (weather location) merge continuation
         result = parse_err_file(err_text)
-        # Warning about weather location has continuation
         weather_warn = [w for w in result["warnings"] if "Weather file" in w]
         assert len(weather_warn) == 1
         assert "Location object" in weather_warn[0]
 
     def test_warnings_capped(self, err_text):
+        # Validates: max_warnings caps returned list but warning_count reflects true total
         result = parse_err_file(err_text, max_warnings=5)
         assert len(result["warnings"]) == 5
         assert result["warning_count"] == 25
 
     def test_summary_format(self, err_text):
+        # Validates: summary string includes human-readable counts for fatal/severe/warnings
         result = parse_err_file(err_text)
         assert "1 Fatal" in result["summary"]
         assert "2 Severe" in result["summary"]
         assert "25 Warnings" in result["summary"]
 
     def test_empty_input(self):
+        # Validates: empty string input produces zeroed result with "No errors" summary
         result = parse_err_file("")
         assert result["fatal"] == []
         assert result["severe"] == []
@@ -63,6 +71,7 @@ class TestParseErrFile:
         assert result["summary"] == "No errors"
 
     def test_clean_run(self):
+        # Validates: successful EnergyPlus run with 0 errors produces empty lists
         clean = (
             "Program Version,EnergyPlus, Version 24.2.0\n"
             "   ************* EnergyPlus Completed Successfully-- 0 Warning; 0 Severe Errors\n"

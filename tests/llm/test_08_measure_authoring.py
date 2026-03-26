@@ -45,13 +45,8 @@ QUOTED_DESC_PROMPT = (
 
 @pytest.mark.stable
 def test_create_measure_with_quoted_description():
-    """LLM creates a measure whose description naturally contains double-quotes.
-
-    Regression: the original chat produced syntax_ok:false because unescaped
-    quotes in the description broke the Ruby string.  Now create_measure
-    escapes quotes and returns ok:false on syntax errors, so the LLM should
-    get ok:true on the first try.
-    """
+    """LLM creates a measure whose description naturally contains double-quotes."""
+    # Regression: unescaped quotes in measure description broke Ruby syntax, causing 8 failed retries
     result = run_claude(QUOTED_DESC_PROMPT, timeout=120)
     tools = result.tool_names
 
@@ -92,11 +87,8 @@ EDIT_AFTER_CREATE_PROMPT = (
 
 @pytest.mark.stable
 def test_edit_measure_description_with_quotes():
-    """LLM creates then edits a measure, both times with quoted descriptions.
-
-    Regression: edit_measure used a fragile regex that broke when the existing
-    description contained double-quotes, appending instead of replacing.
-    """
+    """LLM creates then edits a measure, both times with quoted descriptions."""
+    # Regression: edit_measure fragile regex broke when description contained double-quotes
     result = run_claude(EDIT_AFTER_CREATE_PROMPT, timeout=120)
     tools = result.tool_names
 
@@ -126,11 +118,8 @@ XML_ATTRS_PROMPT = (
 
 @pytest.mark.stable
 def test_measure_xml_intended_software_tool():
-    """LLM creates a measure and verifies XML has Intended Software Tool attrs.
-
-    Regression: SDK scaffold didn't add these attributes, so measures didn't
-    appear in OS App's Apply Measure Now dialog.
-    """
+    """LLM creates a measure and verifies XML has Intended Software Tool attrs."""
+    # Regression: SDK scaffold omitted Intended Software Tool attributes, hiding measures from OS App
     result = run_claude(XML_ATTRS_PROMPT, timeout=120)
     tools = result.tool_names
 
@@ -157,11 +146,8 @@ SYNTAX_ERROR_PROMPT = (
 
 @pytest.mark.stable
 def test_syntax_error_reported_clearly():
-    """LLM should report failure when create_measure returns ok:false.
-
-    Regression: create_measure returned ok:true with syntax_ok:false, causing
-    the LLM to think the measure was created successfully.
-    """
+    """LLM should report failure when create_measure returns ok:false."""
+    # Regression: create_measure returned ok:true with syntax_ok:false, hiding syntax errors from LLM
     result = run_claude(SYNTAX_ERROR_PROMPT, timeout=120)
     tools = result.tool_names
 

@@ -21,6 +21,7 @@ pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration d
 @pytest.mark.integration
 def test_radiant_floor():
     """Verify radiant floor system with low-temp loops."""
+    # Validates: radiant floor creates HW(120F)/CHW(58F) loops + floor equipment per zone
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -47,13 +48,13 @@ def test_radiant_floor():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "Radiant"
                 assert system_data["system"]["radiant_type"] == "Floor"
                 assert system_data["system"]["hw_supply_temp_f"] == 120
                 assert system_data["system"]["chw_supply_temp_f"] == 58
-                assert system_data["system"]["hot_water_loop"] is not None
-                assert system_data["system"]["chilled_water_loop"] is not None
+                assert system_data["system"]["hot_water_loop"] is not None, "Radiant floor needs HW loop"
+                assert system_data["system"]["chilled_water_loop"] is not None, "Radiant floor needs CHW loop"
                 assert len(system_data["system"]["radiant_equipment"]) == len(zone_names)
 
                 # Verify floor radiant equipment
@@ -72,6 +73,7 @@ def test_radiant_floor():
 @pytest.mark.integration
 def test_radiant_ceiling():
     """Verify radiant ceiling panels."""
+    # Validates: radiant ceiling type creates ceiling equipment with low-temp loops
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -98,7 +100,7 @@ def test_radiant_ceiling():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["radiant_type"] == "Ceiling"
 
                 # Verify ceiling radiant equipment
@@ -115,6 +117,7 @@ def test_radiant_ceiling():
 @pytest.mark.integration
 def test_radiant_with_doas():
     """Verify radiant system integrated with DOAS for ventilation."""
+    # Validates: radiant+DOAS creates DOAS air loop named "Radiant DOAS Ventilation"
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -141,9 +144,9 @@ def test_radiant_with_doas():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["ventilation_system"] == "DOAS"
-                assert system_data["system"]["doas_loop"] is not None
+                assert system_data["system"]["doas_loop"] is not None, "DOAS ventilation should create air loop"
                 assert "DOAS" in system_data["system"]["doas_loop"]
 
                 # Verify DOAS air loop exists
@@ -160,6 +163,7 @@ def test_radiant_with_doas():
 @pytest.mark.integration
 def test_radiant_without_doas():
     """Verify radiant system without DOAS (ventilation handled separately)."""
+    # Validates: radiant with ventilation_system=None creates no DOAS air loop
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -186,9 +190,9 @@ def test_radiant_without_doas():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["ventilation_system"] == "None"
-                assert system_data["system"]["doas_loop"] is None
+                assert system_data["system"]["doas_loop"] is None, "No-DOAS mode should have null doas_loop"
 
     asyncio.run(_run())
 
@@ -196,6 +200,7 @@ def test_radiant_without_doas():
 @pytest.mark.integration
 def test_radiant_loop_temps():
     """Verify radiant system uses low-temperature plant loops."""
+    # Validates: radiant loop temps are 120F HW and 58F CHW (low-temp design)
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -222,7 +227,7 @@ def test_radiant_loop_temps():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
 
                 # Verify low-temp specifications
                 assert system_data["system"]["hw_supply_temp_f"] == 120  # Low-temp heating
@@ -246,6 +251,7 @@ def test_radiant_loop_temps():
 @pytest.mark.integration
 def test_radiant_multi_zone_baseline():
     """Verify radiant floor + DOAS on 10-zone baseline model."""
+    # Validates: radiant+DOAS serves all 10 baseline zones with correct plant loops
     import uuid
     name = f"test_rad_bl_{uuid.uuid4().hex[:8]}"
 
@@ -257,9 +263,9 @@ def test_radiant_multi_zone_baseline():
 
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
@@ -274,11 +280,11 @@ def test_radiant_multi_zone_baseline():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "Radiant"
                 assert len(system_data["system"]["radiant_equipment"]) == 10
                 assert system_data["system"]["ventilation_system"] == "DOAS"
-                assert system_data["system"]["doas_loop"] is not None
+                assert system_data["system"]["doas_loop"] is not None, "10-zone radiant+DOAS needs air loop"
 
                 # Verify plant loops
                 loops_resp = await session.call_tool("list_plant_loops", {})
@@ -291,6 +297,7 @@ def test_radiant_multi_zone_baseline():
 
 def test_radiant_json_string_zones():
     """Test add_radiant_system accepts thermal_zone_names as JSON string."""
+    # Regression: MCP clients sent thermal_zone_names as JSON string, caused TypeError
     import json
 
     async def _run():
@@ -311,7 +318,7 @@ def test_radiant_json_string_zones():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True, (
+                assert system_data["ok"] is True, (
                     f"JSON-string zone names failed: {system_data.get('error')}"
                 )
 

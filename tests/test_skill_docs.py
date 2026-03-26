@@ -10,9 +10,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 from mcp_server.skills import register_all_skills
+
+pytestmark = pytest.mark.unit
 
 # Repo-relative path (host/CI), fallback to Docker baked-in path
 _REPO_SKILLS = Path(__file__).resolve().parent.parent / ".claude" / "skills"
@@ -71,13 +74,13 @@ def _extract_tool_references(body: str) -> set[str]:
 
 
 def test_skill_files_exist():
-    """At least one SKILL.md exists under .claude/skills/."""
+    # Validates: at least 3 SKILL.md files exist under .claude/skills/
     files = _find_skill_files()
     assert len(files) >= 3, f"Expected >= 3 SKILL.md files, found {len(files)}"
 
 
 def test_frontmatter_valid():
-    """Every SKILL.md has valid YAML frontmatter with description."""
+    # Validates: every SKILL.md has valid YAML frontmatter with non-trivial description
     for path in _find_skill_files():
         fm, _ = _parse_skill_md(path)
         skill_name = path.parent.name
@@ -87,7 +90,7 @@ def test_frontmatter_valid():
 
 
 def test_tool_references_valid():
-    """Every tool name referenced in SKILL.md body exists in MCP registry."""
+    # Validates: every backtick-quoted tool name in SKILL.md exists in MCP tool registry
     registered = _get_registered_tool_names()
 
     all_errors = []

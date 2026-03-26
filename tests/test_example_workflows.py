@@ -29,6 +29,7 @@ MEASURE_DIR = "/repo/tests/assets/measures/set_building_name"
 @pytest.mark.integration
 def test_workflow_baseline_with_weather():
     """Example 1: Create baseline model, set weather, run simulation, extract metrics."""
+    # Validates: full workflow — baseline creation, weather, design days, save, simulate, extract metrics
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -116,6 +117,7 @@ def test_workflow_baseline_with_weather():
 @pytest.mark.integration
 def test_workflow_hvac_design_exploration():
     """Example 2: DOAS system with plant loop sizing adjustments."""
+    # Validates: System 7 creates plant loops + boiler accessible via get/set component properties
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -159,20 +161,21 @@ def test_workflow_hvac_design_exploration():
                 assert comps.get("ok") is True
                 # All results are boilers (filtered by object_type)
                 boilers = comps["objects"]
-                if boilers:
-                    # Step 6: Get and modify boiler properties
-                    bp = unwrap(await s.call_tool("get_component_properties", {
-                        "component_name": boilers[0]["name"],
-                    }))
-                    assert bp.get("ok") is True
+                assert len(boilers) > 0, "System 7 must have at least one BoilerHotWater component"
 
-                    # Step 6b: Generic access — get_object_fields on same boiler
-                    fields = unwrap(await s.call_tool("get_object_fields", {
-                        "object_name": boilers[0]["name"],
-                        "object_type": "BoilerHotWater",
-                    }))
-                    assert fields.get("ok") is True
-                    assert "properties" in fields
+                # Step 6: Get and modify boiler properties
+                bp = unwrap(await s.call_tool("get_component_properties", {
+                    "component_name": boilers[0]["name"],
+                }))
+                assert bp.get("ok") is True
+
+                # Step 6b: Generic access — get_object_fields on same boiler
+                fields = unwrap(await s.call_tool("get_object_fields", {
+                    "object_name": boilers[0]["name"],
+                    "object_type": "BoilerHotWater",
+                }))
+                assert fields.get("ok") is True
+                assert len(fields["properties"]) > 0, "get_object_fields should return properties"
 
     asyncio.run(_run())
 
@@ -184,6 +187,7 @@ def test_workflow_hvac_design_exploration():
 @pytest.mark.integration
 def test_workflow_envelope_retrofit():
     """Example 3: Create insulation material, build construction, assign to wall."""
+    # Validates: material->construction->surface assignment pipeline round-trips correctly
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -255,6 +259,7 @@ def test_workflow_envelope_retrofit():
 @pytest.mark.integration
 def test_workflow_internal_loads():
     """Example 4: Add people, lights, equipment to a space with schedule."""
+    # Validates: people+lights+equipment loads created and discoverable via list_model_objects
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -342,6 +347,7 @@ def test_workflow_internal_loads():
 @pytest.mark.integration
 def test_workflow_apply_measure():
     """Example 5: List measure arguments, apply with custom value, verify."""
+    # Validates: apply_measure changes building name and get_building_info reflects new name
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -387,6 +393,7 @@ def test_workflow_apply_measure():
 @pytest.mark.integration
 def test_workflow_model_cleanup():
     """Example 6: Rename zone, delete space, verify changes."""
+    # Validates: rename_object + delete_object correctly modify model (zone renamed, space deleted)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -440,6 +447,7 @@ def test_workflow_model_cleanup():
 @pytest.mark.integration
 def test_workflow_full_building():
     """Example 7: Baseline model + loads + weather + design days + simulation."""
+    # Validates: full pipeline — System 5 baseline + loads + weather + simulation completes
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -531,6 +539,7 @@ def test_workflow_full_building():
 @pytest.mark.integration
 def test_workflow_geometry_from_scratch():
     """Example 8: Create spaces from floor prints, add window, assign zones."""
+    # Validates: floor-print extrusion creates 6 surfaces per space, match_surfaces finds shared walls, WWR adds subsurfaces
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -646,6 +655,7 @@ def test_workflow_geometry_from_scratch():
 @pytest.mark.integration
 def test_workflow_fenestration_by_orientation():
     """Example 9: Apply WWR per cardinal direction on a baseline model."""
+    # Validates: set_window_to_wall_ratio applies different ratios per orientation, south wall ~40% glazing
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -741,6 +751,7 @@ COMSTOCK_TEST_EPW = (
 @pytest.mark.integration
 def test_workflow_comstock_typical_building():
     """Example 10: Apply 90.1-2019 typical building template, verify HVAC + constructions."""
+    # Validates: create_typical_building adds HVAC loops + constructions to SmallOffice model
     if not integration_enabled():
         pytest.skip("integration disabled")
 

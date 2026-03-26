@@ -20,15 +20,16 @@ async def _setup_baseline(session, model_name, ashrae_sys_num="07"):
     cr = unwrap(await session.call_tool("create_baseline_osm", {
         "name": model_name, "ashrae_sys_num": ashrae_sys_num,
     }))
-    assert cr.get("ok") is True, cr
+    assert cr["ok"] is True, cr
     lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True
+    assert lr["ok"] is True
 
 
 # ---- Rename tests ----
 
 @pytest.mark.integration
 def test_rename_space():
+    # Validates: rename_object changes space name and old name disappears from listing
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -44,7 +45,7 @@ def test_rename_space():
                 res = unwrap(await s.call_tool("rename_object", {
                     "object_name": old_name, "new_name": "Renamed Space",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["old_name"] == old_name
                 assert res["new_name"] == "Renamed Space"
                 # Verify
@@ -55,6 +56,7 @@ def test_rename_space():
 
 @pytest.mark.integration
 def test_rename_thermal_zone():
+    # Validates: rename_object changes zone name, returns type=ThermalZone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -68,7 +70,7 @@ def test_rename_thermal_zone():
                 res = unwrap(await s.call_tool("rename_object", {
                     "object_name": old_name, "new_name": "Renamed Zone",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["type"] == "ThermalZone"
 
                 # Independent query verification
@@ -83,6 +85,7 @@ def test_rename_thermal_zone():
 
 @pytest.mark.integration
 def test_delete_space():
+    # Validates: delete_object removes space and decreases count by 1
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -99,7 +102,7 @@ def test_delete_space():
                 res = unwrap(await s.call_tool("delete_object", {
                     "object_name": "ToDelete",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["type"] == "Space"
                 # Verify count decreased
                 spaces_after = unwrap(await s.call_tool("list_spaces", {"max_results": 0}))
@@ -109,6 +112,7 @@ def test_delete_space():
 
 @pytest.mark.integration
 def test_delete_nonexistent():
+    # Validates: delete_object returns ok:false with "not found" for bad name
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -120,7 +124,7 @@ def test_delete_nonexistent():
                 res = unwrap(await s.call_tool("delete_object", {
                     "object_name": "DoesNotExist123",
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "not found" in res["error"]
     asyncio.run(_run())
 
@@ -131,6 +135,7 @@ def test_delete_nonexistent():
 
 @pytest.mark.integration
 def test_delete_boiler():
+    # Validates: delete_object removes BoilerHotWater from System 7 model
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -143,12 +148,12 @@ def test_delete_boiler():
                 boilers = unwrap(await s.call_tool("list_model_objects", {
                     "object_type": "BoilerHotWater", "max_results": 0,
                 }))
-                assert boilers.get("ok") is True and boilers["count"] > 0
+                assert boilers["ok"] is True and boilers["count"] > 0
                 boiler_name = boilers["objects"][0]["name"]
                 res = unwrap(await s.call_tool("delete_object", {
                     "object_name": boiler_name, "object_type": "BoilerHotWater",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
 
                 # Independent query verification
                 boilers2 = unwrap(await s.call_tool("list_model_objects", {
@@ -160,6 +165,7 @@ def test_delete_boiler():
 
 @pytest.mark.integration
 def test_rename_air_loop():
+    # Validates: rename_object changes air loop name, returns type=AirLoopHVAC
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -169,12 +175,12 @@ def test_rename_air_loop():
                 await s.initialize()
                 await _setup_baseline(s, _unique(), ashrae_sys_num="03")
                 loops = unwrap(await s.call_tool("list_air_loops", {}))
-                assert loops.get("ok") is True and loops["count"] > 0
+                assert loops["ok"] is True and loops["count"] > 0
                 old = loops["air_loops"][0]["name"]
                 res = unwrap(await s.call_tool("rename_object", {
                     "object_name": old, "new_name": "My AHU",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["type"] == "AirLoopHVAC"
 
                 # Independent query verification
@@ -187,6 +193,7 @@ def test_rename_air_loop():
 
 @pytest.mark.integration
 def test_delete_with_type_hint():
+    # Validates: delete_object with object_type hint removes ScheduleRuleset
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -202,7 +209,7 @@ def test_delete_with_type_hint():
                 res = unwrap(await s.call_tool("delete_object", {
                     "object_name": "TempSched", "object_type": "ScheduleRuleset",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["type"] == "ScheduleRuleset"
 
                 # Independent query verification
@@ -214,6 +221,7 @@ def test_delete_with_type_hint():
 
 @pytest.mark.integration
 def test_rename_schedule():
+    # Validates: rename_object changes schedule name, old name gone from listing
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -229,7 +237,7 @@ def test_rename_schedule():
                 res = unwrap(await s.call_tool("rename_object", {
                     "object_name": "OldSched", "new_name": "NewSched",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["new_name"] == "NewSched"
 
                 # Independent query verification

@@ -452,12 +452,8 @@ _GENERIC_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
 @pytest.mark.progressive
 @pytest.mark.parametrize("case", _FLAT_CASES, ids=[c["id"] for c in _FLAT_CASES])
 def test_progressive(case):
-    """Test tool discovery at varying prompt specificity levels.
-
-    L1 (vague) → L2 (moderate) → L3 (explicit). Tracks which level
-    the agent starts succeeding at. Lower levels passing = better
-    tool discoverability.
-    """
+    """Test tool discovery at varying prompt specificity levels."""
+    # Validates: Claude routes L1/L2/L3 prompts to correct tools — lower levels passing = better discoverability
     tier = get_tier()
     if tier not in ("all", "1"):
         pytest.skip("Tier 1 not selected")

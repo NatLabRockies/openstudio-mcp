@@ -15,6 +15,8 @@ import pytest
 from mcp_server.skills import register_all_skills
 from tests.test_tool_baseline import CORE_TOOLS
 
+pytestmark = pytest.mark.unit
+
 
 def _register_tools_with_tags() -> dict[str, dict]:
     """Register all skills via FakeMCP, capturing tags."""
@@ -45,7 +47,7 @@ def _register_tools_with_tags() -> dict[str, dict]:
 # ── Phase 2 gate tests ───────────────────────────────────────────────────
 
 def test_all_tools_have_tags():
-    """Every tool must have >= 1 tag after Phase 2."""
+    # Validates: every registered MCP tool has at least one tag for routing
     tools = _register_tools_with_tags()
     untagged = [name for name, t in tools.items() if not t["tags"]]
     if untagged:
@@ -58,7 +60,7 @@ def test_all_tools_have_tags():
 
 
 def test_group_sizes_balanced():
-    """No group should have > 40 tools (catches dumping everything in core)."""
+    # Validates: no tool group exceeds 40 members (prevents core group bloat)
     tools = _register_tools_with_tags()
     groups: dict[str, list[str]] = {}
     for name, t in tools.items():
@@ -114,7 +116,7 @@ ROUTING_CASES = [
     ids=[f"{c[1][:30]}→{c[2]}" for c in ROUTING_CASES],
 )
 def test_recommend_tools(task, expected_group, must_include):
-    """recommend_tools returns correct group + tool for each case."""
+    # Validates: recommend_tools routes task description to correct group and includes expected tool
     from mcp_server.skills.tool_router.operations import recommend_tools_op
 
     result = recommend_tools_op(task)
@@ -131,7 +133,7 @@ def test_recommend_tools(task, expected_group, must_include):
 # ── Schema size comparison ───────────────────────────────────────────────
 
 def test_tool_schema_token_count():
-    """Core subset must be < 30% of full tool schema."""
+    # Validates: core tool subset is < 30% of full schema size (token reduction target)
     tools = _register_tools_with_tags()
 
     all_data = [{"name": t["name"], "description": t["doc"]}

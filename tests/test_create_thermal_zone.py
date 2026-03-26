@@ -19,6 +19,7 @@ def _unique_name(prefix: str = "pytest_create_tz") -> str:
 @pytest.mark.integration
 def test_create_thermal_zone_minimal():
     """Test creating a thermal zone with no spaces."""
+    # Validates: create_thermal_zone creates empty zone visible in list_thermal_zones
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -32,17 +33,17 @@ def test_create_thermal_zone_minimal():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create thermal zone
                 zone_resp = await session.call_tool("create_thermal_zone", {"name": "New Zone"})
                 zone_result = unwrap(zone_resp)
 
-                assert zone_result.get("ok") is True
+                assert zone_result["ok"] is True
                 assert zone_result["thermal_zone"]["name"] == "New Zone"
                 assert zone_result["thermal_zone"]["num_equipment"] == 0
 
@@ -57,6 +58,7 @@ def test_create_thermal_zone_minimal():
 @pytest.mark.integration
 def test_create_thermal_zone_with_spaces():
     """Test creating a thermal zone with spaces assigned."""
+    # Validates: create_thermal_zone assigns existing space to new zone
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -70,16 +72,16 @@ def test_create_thermal_zone_with_spaces():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Get existing spaces
                 spaces_resp = await session.call_tool("list_spaces", {"max_results": 0})
                 spaces_result = unwrap(spaces_resp)
-                assert len(spaces_result["spaces"]) > 0
+                assert len(spaces_result["spaces"]) == 4, "Example model should have 4 spaces"
                 space_names = [spaces_result["spaces"][0]["name"]]
 
                 # Create thermal zone with spaces
@@ -89,7 +91,7 @@ def test_create_thermal_zone_with_spaces():
                 })
                 zone_result = unwrap(zone_resp)
 
-                assert zone_result.get("ok") is True
+                assert zone_result["ok"] is True
                 assert zone_result["thermal_zone"]["name"] == "New Zone"
 
                 # Independent query verification
@@ -104,6 +106,7 @@ def test_create_thermal_zone_with_spaces():
 @pytest.mark.integration
 def test_create_thermal_zone_verify_space_assignment():
     """Test that space assignment is reflected in space details."""
+    # Validates: space thermal_zone field reflects the zone it was assigned to
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -117,16 +120,16 @@ def test_create_thermal_zone_verify_space_assignment():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create a new space
                 space_resp = await session.call_tool("create_space", {"name": "Test Space"})
                 space_result = unwrap(space_resp)
-                assert space_result.get("ok") is True
+                assert space_result["ok"] is True
 
                 # Create thermal zone with the space
                 zone_resp = await session.call_tool("create_thermal_zone", {
@@ -134,12 +137,12 @@ def test_create_thermal_zone_verify_space_assignment():
                     "space_names": ["Test Space"],
                 })
                 zone_result = unwrap(zone_resp)
-                assert zone_result.get("ok") is True
+                assert zone_result["ok"] is True
 
                 # Check space details shows the zone
                 space_details_resp = await session.call_tool("get_space_details", {"space_name": "Test Space"})
                 space_details = unwrap(space_details_resp)
-                assert space_details.get("ok") is True
+                assert space_details["ok"] is True
                 assert space_details["space"]["thermal_zone"] == "Test Zone"
 
     asyncio.run(_run())
@@ -148,6 +151,7 @@ def test_create_thermal_zone_verify_space_assignment():
 @pytest.mark.integration
 def test_create_thermal_zone_no_model_loaded():
     """Test error when no model is loaded."""
+    # Validates: create_thermal_zone returns "No model loaded" error without prior load
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -160,8 +164,7 @@ def test_create_thermal_zone_no_model_loaded():
                 zone_resp = await session.call_tool("create_thermal_zone", {"name": "Should Fail"})
                 zone_result = unwrap(zone_resp)
 
-                assert zone_result.get("ok") is False
-                assert "error" in zone_result
+                assert zone_result["ok"] is False
                 assert "No model loaded" in zone_result["error"]
 
     asyncio.run(_run())
@@ -170,6 +173,7 @@ def test_create_thermal_zone_no_model_loaded():
 @pytest.mark.integration
 def test_create_thermal_zone_invalid_space():
     """Test error when space doesn't exist."""
+    # Validates: create_thermal_zone returns "not found" for nonexistent space name
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -183,11 +187,11 @@ def test_create_thermal_zone_invalid_space():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create thermal zone with invalid space
                 zone_resp = await session.call_tool("create_thermal_zone", {
@@ -196,8 +200,7 @@ def test_create_thermal_zone_invalid_space():
                 })
                 zone_result = unwrap(zone_resp)
 
-                assert zone_result.get("ok") is False
-                assert "error" in zone_result
+                assert zone_result["ok"] is False
                 assert "not found" in zone_result["error"]
 
     asyncio.run(_run())
@@ -206,6 +209,7 @@ def test_create_thermal_zone_invalid_space():
 @pytest.mark.integration
 def test_create_thermal_zone_json_string_spaces():
     """Test create_thermal_zone accepts space_names as JSON string."""
+    # Regression: MCP clients sent space_names as JSON string, caused TypeError
     import json
 
     name = _unique_name()
@@ -228,7 +232,7 @@ def test_create_thermal_zone_json_string_spaces():
                 })
                 zone_result = unwrap(zone_resp)
 
-                assert zone_result.get("ok") is True, (
+                assert zone_result["ok"] is True, (
                     f"JSON-string space_names failed: {zone_result.get('error')}"
                 )
 

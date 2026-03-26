@@ -240,6 +240,7 @@ class TestResponseSizes:
 
     def test_default_response_under_budget(self, session_data):
         """Every paginated list tool with defaults returns <10K chars."""
+        # Validates: all 8 paginated list tools stay under 10K chars with default max_results
         failures = []
         for tool_name, _key, _args in PAGINATED_TOOLS:
             resp = session_data["defaults"][tool_name]
@@ -250,6 +251,7 @@ class TestResponseSizes:
 
     def test_each_default_individually(self, session_data):
         """Per-tool size check — gives clear failure message per tool."""
+        # Validates: each individual paginated tool default response < 10K chars
         for tool_name, _key, _args in PAGINATED_TOOLS:
             resp = session_data["defaults"][tool_name]
             size = len(json.dumps(resp))
@@ -263,6 +265,7 @@ class TestResponseSizes:
 
     def test_response_shape_ok_and_count(self, session_data):
         """Every list tool response has ok=True and count >= 0."""
+        # Validates: MCP contract — all list tools return ok=True and integer count >= 0
         for tool_name, _key, _args in PAGINATED_TOOLS:
             resp = session_data["defaults"][tool_name]
             assert resp.get("ok") is True, f"{tool_name}: ok not True"
@@ -271,6 +274,7 @@ class TestResponseSizes:
 
     def test_response_has_correct_items_key(self, session_data):
         """Every list tool response contains its items under the correct key."""
+        # Validates: MCP contract — items_key exists, is list, and len matches count
         for tool_name, items_key, _args in PAGINATED_TOOLS:
             resp = session_data["defaults"][tool_name]
             assert items_key in resp, (
@@ -284,6 +288,7 @@ class TestResponseSizes:
 
     def test_no_unexpected_keys(self, session_data):
         """Default (non-truncated) responses don't have truncation keys."""
+        # Validates: non-truncated responses omit total_available key
         for tool_name, items_key, _args in PAGINATED_TOOLS:
             resp = session_data["defaults"][tool_name]
             # If not truncated, should NOT have total_available
@@ -298,6 +303,7 @@ class TestResponseSizes:
 
     def test_truncation_surfaces(self, session_data):
         """list_surfaces truncates and reports total_available."""
+        # Validates: list_surfaces default truncates to 10 items and reports total_available
         default = session_data["defaults"]["list_surfaces"]
         unlimited = session_data["unlimited"]["list_surfaces"]
         total = unlimited["count"]
@@ -310,6 +316,7 @@ class TestResponseSizes:
 
     def test_truncation_materials(self, session_data):
         """list_materials truncates when >10 materials exist."""
+        # Validates: list_materials default truncates to 10 items when >10 exist
         default = session_data["defaults"]["list_materials"]
         unlimited = session_data["unlimited"]["list_materials"]
         total = unlimited["count"]
@@ -321,6 +328,7 @@ class TestResponseSizes:
 
     def test_truncation_model_objects(self, session_data):
         """list_model_objects(Space) truncates when >10 spaces."""
+        # Validates: list_model_objects truncation behavior matches baseline space count (10)
         default = session_data["defaults"]["list_model_objects"]
         unlimited = session_data["unlimited"]["list_model_objects"]
         total = unlimited["count"]
@@ -338,6 +346,7 @@ class TestResponseSizes:
 
     def test_max_results_zero_returns_all(self, session_data):
         """max_results=0 returns all items with no truncation."""
+        # Validates: max_results=0 disables pagination — all items returned, no truncation flag
         for tool_name, items_key, _args in PAGINATED_TOOLS:
             resp = session_data["unlimited"][tool_name]
             assert resp["ok"] is True, f"{tool_name}: not ok"
@@ -348,6 +357,7 @@ class TestResponseSizes:
 
     def test_max_results_5(self, session_data):
         """max_results=5 limits to 5 items."""
+        # Validates: max_results=5 returns exactly 5 items with truncated=True
         resp = session_data["surfaces_max5"]
         total = session_data["unlimited"]["list_surfaces"]["count"]
         assert resp["ok"] is True
@@ -359,6 +369,7 @@ class TestResponseSizes:
 
     def test_max_results_1(self, session_data):
         """max_results=1 limits to 1 item."""
+        # Validates: max_results=1 returns exactly 1 item with truncated=True
         resp = session_data["surfaces_max1"]
         total = session_data["unlimited"]["list_surfaces"]["count"]
         assert resp["ok"] is True
@@ -369,6 +380,7 @@ class TestResponseSizes:
 
     def test_unlimited_surfaces_more_than_10(self, session_data):
         """Baseline model has >10 surfaces (validates test premise)."""
+        # Validates: baseline model has >10 surfaces (test premise for truncation tests)
         resp = session_data["unlimited"]["list_surfaces"]
         assert resp["count"] > 10, "Baseline should have >10 surfaces for truncation tests"
 
@@ -378,6 +390,7 @@ class TestResponseSizes:
 
     def test_filter_surfaces_type_and_boundary(self, session_data):
         """Filtered exterior walls returns only matching items."""
+        # Validates: surface filter by type=Wall + boundary=Outdoors returns only exterior walls
         resp = session_data["surfaces_ext_walls"]
         assert resp["ok"] is True
         assert resp["count"] > 0, "Baseline should have exterior walls"
@@ -387,6 +400,7 @@ class TestResponseSizes:
 
     def test_filter_surfaces_roof_ceiling(self, session_data):
         """Filtering by RoofCeiling returns only roof/ceiling surfaces."""
+        # Validates: surface filter by type=RoofCeiling returns only roof/ceiling surfaces
         resp = session_data["surfaces_roofs"]
         assert resp["ok"] is True
         for s in resp["surfaces"]:
@@ -394,6 +408,7 @@ class TestResponseSizes:
 
     def test_filter_surfaces_by_space(self, session_data):
         """Filtering by space_name returns surfaces belonging to that space."""
+        # Validates: surface filter by space_name returns only surfaces in that space
         resp = session_data.get("surfaces_by_space")
         if resp is None:
             pytest.skip("No spaces found")
@@ -405,6 +420,7 @@ class TestResponseSizes:
 
     def test_filter_reduces_count(self, session_data):
         """Filtered results have fewer items than unfiltered."""
+        # Validates: exterior walls are a strict subset of all surfaces
         all_count = session_data["unlimited"]["list_surfaces"]["count"]
         filtered_count = session_data["surfaces_ext_walls"]["count"]
         assert filtered_count < all_count, "Exterior walls should be subset of all surfaces"
@@ -415,6 +431,7 @@ class TestResponseSizes:
 
     def test_filter_subsurfaces_by_type(self, session_data):
         """Filtering subsurfaces by type returns correct subset."""
+        # Validates: subsurface filter by type=FixedWindow returns only FixedWindow items
         resp = session_data["subsurfaces_windows"]
         assert resp["ok"] is True
         # May be 0 if baseline has no windows (no wwr set)
@@ -427,6 +444,7 @@ class TestResponseSizes:
 
     def test_filter_spaces_by_space_type(self, session_data):
         """Filtering spaces by space_type_name returns matching spaces."""
+        # Validates: baseline model has exactly 10 spaces with "Baseline Model Space Type"
         resp = session_data["spaces_by_type"]
         assert resp["ok"] is True
         # All baseline spaces should have this space type
@@ -438,6 +456,7 @@ class TestResponseSizes:
 
     def test_filter_zones_by_air_loop(self, session_data):
         """Filtering zones by air_loop_name returns zones on that loop."""
+        # Validates: thermal zone filter by air_loop_name returns > 0 zones
         resp = session_data.get("zones_by_air_loop")
         if resp is None:
             pytest.skip("No air loops in baseline model")
@@ -450,6 +469,7 @@ class TestResponseSizes:
 
     def test_filter_model_objects_name_contains(self, session_data):
         """Filtering model objects by name_contains returns matching names."""
+        # Validates: name_contains="Core" returns subset of spaces with "core" in name
         resp = session_data["model_objs_filtered"]
         assert resp["ok"] is True
         assert resp["count"] > 0, "Baseline should have 'Core' spaces"
@@ -463,8 +483,12 @@ class TestResponseSizes:
 
     def test_model_objects_has_type_field(self, session_data):
         """list_model_objects response includes the queried type."""
+        # Validates: list_model_objects echoes queried type="Space" and returns valid objects
         resp = session_data["defaults"]["list_model_objects"]
         assert resp.get("type") == "Space"
+        assert resp["count"] > 0, "Baseline model should have spaces"
+        for obj in resp["objects"][:3]:  # spot-check first 3
+            assert obj.get("name"), f"Space object missing name: {obj}"
 
     # -----------------------------------------------------------------------
     # Filter: list_materials by material_type
@@ -472,6 +496,7 @@ class TestResponseSizes:
 
     def test_filter_materials_by_type(self, session_data):
         """Filtering materials by type returns correct subset."""
+        # Validates: material filter by type=StandardOpaqueMaterial returns subset of all materials
         resp = session_data["materials_opaque"]
         assert resp["ok"] is True
         all_count = session_data["unlimited"]["list_materials"]["count"]
@@ -484,6 +509,7 @@ class TestResponseSizes:
 
     def test_get_construction_details_ok(self, session_data):
         """get_construction_details returns ok with layer info."""
+        # Validates: get_construction_details returns ok=True with construction data
         resp = session_data.get("construction_details")
         if resp is None:
             pytest.skip("No constructions in baseline model")
@@ -494,6 +520,7 @@ class TestResponseSizes:
 
     def test_get_construction_details_under_budget(self, session_data):
         """get_construction_details response < 10K chars."""
+        # Validates: get_construction_details response stays under 10K char budget
         resp = session_data.get("construction_details")
         if resp is None:
             pytest.skip("No constructions in baseline model")
@@ -502,6 +529,7 @@ class TestResponseSizes:
 
     def test_get_load_details_lights(self, session_data):
         """get_load_details returns ok for a lighting load."""
+        # Validates: get_load_details returns load_type="Lights" for lighting load
         resp = session_data.get("load_details_lights")
         if resp is None:
             pytest.skip("No lighting loads in baseline model")
@@ -511,6 +539,7 @@ class TestResponseSizes:
 
     def test_get_load_details_infiltration(self, session_data):
         """get_load_details returns ok for infiltration."""
+        # Validates: get_load_details returns load_type="SpaceInfiltrationDesignFlowRate"
         resp = session_data.get("load_details_infil")
         if resp is None:
             pytest.skip("No infiltration in baseline model")
@@ -519,12 +548,14 @@ class TestResponseSizes:
 
     def test_get_load_details_missing(self, session_data):
         """get_load_details returns ok=False for nonexistent load."""
+        # Validates: get_load_details returns ok=False with "not found" for nonexistent load name
         resp = session_data["load_details_missing"]
         assert resp["ok"] is False
         assert "not found" in resp.get("error", "").lower()
 
     def test_get_load_details_under_budget(self, session_data):
         """get_load_details response < 10K chars."""
+        # Validates: get_load_details response stays under 10K char budget
         resp = session_data.get("load_details_lights")
         if resp is None:
             pytest.skip("No lighting loads")
@@ -537,18 +568,22 @@ class TestResponseSizes:
 
     def test_list_files_no_redundant_total(self, session_data):
         """list_files response has 'count' but not 'total'."""
+        # Validates: list_files uses "count" not "total" (no redundant key)
         resp = session_data["defaults"]["list_files"]
         assert "count" in resp
         assert "total" not in resp
 
     def test_list_files_items_have_name_and_type(self, session_data):
         """list_files items have name, path, type fields."""
+        # Validates: list_files items contain non-empty name, path, and type ("file" or "dir")
         resp = session_data["defaults"]["list_files"]
         if resp["count"] == 0:
             pytest.skip("No files in run dir")
         item = resp["items"][0]
         assert "name" in item
+        assert item["name"], f"File item should have non-empty name: {item}"
         assert "path" in item
+        assert item["path"], f"File item should have non-empty path: {item}"
         assert "type" in item
         assert item["type"] in ("file", "dir")
 
@@ -558,6 +593,7 @@ class TestResponseSizes:
 
     def test_unlimited_count_matches_items_length(self, session_data):
         """For every tool, unlimited count == len(items)."""
+        # Validates: count field matches actual items list length for all unlimited responses
         for tool_name, items_key, _args in PAGINATED_TOOLS:
             resp = session_data["unlimited"][tool_name]
             assert resp["count"] == len(resp[items_key]), (
@@ -570,6 +606,7 @@ class TestResponseSizes:
 
     def test_surfaces_brief_has_boundary(self, session_data):
         """Default (brief) surface items include outside_boundary_condition."""
+        # Validates: brief surface format includes outside_boundary_condition field
         resp = session_data["defaults"]["list_surfaces"]
         if resp["count"] == 0:
             pytest.skip("No surfaces")
@@ -584,6 +621,7 @@ class TestResponseSizes:
 
     def test_read_file_default_under_budget(self, session_data):
         """read_file with defaults returns <50KB text."""
+        # Validates: read_file default response stays under 50KB max_bytes budget
         resp = session_data.get("read_file_default")
         if resp is None:
             pytest.skip("No files to read")
@@ -597,6 +635,7 @@ class TestResponseSizes:
 
     def test_space_type_details_under_budget(self, session_data):
         """get_space_type_details response < 10K chars."""
+        # Validates: get_space_type_details response stays under 10K char budget
         resp = session_data.get("space_type_details")
         if resp is None:
             pytest.skip("No space types")
@@ -606,6 +645,7 @@ class TestResponseSizes:
 
     def test_space_type_details_brief_loads(self, session_data):
         """get_space_type_details nested loads have brief format {name, schedule}."""
+        # Validates: space type detail nested load arrays contain items with "name" key
         resp = session_data.get("space_type_details")
         if resp is None:
             pytest.skip("No space types")

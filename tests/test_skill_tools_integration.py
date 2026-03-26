@@ -14,6 +14,7 @@ from mcp.client.stdio import stdio_client
 @pytest.mark.integration
 def test_skill_tools_workflow():
     """list_skills → get_skill → get_skill(missing)."""
+    # Validates: skill discovery tools return known skills and error on missing skills
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -24,31 +25,31 @@ def test_skill_tools_workflow():
 
                 # 1. List skills — should return skills if mounted
                 ls = unwrap(await s.call_tool("list_skills", {}))
-                assert ls.get("ok") is True, ls
+                assert ls["ok"] is True, ls
 
-                # If skills are mounted, verify we get results
-                if ls["count"] > 0:
-                    names = {sk["name"] for sk in ls["skills"]}
-                    # At least one known skill should be present
-                    known = {"simulate", "retrofit", "qaqc", "new-building"}
-                    assert names & known, (
-                        f"Expected at least one known skill, got {names}"
-                    )
+                # Skills are always mounted in Docker test environment
+                assert ls["count"] > 0, "Skills should be mounted in Docker test environment"
+                names = {sk["name"] for sk in ls["skills"]}
+                # At least one known skill should be present
+                known = {"simulate", "retrofit", "qaqc", "new-building"}
+                assert names & known, (
+                    f"Expected at least one known skill, got {names}"
+                )
 
-                    # 2. Get a specific skill
-                    skill = unwrap(await s.call_tool("get_skill", {
-                        "name": "simulate",
-                    }))
-                    assert skill.get("ok") is True, skill
-                    assert "content" in skill
-                    # Content should mention simulation-related tools
-                    assert "run_simulation" in skill["content"]
+                # 2. Get a specific skill
+                skill = unwrap(await s.call_tool("get_skill", {
+                    "name": "simulate",
+                }))
+                assert skill["ok"] is True, skill
+                assert "run_simulation" in skill["content"], (
+                    "Skill content should mention run_simulation"
+                )
 
                 # 3. Get nonexistent skill
                 missing = unwrap(await s.call_tool("get_skill", {
                     "name": "nonexistent_skill_xyz",
                 }))
-                assert missing.get("ok") is False
-                assert "not found" in missing.get("error", "")
+                assert missing["ok"] is False
+                assert "not found" in missing["error"]
 
     asyncio.run(_run())

@@ -23,7 +23,7 @@ def run_session():
             "name": name, "ashrae_sys_num": "07",
         })
         cd = unwrap(cr)
-        assert cd.get("ok") is True, cd
+        assert cd["ok"] is True, cd
         return cd
 
     return _setup
@@ -32,6 +32,7 @@ def run_session():
 @pytest.mark.integration
 def test_set_sizing_system_properties():
     """set_sizing_system_properties sets DOAS config on an air loop."""
+    # Validates: sizing system properties round-trip (set VentilationRequirement, read it back)
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -44,11 +45,11 @@ def test_set_sizing_system_properties():
                 cr = unwrap(await session.call_tool("create_baseline_osm", {
                     "name": name, "ashrae_sys_num": "07",
                 }))
-                assert cr.get("ok") is True, cr
+                assert cr["ok"] is True, cr
 
                 # Get air loop name
                 loops = unwrap(await session.call_tool("list_air_loops", {}))
-                assert loops.get("ok") is True
+                assert loops["ok"] is True
                 loop_name = loops["air_loops"][0]["name"]
 
                 # Set DOAS-style sizing
@@ -62,14 +63,15 @@ def test_set_sizing_system_properties():
                     "properties": json.dumps(props),
                 }))
                 print("set_sizing_system:", resp)
-                assert resp.get("ok") is True, resp
-                assert "type_of_load_to_size_on" in resp["changes"]
+                assert resp["ok"] is True, resp
+                changed = str(resp["changes"]["type_of_load_to_size_on"])
+                assert "VentilationRequirement" in changed, "Should reflect VentilationRequirement"
 
                 # Verify via getter
                 get_resp = unwrap(await session.call_tool("get_sizing_system_properties", {
                     "air_loop_name": loop_name,
                 }))
-                assert get_resp.get("ok") is True
+                assert get_resp["ok"] is True
                 assert get_resp["properties"]["type_of_load_to_size_on"] == "VentilationRequirement"
                 assert get_resp["properties"]["central_cooling_design_supply_air_temperature"] == 16.0
 
@@ -79,6 +81,7 @@ def test_set_sizing_system_properties():
 @pytest.mark.integration
 def test_set_sizing_zone_properties_bulk():
     """set_sizing_zone_properties updates DOAS settings on multiple zones."""
+    # Validates: bulk sizing zone update applies to 2 zones, DOAS settings round-trip
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -91,11 +94,11 @@ def test_set_sizing_zone_properties_bulk():
                 cr = unwrap(await session.call_tool("create_baseline_osm", {
                     "name": name, "ashrae_sys_num": "07",
                 }))
-                assert cr.get("ok") is True, cr
+                assert cr["ok"] is True, cr
 
                 # Get first 2 zone names
                 zones = unwrap(await session.call_tool("list_thermal_zones", {"max_results": 0}))
-                assert zones.get("ok") is True
+                assert zones["ok"] is True
                 zone_names = [z["name"] for z in zones["thermal_zones"][:2]]
 
                 # Bulk update
@@ -109,14 +112,14 @@ def test_set_sizing_zone_properties_bulk():
                     "properties": json.dumps(props),
                 }))
                 print("set_sizing_zone bulk:", resp)
-                assert resp.get("ok") is True, resp
+                assert resp["ok"] is True, resp
                 assert resp["zones_processed"] == 2
 
                 # Verify one zone
                 get_resp = unwrap(await session.call_tool("get_sizing_zone_properties", {
                     "zone_name": zone_names[0],
                 }))
-                assert get_resp.get("ok") is True
+                assert get_resp["ok"] is True
                 assert abs(get_resp["properties"]["zone_cooling_sizing_factor"] - 1.15) < 0.001
                 assert get_resp["properties"]["account_for_dedicated_outdoor_air_system"] is True
 

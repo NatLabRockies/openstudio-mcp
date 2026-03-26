@@ -40,7 +40,7 @@ async def _get_supply_types(session, loop_name):
         "plant_loop_name": loop_name,
     })
     data = unwrap(resp)
-    assert data.get("ok") is True, f"get_plant_loop_details failed: {data.get('error')}"
+    assert data["ok"] is True, f"get_plant_loop_details failed: {data.get('error')}"
     return {comp["type"] for comp in data["plant_loop"]["supply_components"]}
 
 
@@ -51,6 +51,7 @@ async def _get_supply_types(session, loop_name):
 @pytest.mark.integration
 def test_doas_default_supply_equipment():
     """DOAS FanCoil with default fuels gets boiler + chiller + condenser."""
+    # Validates: DOAS default fuels wire boiler+chiller+cooling tower on plant loops
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -63,13 +64,13 @@ def test_doas_default_supply_equipment():
                     "zone_equipment_type": "FanCoil",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
 
                 # Return dict includes new fields
                 assert sys["heating_fuel"] == "NaturalGas"
                 assert sys["cooling_fuel"] == "Electricity"
-                assert sys["condenser_water_loop"] is not None
+                assert sys["condenser_water_loop"], "Condenser water loop should be created"
 
                 # HW loop has boiler
                 hw_types = await _get_supply_types(session, sys["hot_water_loop"])
@@ -93,6 +94,7 @@ def test_doas_default_supply_equipment():
 @pytest.mark.integration
 def test_doas_district_heating():
     """DOAS with DistrictHeating puts DistrictHeating on HW loop."""
+    # Validates: DOAS DistrictHeating puts DistrictHeating on HW loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -106,7 +108,7 @@ def test_doas_district_heating():
                     "heating_fuel": "DistrictHeating",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
                 assert sys["heating_fuel"] == "DistrictHeating"
 
@@ -124,6 +126,7 @@ def test_doas_district_heating():
 @pytest.mark.integration
 def test_doas_district_cooling():
     """DOAS with DistrictCooling puts DistrictCooling on CHW loop, no condenser."""
+    # Validates: DOAS DistrictCooling puts DistrictCooling on CHW, no condenser
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -137,7 +140,7 @@ def test_doas_district_cooling():
                     "cooling_fuel": "DistrictCooling",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
                 assert sys["cooling_fuel"] == "DistrictCooling"
                 assert sys["condenser_water_loop"] is None  # no condenser for district
@@ -156,6 +159,7 @@ def test_doas_district_cooling():
 @pytest.mark.integration
 def test_doas_both_district():
     """DOAS with both district fuels — no condenser, no boiler, no chiller."""
+    # Validates: DOAS both district = no condenser, no boiler, no chiller
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -170,7 +174,7 @@ def test_doas_both_district():
                     "cooling_fuel": "DistrictCooling",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
                 assert sys["condenser_water_loop"] is None
 
@@ -192,6 +196,7 @@ def test_doas_both_district():
 @pytest.mark.integration
 def test_radiant_default_supply_equipment():
     """Radiant with default fuels gets boiler + chiller + condenser."""
+    # Validates: Radiant default fuels wire boiler+chiller+tower on plant loops
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -205,12 +210,12 @@ def test_radiant_default_supply_equipment():
                     "ventilation_system": "None",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
 
                 assert sys["heating_fuel"] == "NaturalGas"
                 assert sys["cooling_fuel"] == "Electricity"
-                assert sys["condenser_water_loop"] is not None
+                assert sys["condenser_water_loop"], "Condenser water loop should be created"
 
                 hw_types = await _get_supply_types(session, sys["hot_water_loop"])
                 assert any("Boiler" in t for t in hw_types)
@@ -231,6 +236,7 @@ def test_radiant_default_supply_equipment():
 @pytest.mark.integration
 def test_radiant_district_heating():
     """Radiant with DistrictHeating puts DistrictHeating on HW loop."""
+    # Validates: Radiant DistrictHeating puts DistrictHeating on HW loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -245,7 +251,7 @@ def test_radiant_district_heating():
                     "heating_fuel": "DistrictHeating",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
                 assert sys["heating_fuel"] == "DistrictHeating"
 
@@ -262,6 +268,7 @@ def test_radiant_district_heating():
 @pytest.mark.integration
 def test_radiant_district_cooling():
     """Radiant with DistrictCooling — no condenser loop."""
+    # Validates: Radiant DistrictCooling = no condenser loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -276,7 +283,7 @@ def test_radiant_district_cooling():
                     "cooling_fuel": "DistrictCooling",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
                 assert sys["cooling_fuel"] == "DistrictCooling"
                 assert sys["condenser_water_loop"] is None
@@ -294,6 +301,7 @@ def test_radiant_district_cooling():
 @pytest.mark.integration
 def test_radiant_both_district():
     """Radiant with both district fuels — district objects, no boiler/chiller."""
+    # Validates: Radiant both district = no boiler/chiller, district objects only
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -309,7 +317,7 @@ def test_radiant_both_district():
                     "cooling_fuel": "DistrictCooling",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
                 assert sys["condenser_water_loop"] is None
 
@@ -331,6 +339,7 @@ def test_radiant_both_district():
 @pytest.mark.integration
 def test_radiant_with_doas_has_supply():
     """Radiant+DOAS: radiant loops get supply equipment, DOAS loop exists."""
+    # Validates: Radiant+DOAS wires supply on radiant loops + creates DOAS air loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -344,7 +353,7 @@ def test_radiant_with_doas_has_supply():
                     "ventilation_system": "DOAS",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
 
                 # Radiant HW loop has boiler
@@ -370,6 +379,7 @@ def test_radiant_with_doas_has_supply():
 @pytest.mark.integration
 def test_doas_chilled_beams_supply():
     """DOAS ChilledBeams: CHW loop has chiller, no HW loop."""
+    # Validates: DOAS ChilledBeams has CHW with chiller, no HW loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -382,11 +392,11 @@ def test_doas_chilled_beams_supply():
                     "zone_equipment_type": "ChilledBeams",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
 
                 # Chilled beams only need CHW, no HW
-                assert sys["chilled_water_loop"] is not None
+                assert sys["chilled_water_loop"], "CHW loop should be created"
                 assert sys["hot_water_loop"] is None
 
                 chw_types = await _get_supply_types(session, sys["chilled_water_loop"])
@@ -402,6 +412,7 @@ def test_doas_chilled_beams_supply():
 @pytest.mark.integration
 def test_doas_electric_boiler():
     """DOAS with Electricity heating gets electric boiler."""
+    # Validates: DOAS Electricity heating creates electric boiler on HW loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -415,7 +426,7 @@ def test_doas_electric_boiler():
                     "heating_fuel": "Electricity",
                 })
                 data = unwrap(resp)
-                assert data.get("ok") is True
+                assert data["ok"] is True
                 sys = data["system"]
                 assert sys["heating_fuel"] == "Electricity"
 

@@ -46,6 +46,7 @@ AB_CASES = [
 )
 def test_tool_selection_baseline(case_id, prompt, expected):
     """Baseline: all tools available. Record pass/fail + tokens."""
+    # Validates: Claude selects correct tool from 139+ available tools without routing hints
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -64,6 +65,7 @@ def test_tool_selection_baseline(case_id, prompt, expected):
 
 def test_tool_selection_baseline_extract_eui():
     """Baseline: extract EUI with all tools available."""
+    # Validates: Claude selects extract_summary_metrics for EUI queries, not other extract_* tools
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -94,6 +96,7 @@ VIZ_TOOLS = {"view_model", "view_simulation_data"}
 
 def test_visualization_uses_mcp_not_script():
     """Must use view_model/view_simulation_data, not matplotlib/plotly."""
+    # Regression: Claude was writing matplotlib/plotly scripts instead of using MCP viz tools
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -110,6 +113,7 @@ def test_visualization_uses_mcp_not_script():
 
 def test_report_uses_mcp_not_script():
     """Must use generate_results_report, not Python/HTML scripting."""
+    # Regression: Claude was writing Python/HTML scripts instead of using generate_results_report
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -130,6 +134,7 @@ def test_report_uses_mcp_not_script():
 
 def test_measure_uses_create_measure_not_create_file():
     """Must use create_measure, not write measure.rb directly."""
+    # Regression: Claude was writing measure.rb files directly instead of using create_measure tool
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -148,6 +153,7 @@ def test_measure_uses_create_measure_not_create_file():
 
 def test_read_file_uses_mcp_not_bash():
     """LLM must use MCP read_file for /inputs paths, not bash."""
+    # Validates: Claude uses MCP read_file for /inputs paths instead of bash cat/head
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -169,13 +175,8 @@ API_REFERENCE_TOOLS = {"search_api", "search_wiring_patterns", "get_skill"}
 
 
 def test_hvac_measure_uses_api_reference():
-    """Agent should call search_api or search_wiring_patterns when authoring
-    an HVAC measure that requires wiring components to loops.
-
-    This is aspirational — the agent may or may not discover these tools.
-    We check that it at least calls create_measure (primary) and ideally
-    also calls a reference tool (secondary).
-    """
+    """Agent should call search_api or search_wiring_patterns for HVAC measure authoring."""
+    # Validates: Claude calls create_measure for HVAC measures; aspirational check for search_api/search_wiring_patterns
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -205,6 +206,7 @@ def test_hvac_measure_uses_api_reference():
 
 def test_search_api_for_method_verification():
     """Agent should call search_api when asked to verify methods exist."""
+    # Validates: Claude uses search_api to verify OpenStudio SDK methods before authoring measures
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -222,6 +224,7 @@ def test_search_api_for_method_verification():
 
 def test_search_wiring_patterns_for_hvac_wiring():
     """Agent should call search_wiring_patterns when asked about wiring."""
+    # Validates: Claude uses search_wiring_patterns to find HVAC component wiring recipes
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
