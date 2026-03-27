@@ -53,8 +53,10 @@ def test_radiant_floor():
                 assert system_data["system"]["radiant_type"] == "Floor"
                 assert system_data["system"]["hw_supply_temp_f"] == 120
                 assert system_data["system"]["chw_supply_temp_f"] == 58
-                assert system_data["system"]["hot_water_loop"] is not None, "Radiant floor needs HW loop"
-                assert system_data["system"]["chilled_water_loop"] is not None, "Radiant floor needs CHW loop"
+                hw = system_data["system"]["hot_water_loop"]
+                assert isinstance(hw, str) and hw, "Radiant floor needs HW loop"
+                chw = system_data["system"]["chilled_water_loop"]
+                assert isinstance(chw, str) and chw, "Radiant floor needs CHW loop"
                 assert len(system_data["system"]["radiant_equipment"]) == len(zone_names)
 
                 # Verify floor radiant equipment
@@ -146,7 +148,8 @@ def test_radiant_with_doas():
 
                 assert system_data["ok"] is True
                 assert system_data["system"]["ventilation_system"] == "DOAS"
-                assert system_data["system"]["doas_loop"] is not None, "DOAS ventilation should create air loop"
+                assert isinstance(system_data["system"]["doas_loop"], str) and system_data["system"]["doas_loop"], \
+                    "DOAS ventilation should create air loop"
                 assert "DOAS" in system_data["system"]["doas_loop"]
 
                 # Verify DOAS air loop exists
@@ -284,7 +287,8 @@ def test_radiant_multi_zone_baseline():
                 assert system_data["system"]["type"] == "Radiant"
                 assert len(system_data["system"]["radiant_equipment"]) == 10
                 assert system_data["system"]["ventilation_system"] == "DOAS"
-                assert system_data["system"]["doas_loop"] is not None, "10-zone radiant+DOAS needs air loop"
+                assert isinstance(system_data["system"]["doas_loop"], str) and system_data["system"]["doas_loop"], \
+                    "10-zone radiant+DOAS needs air loop"
 
                 # Verify plant loops
                 loops_resp = await session.call_tool("list_plant_loops", {})

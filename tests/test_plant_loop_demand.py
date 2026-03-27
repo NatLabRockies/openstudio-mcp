@@ -37,7 +37,14 @@ def test_create_plant_loop_cooling():
                 print("create_plant_loop cooling:", result)
                 assert result["ok"] is True, result
                 assert result["loop_type"] == "Cooling"
-                assert result["design_exit_temp_c"] == 7.22
+                assert result["design_exit_temp_c"] == pytest.approx(7.22)
+
+                # Independent readback — verify design temp persisted in model
+                details = unwrap(await session.call_tool("get_plant_loop_details", {
+                    "plant_loop_name": "New CHW Loop",
+                }))
+                assert details["ok"] is True
+                assert details["plant_loop"]["design_loop_exit_temp_c"] == pytest.approx(7.22)
 
                 # Verify loop shows up
                 loops = unwrap(await session.call_tool("list_plant_loops", {}))
@@ -72,7 +79,14 @@ def test_create_plant_loop_heating():
                 print("create_plant_loop heating:", result)
                 assert result["ok"] is True, result
                 assert result["loop_type"] == "Heating"
-                assert result["design_exit_temp_c"] == 82.0
+                assert result["design_exit_temp_c"] == pytest.approx(82.0)
+
+                # Independent readback — verify design temp persisted in model
+                details = unwrap(await session.call_tool("get_plant_loop_details", {
+                    "plant_loop_name": "New HW Loop",
+                }))
+                assert details["ok"] is True
+                assert details["plant_loop"]["design_loop_exit_temp_c"] == pytest.approx(82.0)
 
     asyncio.run(_run())
 

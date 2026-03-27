@@ -50,7 +50,7 @@ def test_inspect_osm_summary_exact_values():
                 assert summary["thermal_zones"] == 1
                 assert summary["space_types_count"] == 1
                 assert summary["space_types"] == ["Space Type 1"]
-                assert summary["floor_area_m2"] == 400.0
+                assert summary["floor_area_m2"] == pytest.approx(400.0)
                 assert summary["openstudio_version"] == "3.11.0"
 
     asyncio.run(_run())

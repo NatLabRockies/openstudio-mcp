@@ -473,7 +473,7 @@ def test_set_window_to_wall_ratio():
                 }))
                 assert res["ok"] is True
                 assert res["num_subsurfaces"] >= 1
-                assert res["ratio"] == 0.4
+                assert res["ratio"] == pytest.approx(0.4)
                 # Window area should be ~40% of wall (30 m² → ~12 m²)
                 win_area = sum(sub["gross_area_m2"] for sub in res["subsurfaces"])
                 assert 10 < win_area < 14

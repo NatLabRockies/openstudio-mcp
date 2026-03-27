@@ -56,7 +56,18 @@ def test_doas_with_erv():
                 assert "ERV" in system_data["system"]["erv_name"], (
                     f"ERV name should contain 'ERV': {system_data['system']['erv_name']}"
                 )
-                assert system_data["system"]["sensible_effectiveness"] == 0.75
+                assert system_data["system"]["sensible_effectiveness"] == pytest.approx(0.75)
+
+                # Independent readback — verify ERV effectiveness in the model
+                erv_name = system_data["system"]["erv_name"]
+                erv_fields = unwrap(await session.call_tool("get_object_fields", {
+                    "object_type": "HeatExchangerAirToAirSensibleAndLatent",
+                    "object_name": erv_name,
+                }))
+                assert erv_fields["ok"] is True
+                erv_eff = erv_fields["properties"]["sensibleEffectivenessat100HeatingAirFlow"]["value"]
+                assert erv_eff == pytest.approx(0.75), \
+                    f"ERV sensible effectiveness should be 0.75, got {erv_eff}"
 
                 # Independent query verification
                 alr = await session.call_tool("list_air_loops", {})

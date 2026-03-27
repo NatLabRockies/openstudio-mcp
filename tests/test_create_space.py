@@ -45,7 +45,7 @@ def test_create_space_minimal():
 
                 assert space_result["ok"] is True
                 assert space_result["space"]["name"] == "New Office"
-                assert space_result["space"]["floor_area_m2"] == 0.0  # No surfaces yet
+                assert space_result["space"]["floor_area_m2"] == pytest.approx(0.0)  # No surfaces yet
 
                 # Verify it appears in list
                 list_resp = await session.call_tool("list_spaces", {"max_results": 0})

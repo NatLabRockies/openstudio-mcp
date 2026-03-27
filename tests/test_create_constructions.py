@@ -52,8 +52,8 @@ def test_create_standard_opaque_material():
 
                 assert material_result["ok"] is True
                 assert material_result["material"]["name"] == "Test Concrete"
-                assert material_result["material"]["thickness_m"] == 0.2
-                assert material_result["material"]["conductivity_w_m_k"] == 1.7
+                assert material_result["material"]["thickness_m"] == pytest.approx(0.2)
+                assert material_result["material"]["conductivity_w_m_k"] == pytest.approx(1.7)
 
                 # Verify it appears in list
                 list_resp = await session.call_tool("list_materials", {"max_results": 0})

@@ -246,3 +246,16 @@ def test_rename_schedule():
                 assert "NewSched" in names
                 assert "OldSched" not in names
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# H-29: fetch_object UUID validation (direct SDK, not MCP)
+# ---------------------------------------------------------------------------
+
+def test_bad_uuid_returns_none():
+    # Regression: malformed UUID in fetch_object caused unhandled exception
+    openstudio = pytest.importorskip("openstudio")
+    from mcp_server.osm_helpers import fetch_object
+    model = openstudio.model.Model()
+    result = fetch_object(model, "Space", handle="not-a-valid-uuid-!!!")
+    assert result is None, "Malformed UUID should return None, not an object"

@@ -253,6 +253,14 @@ def test_set_object_property_boiler_efficiency():
                 assert res["setter_method"] == "setNominalThermalEfficiency"
                 assert res["new_value"] == 0.92
 
+                # Independent readback — verify model was actually updated
+                readback = unwrap(await s.call_tool("get_object_fields", {
+                    "object_type": "BoilerHotWater",
+                    "object_name": boiler_name,
+                }))
+                assert readback["ok"] is True
+                assert readback["properties"]["nominalThermalEfficiency"]["value"] == pytest.approx(0.92)
+
     asyncio.run(_run())
 
 
@@ -282,6 +290,14 @@ def test_set_object_property_with_set_prefix():
                 }))
                 assert res["ok"] is True, res
                 assert res["new_value"] == 0.85
+
+                # Independent readback — verify model was actually updated
+                readback = unwrap(await s.call_tool("get_object_fields", {
+                    "object_type": "BoilerHotWater",
+                    "object_name": boiler_name,
+                }))
+                assert readback["ok"] is True
+                assert readback["properties"]["nominalThermalEfficiency"]["value"] == pytest.approx(0.85)
 
     asyncio.run(_run())
 

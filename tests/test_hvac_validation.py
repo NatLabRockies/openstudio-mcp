@@ -202,7 +202,8 @@ class TestSystem3:
     def test_outdoor_air_present(self, data):
         # Validates: PSZ-AC has outdoor air system for ventilation
         oa = data["gas"]["air_loop"]["air_loop"]["outdoor_air_system"]
-        assert oa["economizer_type"] is not None, "PSZ-AC must have outdoor air system"
+        assert isinstance(oa["economizer_type"], str) and oa["economizer_type"], \
+            "PSZ-AC must have outdoor air system with valid economizer type"
 
     def test_setpoint_managers(self, data):
         # Validates: PSZ-AC has at least one setpoint manager on supply outlet
@@ -289,7 +290,8 @@ class TestSystem4:
 
     def test_outdoor_air_present(self, data):
         # Validates: PSZ-HP has outdoor air system for ventilation
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"] is not None
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "PSZ-HP must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
         # Validates: PSZ-HP has at least one setpoint manager
@@ -361,7 +363,8 @@ class TestSystem5:
 
     def test_outdoor_air_present(self, data):
         # Validates: System 5 has outdoor air system for ventilation
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"] is not None
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 5 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
         # Validates: System 5 has at least one setpoint manager
@@ -428,7 +431,8 @@ class TestSystem6:
 
     def test_outdoor_air_present(self, data):
         # Validates: System 6 has outdoor air system for ventilation
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"] is not None
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 6 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
         # Validates: System 6 has at least one setpoint manager
@@ -480,7 +484,8 @@ class TestSystem7:
 
     def test_condenser_loop(self, data):
         # Validates: System 7 creates condenser water loop for heat rejection
-        assert data["system"]["system"]["condenser_loop"] is not None
+        cw = data["system"]["system"]["condenser_loop"]
+        assert isinstance(cw, str) and cw, "System 7 must create condenser water loop"
 
     def test_chiller_present(self, data):
         # Validates: System 7 has chiller on CHW supply side
@@ -519,7 +524,8 @@ class TestSystem7:
 
     def test_outdoor_air_present(self, data):
         # Validates: System 7 has outdoor air system for ventilation
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"] is not None
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 7 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
         # Validates: System 7 has at least one setpoint manager
@@ -552,7 +558,8 @@ class TestSystem8:
 
     def test_chilled_water_loop(self, data):
         # Validates: System 8 creates chilled water plant loop
-        assert data["system"]["system"]["chilled_water_loop"] is not None
+        chw = data["system"]["system"]["chilled_water_loop"]
+        assert isinstance(chw, str) and chw, "System 8 must create CHW loop"
 
     def test_hot_water_loop(self, data):
         # Validates: System 8 PFP has hot water loop for heating coils
@@ -563,7 +570,8 @@ class TestSystem8:
 
     def test_condenser_loop(self, data):
         # Validates: System 8 creates condenser water loop for heat rejection
-        assert data["system"]["system"]["condenser_loop"] is not None
+        cw = data["system"]["system"]["condenser_loop"]
+        assert isinstance(cw, str) and cw, "System 8 must create condenser water loop"
 
     def test_pfp_terminals(self, data):
         # Validates: System 8 creates one PFP terminal per zone
@@ -601,7 +609,8 @@ class TestSystem8:
 
     def test_outdoor_air_present(self, data):
         # Validates: System 8 has outdoor air system for ventilation
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"] is not None
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 8 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
         # Validates: System 8 has at least one setpoint manager

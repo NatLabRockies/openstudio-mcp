@@ -48,7 +48,7 @@ def test_get_building_info():
 
                 building = building_result["building"]
                 assert building["name"] == "Building 1"
-                assert building["floor_area_m2"] == 400.0
+                assert building["floor_area_m2"] == pytest.approx(400.0)
                 assert building["conditioned_floor_area_m2"] >= 0, "Should have conditioned area"
                 assert building["exterior_surface_area_m2"] > 0, "Should have exterior surfaces"
                 assert building["number_of_people"] >= 0, "Should have people count"
@@ -88,7 +88,7 @@ def test_get_model_summary():
                 summary = summary_result["summary"]
                 # Known values from OpenStudio example model
                 assert summary["building_name"] == "Building 1"
-                assert summary["floor_area_m2"] == 400.0
+                assert summary["floor_area_m2"] == pytest.approx(400.0)
                 assert summary["spaces"] == 4
                 assert summary["thermal_zones"] == 1
                 assert summary["space_types"] == 1

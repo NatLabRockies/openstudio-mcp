@@ -195,6 +195,7 @@ def test_space_types_baseline():
                         bl_st = st
                         break
                 assert bl_st is not None, "Expected 'Baseline Model Space Type' in baseline model"
+                assert "Baseline" in bl_st["name"], f"Space type name should contain 'Baseline', got '{bl_st['name']}'"
 
                 # Get details
                 dd = unwrap(await session.call_tool("get_space_type_details", {"space_type_name": bl_st["name"]}))

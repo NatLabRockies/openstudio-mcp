@@ -10,10 +10,13 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("RUN_OPENSTUDIO_INTEGRATION"),
-    reason="requires OpenStudio (set RUN_OPENSTUDIO_INTEGRATION=1)",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.environ.get("RUN_OPENSTUDIO_INTEGRATION"),
+        reason="requires OpenStudio (set RUN_OPENSTUDIO_INTEGRATION=1)",
+    ),
+]
 
 
 @pytest.fixture(autouse=True)

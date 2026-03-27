@@ -134,9 +134,12 @@ def test_doas_fancoil_simulates():
                 }))
                 assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["hot_water_loop"] is not None, "DOAS FanCoil should create HW loop"
-                assert sys["chilled_water_loop"] is not None, "DOAS FanCoil should create CHW loop"
-                assert sys["condenser_water_loop"] is not None, "DOAS FanCoil should create condenser loop"
+                assert isinstance(sys["hot_water_loop"], str) and sys["hot_water_loop"], \
+                    "DOAS FanCoil should create HW loop"
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "DOAS FanCoil should create CHW loop"
+                assert isinstance(sys["condenser_water_loop"], str) and sys["condenser_water_loop"], \
+                    "DOAS FanCoil should create condenser loop"
 
                 await _save_run_and_check(s, name)
 
@@ -167,10 +170,14 @@ def test_radiant_doas_simulates():
                 }))
                 assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["hot_water_loop"] is not None, "Radiant needs HW loop"
-                assert sys["chilled_water_loop"] is not None, "Radiant needs CHW loop"
-                assert sys["condenser_water_loop"] is not None, "Radiant needs condenser loop"
-                assert sys["doas_loop"] is not None, "Radiant+DOAS needs DOAS air loop"
+                assert isinstance(sys["hot_water_loop"], str) and sys["hot_water_loop"], \
+                    "Radiant needs HW loop"
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "Radiant needs CHW loop"
+                assert isinstance(sys["condenser_water_loop"], str) and sys["condenser_water_loop"], \
+                    "Radiant needs condenser loop"
+                assert isinstance(sys["doas_loop"], str) and sys["doas_loop"], \
+                    "Radiant+DOAS needs DOAS air loop"
 
                 await _save_run_and_check(s, name)
 
@@ -234,7 +241,8 @@ def test_doas_chilled_beams_simulates():
                 }))
                 assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["chilled_water_loop"] is not None, "Chilled beams need CHW loop"
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "Chilled beams need CHW loop"
                 assert sys["hot_water_loop"] is None, "Chilled beams should have no HW loop"
 
                 await _save_run_and_check(s, name)
@@ -266,9 +274,12 @@ def test_doas_radiant_equip_simulates():
                 }))
                 assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["chilled_water_loop"] is not None, "DOAS Radiant needs CHW loop"
-                assert sys["hot_water_loop"] is not None, "DOAS Radiant needs HW loop"
-                assert sys["condenser_water_loop"] is not None, "DOAS Radiant needs condenser loop"
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "DOAS Radiant needs CHW loop"
+                assert isinstance(sys["hot_water_loop"], str) and sys["hot_water_loop"], \
+                    "DOAS Radiant needs HW loop"
+                assert isinstance(sys["condenser_water_loop"], str) and sys["condenser_water_loop"], \
+                    "DOAS Radiant needs condenser loop"
 
                 await _save_run_and_check(s, name)
 

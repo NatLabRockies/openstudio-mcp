@@ -73,7 +73,7 @@ def test_set_sizing_system_properties():
                 }))
                 assert get_resp["ok"] is True
                 assert get_resp["properties"]["type_of_load_to_size_on"] == "VentilationRequirement"
-                assert get_resp["properties"]["central_cooling_design_supply_air_temperature"] == 16.0
+                assert get_resp["properties"]["central_cooling_design_supply_air_temperature"] == pytest.approx(16.0)
 
     asyncio.run(_run())
 

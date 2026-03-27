@@ -216,24 +216,6 @@ class TestConfigSafeInt:
         assert _safe_int(None, 5) == 5
 
 
-# ---------------------------------------------------------------------------
-# H-29: fetch_object UUID validation
-# ---------------------------------------------------------------------------
-
-class TestFetchObjectUUID:
-    """H-29: malformed UUID returns None instead of crashing."""
-
-    def test_bad_uuid_returns_none(self):
-        # Regression: malformed UUID in fetch_object caused unhandled exception
-        try:
-            import openstudio
-            model = openstudio.model.Model()
-            from mcp_server.osm_helpers import fetch_object
-            result = fetch_object(model, "Space", handle="not-a-valid-uuid-!!!")
-            assert result is None, "Malformed UUID should return None, not an object"
-        except ImportError:
-            pytest.skip("openstudio not available")
-
 
 # ---------------------------------------------------------------------------
 # H-32: run_qaqc_checks unknown check names
@@ -260,8 +242,7 @@ class TestQaqcUnknownChecks:
             pytest.skip("imports unavailable")
         result = result_fn(checks=["envelope"])
         # Should not be "Unknown check" error — may be "Measure not found" instead
-        if not result["ok"]:
-            assert "Unknown check" not in result.get("error", "")
+        assert "Unknown check" not in result.get("error", "")
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +258,9 @@ class TestViewSimDataEmptyVars:
         result = view_simulation_data_op(variable_names=[])
         # Empty list should use defaults, not crash with IndexError
         assert isinstance(result.get("ok"), bool), f"Expected ok field: {result}"
+        assert "IndexError" not in result.get("error", ""), \
+            "Empty variable_names should not cause IndexError"
         if not result["ok"]:
-            assert "IndexError" not in result.get("error", ""), \
-                "Empty variable_names should not cause IndexError"
             assert result["error"].strip(), "Error message should not be empty"
 
 
@@ -346,8 +327,7 @@ class TestScheduleTypeValidation:
         for st in ("Fractional", "Temperature", "OnOff"):
             # Will fail downstream (no model loaded) but should NOT fail validation
             result = create_schedule_ruleset("test", schedule_type=st)
-            if not result["ok"]:
-                assert "Invalid schedule_type" not in result["error"]
+            assert "Invalid schedule_type" not in result.get("error", "")
 
 
 # ---------------------------------------------------------------------------
@@ -383,8 +363,7 @@ class TestScheduleDefaultValueValidation:
         from mcp_server.skills.schedules.operations import create_schedule_ruleset
         # Temperature allows any value — should not fail on value range
         result = create_schedule_ruleset("test", schedule_type="Temperature", default_value=-40.0)
-        if not result["ok"]:
-            assert "default_value" not in result["error"]
+        assert "default_value" not in result.get("error", "")
 
 
 # ---------------------------------------------------------------------------
@@ -442,8 +421,7 @@ class TestSimControlValidation:
         from mcp_server.skills.weather.operations import set_simulation_control
         for ts in (1, 4, 6, 60):
             result = set_simulation_control(timesteps_per_hour=ts)
-            if not result["ok"]:
-                assert "timesteps_per_hour" not in result["error"]
+            assert "timesteps_per_hour" not in result.get("error", "")
 
 
 class TestRunPeriodValidation:
