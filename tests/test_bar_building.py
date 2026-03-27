@@ -26,6 +26,7 @@ COMSTOCK_EPW = (
 @pytest.mark.integration
 def test_create_bar_building_default():
     """create_bar_building with defaults creates geometry from empty model."""
+    # Validates: create_bar_building defaults generate spaces, zones, surfaces, stories
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -34,7 +35,7 @@ def test_create_bar_building_default():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("create_bar_building", {}))
-                assert res.get("ok") is True, f"create_bar_building failed: {res}"
+                assert res["ok"] is True, f"create_bar_building failed: {res}"
                 # Should have created spaces, zones, surfaces
                 assert res.get("spaces", 0) > 0, f"No spaces: {res}"
                 assert res.get("thermal_zones", 0) > 0, f"No zones: {res}"
@@ -48,6 +49,7 @@ def test_create_bar_building_default():
 @pytest.mark.integration
 def test_create_bar_building_large_office():
     """create_bar_building with LargeOffice, 3 stories."""
+    # Validates: create_bar_building LargeOffice 3-story generates >= 3 building stories
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -62,7 +64,7 @@ def test_create_bar_building_large_office():
                     "template": "90.1-2019",
                     "climate_zone": "4A",
                 }))
-                assert res.get("ok") is True, f"create_bar_building failed: {res}"
+                assert res["ok"] is True, f"create_bar_building failed: {res}"
                 assert res.get("spaces", 0) > 0
                 assert res.get("building_stories", 0) >= 3
 
@@ -73,6 +75,7 @@ def test_create_bar_building_large_office():
 @pytest.mark.integration
 def test_create_bar_building_retail():
     """create_bar_building with RetailStandalone."""
+    # Validates: create_bar_building RetailStandalone creates spaces from bar geometry
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -86,7 +89,7 @@ def test_create_bar_building_retail():
                     "num_stories_above_grade": 1,
                     "wwr": 0.15,
                 }))
-                assert res.get("ok") is True, f"create_bar_building failed: {res}"
+                assert res["ok"] is True, f"create_bar_building failed: {res}"
                 assert res.get("spaces", 0) > 0
 
     asyncio.run(_run())
@@ -96,6 +99,7 @@ def test_create_bar_building_retail():
 @pytest.mark.integration
 def test_bar_then_typical_chain():
     """create_bar_building then create_typical_building produces complete model."""
+    # Validates: bar -> weather -> create_typical chain produces model with HVAC
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -108,23 +112,23 @@ def test_bar_then_typical_chain():
                     "building_type": "SmallOffice",
                     "climate_zone": "2A",
                 }))
-                assert bar.get("ok") is True, f"create_bar failed: {bar}"
+                assert bar["ok"] is True, f"create_bar failed: {bar}"
 
                 # Step 2: Set weather + design days + climate zone AFTER bar
                 wr = unwrap(await s.call_tool("change_building_location", {
                     "weather_file": COMSTOCK_EPW,
                 }))
-                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
+                assert wr["ok"] is True, f"change_building_location failed: {wr}"
 
                 # Step 3: Apply typical
                 typical = unwrap(await s.call_tool("create_typical_building", {
                     "climate_zone": "ASHRAE 169-2013-2A",
                 }))
-                assert typical.get("ok") is True, f"create_typical failed: {typical}"
+                assert typical["ok"] is True, f"create_typical failed: {typical}"
 
                 # Verify complete model
                 summary = unwrap(await s.call_tool("get_model_summary", {}))
-                assert summary.get("ok") is True
+                assert summary["ok"] is True
                 counts = summary.get("counts", summary.get("summary", {}))
                 total_hvac = counts.get("air_loops", 0) + counts.get("zone_hvac_equipment", 0)
                 assert total_hvac > 0, f"No HVAC after bar+typical: {counts}"
@@ -136,6 +140,7 @@ def test_bar_then_typical_chain():
 @pytest.mark.integration
 def test_create_new_building_with_weather():
     """create_new_building creates complete model with weather in one call."""
+    # Validates: create_new_building one-call chain produces spaces+zones+HVAC loops
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -150,7 +155,7 @@ def test_create_new_building_with_weather():
                     "weather_file": COMSTOCK_EPW,
                     "template": "90.1-2019",
                 }))
-                assert res.get("ok") is True, f"create_new_building failed: {res}"
+                assert res["ok"] is True, f"create_new_building failed: {res}"
                 assert res.get("spaces", 0) > 0, f"No spaces: {res}"
                 assert res.get("thermal_zones", 0) > 0, f"No zones: {res}"
                 assert res.get("air_loops", 0) + res.get("plant_loops", 0) > 0, (
@@ -164,6 +169,7 @@ def test_create_new_building_with_weather():
 @pytest.mark.integration
 def test_create_new_building_medium_office():
     """create_new_building with MediumOffice, 3 stories."""
+    # Validates: create_new_building MediumOffice 3-story produces spaces and zones
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -178,7 +184,7 @@ def test_create_new_building_medium_office():
                     "weather_file": COMSTOCK_EPW,
                     "template": "90.1-2019",
                 }))
-                assert res.get("ok") is True, f"create_new_building failed: {res}"
+                assert res["ok"] is True, f"create_new_building failed: {res}"
                 assert res.get("spaces", 0) > 0
                 assert res.get("thermal_zones", 0) > 0
 
@@ -189,6 +195,7 @@ def test_create_new_building_medium_office():
 @pytest.mark.integration
 def test_create_new_building_no_climate_zone_error():
     """create_new_building with no weather_file and no climate_zone returns ok:false."""
+    # Validates: create_new_building without weather/climate_zone returns ok:false
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -203,7 +210,7 @@ def test_create_new_building_no_climate_zone_error():
                     "template": "90.1-2019",
                     # No weather_file, no climate_zone
                 }))
-                assert res.get("ok") is False, f"Expected ok:false, got: {res}"
+                assert res["ok"] is False, f"Expected ok:false, got: {res}"
                 assert "climate_zone" in res.get("error", "").lower(), (
                     f"Error should mention climate_zone: {res}"
                 )
@@ -220,6 +227,7 @@ def test_sddc_office_seed_loads():
     loads correctly with expected spaces, surfaces, and space types.
     Full workflow (zones + create_typical) deferred to Phase B.
     """
+    # Validates: SDDC Office seed.osm loads with ~44 spaces, ~328 surfaces, 0 zones
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -231,18 +239,18 @@ def test_sddc_office_seed_loads():
                 lr = unwrap(await s.call_tool("load_osm_model", {
                     "osm_path": "/repo/tests/assets/sddc_office/seed.osm",
                 }))
-                assert lr.get("ok") is True, f"load failed: {lr}"
+                assert lr["ok"] is True, f"load failed: {lr}"
                 assert lr.get("spaces", 0) >= 40, f"Expected ~44 spaces: {lr}"
                 assert lr.get("thermal_zones", 0) == 0, "Expected 0 zones in seed"
 
                 # Verify surfaces exist
                 surfaces = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
-                assert surfaces.get("ok") is True
+                assert surfaces["ok"] is True
                 assert surfaces["count"] >= 300, f"Expected ~328 surfaces: {surfaces['count']}"
 
                 # Verify space types exist
                 sts = unwrap(await s.call_tool("list_model_objects", {"object_type": "SpaceType"}))
-                assert sts.get("ok") is True
+                assert sts["ok"] is True
                 assert sts["count"] >= 10, f"Expected ~12 space types: {sts['count']}"
 
     asyncio.run(_run())
@@ -255,6 +263,7 @@ SDDC_FLOORPLAN = "/repo/tests/assets/sddc_office/floorplan.json"
 @pytest.mark.integration
 def test_import_floorspacejs():
     """Import SDDC Office FloorspaceJS JSON and verify geometry."""
+    # Validates: import_floorspacejs creates ~44 spaces, ~328 surfaces, zones from JSON
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -266,7 +275,7 @@ def test_import_floorspacejs():
                     "floorplan_path": SDDC_FLOORPLAN,
                     "building_type": "SmallOffice",
                 }))
-                assert res.get("ok") is True, f"import failed: {res}"
+                assert res["ok"] is True, f"import failed: {res}"
                 assert res["spaces"] >= 40, f"Expected ~44 spaces: {res['spaces']}"
                 assert res["surfaces"] >= 300, f"Expected ~328 surfaces: {res['surfaces']}"
                 assert res["thermal_zones"] >= 40, f"Expected zones: {res['thermal_zones']}"
@@ -282,6 +291,7 @@ def test_import_floorspacejs():
 @pytest.mark.integration
 def test_floorspacejs_to_typical():
     """Import FloorspaceJS → set weather → create_typical = complete model."""
+    # Validates: FloorspaceJS -> weather -> create_typical produces complete HVAC model
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -294,24 +304,24 @@ def test_floorspacejs_to_typical():
                     "floorplan_path": SDDC_FLOORPLAN,
                     "building_type": "SmallOffice",
                 }))
-                assert imp.get("ok") is True, f"import failed: {imp}"
+                assert imp["ok"] is True, f"import failed: {imp}"
 
                 # Set weather + design days + climate zone
                 wr = unwrap(await s.call_tool("change_building_location", {
                     "weather_file": COMSTOCK_EPW,
                 }))
-                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
+                assert wr["ok"] is True, f"change_building_location failed: {wr}"
 
                 # Apply typical building
                 typ = unwrap(await s.call_tool("create_typical_building", {
                     "building_type": "SmallOffice",
                     "climate_zone": "ASHRAE 169-2013-2A",
                 }))
-                assert typ.get("ok") is True, f"create_typical failed: {typ}"
+                assert typ["ok"] is True, f"create_typical failed: {typ}"
 
                 # Verify HVAC added
                 summary = unwrap(await s.call_tool("get_model_summary", {}))
-                assert summary.get("ok") is True
+                assert summary["ok"] is True
                 counts = summary.get("counts", summary.get("summary", {}))
                 total_hvac = counts.get("air_loops", 0) + counts.get("zone_hvac_equipment", 0)
                 assert total_hvac > 0, f"No HVAC: {counts}"

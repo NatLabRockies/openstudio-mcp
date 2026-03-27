@@ -38,29 +38,29 @@ pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration d
 async def _setup_baseline(s, name):
     """Create baseline 10-zone model, load, set weather + design days + sim control."""
     cr = unwrap(await s.call_tool("create_baseline_osm", {"name": name}))
-    assert cr.get("ok") is True, cr
+    assert cr["ok"] is True, cr
     lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True, lr
+    assert lr["ok"] is True, lr
 
     zr = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
     zone_names = [z["name"] for z in zr["thermal_zones"]]
     assert len(zone_names) == 10
 
     wr = unwrap(await s.call_tool("change_building_location", {"weather_file": EPW_PATH}))
-    assert wr.get("ok") is True, wr
+    assert wr["ok"] is True, wr
 
     sc = unwrap(await s.call_tool("set_simulation_control", {
         "do_zone_sizing": True, "do_system_sizing": True,
         "do_plant_sizing": True, "run_for_sizing_periods": True,
         "run_for_weather_file": True,
     }))
-    assert sc.get("ok") is True
+    assert sc["ok"] is True
 
     rp = unwrap(await s.call_tool("set_run_period", {
         "begin_month": 1, "begin_day": 1,
         "end_month": 1, "end_day": 31, "name": "January Only",
     }))
-    assert rp.get("ok") is True
+    assert rp["ok"] is True
 
     return zone_names
 
@@ -69,12 +69,12 @@ async def _save_run_and_check(s, name):
     """Save model, run simulation, assert success + no fatal/severe errors."""
     save_path = f"/runs/{name}.osm"
     sr = unwrap(await s.call_tool("save_osm_model", {"osm_path": save_path}))
-    assert sr.get("ok") is True
+    assert sr["ok"] is True
 
     sim = unwrap(await s.call_tool("run_simulation", {
         "osm_path": save_path, "epw_path": EPW_PATH,
     }))
-    assert sim.get("ok") is True, sim
+    assert sim["ok"] is True, sim
     run_id = sim["run_id"]
 
     status = await poll_until_done(s, run_id)
@@ -105,8 +105,8 @@ async def _save_run_and_check(s, name):
     metrics = unwrap(await s.call_tool("extract_summary_metrics", {
         "run_id": run_id,
     }))
-    assert metrics.get("ok") is True, metrics
-    assert "metrics" in metrics
+    assert metrics["ok"] is True, metrics
+    assert "metrics" in metrics, "extract_summary_metrics missing metrics key"
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +116,7 @@ async def _save_run_and_check(s, name):
 @pytest.mark.integration
 def test_doas_fancoil_simulates():
     """10-zone DOAS FanCoil → EnergyPlus completes, no fatal/severe errors."""
+    # Validates: DOAS+FanCoil with boiler/chiller/tower simulates without fatal/severe errors
     name = f"sim_doas_fc_{uuid.uuid4().hex[:8]}"
 
     async def _run():
@@ -131,11 +132,14 @@ def test_doas_fancoil_simulates():
                     "sensible_effectiveness": 0.75,
                     "zone_equipment_type": "FanCoil",
                 }))
-                assert sys_resp.get("ok") is True, sys_resp
+                assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["hot_water_loop"] is not None
-                assert sys["chilled_water_loop"] is not None
-                assert sys["condenser_water_loop"] is not None
+                assert isinstance(sys["hot_water_loop"], str) and sys["hot_water_loop"], \
+                    "DOAS FanCoil should create HW loop"
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "DOAS FanCoil should create CHW loop"
+                assert isinstance(sys["condenser_water_loop"], str) and sys["condenser_water_loop"], \
+                    "DOAS FanCoil should create condenser loop"
 
                 await _save_run_and_check(s, name)
 
@@ -149,6 +153,7 @@ def test_doas_fancoil_simulates():
 @pytest.mark.integration
 def test_radiant_doas_simulates():
     """10-zone radiant floor + DOAS → EnergyPlus completes, no fatal/severe."""
+    # Validates: Radiant+DOAS with all 4 loops simulates without fatal/severe errors
     name = f"sim_rad_doas_{uuid.uuid4().hex[:8]}"
 
     async def _run():
@@ -163,12 +168,16 @@ def test_radiant_doas_simulates():
                     "radiant_type": "Floor",
                     "ventilation_system": "DOAS",
                 }))
-                assert sys_resp.get("ok") is True, sys_resp
+                assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["hot_water_loop"] is not None
-                assert sys["chilled_water_loop"] is not None
-                assert sys["condenser_water_loop"] is not None
-                assert sys["doas_loop"] is not None
+                assert isinstance(sys["hot_water_loop"], str) and sys["hot_water_loop"], \
+                    "Radiant needs HW loop"
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "Radiant needs CHW loop"
+                assert isinstance(sys["condenser_water_loop"], str) and sys["condenser_water_loop"], \
+                    "Radiant needs condenser loop"
+                assert isinstance(sys["doas_loop"], str) and sys["doas_loop"], \
+                    "Radiant+DOAS needs DOAS air loop"
 
                 await _save_run_and_check(s, name)
 
@@ -182,6 +191,7 @@ def test_radiant_doas_simulates():
 @pytest.mark.integration
 def test_doas_district_simulates():
     """10-zone DOAS FanCoil w/ district H+C → EnergyPlus completes."""
+    # Validates: DOAS+FanCoil with district heating/cooling simulates (no condenser loop)
     name = f"sim_doas_dist_{uuid.uuid4().hex[:8]}"
 
     async def _run():
@@ -198,7 +208,7 @@ def test_doas_district_simulates():
                     "heating_fuel": "DistrictHeating",
                     "cooling_fuel": "DistrictCooling",
                 }))
-                assert sys_resp.get("ok") is True, sys_resp
+                assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
                 assert sys["condenser_water_loop"] is None  # district = no condenser
 
@@ -214,6 +224,7 @@ def test_doas_district_simulates():
 @pytest.mark.integration
 def test_doas_chilled_beams_simulates():
     """10-zone DOAS chilled beams → EnergyPlus completes, no fatal/severe."""
+    # Validates: DOAS+ChilledBeams simulates with CHW-only (no HW loop)
     name = f"sim_doas_beam_{uuid.uuid4().hex[:8]}"
 
     async def _run():
@@ -228,10 +239,11 @@ def test_doas_chilled_beams_simulates():
                     "energy_recovery": True,
                     "zone_equipment_type": "ChilledBeams",
                 }))
-                assert sys_resp.get("ok") is True, sys_resp
+                assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["chilled_water_loop"] is not None
-                assert sys["hot_water_loop"] is None  # beams = CHW only
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "Chilled beams need CHW loop"
+                assert sys["hot_water_loop"] is None, "Chilled beams should have no HW loop"
 
                 await _save_run_and_check(s, name)
 
@@ -245,6 +257,7 @@ def test_doas_chilled_beams_simulates():
 @pytest.mark.integration
 def test_doas_radiant_equip_simulates():
     """10-zone DOAS w/ radiant zone equip → EnergyPlus completes, no fatal/severe."""
+    # Validates: DOAS+Radiant zone equipment simulates with all 3 plant loops
     name = f"sim_doas_rad_{uuid.uuid4().hex[:8]}"
 
     async def _run():
@@ -259,11 +272,14 @@ def test_doas_radiant_equip_simulates():
                     "energy_recovery": True,
                     "zone_equipment_type": "Radiant",
                 }))
-                assert sys_resp.get("ok") is True, sys_resp
+                assert sys_resp["ok"] is True, sys_resp
                 sys = sys_resp["system"]
-                assert sys["chilled_water_loop"] is not None
-                assert sys["hot_water_loop"] is not None
-                assert sys["condenser_water_loop"] is not None
+                assert isinstance(sys["chilled_water_loop"], str) and sys["chilled_water_loop"], \
+                    "DOAS Radiant needs CHW loop"
+                assert isinstance(sys["hot_water_loop"], str) and sys["hot_water_loop"], \
+                    "DOAS Radiant needs HW loop"
+                assert isinstance(sys["condenser_water_loop"], str) and sys["condenser_water_loop"], \
+                    "DOAS Radiant needs condenser loop"
 
                 await _save_run_and_check(s, name)
 

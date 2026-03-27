@@ -29,6 +29,7 @@ LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then
 
 def test_qaqc_vs_validate_post_sim():
     """'Check model quality' after sim → run_qaqc_checks, not validate_model."""
+    # Validates: Claude selects run_qaqc_checks (not validate_model) for post-simulation quality checks
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -49,6 +50,7 @@ def test_qaqc_vs_validate_post_sim():
 
 def test_validate_vs_qaqc_pre_sim():
     """'Is the model ready to simulate?' pre-sim → validate_model, not run_qaqc_checks."""
+    # Validates: Claude selects validate_model/inspection tools (not run_qaqc_checks) for pre-sim readiness
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -70,6 +72,7 @@ def test_validate_vs_qaqc_pre_sim():
 
 def test_load_details_vs_space_details():
     """'What are the lighting loads?' → get_load_details, not get_space_details."""
+    # Validates: Claude selects get_load_details (not get_space_details) for lighting power density queries
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -90,6 +93,7 @@ def test_load_details_vs_space_details():
 
 def test_summary_metrics_vs_end_use():
     """'What is the EUI?' → extract_summary_metrics, not extract_end_use_breakdown."""
+    # Validates: Claude selects extract_summary_metrics (not extract_end_use_breakdown) for EUI queries
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -110,6 +114,7 @@ def test_summary_metrics_vs_end_use():
 
 def test_end_use_vs_summary_metrics():
     """'Break down energy by category' → extract_end_use_breakdown, not extract_summary_metrics."""
+    # Validates: Claude selects extract_end_use_breakdown (not extract_summary_metrics) for energy category breakdown
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -130,6 +135,7 @@ def test_end_use_vs_summary_metrics():
 
 def test_inspect_osm_vs_model_summary():
     """'Preview this OSM file' without loading → inspect_osm_summary."""
+    # Validates: Claude selects inspect_osm_summary (not get_model_summary) for previewing without loading
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -146,6 +152,7 @@ def test_inspect_osm_vs_model_summary():
 
 def test_create_baseline_vs_new_building():
     """'Create a real office building' → create_new_building, not create_baseline_osm."""
+    # Validates: Claude selects create_new_building (not create_baseline_osm) for full-featured building creation
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -162,6 +169,7 @@ def test_create_baseline_vs_new_building():
 
 def test_apply_measure_vs_create_measure():
     """'Apply an existing measure' → apply_measure, not create_measure."""
+    # Validates: Claude selects apply_measure (not create_measure) when applying an existing measure by path
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")

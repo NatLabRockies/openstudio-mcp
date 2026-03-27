@@ -22,6 +22,7 @@ pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration d
 @pytest.mark.integration
 def test_vrf_heat_recovery():
     """Verify VRF with heat recovery mode creates correct system."""
+    # Validates: VRF heat recovery creates HR outdoor unit + autosized + 1 terminal per zone
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -48,7 +49,7 @@ def test_vrf_heat_recovery():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "VRF"
                 assert system_data["system"]["heat_recovery"] is True
                 assert "HR" in system_data["system"]["outdoor_unit"]
@@ -67,6 +68,7 @@ def test_vrf_heat_recovery():
 @pytest.mark.integration
 def test_vrf_heat_pump():
     """Verify VRF heat pump mode (no heat recovery)."""
+    # Validates: VRF without heat_recovery creates non-HR outdoor unit
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -93,7 +95,7 @@ def test_vrf_heat_pump():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["heat_recovery"] is False
                 assert "HR" not in system_data["system"]["outdoor_unit"]
                 assert len(system_data["system"]["terminals"]) == len(zone_names)
@@ -109,6 +111,7 @@ def test_vrf_heat_pump():
 @pytest.mark.integration
 def test_vrf_multi_zone():
     """Verify VRF serves multiple zones with 1 outdoor unit."""
+    # Validates: VRF creates exactly 1 terminal per zone, all zones served
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -135,7 +138,7 @@ def test_vrf_multi_zone():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["num_zones"] == len(zone_names)
                 assert len(system_data["system"]["terminals"]) == len(zone_names)
 
@@ -156,6 +159,7 @@ def test_vrf_multi_zone():
 @pytest.mark.integration
 def test_vrf_capacity_autosize():
     """Verify VRF autosizes when capacity is None."""
+    # Validates: VRF outdoor_unit_capacity_w=None results in "autosized" capacity
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -182,12 +186,12 @@ def test_vrf_capacity_autosize():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["capacity_w"] == "autosized"
 
                 ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
-                assert len(zd.get("zone_hvac_equipment", [])) > 0
+                assert len(zd["zone_hvac_equipment"]) == len(zone_names), "Should have 1 VRF terminal per zone"
 
     asyncio.run(_run())
 
@@ -195,6 +199,7 @@ def test_vrf_capacity_autosize():
 @pytest.mark.integration
 def test_vrf_capacity_explicit():
     """Verify VRF uses explicit capacity when provided."""
+    # Validates: VRF respects explicit outdoor_unit_capacity_w value (50kW)
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -222,12 +227,12 @@ def test_vrf_capacity_explicit():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["capacity_w"] == capacity
 
                 ze = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})
                 zd = unwrap(ze)
-                assert len(zd.get("zone_hvac_equipment", [])) > 0
+                assert len(zd["zone_hvac_equipment"]) == len(zone_names), "Should have 1 VRF terminal per zone"
 
     asyncio.run(_run())
 
@@ -235,6 +240,7 @@ def test_vrf_capacity_explicit():
 @pytest.mark.integration
 def test_vrf_multi_zone_baseline():
     """Verify VRF with heat recovery on 10-zone baseline model."""
+    # Validates: VRF+HR serves all 10 baseline zones with correct terminal count
     import uuid
     name = f"test_vrf_bl_{uuid.uuid4().hex[:8]}"
 
@@ -246,9 +252,9 @@ def test_vrf_multi_zone_baseline():
 
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_data = unwrap(zones_resp)
@@ -263,7 +269,7 @@ def test_vrf_multi_zone_baseline():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True
+                assert system_data["ok"] is True
                 assert system_data["system"]["type"] == "VRF"
                 assert system_data["system"]["num_zones"] == 10
                 assert len(system_data["system"]["terminals"]) == 10
@@ -274,6 +280,7 @@ def test_vrf_multi_zone_baseline():
 
 def test_vrf_json_string_zones():
     """Test add_vrf_system accepts thermal_zone_names as JSON string."""
+    # Regression: MCP clients sent thermal_zone_names as JSON string, caused TypeError
     import json
 
     async def _run():
@@ -294,7 +301,7 @@ def test_vrf_json_string_zones():
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data.get("ok") is True, (
+                assert system_data["ok"] is True, (
                     f"JSON-string zone names failed: {system_data.get('error')}"
                 )
 

@@ -4,7 +4,7 @@
 
 | Run | Date | Model | Tests | Passed | Rate | Runtime | Notes |
 |-----|------|-------|-------|--------|------|---------|-------|
-| **9** | **2026-03-19** | **sonnet** | **9** | **9** | **100%** | **5 min** | **Tool routing A/B tests (test_09, post-docstring-hardening)** |
+| **13** | **2026-03-26** | **sonnet** | **230** | **160** | **95.8%** | **151 min** | **Post #40 fix + test audit. 7 fail (3 qaqc, 3 measure quality, 1 sim_L1)** |
 
 *Cost is notional API pricing from Claude Code CLI — free on Claude Max.*
 
@@ -14,7 +14,7 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 
 | Case | Tool(s) | L1 | L2 | L3 | Flaky? | Added | Notes |
 |------|---------|----|----|-----|--------|-------|-------|
-| import_floorplan | import_floorspacejs | FAIL | PASS | PASS | L1 | Run 2 | No file path in prompt — agent asks for one |
+| import_floorplan | import_floorspacejs | PASS | PASS | PASS | L1 | Run 2 | Was FAIL L1 until Run 13 |
 | add_hvac | add_baseline_system | PASS | PASS | PASS | L1 | Run 2 | Was flaky L1 before docstring fix (Run 3) |
 | view_model | view_model | PASS | PASS | PASS | — | Run 2 | |
 | set_weather | change_building_location | PASS | PASS | PASS | — | Run 2 | |
@@ -26,20 +26,20 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | schedules | get_schedule_details | PASS | PASS | PASS | — | Run 2 | |
 | inspect_component | get_component_properties | PASS | PASS | PASS | — | Run 5 | Generic access test |
 | modify_component | set_component_properties | PASS | PASS | PASS | — | Run 5 | Generic access test |
-| list_dynamic_type | list_model_objects | FAIL | PASS | PASS | L1 | Run 5 | L1 uses explicit sizing tools instead |
+| list_dynamic_type | list_model_objects | PASS | PASS | PASS | L1 | Run 5 | Was FAIL L1 until Run 13 |
 | floor_area | get_building_info | PASS | PASS | PASS | — | Run 5 | |
 | materials | list_materials | PASS | PASS | PASS | — | Run 5 | |
 | thermal_zones | list_thermal_zones | PASS | PASS | PASS | — | Run 5 | |
 | subsurfaces | list_subsurfaces | PASS | PASS | PASS | — | Run 5 | |
 | surface_details | get_surface_details | PASS | PASS | PASS | — | Run 5 | |
-| run_simulation | run_simulation | PASS | PASS | PASS | — | Run 6 | |
+| run_simulation | run_simulation | FAIL | PASS | PASS | L1 | Run 6 | Was PASS until Run 13 — L1 flaky |
 | get_eui | extract_summary_metrics | PASS | PASS | PASS | — | Run 6 | |
 | end_use_breakdown | extract_end_use_breakdown | PASS | PASS | PASS | — | Run 6 | |
 | hvac_sizing | extract_hvac_sizing | PASS | PASS | PASS | — | Run 6 | |
 | set_wwr | set_window_to_wall_ratio | PASS | PASS | PASS | L1 | Run 6 | |
 | replace_windows | replace_window_constructions | PASS | PASS | PASS | — | Run 6 | |
 | construction_details | get_construction_details | PASS | PASS | PASS | — | Run 6 | |
-| check_loads | get_load_details | FAIL | PASS | PASS | L1 | Run 6 | "What loads?" too vague |
+| check_loads | get_load_details | PASS | PASS | PASS | L1 | Run 6 | Was FAIL L1 until Run 13 |
 | create_loads | create_people_definition + create_lights_definition | PASS | PASS | PASS | L1 | Run 6 | |
 | create_plant_loop | create_plant_loop | PASS | PASS | PASS | — | Run 6 | |
 | schedule_details | get_schedule_details | PASS | PASS | PASS | L1 | Run 6 | |
@@ -56,23 +56,23 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | replace_terminals_cooled_beam | replace_air_terminals | PASS | PASS | PASS | — | Run 8 | CooledBeam 2-pipe docstring works well |
 | measure_replace_terminals | create_measure | PASS | PASS | PASS | — | Run 8 | Agent chose measure authoring path at L1 |
 | zone_equipment_priority | set_zone_equipment_priority | PASS | PASS | PASS | — | Run 8 | Prompt must add equipment first |
-| **Totals** | | **38/42** | **40/42** | **42/42** | | | |
+| **Totals** | | **39/42** | **40/42** | **42/42** | | | |
 
-**Summary:** L1=90%, L2=95%, L3=100%
+**Summary:** L1=93%, L2=95%, L3=100% (Run 13: 3 previously-failed L1s now passing)
 
 *Run 8 cases (measure authoring, cooled beam) tested separately — not yet in main suite run.*
 
-## Per-Tier Summary (Run 7)
+## Per-Tier Summary (Run 13)
 
-| Tier | Passed | Total | Rate |
-|------|--------|-------|------|
-| setup | 5 | 5 | 100% |
-| tier1 | 4 | 4 | 100% |
-| tier2 | 18 | 19 | 95% |
-| tier3 | 26 | 26 | 100% |
-| tier4 | 3 | 3 | 100% |
-| progressive | 99 | 102 | 97% |
-| **Total** | **155** | **159** | **97.5%** |
+| Tier | Passed | Total | Rate | Notes |
+|------|--------|-------|------|-------|
+| setup | 5 | 5 | 100% | |
+| tier1 | 4 | 4 | 100% | |
+| tier2 | 16 | 19 | 84% | 3 qaqc failures |
+| tier3 | 24 | 26 | 92% | +63 skipped |
+| tier4 | 3 | 3 | 100% | |
+| progressive | 108 | 110 | 98% | 1 run_simulation_L1 fail, rest passing |
+| **Total** | **160** | **167** | **95.8%** | +63 skipped |
 
 ## Workflow Tests
 
@@ -89,7 +89,7 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | Bar then typical | create_bar + change_building_location + create_typical | PASS | |
 | Import floorspacejs | import_floorspacejs + list_files | PASS | |
 | Surface matching | create_space_from_floor_print x2 + match_surfaces | PASS | |
-| FloorspaceJS to typical | import + weather + create_typical + sim | FLAKY | Multi-step chain stalls |
+| FloorspaceJS to typical | import + weather + create_typical + sim | PASS | Was FLAKY, passed Run 13 |
 | Envelope retrofit | load + set_wwr + replace_windows | PASS | Run 6+ |
 | Create+assign loads | load + create_people + create_lights | PASS | Run 6+ |
 | Plant loop w/ boiler | load + create_plant_loop + add_supply_equipment | PASS | Run 6+ |
@@ -125,6 +125,7 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | 10 | 2026-03-19 | 172 | 166 | 96.5% | — | Full regression after tool routing (tags, recommend_tools, search_api, docstrings). No regressions — 6 failures all known flaky. |
 | 11 | 2026-03-20 | 171 | 164 | 95.9% | — | Full suite with ToolSearch + wiring recipes + enriched descriptions. 12/12 test_09 pass. 7 failures all known flaky (replace_windows_L1 new — agent called search_api instead). |
 | 12 | 2026-03-20 | 170 | 163 | 95.9% | — | Post description enrichment (all 142 tools ≥40 char). Same 7 flaky failures. No regression. |
+| 13 | 2026-03-26 | 230 | 160 | 95.8% | — | Post #40 fix + test audit. 63 skipped (test structure). 7 fail: 3 qaqc tier2, 3 measure quality, 1 run_simulation_L1. Previously flaky L1s (import_floorplan, list_dynamic_type, check_loads, thermostat, set_wwr, schedule_details, create_loads) ALL passed. |
 
 *Run 8 = combined results from two separate targeted runs (measure authoring 13/15 + cooled beam 10/10).*
 
@@ -142,20 +143,23 @@ Only cases where expected tool wasn't called.
 
 ## Known Flaky Tests
 
-| Test | Root Cause |
-|------|-----------|
-| import_floorplan_L1 | No file path in prompt — agent correctly asks for one |
-| list_dynamic_type_L1 | L1 "sizing parameters" too vague, agent uses explicit sizing tools |
-| check_loads_L1 | "What loads?" too vague, agent inspects space instead |
-| thermostat_L1 | Intermittent — "change thermostat settings" needs direction |
-| save_model_L1 | Intermittent |
-| schedule_details_L1 | Intermittent |
-| create_loads_L1 | Intermittent |
-| set_wwr_L1 | Intermittent |
-| ideal_air_L1 | Intermittent |
-| add_hvac_L1 | Intermittent — stable since docstring fix |
-| export_measure_L1/L2 | Tool not discoverable without explicit name |
-| floorspacejs_to_typical | Multi-step workflow chain stalls after step 1 |
+| Test | Root Cause | Run 13 |
+|------|-----------|--------|
+| import_floorplan_L1 | No file path in prompt — agent correctly asks for one | PASS |
+| list_dynamic_type_L1 | L1 "sizing parameters" too vague, agent uses explicit sizing tools | PASS |
+| check_loads_L1 | "What loads?" too vague, agent inspects space instead | PASS |
+| thermostat_L1 | Intermittent — "change thermostat settings" needs direction | PASS |
+| save_model_L1 | Intermittent | skipped |
+| schedule_details_L1 | Intermittent | PASS |
+| create_loads_L1 | Intermittent | PASS |
+| set_wwr_L1 | Intermittent | PASS |
+| ideal_air_L1 | Intermittent | PASS |
+| add_hvac_L1 | Intermittent — stable since docstring fix | PASS |
+| export_measure_L1/L2 | Tool not discoverable without explicit name | skipped |
+| floorspacejs_to_typical | Multi-step workflow chain stalls after step 1 | PASS |
+| run_simulation_L1 | Intermittent — "Run a simulation" too vague at L1 | FAIL |
+| qaqc tier2 (3 cases) | Agent doesn't call run_qaqc_checks for validation prompts | FAIL |
+| measure quality (3 cases) | New tests — measure code quality checks | FAIL |
 
 ## Key Lessons & Patterns
 

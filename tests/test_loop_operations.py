@@ -14,6 +14,7 @@ pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration d
 
 def test_add_second_boiler():
     """Add second BoilerHotWater to HW loop."""
+    # Validates: add_supply_equipment adds a second boiler to System 7 HW loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -35,18 +36,19 @@ def test_add_second_boiler():
                     "properties": json.dumps({"nominal_thermal_efficiency": 0.85}),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"add_supply_equipment failed: {data.get('error')}"
                 assert data["equipment_name"] == "Backup Boiler"
 
-                # Verify 2 boilers exist
+                # Verify 2 boilers exist (1 from System 7 + 1 added)
                 cr = await session.call_tool("list_model_objects", {"object_type": "BoilerHotWater", "max_results": 0})
                 boilers = unwrap(cr)["objects"]
-                assert len(boilers) >= 2
+                assert len(boilers) == 2, f"Expected 2 boilers (original + backup), got {len(boilers)}"
     asyncio.run(_run())
 
 
 def test_add_second_chiller():
     """Add second ChillerElectricEIR to CHW loop."""
+    # Validates: add_supply_equipment adds a second chiller to System 7 CHW loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -67,16 +69,17 @@ def test_add_second_chiller():
                     "properties": json.dumps({"reference_cop": 5.5}),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"add_supply_equipment failed: {data.get('error')}"
 
                 cr = await session.call_tool("list_model_objects", {"object_type": "ChillerElectricEIR", "max_results": 0})
                 chillers = unwrap(cr)["objects"]
-                assert len(chillers) >= 2
+                assert len(chillers) == 2, f"Expected 2 chillers (original + backup), got {len(chillers)}"
     asyncio.run(_run())
 
 
 def test_remove_boiler():
     """Remove named boiler from HW loop."""
+    # Validates: remove_supply_equipment removes a named boiler and it disappears from model
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -103,7 +106,7 @@ def test_remove_boiler():
                     "equipment_name": "Temp Boiler",
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"remove_supply_equipment failed: {data.get('error')}"
                 assert data["removed"] == "Temp Boiler"
 
                 # Independent query verification
@@ -115,6 +118,7 @@ def test_remove_boiler():
 
 def test_add_equipment_invalid_type():
     """Bad equipment type returns error."""
+    # Validates: add_supply_equipment returns ok=False with error for unsupported equipment_type
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -135,11 +139,14 @@ def test_add_equipment_invalid_type():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data
+                assert data["error"].strip(), "Error message should not be empty for invalid equipment type"
     asyncio.run(_run())
 
 
 def test_add_equipment_invalid_loop():
     """Bad loop name returns error."""
+    # Validates: add_supply_equipment returns ok=False with error for nonexistent plant loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -153,11 +160,13 @@ def test_add_equipment_invalid_loop():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for missing loop"
     asyncio.run(_run())
 
 
 def test_remove_equipment_not_found():
     """Bad equipment name returns error."""
+    # Validates: remove_supply_equipment returns ok=False with error for nonexistent equipment
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -177,6 +186,7 @@ def test_remove_equipment_not_found():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for missing equipment"
     asyncio.run(_run())
 
 
@@ -184,6 +194,7 @@ def test_remove_equipment_not_found():
 
 def test_add_baseboard_to_zone():
     """Add electric baseboard to zone."""
+    # Validates: add_zone_equipment adds baseboard and it appears in list_zone_hvac_equipment
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -196,7 +207,7 @@ def test_add_baseboard_to_zone():
                     "equipment_name": "Test Baseboard",
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"add_zone_equipment failed: {data.get('error')}"
                 assert data["equipment_name"] == "Test Baseboard"
 
                 # Independent query verification
@@ -209,6 +220,7 @@ def test_add_baseboard_to_zone():
 
 def test_remove_zone_equipment():
     """Remove baseboard from zone."""
+    # Validates: remove_zone_equipment removes baseboard and it disappears from equipment list
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -226,7 +238,7 @@ def test_remove_zone_equipment():
                     "equipment_name": "Temp Baseboard",
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"remove_zone_equipment failed: {data.get('error')}"
                 assert data["removed"] == "Temp Baseboard"
 
                 # Independent query verification
@@ -239,6 +251,7 @@ def test_remove_zone_equipment():
 
 def test_add_zone_equipment_invalid_zone():
     """Bad zone name returns error."""
+    # Validates: add_zone_equipment returns ok=False with error for nonexistent zone
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -252,11 +265,13 @@ def test_add_zone_equipment_invalid_zone():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for missing zone"
     asyncio.run(_run())
 
 
 def test_add_zone_equipment_invalid_type():
     """Bad equipment type returns error."""
+    # Validates: add_zone_equipment returns ok=False with error for unsupported equipment_type
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -270,11 +285,13 @@ def test_add_zone_equipment_invalid_type():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for invalid equipment type"
     asyncio.run(_run())
 
 
 def test_set_zone_equipment_priority():
     """Add 2 baseboards, reorder, verify new priority."""
+    # Validates: set_zone_equipment_priority reorders zone equipment cooling priorities
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -314,17 +331,19 @@ def test_set_zone_equipment_priority():
                 else:
                     data = probe_data
 
-                assert data["ok"] is True
+                assert data["ok"] is True, f"set_zone_equipment_priority failed: {data.get('error')}"
                 assert data["zone"] == zones[0]
                 # Find our baseboards in new_order
                 bb_sec = next(e for e in data["new_order"] if e["name"] == "BB_Secondary")
                 bb_pri = next(e for e in data["new_order"] if e["name"] == "BB_Primary")
-                assert bb_sec["cooling_priority"] < bb_pri["cooling_priority"]
+                assert bb_sec["cooling_priority"] < bb_pri["cooling_priority"], \
+                    "BB_Secondary should have higher priority (lower number) than BB_Primary"
     asyncio.run(_run())
 
 
 def test_remove_all_zone_equipment():
     """Add 2 baseboards, remove_all, verify both gone."""
+    # Validates: remove_all_zone_equipment removes all equipment from specified zones
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -354,7 +373,7 @@ def test_remove_all_zone_equipment():
                     "zone_names": json.dumps([zones[0]]),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"remove_all_zone_equipment failed: {data.get('error')}"
 
                 # Verify both gone
                 ze2 = await session.call_tool("list_zone_hvac_equipment", {"max_results": 0})

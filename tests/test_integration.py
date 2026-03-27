@@ -44,6 +44,7 @@ def _load_json(path: Path) -> dict:
 
 @pytest.mark.integration
 def test_run_seb4_baseboard_workflow(tmp_path: Path):
+    # Validates: SEB4 baseboard workflow completes with no EnergyPlus fatal errors
     if not _integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable OpenStudio integration tests.")
 

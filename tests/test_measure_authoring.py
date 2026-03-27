@@ -33,6 +33,7 @@ PYTHON_ARGS = [
 
 @pytest.mark.integration
 def test_list_custom_measures():
+    # Validates: list_custom_measures returns newly created measure in listing
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -50,7 +51,7 @@ def test_list_custom_measures():
                 }))
                 # List and verify it appears
                 res = unwrap(await s.call_tool("list_custom_measures", {}))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["count"] >= 1
                 names = [m["name"] for m in res["measures"]]
                 assert name in names
@@ -59,6 +60,7 @@ def test_list_custom_measures():
 
 @pytest.mark.integration
 def test_create_measure_ruby():
+    # Validates: create_measure Ruby produces measure.rb with valid syntax
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -73,7 +75,7 @@ def test_create_measure_ruby():
                     "run_body": RUBY_BODY,
                     "language": "Ruby",
                 }))
-                assert res.get("ok") is True, res
+                assert res["ok"] is True, res
                 assert res["language"] == "Ruby"
                 assert res["script_file"] == "measure.rb"
                 assert res["validation"]["syntax_ok"] is True
@@ -82,6 +84,7 @@ def test_create_measure_ruby():
 
 @pytest.mark.integration
 def test_create_measure_python():
+    # Validates: create_measure Python produces measure.py with valid syntax
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -96,7 +99,7 @@ def test_create_measure_python():
                     "run_body": PYTHON_BODY,
                     "language": "Python",
                 }))
-                assert res.get("ok") is True, res
+                assert res["ok"] is True, res
                 assert res["language"] == "Python"
                 assert res["script_file"] == "measure.py"
                 assert res["validation"]["syntax_ok"] is True
@@ -105,6 +108,7 @@ def test_create_measure_python():
 
 @pytest.mark.integration
 def test_create_with_arguments():
+    # Validates: create_measure with typed arguments produces inspectable arg list
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -120,12 +124,12 @@ def test_create_with_arguments():
                     "language": "Ruby",
                     "arguments": RUBY_ARGS,
                 }))
-                assert res.get("ok") is True, res
+                assert res["ok"] is True, res
                 # Verify args via list_measure_arguments
                 args_res = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": res["measure_dir"],
                 }))
-                assert args_res.get("ok") is True
+                assert args_res["ok"] is True
                 arg_names = [a["name"] for a in args_res["arguments"]]
                 assert "r_value" in arg_names
                 assert "apply_to_walls" in arg_names
@@ -134,6 +138,7 @@ def test_create_with_arguments():
 
 @pytest.mark.integration
 def test_create_bad_syntax():
+    # Validates: broken Ruby syntax returns ok:false with syntax_ok:false
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -149,7 +154,7 @@ def test_create_bad_syntax():
                     "language": "Ruby",
                 }))
                 # Must return ok:false so LLMs know the measure is broken
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert res["validation"]["syntax_ok"] is False
                 assert "syntax error" in res.get("error", "").lower()
     asyncio.run(_run())
@@ -158,6 +163,7 @@ def test_create_bad_syntax():
 @pytest.mark.integration
 def test_test_measure_ruby_passes():
     """Create a simple Ruby measure, run its tests."""
+    # Validates: simple Ruby measure passes test_measure execution
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -173,11 +179,11 @@ def test_test_measure_ruby_passes():
                     "run_body": body,
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 res = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                assert res.get("ok") is True, res.get("test_output", "")
+                assert res["ok"] is True, res.get("test_output", "")
                 assert res["passed"] > 0
     asyncio.run(_run())
 
@@ -185,6 +191,7 @@ def test_test_measure_ruby_passes():
 @pytest.mark.integration
 def test_test_measure_python_passes():
     """Create a simple Python measure, run its tests."""
+    # Validates: simple Python measure passes test_measure execution
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -200,11 +207,11 @@ def test_test_measure_python_passes():
                     "run_body": body,
                     "language": "Python",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 res = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                assert res.get("ok") is True, res.get("test_output", "")
+                assert res["ok"] is True, res.get("test_output", "")
                 assert res["passed"] > 0
     asyncio.run(_run())
 
@@ -212,6 +219,7 @@ def test_test_measure_python_passes():
 @pytest.mark.integration
 def test_test_measure_reports_errors():
     """Create measure with failing code, verify test reports failure."""
+    # Validates: measure with runtime error reports failed/errors count
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -228,18 +236,19 @@ def test_test_measure_reports_errors():
                     "run_body": body,
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 res = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
                 # Should report failures or errors
-                assert res.get("ok") is False or res.get("failed", 0) > 0 or res.get("errors", 0) > 0
+                assert res["ok"] is False or res.get("failed", 0) > 0 or res.get("errors", 0) > 0
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_edit_run_body():
     """Create measure, edit run body, verify updated."""
+    # Validates: edit_measure updates run_body and preserves valid syntax
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -254,12 +263,12 @@ def test_edit_run_body():
                     "run_body": '    runner.registerInfo("v1")',
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 edit = unwrap(await s.call_tool("edit_measure", {
                     "measure_name": name,
                     "run_body": '    runner.registerInfo("v2")',
                 }))
-                assert edit.get("ok") is True
+                assert edit["ok"] is True
                 assert "run_body" in edit["changes_made"]
                 assert edit["validation"]["syntax_ok"] is True
     asyncio.run(_run())
@@ -268,6 +277,7 @@ def test_edit_run_body():
 @pytest.mark.integration
 def test_edit_arguments():
     """Create measure, edit arguments, verify XML updated."""
+    # Validates: edit_measure replaces arguments and updates measure XML
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -283,7 +293,7 @@ def test_edit_arguments():
                     "language": "Ruby",
                     "arguments": [{"name": "old_arg", "type": "String", "required": True, "default_value": "x"}],
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 new_args = [
                     {"name": "new_arg", "type": "Double", "required": True, "default_value": "42"},
                 ]
@@ -291,13 +301,13 @@ def test_edit_arguments():
                     "measure_name": name,
                     "arguments": new_args,
                 }))
-                assert edit.get("ok") is True
+                assert edit["ok"] is True
                 assert "arguments" in edit["changes_made"]
                 # Verify via list_measure_arguments
                 args_res = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": edit["measure_dir"],
                 }))
-                assert args_res.get("ok") is True
+                assert args_res["ok"] is True
                 arg_names = [a["name"] for a in args_res["arguments"]]
                 assert "new_arg" in arg_names
     asyncio.run(_run())
@@ -306,6 +316,7 @@ def test_edit_arguments():
 @pytest.mark.integration
 def test_full_lifecycle():
     """Create → test → apply → verify model changed."""
+    # Validates: create -> test -> apply -> verify model changed end-to-end
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -329,19 +340,19 @@ def test_full_lifecycle():
                     "run_body": body,
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
 
                 # Test it
                 test = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                assert test.get("ok") is True
+                assert test["ok"] is True
 
                 # Apply it
                 apply = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                assert apply.get("ok") is True
+                assert apply["ok"] is True
 
                 # Verify model changed
                 bldg2 = unwrap(await s.call_tool("get_building_info", {}))
@@ -353,6 +364,7 @@ def test_full_lifecycle():
 @pytest.mark.integration
 def test_create_measure_large_run_body():
     """Create a measure with a ~2KB run_body — validates large payloads survive MCP transport."""
+    # Validates: ~2KB run_body survives MCP transport without truncation
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -377,7 +389,7 @@ def test_create_measure_large_run_body():
                     "run_body": run_body,
                     "language": "Ruby",
                 }))
-                assert res.get("ok") is True, res
+                assert res["ok"] is True, res
                 assert res["validation"]["syntax_ok"] is True
     asyncio.run(_run())
 
@@ -385,6 +397,7 @@ def test_create_measure_large_run_body():
 @pytest.mark.integration
 def test_apply_existing_measure():
     """Apply an existing measure from tests/assets/ to a model."""
+    # Validates: apply_measure works with pre-existing measure from tests/assets/
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -397,14 +410,14 @@ def test_apply_existing_measure():
                 args = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": "/repo/tests/assets/measures/set_building_name",
                 }))
-                assert args.get("ok") is True
+                assert args["ok"] is True
                 assert any(a["name"] == "building_name" for a in args["arguments"])
                 # Apply it
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": "/repo/tests/assets/measures/set_building_name",
                     "arguments": {"building_name": "Applied Externally"},
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 bldg = unwrap(await s.call_tool("get_building_info", {}))
                 assert bldg["building"]["name"] == "Applied Externally"
     asyncio.run(_run())
@@ -416,6 +429,7 @@ def test_apply_existing_measure():
 @pytest.mark.integration
 def test_create_measure_rejects_path_traversal():
     """create_measure must reject names with path traversal."""
+    # Validates: create_measure rejects path traversal names (../../etc, ../passwd)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -430,13 +444,14 @@ def test_create_measure_rejects_path_traversal():
                         "run_body": '    runner.registerInfo("x")',
                         "language": "Ruby",
                     }))
-                    assert res.get("ok") is False, f"Should reject name={bad_name!r}"
+                    assert res["ok"] is False, f"Should reject name={bad_name!r}"
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_edit_measure_rejects_path_traversal():
     """edit_measure must reject names with path traversal."""
+    # Validates: edit_measure rejects path traversal names
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -448,7 +463,7 @@ def test_edit_measure_rejects_path_traversal():
                     "measure_name": "../../etc",
                     "run_body": '    runner.registerInfo("x")',
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
     asyncio.run(_run())
 
 
@@ -458,6 +473,7 @@ def test_edit_measure_rejects_path_traversal():
 @pytest.mark.integration
 def test_create_measure_idempotent():
     """Calling create_measure twice with same name should succeed both times."""
+    # Validates: calling create_measure twice with same name succeeds both times
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -474,7 +490,7 @@ def test_create_measure_idempotent():
                     "run_body": body,
                     "language": "Ruby",
                 }))
-                assert res1.get("ok") is True, res1
+                assert res1["ok"] is True, res1
                 # Second create (same name, different body)
                 body2 = '    runner.registerInfo("v2")'
                 res2 = unwrap(await s.call_tool("create_measure", {
@@ -483,7 +499,7 @@ def test_create_measure_idempotent():
                     "run_body": body2,
                     "language": "Ruby",
                 }))
-                assert res2.get("ok") is True, f"Idempotent create failed: {res2}"
+                assert res2["ok"] is True, f"Idempotent create failed: {res2}"
                 assert res2["validation"]["syntax_ok"] is True
     asyncio.run(_run())
 
@@ -498,6 +514,7 @@ def test_test_measure_with_real_model():
     Regression: previously test_measure always used an empty Model.new(),
     causing measures that depend on plant loops/air loops to fail.
     """
+    # Regression: test_measure always used empty Model.new(), failing HVAC-dependent measures
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -509,7 +526,7 @@ def test_test_measure_with_real_model():
                 load = unwrap(await s.call_tool("load_osm_model", {
                     "osm_path": "/repo/tests/assets/SystemD_baseline.osm",
                 }))
-                assert load.get("ok") is True
+                assert load["ok"] is True
 
                 # Create a measure that requires plant loops to exist
                 name = _unique("needs_hvac")
@@ -528,13 +545,13 @@ def test_test_measure_with_real_model():
                     "run_body": body,
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
 
                 # test_measure should pass because model has CHW loop
                 test = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                assert test.get("ok") is True, (
+                assert test["ok"] is True, (
                     f"test_measure failed (should pass with real model): "
                     f"{test.get('test_output', '')[:500]}"
                 )
@@ -554,6 +571,7 @@ def test_measure_xml_checksums_valid():
     leaving stale checksums that caused OS App Measure Manager to silently
     reject the measure.
     """
+    # Regression: _write_test_file after _update_measure_xml left stale checksums
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -573,13 +591,13 @@ def test_measure_xml_checksums_valid():
                     "run_body": body,
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
 
                 # Read measure.xml and verify checksums
                 xml_res = unwrap(await s.call_tool("read_file", {
                     "file_path": f"{create['measure_dir']}/measure.xml",
                 }))
-                assert xml_res.get("ok") is True
+                assert xml_res["ok"] is True
                 root = ET.fromstring(xml_res["text"])
 
                 mdir = Path(create["measure_dir"])
@@ -635,6 +653,7 @@ PYTHON_REPORTING_BODY = (
 @pytest.mark.integration
 def test_create_reporting_measure_ruby():
     """Create a Ruby ReportingMeasure, verify correct class/signature."""
+    # Validates: Ruby ReportingMeasure has correct class, run signature, SQL access
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -650,7 +669,7 @@ def test_create_reporting_measure_ruby():
                     "language": "Ruby",
                     "measure_type": "ReportingMeasure",
                 }))
-                assert res.get("ok") is True, res
+                assert res["ok"] is True, res
                 assert res["measure_type"] == "ReportingMeasure"
                 assert res["validation"]["syntax_ok"] is True
                 # Verify script content
@@ -670,6 +689,7 @@ def test_create_reporting_measure_ruby():
 @pytest.mark.integration
 def test_create_reporting_measure_python():
     """Create a Python ReportingMeasure, verify correct class/signature."""
+    # Validates: Python ReportingMeasure has correct class, run signature, SQL access
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -685,7 +705,7 @@ def test_create_reporting_measure_python():
                     "language": "Python",
                     "measure_type": "ReportingMeasure",
                 }))
-                assert res.get("ok") is True, res
+                assert res["ok"] is True, res
                 assert res["measure_type"] == "ReportingMeasure"
                 assert res["validation"]["syntax_ok"] is True
                 # Verify script content
@@ -704,6 +724,7 @@ def test_create_reporting_measure_python():
 @pytest.mark.integration
 def test_test_reporting_measure_args_only():
     """Test a ReportingMeasure without run_id — only arg validation runs."""
+    # Validates: ReportingMeasure without run_id passes argument validation tests
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -723,12 +744,12 @@ def test_test_reporting_measure_args_only():
                          "required": True, "default_value": "My Report"},
                     ],
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 # Test without run_id — should pass arg tests
                 res = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                assert res.get("ok") is True, res.get("test_output", "")
+                assert res["ok"] is True, res.get("test_output", "")
                 assert res["passed"] > 0
     asyncio.run(_run())
 
@@ -736,6 +757,7 @@ def test_test_reporting_measure_args_only():
 @pytest.mark.integration
 def test_create_with_choice_values():
     """Create a measure with Choice argument that has values list."""
+    # Validates: Choice argument with values list generates StringVector+addChoice in script
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -764,7 +786,7 @@ def test_create_with_choice_values():
                     "language": "Ruby",
                     "arguments": choice_args,
                 }))
-                assert res.get("ok") is True, res
+                assert res["ok"] is True, res
                 assert res["validation"]["syntax_ok"] is True
                 # Verify the generated script contains addChoice calls
                 script = unwrap(await s.call_tool("read_file", {
@@ -779,7 +801,7 @@ def test_create_with_choice_values():
                 test = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": res["measure_dir"],
                 }))
-                assert test.get("ok") is True, test.get("test_output", "")
+                assert test["ok"] is True, test.get("test_output", "")
                 assert test["passed"] > 0
     asyncio.run(_run())
 
@@ -787,6 +809,7 @@ def test_create_with_choice_values():
 @pytest.mark.integration
 def test_edit_reporting_measure():
     """Edit a ReportingMeasure run_body, verify correct signature preserved."""
+    # Validates: editing ReportingMeasure run_body preserves ReportingMeasure signature
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -802,13 +825,13 @@ def test_edit_reporting_measure():
                     "language": "Ruby",
                     "measure_type": "ReportingMeasure",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 # Edit run_body
                 edit = unwrap(await s.call_tool("edit_measure", {
                     "measure_name": name,
                     "run_body": '    runner.registerInfo("v2")',
                 }))
-                assert edit.get("ok") is True
+                assert edit["ok"] is True
                 assert "run_body" in edit["changes_made"]
                 assert edit["validation"]["syntax_ok"] is True
                 # Verify ReportingMeasure signature still intact
@@ -825,6 +848,7 @@ def test_edit_reporting_measure():
 @pytest.mark.integration
 def test_create_with_description_ruby():
     """Argument description field emits setDescription() in Ruby."""
+    # Validates: argument description field emits setDescription() in Ruby script
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -845,7 +869,7 @@ def test_create_with_description_ruby():
                     "language": "Ruby",
                     "arguments": args,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 script = unwrap(await s.call_tool("read_file", {
                     "file_path": f"{res['measure_dir']}/measure.rb",
                 }))
@@ -856,6 +880,7 @@ def test_create_with_description_ruby():
 @pytest.mark.integration
 def test_create_with_description_python():
     """Argument description field emits setDescription() in Python."""
+    # Validates: argument description field emits setDescription() in Python script
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -876,7 +901,7 @@ def test_create_with_description_python():
                     "language": "Python",
                     "arguments": args,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 script = unwrap(await s.call_tool("read_file", {
                     "file_path": f"{res['measure_dir']}/measure.py",
                 }))
@@ -887,6 +912,7 @@ def test_create_with_description_python():
 @pytest.mark.integration
 def test_apply_measure_returns_runner_messages():
     """apply_measure should include runner_messages from out.osw."""
+    # Validates: apply_measure response includes runner_messages with result/conditions/info
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -908,17 +934,16 @@ def test_apply_measure_returns_runner_messages():
                     "run_body": body,
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                assert res.get("ok") is True
-                msgs = res.get("runner_messages")
-                assert msgs is not None, f"No runner_messages in response: {res.keys()}"
+                assert res["ok"] is True
+                msgs = res["runner_messages"]
                 assert msgs["result"] == "Success"
-                assert "initial_condition" in msgs
-                assert "final_condition" in msgs
-                assert "info" in msgs
+                assert msgs["initial_condition"], "Should have initial_condition"
+                assert msgs["final_condition"], "Should have final_condition"
+                assert msgs["info"], "Should have info messages"
     asyncio.run(_run())
 
 
@@ -932,6 +957,7 @@ def test_create_measure_with_quotes_in_description():
     Regression: create_measure injected unescaped quotes into Ruby string,
     producing broken syntax that cascaded into 8 fix attempts.
     """
+    # Regression: unescaped quotes in description broke Ruby/Python string syntax
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -954,7 +980,7 @@ def test_create_measure_with_quotes_in_description():
                                      else '        runner.registerInfo("ok")'),
                         "language": lang,
                     }))
-                    assert res.get("ok") is True, (
+                    assert res["ok"] is True, (
                         f"{lang} measure with quotes failed: {res.get('error')}"
                     )
                     assert res["validation"]["syntax_ok"] is True
@@ -964,6 +990,7 @@ def test_create_measure_with_quotes_in_description():
 @pytest.mark.integration
 def test_edit_description_with_quotes():
     """edit_measure description update must handle existing and new quotes."""
+    # Regression: edit_measure with quotes in description broke syntax
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -979,13 +1006,13 @@ def test_edit_description_with_quotes():
                     "run_body": '    runner.registerInfo("ok")',
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 # Edit to new description also with quotes
                 edit = unwrap(await s.call_tool("edit_measure", {
                     "measure_name": name,
                     "description": 'Now fixes "DSOA" and "People" warnings.',
                 }))
-                assert edit.get("ok") is True, (
+                assert edit["ok"] is True, (
                     f"edit_measure failed: {edit.get('error')}"
                 )
                 assert edit["validation"]["syntax_ok"] is True
@@ -995,6 +1022,7 @@ def test_edit_description_with_quotes():
 @pytest.mark.integration
 def test_measure_xml_has_intended_software_tool():
     """measure.xml must include Intended Software Tool attributes."""
+    # Validates: measure.xml includes Apply Measure Now + OpenStudio Application tools
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -1011,11 +1039,11 @@ def test_measure_xml_has_intended_software_tool():
                     "run_body": '    runner.registerInfo("ok")',
                     "language": "Ruby",
                 }))
-                assert create.get("ok") is True
+                assert create["ok"] is True
                 xml_res = unwrap(await s.call_tool("read_file", {
                     "file_path": f"{create['measure_dir']}/measure.xml",
                 }))
-                assert xml_res.get("ok") is True
+                assert xml_res["ok"] is True
                 root = ET.fromstring(xml_res["text"])
                 tool_values = []
                 for attr in root.findall(".//attribute"):
@@ -1036,6 +1064,7 @@ def test_create_bad_syntax_returns_ok_false():
     Regression: previously returned ok:true with syntax_ok:false, causing
     LLMs to try edit_measure on a broken file, compounding the error.
     """
+    # Regression: broken syntax returned ok:true, causing LLMs to try edit on broken file
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -1050,7 +1079,7 @@ def test_create_bad_syntax_returns_ok_false():
                     "run_body": "    def def def broken",
                     "language": "Ruby",
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "syntax error" in res.get("error", "").lower()
                 # Should still include measure_dir for debugging
                 assert "measure_dir" in res

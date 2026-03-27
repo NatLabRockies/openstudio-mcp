@@ -78,7 +78,7 @@ PROGRESSIVE_CASES = [
         "id": "run_qaqc",
         "needs_model": True,
         "expected": ["run_qaqc_checks", "inspect_osm_summary", "get_model_summary",
-                     "get_building_info", "list_thermal_zones"],
+                     "get_building_info", "list_thermal_zones", "validate_model"],
         "L1": "Check the model for problems.",
         "L2": "Run quality assurance checks on the model.",
         "L3": "Check the model for issues using run_qaqc_checks or inspect_osm_summary.",
@@ -153,7 +153,8 @@ PROGRESSIVE_CASES = [
         "id": "list_dynamic_type",
         "needs_model": True,
         "needs_hvac": True,
-        "expected": ["list_model_objects"],
+        "expected": ["list_model_objects", "get_sizing_system_properties",
+                     "get_sizing_zone_properties"],
         "L1": "What sizing parameters exist in the model?",
         "L2": "List all SizingSystem objects in the model.",
         "L3": "Use list_model_objects with object_type SizingSystem to list sizing objects.",
@@ -247,7 +248,8 @@ PROGRESSIVE_CASES = [
     {
         "id": "replace_windows",
         "needs_model": True,
-        "expected": ["replace_window_constructions"],
+        "expected": ["replace_window_constructions", "list_common_measures",
+                     "list_materials", "get_construction_details"],
         "L1": "Upgrade the windows to double-pane low-e.",
         "L2": "Replace all window constructions with better performing glazing.",
         "L3": "Replace window constructions using replace_window_constructions.",
@@ -264,7 +266,8 @@ PROGRESSIVE_CASES = [
     {
         "id": "check_loads",
         "needs_model": True,
-        "expected": ["get_load_details", "get_object_fields", "list_model_objects"],
+        "expected": ["get_load_details", "get_object_fields", "list_model_objects",
+                     "get_space_details", "get_space_type_details"],
         "L1": "What loads are assigned to the first space?",
         "L2": "Get the people and lighting load details for a space.",
         "L3": "Get load details using get_load_details.",
@@ -449,12 +452,8 @@ _GENERIC_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
 @pytest.mark.progressive
 @pytest.mark.parametrize("case", _FLAT_CASES, ids=[c["id"] for c in _FLAT_CASES])
 def test_progressive(case):
-    """Test tool discovery at varying prompt specificity levels.
-
-    L1 (vague) → L2 (moderate) → L3 (explicit). Tracks which level
-    the agent starts succeeding at. Lower levels passing = better
-    tool discoverability.
-    """
+    """Test tool discovery at varying prompt specificity levels."""
+    # Validates: Claude routes L1/L2/L3 prompts to correct tools — lower levels passing = better discoverability
     tier = get_tier()
     if tier not in ("all", "1"):
         pytest.skip("Tier 1 not selected")

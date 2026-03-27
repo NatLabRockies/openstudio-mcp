@@ -77,6 +77,7 @@ def _read_json_line(stdout_q: queue.Queue, *, timeout_s: float) -> dict:
 
 @pytest.mark.timeout(30)
 def test_openstudio_mcp_stdio_is_clean_through_tool_call():
+    # Validates: MCP JSON-RPC stdout stays clean (no SWIG warnings) through init+list+tool call
     """
     Verifies:
       1) stdout is JSON-only during initialize
@@ -192,10 +193,10 @@ def test_openstudio_mcp_stdio_is_clean_through_tool_call():
 @pytest.mark.integration
 @pytest.mark.timeout(60)
 def test_complex_model_stdout_purity():
+    # Regression: SWIG memory-leak warnings corrupted MCP JSON-RPC on large 44-zone model
     """Load a 44-zone complex model and call query tools — stdout must stay JSON-clean.
 
-    Regression test for SWIG memory-leak warnings corrupting MCP transport
-    on large models. Uses SystemD_baseline.osm (44 zones, 2 DOAS, 3 plant loops).
+    Uses SystemD_baseline.osm (44 zones, 2 DOAS, 3 plant loops).
     """
     server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
     extra_args = os.environ.get("MCP_SERVER_ARGS", "").split()

@@ -97,20 +97,17 @@ class TestSystem1:
         return _run_setup("val_s1", 1, heating_fuel="Electricity", system_name="PTAC System")
 
     def test_coil_types(self, data):
-        """PTAC has electric heating and DX cooling coils."""
+        # Validates: PTAC has electric heating coil and DX cooling coil per ASHRAE System 1
         equip = data["zone_hvac"]["equipment"]
-        assert "heating_coil" in equip
         assert "Electric" in equip["heating_coil"]["type"]
-        assert "cooling_coil" in equip
         assert "DX" in equip["cooling_coil"]["type"]
 
     def test_fan_present(self, data):
-        """PTAC has supply air fan."""
-        assert "fan" in data["zone_hvac"]["equipment"]
+        # Validates: PTAC has supply air fan component
         assert "Fan" in data["zone_hvac"]["equipment"]["fan"]["type"]
 
     def test_multiple_zones(self, data):
-        """System 1 creates one PTAC per zone."""
+        # Validates: System 1 creates one PTAC per zone (10 zones = 10 PTACs)
         equip_list = data["system"]["system"]["equipment"]
         assert len(equip_list) == len(data["zones"])
 
@@ -127,14 +124,22 @@ class TestSystem2:
         return _run_setup("val_s2", 2, system_name="PTHP System")
 
     def test_heat_pump_coils(self, data):
-        """PTHP has heating and cooling coils."""
+        # Validates: PTHP has DX/heat-pump heating and DX cooling coils per ASHRAE System 2
         equip = data["zone_hvac"]["equipment"]
-        assert "heating_coil" in equip
-        assert "cooling_coil" in equip
+        assert equip["heating_coil"]["type"], "PTHP missing heating coil type"
+        assert "DX" in equip["heating_coil"]["type"] or "HeatPump" in equip["heating_coil"]["type"], (
+            f"PTHP heating should be DX/heat pump, got: {equip['heating_coil']['type']}"
+        )
+        assert equip["cooling_coil"]["type"], "PTHP missing cooling coil type"
+        assert "DX" in equip["cooling_coil"]["type"] or "Cooling" in equip["cooling_coil"]["type"], (
+            f"PTHP cooling should be DX, got: {equip['cooling_coil']['type']}"
+        )
 
     def test_fan_present(self, data):
-        """PTHP has supply air fan."""
-        assert "fan" in data["zone_hvac"]["equipment"]
+        # Validates: PTHP has supply air fan component
+        assert "Fan" in data["zone_hvac"]["equipment"]["fan"]["type"], (
+            f"PTHP should have a Fan, got: {data['zone_hvac']['equipment']['fan']['type']}"
+        )
 
 
 # ===========================================================================
@@ -176,40 +181,41 @@ class TestSystem3:
         return result
 
     def test_coil_types(self, data):
-        """PSZ-AC has heating and DX cooling coils."""
+        # Validates: PSZ-AC (System 3) has heating coils and DX cooling coil
         al = data["gas"]["air_loop"]["air_loop"]
         assert len(al["detailed_components"]["heating_coils"]) >= 1
         assert len(al["detailed_components"]["cooling_coils"]) >= 1
         assert "DX" in al["detailed_components"]["cooling_coils"][0]["type"]
 
     def test_fan_verification(self, data):
-        """PSZ-AC has fan."""
+        # Validates: PSZ-AC has supply fan on air loop
         fans = data["gas"]["air_loop"]["air_loop"]["detailed_components"]["fans"]
         assert len(fans) >= 1
         assert "Fan" in fans[0]["type"]
 
     def test_economizer_enabled(self, data):
-        """Economizer enabled when requested."""
+        # Validates: PSZ-AC economizer is active when requested (not NoEconomizer)
         oa = data["gas"]["air_loop"]["air_loop"]["outdoor_air_system"]
-        assert oa is not None
         assert oa["economizer_enabled"] is True
         assert oa["economizer_type"] != "NoEconomizer"
 
     def test_outdoor_air_present(self, data):
-        """PSZ-AC has outdoor air system."""
-        assert data["gas"]["air_loop"]["air_loop"]["outdoor_air_system"] is not None
+        # Validates: PSZ-AC has outdoor air system for ventilation
+        oa = data["gas"]["air_loop"]["air_loop"]["outdoor_air_system"]
+        assert isinstance(oa["economizer_type"], str) and oa["economizer_type"], \
+            "PSZ-AC must have outdoor air system with valid economizer type"
 
     def test_setpoint_managers(self, data):
-        """PSZ-AC has setpoint managers."""
+        # Validates: PSZ-AC has at least one setpoint manager on supply outlet
         spms = data["gas"]["air_loop"]["air_loop"]["setpoint_managers"]
         assert len(spms) >= 1
 
     def test_electric_heating(self, data):
-        """PSZ-AC with electric heating has electric coil."""
+        # Validates: PSZ-AC with Electricity fuel uses electric heating coil
         assert "Electric" in data["electric"]["system"]["heating"]
 
     def test_gas_heating(self, data):
-        """PSZ-AC with gas heating has gas coil."""
+        # Validates: PSZ-AC with NaturalGas fuel uses gas heating coil
         assert "Gas" in data["gas"]["system"]["system"]["heating"]
 
 
@@ -221,9 +227,8 @@ class TestSystem3NoEcon:
         return _run_setup("val_s3ne", 3, economizer=False, system_name="PSZ No Econ")
 
     def test_economizer_disabled(self, data):
-        """Economizer disabled when requested."""
+        # Validates: PSZ-AC economizer is off when economizer=False
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
-        assert oa is not None
         assert oa["economizer_enabled"] is False
 
 
@@ -264,41 +269,41 @@ class TestSystem4:
         return result
 
     def test_heat_pump_coils(self, data):
-        """PSZ-HP has DX heating and cooling coils."""
+        # Validates: PSZ-HP (System 4) has DX heating and cooling coils on air loop
         al = data["air_loop"]["air_loop"]
         assert len(al["detailed_components"]["heating_coils"]) >= 1
         assert len(al["detailed_components"]["cooling_coils"]) >= 1
 
     def test_supplemental_heat(self, data):
-        """PSZ-HP has supplemental heating."""
-        assert data["system"]["system"]["heating"] is not None
+        # Validates: PSZ-HP has supplemental heating for low-temp backup
+        assert len(data["system"]["system"]["heating"]) > 0, "PSZ-HP must have supplemental heating"
 
     def test_fan_present(self, data):
-        """PSZ-HP has supply fan."""
+        # Validates: PSZ-HP has supply fan on air loop
         fans = data["air_loop"]["air_loop"]["detailed_components"]["fans"]
         assert len(fans) >= 1
 
     def test_economizer_enabled(self, data):
-        """System 4 economizer when enabled."""
+        # Validates: System 4 economizer is active when requested
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
-        assert oa is not None
         assert oa["economizer_enabled"] is True
 
     def test_outdoor_air_present(self, data):
-        """PSZ-HP has outdoor air system."""
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"] is not None
+        # Validates: PSZ-HP has outdoor air system for ventilation
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "PSZ-HP must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
-        """PSZ-HP has setpoint managers."""
+        # Validates: PSZ-HP has at least one setpoint manager
         assert len(data["air_loop"]["air_loop"]["setpoint_managers"]) >= 1
 
     def test_dx_cooling(self, data):
-        """System 4 uses DX cooling (heat pump)."""
+        # Validates: System 4 uses heat pump DX cooling
         assert data["system"]["system"]["cooling"] == "Heat Pump"
 
     def test_single_zone_only(self, data):
-        """System 4 requires exactly one zone."""
-        assert data["multi_zone_error"].get("ok") is False
+        # Validates: System 4 rejects multi-zone requests (single-zone only)
+        assert data["multi_zone_error"]["ok"] is False
         assert "exactly 1 zone" in data["multi_zone_error"]["error"].lower()
 
 
@@ -311,7 +316,7 @@ class TestSystem4NoEcon:
                           zones=None)
 
     def test_economizer_disabled(self, data):
-        """System 4 economizer disabled."""
+        # Validates: System 4 economizer is off when economizer=False
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is False
 
@@ -329,50 +334,49 @@ class TestSystem5:
                           system_name="VAV Reheat", economizer=True)
 
     def test_hot_water_loop(self, data):
-        """System 5 creates hot water plant loop."""
-        assert "hot_water_loop" in data["system"]["system"]
+        # Validates: System 5 creates Heating-type hot water plant loop
         assert data["hot_water_loop"]["plant_loop"]["loop_type"] == "Heating"
 
     def test_boiler_present(self, data):
-        """System 5 has boiler on HW loop."""
+        # Validates: System 5 has boiler on hot water supply side
         supply = data["hot_water_loop"]["plant_loop"]["supply_components"]
         assert any("Boiler" in c["type"] for c in supply)
 
     def test_vav_terminals(self, data):
-        """System 5 has VAV reheat terminals."""
+        # Validates: System 5 creates one VAV reheat terminal per zone
         sys = data["system"]["system"]
-        assert "terminals" in sys
         assert len(sys["terminals"]) == len(data["zones"])
 
     def test_dx_cooling(self, data):
-        """System 5 uses DX cooling."""
+        # Validates: System 5 uses packaged DX cooling
         assert "DX" in data["system"]["system"]["cooling"]
 
     def test_variable_fan(self, data):
-        """System 5 has variable volume fan."""
+        # Validates: System 5 has variable volume supply fan
         fans = data["air_loop"]["air_loop"]["detailed_components"]["fans"]
         assert len(fans) >= 1
 
     def test_economizer_enabled(self, data):
-        """System 5 economizer enabled."""
+        # Validates: System 5 economizer is active when requested
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is True
 
     def test_outdoor_air_present(self, data):
-        """System 5 has outdoor air system."""
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"] is not None
+        # Validates: System 5 has outdoor air system for ventilation
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 5 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
-        """System 5 has setpoint managers."""
+        # Validates: System 5 has at least one setpoint manager
         assert len(data["air_loop"]["air_loop"]["setpoint_managers"]) >= 1
 
     def test_reheat_coils(self, data):
-        """System 5 VAV terminals are reheat type."""
+        # Validates: System 5 VAV terminals are reheat type (contain "VAV")
         for terminal in data["system"]["system"]["terminals"]:
             assert "VAV" in terminal
 
     def test_heating_coils(self, data):
-        """System 5 has heating coils on air loop."""
+        # Validates: System 5 has heating coils on air loop supply side
         hc = data["air_loop"]["air_loop"]["detailed_components"]["heating_coils"]
         assert len(hc) >= 1
 
@@ -385,7 +389,7 @@ class TestSystem5NoEcon:
         return _run_setup("val_s5ne", 5, economizer=False, system_name="VAV No Econ")
 
     def test_economizer_disabled(self, data):
-        """System 5 economizer disabled."""
+        # Validates: System 5 economizer is off when economizer=False
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is False
 
@@ -402,46 +406,45 @@ class TestSystem6:
         return _run_setup("val_s6", 6, system_name="VAV PFP", economizer=True)
 
     def test_pfp_terminals(self, data):
-        """System 6 has PFP terminals."""
-        sys = data["system"]["system"]
-        assert "terminals" in sys
-        for t in sys["terminals"]:
+        # Validates: System 6 creates PFP (parallel fan-powered) terminals for all zones
+        for t in data["system"]["system"]["terminals"]:
             assert "PFP" in t
 
     def test_electric_reheat(self, data):
-        """System 6 PFP terminals have electric reheat."""
+        # Validates: System 6 PFP terminals use electric reheat (PFP in name)
         for t in data["system"]["system"]["terminals"]:
             assert "PFP" in t
 
     def test_dx_cooling(self, data):
-        """System 6 uses DX cooling."""
+        # Validates: System 6 uses packaged DX cooling
         assert "DX" in data["system"]["system"]["cooling"]
 
     def test_variable_fan(self, data):
-        """System 6 has variable volume fan."""
+        # Validates: System 6 has variable volume supply fan
         fans = data["air_loop"]["air_loop"]["detailed_components"]["fans"]
         assert len(fans) >= 1
 
     def test_economizer_enabled(self, data):
-        """System 6 economizer enabled."""
+        # Validates: System 6 economizer is active when requested
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is True
 
     def test_outdoor_air_present(self, data):
-        """System 6 has outdoor air system."""
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"] is not None
+        # Validates: System 6 has outdoor air system for ventilation
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 6 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
-        """System 6 has setpoint managers."""
+        # Validates: System 6 has at least one setpoint manager
         assert len(data["air_loop"]["air_loop"]["setpoint_managers"]) >= 1
 
     def test_preheat_coil(self, data):
-        """System 6 has preheat coil."""
+        # Validates: System 6 has preheat coil on air loop
         hc = data["air_loop"]["air_loop"]["detailed_components"]["heating_coils"]
         assert len(hc) >= 1
 
     def test_cooling_coil(self, data):
-        """System 6 has DX cooling coil."""
+        # Validates: System 6 has DX cooling coil on air loop
         cc = data["air_loop"]["air_loop"]["detailed_components"]["cooling_coils"]
         assert len(cc) >= 1
         assert "DX" in cc[0]["type"]
@@ -455,7 +458,7 @@ class TestSystem6NoEcon:
         return _run_setup("val_s6ne", 6, economizer=False, system_name="VAV PFP No Econ")
 
     def test_economizer_disabled(self, data):
-        """System 6 economizer disabled."""
+        # Validates: System 6 economizer is off when economizer=False
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is False
 
@@ -472,61 +475,60 @@ class TestSystem7:
         return _run_setup("val_s7", 7, system_name="Central VAV", economizer=True)
 
     def test_chilled_water_loop(self, data):
-        """System 7 creates chilled water loop."""
-        assert "chilled_water_loop" in data["system"]["system"]
+        # Validates: System 7 creates Cooling-type chilled water plant loop
         assert data["chilled_water_loop"]["plant_loop"]["loop_type"] == "Cooling"
 
     def test_hot_water_loop(self, data):
-        """System 7 creates hot water loop."""
-        assert "hot_water_loop" in data["system"]["system"]
+        # Validates: System 7 creates Heating-type hot water plant loop
         assert data["hot_water_loop"]["plant_loop"]["loop_type"] == "Heating"
 
     def test_condenser_loop(self, data):
-        """System 7 creates condenser water loop."""
-        assert "condenser_loop" in data["system"]["system"]
+        # Validates: System 7 creates condenser water loop for heat rejection
+        cw = data["system"]["system"]["condenser_loop"]
+        assert isinstance(cw, str) and cw, "System 7 must create condenser water loop"
 
     def test_chiller_present(self, data):
-        """System 7 has chiller on CHW loop."""
+        # Validates: System 7 has chiller on CHW supply side
         supply = data["chilled_water_loop"]["plant_loop"]["supply_components"]
         assert any("Chiller" in c["type"] for c in supply)
 
     def test_boiler_present(self, data):
-        """System 7 has boiler on HW loop."""
+        # Validates: System 7 has boiler on HW supply side
         supply = data["hot_water_loop"]["plant_loop"]["supply_components"]
         assert any("Boiler" in c["type"] for c in supply)
 
     def test_cooling_tower(self, data):
-        """System 7 has cooling tower on condenser loop."""
+        # Validates: System 7 has cooling tower on condenser supply side
         supply = data["condenser_loop"]["plant_loop"]["supply_components"]
         assert any("CoolingTower" in c["type"] for c in supply)
 
     def test_vav_terminals(self, data):
-        """System 7 has VAV reheat terminals."""
+        # Validates: System 7 creates one VAV reheat terminal per zone (10 zones)
         sys = data["system"]["system"]
-        assert "terminals" in sys
         assert len(sys["terminals"]) == len(data["zones"])
 
     def test_water_coils(self, data):
-        """System 7 uses water coils not DX."""
+        # Validates: System 7 uses chilled water cooling (not DX)
         cooling = data["system"]["system"]["cooling"]
         assert "Chilled Water" in cooling or "Water" in cooling
 
     def test_variable_fan(self, data):
-        """System 7 has variable volume fan."""
+        # Validates: System 7 has variable volume supply fan
         fans = data["air_loop"]["air_loop"]["detailed_components"]["fans"]
         assert len(fans) >= 1
 
     def test_economizer_enabled(self, data):
-        """System 7 economizer enabled."""
+        # Validates: System 7 economizer is active when requested
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is True
 
     def test_outdoor_air_present(self, data):
-        """System 7 has outdoor air system."""
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"] is not None
+        # Validates: System 7 has outdoor air system for ventilation
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 7 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
-        """System 7 has setpoint managers."""
+        # Validates: System 7 has at least one setpoint manager
         assert len(data["air_loop"]["air_loop"]["setpoint_managers"]) >= 1
 
 
@@ -538,7 +540,7 @@ class TestSystem7NoEcon:
         return _run_setup("val_s7ne", 7, economizer=False, system_name="Central VAV No Econ")
 
     def test_economizer_disabled(self, data):
-        """System 7 economizer disabled."""
+        # Validates: System 7 economizer is off when economizer=False
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is False
 
@@ -555,56 +557,63 @@ class TestSystem8:
         return _run_setup("val_s8", 8, system_name="Central PFP", economizer=True)
 
     def test_chilled_water_loop(self, data):
-        """System 8 creates chilled water loop."""
-        assert "chilled_water_loop" in data["system"]["system"]
+        # Validates: System 8 creates chilled water plant loop
+        chw = data["system"]["system"]["chilled_water_loop"]
+        assert isinstance(chw, str) and chw, "System 8 must create CHW loop"
 
     def test_hot_water_loop(self, data):
-        """System 8 created ok (may or may not have HW loop — PFP uses electric reheat)."""
-        assert data["system"].get("ok") is True
+        # Validates: System 8 PFP has hot water loop for heating coils
+        sys = data["system"]["system"]
+        assert sys.get("hot_water_loop"), (
+            f"System 8 PFP should have HW loop, got keys: {list(sys.keys())}"
+        )
 
     def test_condenser_loop(self, data):
-        """System 8 creates condenser water loop."""
-        assert "condenser_loop" in data["system"]["system"]
+        # Validates: System 8 creates condenser water loop for heat rejection
+        cw = data["system"]["system"]["condenser_loop"]
+        assert isinstance(cw, str) and cw, "System 8 must create condenser water loop"
 
     def test_pfp_terminals(self, data):
-        """System 8 has PFP terminals."""
-        assert "terminals" in data["system"]["system"]
+        # Validates: System 8 creates one PFP terminal per zone
+        sys = data["system"]["system"]
+        assert len(sys["terminals"]) == len(data["zones"])
 
     def test_electric_reheat(self, data):
-        """System 8 PFP terminals have electric reheat."""
+        # Validates: System 8 PFP terminals use electric reheat
         for t in data["system"]["system"]["terminals"]:
             assert "PFP" in t
 
     def test_chiller_present(self, data):
-        """System 8 has chiller."""
+        # Validates: System 8 has chiller on CHW supply side
         supply = data["chilled_water_loop"]["plant_loop"]["supply_components"]
         assert any("Chiller" in c["type"] for c in supply)
 
     def test_cooling_tower(self, data):
-        """System 8 has cooling tower."""
+        # Validates: System 8 has cooling tower on condenser supply side
         supply = data["condenser_loop"]["plant_loop"]["supply_components"]
         assert any("CoolingTower" in c["type"] for c in supply)
 
     def test_water_cooling(self, data):
-        """System 8 uses chilled water cooling."""
+        # Validates: System 8 uses chilled water cooling
         assert "Water" in data["system"]["system"]["cooling"]
 
     def test_variable_fan(self, data):
-        """System 8 has variable volume fan."""
+        # Validates: System 8 has variable volume supply fan
         fans = data["air_loop"]["air_loop"]["detailed_components"]["fans"]
         assert len(fans) >= 1
 
     def test_economizer_enabled(self, data):
-        """System 8 economizer enabled."""
+        # Validates: System 8 economizer is active when requested
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is True
 
     def test_outdoor_air_present(self, data):
-        """System 8 has outdoor air system."""
-        assert data["air_loop"]["air_loop"]["outdoor_air_system"] is not None
+        # Validates: System 8 has outdoor air system for ventilation
+        eco = data["air_loop"]["air_loop"]["outdoor_air_system"]["economizer_type"]
+        assert isinstance(eco, str) and eco, "System 8 must have OA system with valid economizer type"
 
     def test_setpoint_managers(self, data):
-        """System 8 has setpoint managers."""
+        # Validates: System 8 has at least one setpoint manager
         assert len(data["air_loop"]["air_loop"]["setpoint_managers"]) >= 1
 
 
@@ -616,7 +625,7 @@ class TestSystem8NoEcon:
         return _run_setup("val_s8ne", 8, economizer=False, system_name="Central PFP No Econ")
 
     def test_economizer_disabled(self, data):
-        """System 8 economizer disabled."""
+        # Validates: System 8 economizer is off when economizer=False
         oa = data["air_loop"]["air_loop"]["outdoor_air_system"]
         assert oa["economizer_enabled"] is False
 
@@ -633,12 +642,14 @@ class TestSystem9:
         return _run_setup("val_s9", 9, system_name="Gas Heaters")
 
     def test_unit_heaters(self, data):
-        """System 9 creates gas unit heaters."""
-        assert data["system"].get("ok") is True
-        assert "equipment" in data["system"]["system"]
+        # Validates: System 9 creates one gas unit heater per zone
+        assert data["system"]["ok"] is True
+        equip = data["system"]["system"]["equipment"]
+        assert len(equip) >= len(data["zones"]), \
+            f"System 9 needs >= 1 heater/zone, got {len(equip)} for {len(data['zones'])} zones"
 
     def test_no_cooling(self, data):
-        """System 9 has no cooling."""
+        # Validates: System 9 is heating-only (no cooling)
         cooling = data["system"]["system"].get("cooling", "None")
         assert cooling == "None" or cooling is None
 
@@ -655,11 +666,13 @@ class TestSystem10:
         return _run_setup("val_s10", 10, system_name="Electric Heaters")
 
     def test_unit_heaters(self, data):
-        """System 10 creates electric unit heaters."""
-        assert data["system"].get("ok") is True
-        assert "equipment" in data["system"]["system"]
+        # Validates: System 10 creates one electric unit heater per zone
+        assert data["system"]["ok"] is True
+        equip = data["system"]["system"]["equipment"]
+        assert len(equip) >= len(data["zones"]), \
+            f"System 10 needs >= 1 heater/zone, got {len(equip)} for {len(data['zones'])} zones"
 
     def test_no_cooling(self, data):
-        """System 10 has no cooling."""
+        # Validates: System 10 is heating-only (no cooling)
         cooling = data["system"]["system"].get("cooling", "None")
         assert cooling == "None" or cooling is None

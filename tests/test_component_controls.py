@@ -14,6 +14,7 @@ pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration d
 
 def test_set_economizer_type():
     """Change economizer to NoEconomizer."""
+    # Validates: set_economizer_properties changes economizer_control_type on System 3 PSZ-AC
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -27,15 +28,18 @@ def test_set_economizer_type():
                 # Find the air loop name
                 alr = await session.call_tool("list_air_loops", {})
                 loops = unwrap(alr)["air_loops"]
-                assert len(loops) > 0
-                loop_name = loops[0]["name"]
+                assert len(loops) >= 1, f"System 3 should create at least 1 air loop, got {len(loops)}"
+                # Find the PSZ-AC loop added by System 3 (example model may have a pre-existing loop)
+                psz_loops = [l for l in loops if "PSZ" in l["name"]]
+                assert len(psz_loops) >= 1, f"No PSZ-AC loop found in {[l['name'] for l in loops]}"
+                loop_name = psz_loops[0]["name"]
 
                 result = await session.call_tool("set_economizer_properties", {
                     "air_loop_name": loop_name,
                     "properties": json.dumps({"economizer_control_type": "NoEconomizer"}),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"set_economizer_properties failed: {data.get('error')}"
                 assert data["changes"]["economizer_control_type"]["new"] == "NoEconomizer"
 
                 # Independent query verification
@@ -51,6 +55,7 @@ def test_set_economizer_type():
 
 def test_set_economizer_drybulb_limit():
     """Set max dry-bulb limit."""
+    # Validates: set_economizer_properties changes max_limit_drybulb_temp_c on System 3
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -69,8 +74,8 @@ def test_set_economizer_drybulb_limit():
                     "properties": json.dumps({"max_limit_drybulb_temp_c": 24.0}),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
-                assert abs(data["changes"]["max_limit_drybulb_temp_c"]["new"] - 24.0) < 0.1
+                assert data["ok"] is True, f"set_economizer_properties failed: {data.get('error')}"
+                assert data["changes"]["max_limit_drybulb_temp_c"]["new"] == pytest.approx(24.0, abs=0.1)
 
                 # Independent query verification
                 ald = await session.call_tool("get_air_loop_details", {
@@ -79,12 +84,13 @@ def test_set_economizer_drybulb_limit():
                 details = unwrap(ald)
                 oa = details["air_loop"].get("outdoor_air_system") or {}
                 # Drybulb limit not exposed in get_air_loop_details, just verify OAS exists
-                assert oa.get("name") is not None
+                assert isinstance(oa.get("name"), str), "OA system should have a name after economizer setup"
     asyncio.run(_run())
 
 
 def test_economizer_no_oa_system():
     """Error when loop has no OA system (System 1 PTAC has no air loop OA)."""
+    # Validates: set_economizer_properties returns ok=False for nonexistent air loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -97,13 +103,16 @@ def test_economizer_no_oa_system():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for missing loop"
+                assert "not found" in data["error"].lower() or "air loop" in data["error"].lower()
     asyncio.run(_run())
 
 
 # --- Setpoint manager tests (System 5 VAV) ---
 
 def test_set_setpoint_min_max_temp():
-    """Modify SZ Reheat min/max temps on System 5."""
+    """Modify SPM properties on System 5 (SetpointManagerScheduled)."""
+    # Validates: set_setpoint_manager_properties changes properties on System 5 SPM
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -116,34 +125,57 @@ def test_set_setpoint_min_max_temp():
                 # Find SPM name via air loop details
                 alr = await session.call_tool("list_air_loops", {})
                 loop = unwrap(alr)["air_loops"][0]
-                # Get air loop details to find SPM name
                 ald = await session.call_tool("get_air_loop_details", {
                     "air_loop_name": loop["name"],
                 })
                 details = unwrap(ald)
-                # SPM name typically includes loop name
-                spm_name = None
-                if "setpoint_managers" in details:
-                    for spm in details["setpoint_managers"]:
-                        if "SingleZoneReheat" in spm.get("type", ""):
-                            spm_name = spm["name"]
-                            break
+                assert details["ok"] is True, f"get_air_loop_details failed: {details}"
+                air_loop_data = details.get("air_loop", details)
+                spm_list = air_loop_data.get("setpoint_managers", [])
+                assert len(spm_list) > 0, (
+                    f"System 5 air loop '{loop['name']}' should have at least one SPM"
+                )
+                spm_info = spm_list[0]
+                spm_name = spm_info["name"]
+                spm_type = spm_info.get("type", "")
 
-                if spm_name is None:
-                    # Try common naming pattern
-                    spm_name = f"{loop['name']} SAT SPM"
+                # Build properties appropriate for the SPM type
+                if "SingleZoneReheat" in spm_type:
+                    props = {
+                        "minimum_supply_air_temperature_c": 10.0,
+                        "maximum_supply_air_temperature_c": 45.0,
+                    }
+                elif "Scheduled" in spm_type:
+                    props = {"control_variable": "Temperature"}
+                elif "Warmest" in spm_type or "Coldest" in spm_type:
+                    props = {
+                        "minimum_setpoint_temperature": 10.0,
+                        "maximum_setpoint_temperature": 45.0,
+                    }
+                else:
+                    pytest.skip(f"Unsupported SPM type for property test: {spm_type}")
 
                 result = await session.call_tool("set_setpoint_manager_properties", {
                     "setpoint_name": spm_name,
-                    "properties": json.dumps({
-                        "minimum_supply_air_temperature_c": 10.0,
-                        "maximum_supply_air_temperature_c": 45.0,
-                    }),
+                    "properties": json.dumps(props),
                 })
                 data = unwrap(result)
-                # May fail if SPM name doesn't match — that's ok for this test
-                if data["ok"]:
-                    assert abs(data["changes"]["minimum_supply_air_temperature_c"]["new"] - 10.0) < 0.1
+                if not data["ok"]:
+                    pytest.fail(
+                        f"set_setpoint_manager_properties failed on {spm_type}"
+                        f" '{spm_name}': {data.get('error') or data.get('errors')}",
+                    )
+                # Verify at least one property was changed
+                assert len(data["changes"]) > 0, f"No properties changed: {data}"
+                # Verify change values match what we sent
+                for prop_name, new_val in props.items():
+                    assert prop_name in data["changes"], \
+                        f"Property {prop_name} not in changes: {list(data['changes'].keys())}"
+                    actual = data["changes"][prop_name]["new"]
+                    if isinstance(new_val, float):
+                        assert actual == pytest.approx(new_val, abs=0.1)
+                    else:
+                        assert actual == new_val
     asyncio.run(_run())
 
 
@@ -151,6 +183,7 @@ def test_set_setpoint_min_max_temp():
 
 def test_set_chw_loop_exit_temp():
     """Change CHW sizing temp on System 7."""
+    # Validates: set_sizing_properties changes CHW loop exit temp and round-trips via get_plant_loop_details
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -164,15 +197,15 @@ def test_set_chw_loop_exit_temp():
                 plr = await session.call_tool("list_plant_loops", {})
                 loops = unwrap(plr)["plant_loops"]
                 chw = next((l for l in loops if "chw" in l["name"].lower() or "chill" in l["name"].lower() or "cool" in l["name"].lower()), None)
-                assert chw is not None, f"No CHW loop in {[l['name'] for l in loops]}"
+                assert chw is not None, f"System 7 should create CHW loop, got loops: {[l['name'] for l in loops]}"
 
                 result = await session.call_tool("set_sizing_properties", {
                     "loop_name": chw["name"],
                     "properties": json.dumps({"design_loop_exit_temperature_c": 5.5}),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
-                assert abs(data["changes"]["design_loop_exit_temperature_c"]["new"] - 5.5) < 0.1
+                assert data["ok"] is True, f"set_sizing_properties failed: {data.get('error')}"
+                assert data["changes"]["design_loop_exit_temperature_c"]["new"] == pytest.approx(5.5, abs=0.1)
 
                 # Independent query verification
                 pld = await session.call_tool("get_plant_loop_details", {
@@ -180,12 +213,13 @@ def test_set_chw_loop_exit_temp():
                 })
                 pd = unwrap(pld)
                 assert pd["ok"] is True
-                assert abs(pd["plant_loop"].get("design_loop_exit_temp_c", 0) - 5.5) < 0.1
+                assert pd["plant_loop"].get("design_loop_exit_temp_c", 0) == pytest.approx(5.5, abs=0.1)
     asyncio.run(_run())
 
 
 def test_set_hw_loop_delta_t():
     """Change HW sizing delta-T on System 7."""
+    # Validates: set_sizing_properties changes HW loop delta-T and round-trips via get_plant_loop_details
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -198,15 +232,15 @@ def test_set_hw_loop_delta_t():
                 plr = await session.call_tool("list_plant_loops", {})
                 loops = unwrap(plr)["plant_loops"]
                 hw = next((l for l in loops if "hw" in l["name"].lower() or "hot" in l["name"].lower() or "heat" in l["name"].lower()), None)
-                assert hw is not None, f"No HW loop in {[l['name'] for l in loops]}"
+                assert hw is not None, f"System 7 should create HW loop, got loops: {[l['name'] for l in loops]}"
 
                 result = await session.call_tool("set_sizing_properties", {
                     "loop_name": hw["name"],
                     "properties": json.dumps({"loop_design_temperature_difference_c": 15.0}),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
-                assert abs(data["changes"]["loop_design_temperature_difference_c"]["new"] - 15.0) < 0.1
+                assert data["ok"] is True, f"set_sizing_properties failed: {data.get('error')}"
+                assert data["changes"]["loop_design_temperature_difference_c"]["new"] == pytest.approx(15.0, abs=0.1)
 
                 # Independent query verification
                 pld = await session.call_tool("get_plant_loop_details", {
@@ -214,12 +248,13 @@ def test_set_hw_loop_delta_t():
                 })
                 pd = unwrap(pld)
                 assert pd["ok"] is True
-                assert abs(pd["plant_loop"].get("loop_design_delta_temp_c", 0) - 15.0) < 0.1
+                assert pd["plant_loop"].get("loop_design_delta_temp_c", 0) == pytest.approx(15.0, abs=0.1)
     asyncio.run(_run())
 
 
 def test_set_sizing_invalid_loop():
     """Bad loop name returns error."""
+    # Validates: set_sizing_properties returns ok=False with error for nonexistent loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -232,11 +267,14 @@ def test_set_sizing_invalid_loop():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for missing loop"
+                assert "not found" in data["error"].lower()
     asyncio.run(_run())
 
 
 def test_get_setpoint_manager_props():
     """Read SPM properties via generic get_component_properties."""
+    # Validates: get_component_properties returns ok=False for nonexistent SPM name
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -252,11 +290,14 @@ def test_get_setpoint_manager_props():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for unfound component"
+                assert "not found" in data["error"].lower() or "error" in data["error"].lower()
     asyncio.run(_run())
 
 
 def test_set_economizer_differential_drybulb():
     """Set economizer to DifferentialDryBulb on System 3."""
+    # Validates: set_economizer_properties changes to DifferentialDryBulb and verifies via air loop details
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -275,7 +316,7 @@ def test_set_economizer_differential_drybulb():
                     "properties": json.dumps({"economizer_control_type": "DifferentialDryBulb"}),
                 })
                 data = unwrap(result)
-                assert data["ok"] is True
+                assert data["ok"] is True, f"set_economizer_properties failed: {data.get('error')}"
                 assert data["changes"]["economizer_control_type"]["new"] == "DifferentialDryBulb"
 
                 # Independent query verification
@@ -290,6 +331,7 @@ def test_set_economizer_differential_drybulb():
 
 def test_set_economizer_invalid_loop():
     """Bad loop name returns error."""
+    # Validates: set_economizer_properties returns ok=False with error for nonexistent air loop
     async def _run():
         async with stdio_client(server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -302,4 +344,6 @@ def test_set_economizer_invalid_loop():
                 })
                 data = unwrap(result)
                 assert data["ok"] is False
+                assert "error" in data, "Should include error message for missing air loop"
+                assert "not found" in data["error"].lower() or "air loop" in data["error"].lower()
     asyncio.run(_run())

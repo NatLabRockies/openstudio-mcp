@@ -22,6 +22,7 @@ MEASURE_DIR = "/repo/tests/assets/measures/set_building_name"
 
 @pytest.mark.integration
 def test_list_measure_arguments():
+    # Validates: list_measure_arguments returns building_name arg for set_building_name measure
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -32,16 +33,15 @@ def test_list_measure_arguments():
                 res = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": MEASURE_DIR,
                 }))
-                assert res.get("ok") is True
-                assert len(res["arguments"]) >= 1
-                # Check building_name argument exists
+                assert res["ok"] is True
                 arg_names = [a["name"] for a in res["arguments"]]
-                assert "building_name" in arg_names
+                assert "building_name" in arg_names, f"Expected building_name in {arg_names}"
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_list_measure_not_found():
+    # Validates: list_measure_arguments returns error for nonexistent measure directory
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -52,12 +52,15 @@ def test_list_measure_not_found():
                 res = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": "/nonexistent/measure",
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
+                assert "error" in res, "Missing error message for nonexistent measure"
+                assert res["error"].strip(), "Error should have non-empty message for nonexistent measure"
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_apply_measure_default_args():
+    # Validates: apply_measure with default args sets building name to "Test Building"
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -69,16 +72,17 @@ def test_apply_measure_default_args():
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": MEASURE_DIR,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 # After measure, building name should be "Test Building" (default)
                 bldg = unwrap(await s.call_tool("get_building_info", {}))
-                assert bldg.get("ok") is True
+                assert bldg["ok"] is True
                 assert bldg["building"]["name"] == "Test Building"
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_apply_measure_custom_args():
+    # Validates: apply_measure passes custom arguments through to measure
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -91,9 +95,9 @@ def test_apply_measure_custom_args():
                     "measure_dir": MEASURE_DIR,
                     "arguments": {"building_name": "My Custom Building"},
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 bldg = unwrap(await s.call_tool("get_building_info", {}))
-                assert bldg.get("ok") is True
+                assert bldg["ok"] is True
                 assert bldg["building"]["name"] == "My Custom Building"
     asyncio.run(_run())
 
@@ -101,6 +105,7 @@ def test_apply_measure_custom_args():
 @pytest.mark.integration
 def test_apply_measure_invalid_dir():
     """Measure with bad directory path."""
+    # Validates: apply_measure returns error for nonexistent measure directory
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -112,13 +117,15 @@ def test_apply_measure_invalid_dir():
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": "/nonexistent/measure",
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
+                assert "error" in res, "Missing error message for invalid measure dir"
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_apply_measure_verify_model_changed():
     """Verify model state changed after measure application."""
+    # Validates: apply_measure mutates in-memory model (building name changes)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -136,7 +143,7 @@ def test_apply_measure_verify_model_changed():
                     "measure_dir": MEASURE_DIR,
                     "arguments": {"building_name": new_name},
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 # Verify changed
                 bldg_after = unwrap(await s.call_tool("get_building_info", {}))
                 assert bldg_after["building"]["name"] == new_name

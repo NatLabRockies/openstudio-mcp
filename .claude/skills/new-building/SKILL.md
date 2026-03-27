@@ -68,13 +68,13 @@ Step 3 — Typical building (same as Workflow B step 4)
 
 For fully custom buildings not matching DOE prototypes:
 
-1. `create_example_osm(name="<name>")` or `create_baseline_osm(name="<name>")`
-2. Create geometry with `create_space_from_floor_print` + `match_surfaces`
+1. `load_osm_model` an empty model, or start with `create_bar_building` for basic geometry
+2. Create/refine geometry with `create_space_from_floor_print` + `match_surfaces`
 3. Add glazing with `set_window_to_wall_ratio`
 4. Create materials/constructions/loads manually
 5. Add HVAC with `add_baseline_system`
-6. Set weather + design days
-7. Simulate
+6. Set weather with `change_building_location`
+7. Check with `validate_model`, then simulate
 
 ## Simulation
 

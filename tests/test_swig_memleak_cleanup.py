@@ -67,6 +67,7 @@ def _read_json_line(stdout_q: queue.Queue, *, timeout_s: float) -> dict:
 
 @pytest.mark.timeout(60)
 def test_no_swig_memory_leak_warning_on_exit():
+    # Regression: SWIG atexit detector printed memory leak warnings to stderr, breaking MCP JSON-RPC
     """After loading a model and closing stdin, stderr must not contain
     'memory leak' from SWIG's atexit leak detector."""
     server_cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")

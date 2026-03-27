@@ -19,6 +19,7 @@ def _unique_name(prefix: str = "pytest_load_save") -> str:
 @pytest.mark.integration
 def test_load_osm_model():
     """Test loading an OSM file into the current model state."""
+    # Validates: load_osm_model returns building_name, spaces=4, zones=1 for example model
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -33,23 +34,19 @@ def test_load_osm_model():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
                 print("create_example_osm:", create_result)
-                assert isinstance(create_result, dict)
-                assert create_result.get("ok") is True
-                osm_path = create_result.get("osm_path")
-                assert osm_path and str(osm_path).endswith(".osm")
+                assert create_result["ok"] is True
+                osm_path = create_result["osm_path"]
+                assert str(osm_path).endswith(".osm")
 
                 # Load it into current model state
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": osm_path})
                 load_result = unwrap(load_resp)
                 print("load_osm_model:", load_result)
-
-                assert isinstance(load_result, dict)
-                assert load_result.get("ok") is True, load_result
-                assert load_result.get("osm_path") == osm_path
-                assert load_result.get("building_name") == "Building 1"
-                assert load_result.get("spaces") == 4
-                assert load_result.get("thermal_zones") == 1
-                assert "message" in load_result
+                assert load_result["ok"] is True, load_result
+                assert load_result["osm_path"] == osm_path
+                assert load_result["building_name"] == "Building 1"
+                assert load_result["spaces"] == 4
+                assert load_result["thermal_zones"] == 1
                 assert "successfully" in load_result["message"].lower()
 
     asyncio.run(_run())
@@ -58,6 +55,7 @@ def test_load_osm_model():
 @pytest.mark.integration
 def test_save_osm_model():
     """Test saving a loaded model to a new location."""
+    # Validates: save_osm_model writes to same path and new path, both re-loadable
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -72,27 +70,23 @@ def test_save_osm_model():
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
                 print("create_example_osm:", create_result)
-                assert isinstance(create_result, dict)
-                assert create_result.get("ok") is True
-                osm_path = create_result.get("osm_path")
-                out_dir = create_result.get("out_dir")
-                assert osm_path and str(osm_path).endswith(".osm")
+                assert create_result["ok"] is True
+                osm_path = create_result["osm_path"]
+                out_dir = create_result["out_dir"]
+                assert str(osm_path).endswith(".osm")
 
                 # Load it
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": osm_path})
                 load_result = unwrap(load_resp)
                 print("load_osm_model:", load_result)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Save to same location (no save_path argument)
                 save1_resp = await session.call_tool("save_osm_model", {})
                 save1_result = unwrap(save1_resp)
                 print("save_osm_model (same path):", save1_result)
-
-                assert isinstance(save1_result, dict)
-                assert save1_result.get("ok") is True, save1_result
-                assert save1_result.get("osm_path") == osm_path
-                assert "message" in save1_result
+                assert save1_result["ok"] is True, save1_result
+                assert save1_result["osm_path"] == osm_path
                 assert "successfully" in save1_result["message"].lower()
 
                 # Save to new location
@@ -101,18 +95,15 @@ def test_save_osm_model():
                 save2_resp = await session.call_tool("save_osm_model", {"osm_path": new_path})
                 save2_result = unwrap(save2_resp)
                 print("save_osm_model (new path):", save2_result)
-
-                assert isinstance(save2_result, dict)
-                assert save2_result.get("ok") is True, save2_result
-                # Check that the path ends with the expected file
-                assert save2_result.get("osm_path", "").endswith("saved_copy.osm"), save2_result
+                assert save2_result["ok"] is True, save2_result
+                assert save2_result["osm_path"].endswith("saved_copy.osm"), save2_result
 
                 # Verify the new file can be inspected
                 inspect_resp = await session.call_tool("inspect_osm_summary", {"osm_path": new_path})
                 inspect_result = unwrap(inspect_resp)
                 print("inspect_osm_summary (saved copy):", inspect_result)
-                assert inspect_result.get("ok") is True
-                assert inspect_result.get("building_name") == "Building 1"
+                assert inspect_result["ok"] is True
+                assert inspect_result["building_name"] == "Building 1"
 
     asyncio.run(_run())
 
@@ -120,6 +111,7 @@ def test_save_osm_model():
 @pytest.mark.integration
 def test_save_without_load_fails():
     """Test that save_osm_model fails when no model is loaded."""
+    # Validates: save_osm_model returns ok:false with "no model loaded" when no model
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -132,10 +124,7 @@ def test_save_without_load_fails():
                 save_resp = await session.call_tool("save_osm_model", {})
                 save_result = unwrap(save_resp)
                 print("save_osm_model (no model loaded):", save_result)
-
-                assert isinstance(save_result, dict)
-                assert save_result.get("ok") is False
-                assert "error" in save_result
+                assert save_result["ok"] is False
                 assert "no model loaded" in save_result["error"].lower()
 
     asyncio.run(_run())
@@ -144,6 +133,7 @@ def test_save_without_load_fails():
 @pytest.mark.integration
 def test_load_nonexistent_file_fails():
     """Test that load_osm_model fails gracefully for nonexistent file."""
+    # Validates: load_osm_model returns ok:false with "not found" for missing file
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -157,10 +147,7 @@ def test_load_nonexistent_file_fails():
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": fake_path})
                 load_result = unwrap(load_resp)
                 print("load_osm_model (nonexistent file):", load_result)
-
-                assert isinstance(load_result, dict)
-                assert load_result.get("ok") is False
-                assert "error" in load_result
+                assert load_result["ok"] is False
                 assert "not found" in load_result["error"].lower()
 
     asyncio.run(_run())
@@ -169,6 +156,7 @@ def test_load_nonexistent_file_fails():
 @pytest.mark.integration
 def test_list_files():
     """Test list_files discovers files in /runs after creating an example model."""
+    # Validates: list_files discovers files, filters by pattern, blocks /etc and /opt paths
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -182,13 +170,13 @@ def test_list_files():
                 # Create a model so /runs has something in it
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 # List all files — should find the OSM we just created
                 list_resp = await session.call_tool("list_files", {"max_results": 0})
                 list_result = unwrap(list_resp)
                 print("list_files (all):", list_result)
-                assert list_result.get("ok") is True
+                assert list_result["ok"] is True
                 assert list_result.get("count", 0) >= 1
                 names = [f["name"] for f in list_result["items"]]
                 assert "example_model.osm" in names
@@ -197,7 +185,7 @@ def test_list_files():
                 osm_resp = await session.call_tool("list_files", {"pattern": "*.osm", "max_results": 0})
                 osm_result = unwrap(osm_resp)
                 print("list_files (*.osm):", osm_result)
-                assert osm_result.get("ok") is True
+                assert osm_result["ok"] is True
                 osm_files = [f for f in osm_result["items"] if f["type"] == "file"]
                 assert all(f["name"].endswith(".osm") for f in osm_files)
 
@@ -205,28 +193,28 @@ def test_list_files():
                 epw_resp = await session.call_tool("list_files", {"pattern": "*.xyz_no_match", "max_results": 0})
                 epw_result = unwrap(epw_resp)
                 print("list_files (no match):", epw_result)
-                assert epw_result.get("ok") is True
+                assert epw_result["ok"] is True
                 assert epw_result.get("count") == 0
 
                 # Specific directory
                 runs_resp = await session.call_tool("list_files", {"directory": "/runs", "max_results": 0})
                 runs_result = unwrap(runs_resp)
                 print("list_files (/runs):", runs_result)
-                assert runs_result.get("ok") is True
+                assert runs_result["ok"] is True
                 assert runs_result.get("count", 0) >= 1
 
                 # Disallowed directory — /etc
                 bad_resp = await session.call_tool("list_files", {"directory": "/etc", "max_results": 0})
                 bad_result = unwrap(bad_resp)
                 print("list_files (/etc):", bad_result)
-                assert bad_result.get("ok") is False
+                assert bad_result["ok"] is False
                 assert "not allowed" in bad_result.get("error", "").lower()
 
                 # Disallowed — /opt/comstock-measures (restricted to /inputs + /runs)
                 opt_resp = await session.call_tool("list_files", {"directory": "/opt/comstock-measures", "max_results": 0})
                 opt_result = unwrap(opt_resp)
                 print("list_files (/opt):", opt_result)
-                assert opt_result.get("ok") is False
+                assert opt_result["ok"] is False
                 assert "not allowed" in opt_result.get("error", "").lower()
 
                 # Verify no dir-type items in output

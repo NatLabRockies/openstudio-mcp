@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from mcp_server.skills import register_all_skills
+
+pytestmark = pytest.mark.unit
 
 # Core tools — the ~15 always-loaded tools from the routing plan.
 # These cover model lifecycle + discovery and should handle the 80% case.
@@ -51,6 +55,7 @@ def _register_tools_with_docs() -> dict[str, dict]:
 
 
 def test_tool_count():
+    # Validates: total registered tool count matches expected 142 — catches accidental add/remove
     """Record current tool count — expect 139 before search_api."""
     tools = _register_tools_with_docs()
     count = len(tools)
@@ -59,9 +64,10 @@ def test_tool_count():
 
 
 def test_total_schema_chars():
+    # Validates: total schema size stays within reasonable bounds (proxy for LLM token budget)
     """Measure total chars of tool names + docstrings (proxy for tokens).
 
-    ~4 chars/token is a rough estimate. No assertion — just baseline capture.
+    ~4 chars/token is a rough estimate.
     """
     tools = _register_tools_with_docs()
     # Serialize name + doc for each tool (approximates schema size)
@@ -71,11 +77,13 @@ def test_total_schema_chars():
     est_tokens = total_chars // 4
     print(f"\nTotal schema chars: {total_chars:,}")
     print(f"Estimated tokens: {est_tokens:,}")
-    # No hard assertion — this is a measurement
+    assert total_chars > 0, "Schema should have content"
+    assert total_chars < 200_000, f"Schema bloat: {total_chars:,} chars exceeds 200K budget"
 
 
 def test_tags_coverage():
-    """Check how many tools have tags. Before Phase 2: expect 0."""
+    # Validates: tag coverage measurement — all 142 tools must be tagged post-Phase 2
+    """Check how many tools have tags. Post Phase 2: expect 100%."""
     tools = _register_tools_with_docs()
     tagged = {name: t for name, t in tools.items() if t["tags"]}
     untagged = {name for name in tools if name not in tagged}
@@ -85,11 +93,17 @@ def test_tags_coverage():
     if untagged:
         print(f"Untagged: {sorted(untagged)}")
 
-    # Before Phase 2, expect 0 tagged. After Phase 2, update to 100%.
-    # For now this is informational — will add assertion after Phase 2.
+    # Assert actual coverage matches expected state
+    assert len(tools) > 0, "Should have tools to measure"
+    # Post-Phase 2: all 142 tools are tagged
+    assert len(tagged) == 142, (
+        f"Expected 142 tagged tools, found {len(tagged)}; "
+        f"untagged: {sorted(untagged)}"
+    )
 
 
 def test_core_tools_identified():
+    # Validates: all 16 core tools (always-loaded subset) exist in registered tool set
     """All planned core tools exist in the registered tool set."""
     tools = _register_tools_with_docs()
     registered_names = set(tools.keys())
@@ -101,6 +115,7 @@ def test_core_tools_identified():
 
 
 def test_core_schema_chars():
+    # Validates: core tools subset is significantly smaller than full schema
     """Measure schema size of core-only subset vs full set."""
     tools = _register_tools_with_docs()
 
@@ -116,9 +131,12 @@ def test_core_schema_chars():
     print(f"\nAll tools schema: {all_chars:,} chars (~{all_chars // 4:,} tokens)")
     print(f"Core tools schema: {core_chars:,} chars (~{core_chars // 4:,} tokens)")
     print(f"Core/All ratio: {ratio:.1f}%")
+    assert core_chars < all_chars, "Core subset should be smaller than full set"
+    assert ratio < 50, f"Core should be <50% of full schema, got {ratio:.1f}%"
 
 
 def test_min_description_length():
+    # Validates: every tool docstring first line >= 40 chars for ToolSearch discoverability
     """Every tool must have a first-line description of at least 40 chars.
 
     Short descriptions hurt ToolSearch discovery — ToolSearch matches on

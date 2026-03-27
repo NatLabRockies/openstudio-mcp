@@ -31,6 +31,7 @@ async def _setup_model(session, model_name):
 
 @pytest.mark.integration
 def test_create_people_by_area():
+    # Validates: create_people_definition with people_per_area creates People object on correct space
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -42,7 +43,7 @@ def test_create_people_by_area():
                 res = unwrap(await s.call_tool("create_people_definition", {
                     "name": "Office People", "space_name": space, "people_per_area": 0.05,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["people"]["name"] == "Office People"
                 assert res["people"]["space"] == space
                 # Verify shows in list
@@ -54,6 +55,7 @@ def test_create_people_by_area():
 
 @pytest.mark.integration
 def test_create_people_by_count():
+    # Validates: create_people_definition with num_people creates People object with fixed count
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -65,17 +67,25 @@ def test_create_people_by_count():
                 res = unwrap(await s.call_tool("create_people_definition", {
                     "name": "Lab People", "space_name": space, "num_people": 10.0,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["people"]["name"] == "Lab People"
+                # Verify the sizing value was set (not just name echoed back)
+                people_data = res["people"]
+                if "number_of_people" in people_data:
+                    assert people_data["number_of_people"] == pytest.approx(10.0, abs=0.1), (
+                        f"Expected 10 people, got {people_data['number_of_people']}"
+                    )
 
                 lst = unwrap(await s.call_tool("list_model_objects",
                              {"object_type": "People", "max_results": 0}))
-                assert any(p["name"] == "Lab People" for p in lst["objects"])
+                names = [p["name"] for p in lst["objects"]]
+                assert "Lab People" in names, f"Lab People not found in model objects: {names}"
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_create_people_with_schedule():
+    # Validates: create_people_definition assigns schedule to People object
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -88,12 +98,12 @@ def test_create_people_with_schedule():
                 sched = unwrap(await s.call_tool("create_schedule_ruleset", {
                     "name": "Occ Schedule", "schedule_type": "Fractional", "default_value": 0.8,
                 }))
-                assert sched.get("ok") is True
+                assert sched["ok"] is True
                 res = unwrap(await s.call_tool("create_people_definition", {
                     "name": "Scheduled People", "space_name": space,
                     "people_per_area": 0.04, "schedule_name": "Occ Schedule",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["people"]["number_of_people_schedule"] == "Occ Schedule"
 
                 lst = unwrap(await s.call_tool("list_model_objects",
@@ -106,6 +116,7 @@ def test_create_people_with_schedule():
 
 @pytest.mark.integration
 def test_create_lights_by_area():
+    # Validates: create_lights_definition with watts_per_area creates Lights on space
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -117,7 +128,7 @@ def test_create_lights_by_area():
                 res = unwrap(await s.call_tool("create_lights_definition", {
                     "name": "Office Lights", "space_name": space, "watts_per_area": 10.76,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["lights"]["name"] == "Office Lights"
                 lst = unwrap(await s.call_tool("list_model_objects",
                              {"object_type": "Lights", "max_results": 0}))
@@ -127,6 +138,7 @@ def test_create_lights_by_area():
 
 @pytest.mark.integration
 def test_create_lights_by_level():
+    # Validates: create_lights_definition with lighting_level_w creates absolute wattage Lights
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -138,7 +150,8 @@ def test_create_lights_by_level():
                 res = unwrap(await s.call_tool("create_lights_definition", {
                     "name": "Desk Lamp", "space_name": space, "lighting_level_w": 500.0,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
+                assert res["lights"]["name"] == "Desk Lamp"
 
                 lst = unwrap(await s.call_tool("list_model_objects",
                              {"object_type": "Lights", "max_results": 0}))
@@ -150,6 +163,7 @@ def test_create_lights_by_level():
 
 @pytest.mark.integration
 def test_create_electric_equipment():
+    # Validates: create_electric_equipment creates ElectricEquipment on space with correct name
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -161,7 +175,7 @@ def test_create_electric_equipment():
                 res = unwrap(await s.call_tool("create_electric_equipment", {
                     "name": "Computers", "space_name": space, "watts_per_area": 8.0,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["electric_equipment"]["name"] == "Computers"
                 lst = unwrap(await s.call_tool("list_model_objects",
                              {"object_type": "ElectricEquipment", "max_results": 0}))
@@ -171,6 +185,7 @@ def test_create_electric_equipment():
 
 @pytest.mark.integration
 def test_create_gas_equipment():
+    # Validates: create_gas_equipment creates GasEquipment on space with correct name
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -182,7 +197,7 @@ def test_create_gas_equipment():
                 res = unwrap(await s.call_tool("create_gas_equipment", {
                     "name": "Kitchen Range", "space_name": space, "watts_per_area": 5.0,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["gas_equipment"]["name"] == "Kitchen Range"
 
                 lst = unwrap(await s.call_tool("list_model_objects",
@@ -195,6 +210,7 @@ def test_create_gas_equipment():
 
 @pytest.mark.integration
 def test_create_infiltration_by_area():
+    # Validates: create_infiltration with flow_per_exterior_surface_area creates infiltration object
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -207,7 +223,7 @@ def test_create_infiltration_by_area():
                     "name": "Envelope Leakage", "space_name": space,
                     "flow_per_exterior_surface_area": 0.0003,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["infiltration"]["name"] == "Envelope Leakage"
                 lst = unwrap(await s.call_tool("list_model_objects",
                              {"object_type": "SpaceInfiltrationDesignFlowRate", "max_results": 0}))
@@ -217,6 +233,7 @@ def test_create_infiltration_by_area():
 
 @pytest.mark.integration
 def test_create_infiltration_by_ach():
+    # Validates: create_infiltration with ach creates infiltration object with air changes method
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -228,7 +245,8 @@ def test_create_infiltration_by_ach():
                 res = unwrap(await s.call_tool("create_infiltration", {
                     "name": "ACH Infiltration", "space_name": space, "ach": 0.5,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
+                assert res["infiltration"]["name"] == "ACH Infiltration"
 
                 lst = unwrap(await s.call_tool("list_model_objects",
                              {"object_type": "SpaceInfiltrationDesignFlowRate", "max_results": 0}))
@@ -240,6 +258,7 @@ def test_create_infiltration_by_ach():
 
 @pytest.mark.integration
 def test_create_load_invalid_space():
+    # Validates: create_people_definition rejects nonexistent space with clear error
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -251,13 +270,14 @@ def test_create_load_invalid_space():
                 res = unwrap(await s.call_tool("create_people_definition", {
                     "name": "Bad", "space_name": "NonexistentSpace", "people_per_area": 0.05,
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "not found" in res["error"]
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_create_load_invalid_schedule():
+    # Validates: create_lights_definition rejects nonexistent schedule with clear error
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -270,13 +290,14 @@ def test_create_load_invalid_schedule():
                     "name": "Bad Lights", "space_name": space,
                     "watts_per_area": 10.0, "schedule_name": "NonexistentSchedule",
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "not found" in res["error"]
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_create_load_no_sizing_method():
+    # Validates: create_people_definition requires sizing param (people_per_area or num_people)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -288,6 +309,6 @@ def test_create_load_no_sizing_method():
                 res = unwrap(await s.call_tool("create_people_definition", {
                     "name": "No Size", "space_name": space,
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "people_per_area" in res["error"] or "Provide" in res["error"]
     asyncio.run(_run())

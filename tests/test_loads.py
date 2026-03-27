@@ -24,6 +24,7 @@ def _unique_name(prefix: str = "pytest_loads") -> str:
 @pytest.mark.integration
 def test_loads_baseline():
     """Test loads across 10 spaces in baseline model via list_model_objects."""
+    # Validates: baseline model has People, Lights, ElectricEquipment, Infiltration objects
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -35,33 +36,33 @@ def test_loads_baseline():
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 # People via list_model_objects
                 pr = unwrap(await session.call_tool("list_model_objects",
                             {"object_type": "People", "max_results": 0}))
                 print("baseline people:", pr)
-                assert pr.get("ok") is True
+                assert pr["ok"] is True
                 assert pr["count"] >= 1
 
                 # Lights
                 lr2 = unwrap(await session.call_tool("list_model_objects",
                              {"object_type": "Lights", "max_results": 0}))
-                assert lr2.get("ok") is True
+                assert lr2["ok"] is True
                 assert lr2["count"] >= 1
 
                 # Electric equipment
                 er = unwrap(await session.call_tool("list_model_objects",
                             {"object_type": "ElectricEquipment", "max_results": 0}))
-                assert er.get("ok") is True
+                assert er["ok"] is True
                 assert er["count"] >= 1
 
                 # Infiltration
                 ir = unwrap(await session.call_tool("list_model_objects",
                             {"object_type": "SpaceInfiltrationDesignFlowRate", "max_results": 0}))
-                assert ir.get("ok") is True
+                assert ir["ok"] is True
                 assert ir["count"] >= 1
 
     asyncio.run(_run())
@@ -70,6 +71,7 @@ def test_loads_baseline():
 @pytest.mark.integration
 def test_loads_tools_without_loaded_model():
     """Test that list_model_objects fails gracefully when no model is loaded."""
+    # Validates: list_model_objects returns ok:false with "no model loaded" when no model
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -83,10 +85,7 @@ def test_loads_tools_without_loaded_model():
                               {"object_type": "People", "max_results": 0})
                 people_result = unwrap(people_resp)
                 print("list_model_objects People (no model):", people_result)
-
-                assert isinstance(people_result, dict)
-                assert people_result.get("ok") is False
-                assert "error" in people_result
+                assert people_result["ok"] is False
                 assert "no model loaded" in people_result["error"].lower()
 
     asyncio.run(_run())

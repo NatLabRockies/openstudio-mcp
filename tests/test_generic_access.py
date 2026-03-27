@@ -29,9 +29,9 @@ async def _create_baseline_with_hvac(s, name, sys_num="07"):
     """Create baseline model with HVAC system (default: System 7 = VAV w/ boiler+chiller)."""
     cr = unwrap(await s.call_tool("create_baseline_osm",
                 {"name": name, "ashrae_sys_num": sys_num}))
-    assert cr.get("ok") is True, cr
+    assert cr["ok"] is True, cr
     lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True
+    assert lr["ok"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +41,7 @@ async def _create_baseline_with_hvac(s, name, sys_num="07"):
 @pytest.mark.integration
 def test_list_model_objects_dynamic_fallback():
     """list_model_objects accepts types not in MANAGED_TYPES via dynamic getter."""
+    # Validates: list_model_objects accepts types not in MANAGED_TYPES via dynamic getter
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -63,6 +64,7 @@ def test_list_model_objects_dynamic_fallback():
 @pytest.mark.integration
 def test_list_model_objects_idd_colon_format():
     """list_model_objects accepts IDD colon format (OS:Coil:Cooling:Water)."""
+    # Validates: list_model_objects normalizes OS:Coil:Cooling:Water to CoilCoolingWater
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -85,6 +87,7 @@ def test_list_model_objects_idd_colon_format():
 @pytest.mark.integration
 def test_list_model_objects_idd_underscore_format():
     """list_model_objects accepts IDD underscore format."""
+    # Validates: list_model_objects normalizes OS_Coil_Cooling_Water to CoilCoolingWater
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -106,6 +109,7 @@ def test_list_model_objects_idd_underscore_format():
 @pytest.mark.integration
 def test_list_model_objects_unknown_type_error():
     """list_model_objects returns helpful error for truly unknown types."""
+    # Validates: unknown type returns ok:false with type name in error message
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -131,6 +135,7 @@ def test_list_model_objects_unknown_type_error():
 @pytest.mark.integration
 def test_get_object_fields_boiler():
     """get_object_fields reads properties from a BoilerHotWater."""
+    # Validates: get_object_fields reads efficiency properties from BoilerHotWater
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -167,6 +172,7 @@ def test_get_object_fields_boiler():
 @pytest.mark.integration
 def test_get_object_fields_by_handle():
     """get_object_fields works with handle lookup."""
+    # Validates: get_object_fields works with handle lookup (not just name)
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -194,6 +200,7 @@ def test_get_object_fields_by_handle():
 @pytest.mark.integration
 def test_get_object_fields_not_found():
     """get_object_fields returns error for non-existent object."""
+    # Validates: get_object_fields returns ok:false for nonexistent object
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -219,6 +226,7 @@ def test_get_object_fields_not_found():
 @pytest.mark.integration
 def test_set_object_property_boiler_efficiency():
     """set_object_property changes a boiler's nominal thermal efficiency."""
+    # Validates: set_object_property changes boiler efficiency to 0.92
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -245,12 +253,21 @@ def test_set_object_property_boiler_efficiency():
                 assert res["setter_method"] == "setNominalThermalEfficiency"
                 assert res["new_value"] == 0.92
 
+                # Independent readback — verify model was actually updated
+                readback = unwrap(await s.call_tool("get_object_fields", {
+                    "object_type": "BoilerHotWater",
+                    "object_name": boiler_name,
+                }))
+                assert readback["ok"] is True
+                assert readback["properties"]["nominalThermalEfficiency"]["value"] == pytest.approx(0.92)
+
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_set_object_property_with_set_prefix():
     """set_object_property accepts setter name with 'set' prefix."""
+    # Validates: set_object_property accepts setter name with "set" prefix
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -274,12 +291,21 @@ def test_set_object_property_with_set_prefix():
                 assert res["ok"] is True, res
                 assert res["new_value"] == 0.85
 
+                # Independent readback — verify model was actually updated
+                readback = unwrap(await s.call_tool("get_object_fields", {
+                    "object_type": "BoilerHotWater",
+                    "object_name": boiler_name,
+                }))
+                assert readback["ok"] is True
+                assert readback["properties"]["nominalThermalEfficiency"]["value"] == pytest.approx(0.85)
+
     asyncio.run(_run())
 
 
 @pytest.mark.integration
 def test_set_object_property_invalid_setter():
     """set_object_property returns error for non-existent setter."""
+    # Validates: set_object_property returns "No setter" error for fake property
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -313,6 +339,7 @@ def test_set_object_property_invalid_setter():
 @pytest.mark.integration
 def test_air_loop_demand_terminals():
     """get_air_loop_details includes demand_terminals with zone/type/name."""
+    # Validates: get_air_loop_details includes demand_terminals with zone/type/name
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -348,6 +375,7 @@ def test_air_loop_demand_terminals():
 @pytest.mark.integration
 def test_get_object_fields_people_definition():
     """get_object_fields for People returns inline definition fields."""
+    # Validates: get_object_fields for People inlines definition fields as nested dict
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -386,6 +414,7 @@ def test_get_object_fields_people_definition():
 @pytest.mark.integration
 def test_get_object_fields_lights_definition():
     """get_object_fields for Lights returns inline definition fields."""
+    # Validates: get_object_fields for Lights inlines definition fields
     if not integration_enabled():
         pytest.skip("integration")
 
@@ -416,6 +445,7 @@ def test_get_object_fields_lights_definition():
 @pytest.mark.integration
 def test_equivalence_boiler_properties():
     """get_object_fields returns efficiency matching get_component_properties."""
+    # Validates: get_object_fields efficiency matches get_component_properties for same boiler
     if not integration_enabled():
         pytest.skip("integration")
 

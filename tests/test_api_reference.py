@@ -22,6 +22,7 @@ def _import_search_api_op():
 # ── Exact match ──────────────────────────────────────────────────────────
 
 def test_search_class_exact_match():
+    # Validates: exact class name returns single match for CoilCoolingFourPipeBeam
     search = _import_search_api_op()
     result = search("CoilCoolingFourPipeBeam")
     assert result["ok"]
@@ -32,6 +33,7 @@ def test_search_class_exact_match():
 # ── Pattern matching ─────────────────────────────────────────────────────
 
 def test_search_class_pattern():
+    # Validates: partial pattern CoilCooling returns multiple matching classes
     search = _import_search_api_op()
     result = search("CoilCooling")
     assert result["ok"]
@@ -41,6 +43,7 @@ def test_search_class_pattern():
 
 
 def test_search_class_case_insensitive():
+    # Validates: case-insensitive search finds classes
     search = _import_search_api_op()
     result = search("coilcooling")
     assert result["ok"]
@@ -48,6 +51,7 @@ def test_search_class_case_insensitive():
 
 
 def test_search_class_no_match():
+    # Validates: nonexistent class pattern returns empty classes list
     search = _import_search_api_op()
     result = search("NonexistentWidget99")
     assert result["ok"]
@@ -55,6 +59,7 @@ def test_search_class_no_match():
 
 
 def test_max_classes_cap():
+    # Validates: max_classes parameter caps result count
     search = _import_search_api_op()
     result = search("Coil", max_classes=3)
     assert result["ok"]
@@ -64,6 +69,7 @@ def test_max_classes_cap():
 # ── Method grouping ──────────────────────────────────────────────────────
 
 def test_method_grouping():
+    # Validates: methods grouped into setters/getters/other with correct prefixes
     search = _import_search_api_op()
     result = search("CoilCoolingFourPipeBeam")
     cls = result["classes"][0]
@@ -79,6 +85,7 @@ def test_method_grouping():
 
 
 def test_method_pattern_filter():
+    # Validates: method_pattern filters methods, all results match pattern
     search = _import_search_api_op()
     unfiltered = search("CoilCoolingFourPipeBeam")
     filtered = search("CoilCoolingFourPipeBeam", method_pattern="Rated|COP")
@@ -97,6 +104,7 @@ def test_method_pattern_filter():
 
 
 def test_exclude_base_methods():
+    # Validates: base methods (clone/remove/name) excluded by default, included with flag
     search = _import_search_api_op()
     # Default: base methods excluded
     result = search("CoilCoolingFourPipeBeam")
@@ -117,6 +125,7 @@ def test_exclude_base_methods():
 
 
 def test_nonexistent_method_returns_empty():
+    # Validates: nonexistent method_pattern returns empty setter/getter/other lists
     search = _import_search_api_op()
     result = search("CoilCoolingFourPipeBeam", method_pattern="zzzzNonexistent")
     assert result["ok"]
@@ -134,6 +143,7 @@ def test_validates_real_methods_exist():
     The bad methods come from an actual debug session where the LLM invented
     method names that don't exist on CoilCoolingFourPipeBeam.
     """
+    # Validates: known real methods exist, known hallucinated methods do not
     search = _import_search_api_op()
     result = search("CoilCoolingFourPipeBeam", include_base=True)
     cls = result["classes"][0]
@@ -158,6 +168,7 @@ def test_validates_real_methods_exist():
 
 def test_ruby_python_method_parity_spot_check():
     """Spot-check that Python bindings expose known Ruby setter names."""
+    # Validates: Python bindings expose known Ruby setter names for four-pipe beam
     search = _import_search_api_op()
     result = search("CoilCoolingFourPipeBeam")
     cls = result["classes"][0]
@@ -177,6 +188,7 @@ def test_ruby_python_method_parity_spot_check():
 
 def test_search_api_via_mcp():
     """search_api tool works through full MCP stack."""
+    # Validates: search_api works through full MCP server stack
     import asyncio
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client

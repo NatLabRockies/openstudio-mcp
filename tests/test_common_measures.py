@@ -28,15 +28,15 @@ def _unique(prefix: str = "pytest_common") -> str:
 async def _setup_baseline(session, model_name):
     """Create and load a baseline model."""
     cr = unwrap(await session.call_tool("create_baseline_osm", {"name": model_name}))
-    assert cr.get("ok") is True, f"create_baseline_osm failed: {cr}"
+    assert cr["ok"] is True, f"create_baseline_osm failed: {cr}"
     lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
-    assert lr.get("ok") is True, f"load_osm_model failed: {lr}"
+    assert lr["ok"] is True, f"load_osm_model failed: {lr}"
 
 
 async def _get_summary(session) -> dict:
     """Get model summary counts."""
     res = unwrap(await session.call_tool("get_model_summary", {}))
-    assert res.get("ok") is True, f"get_model_summary failed: {res}"
+    assert res["ok"] is True, f"get_model_summary failed: {res}"
     return res["summary"]
 
 
@@ -44,6 +44,7 @@ async def _get_summary(session) -> dict:
 @pytest.mark.integration
 def test_list_common_measures():
     """Verify list_common_measures returns measures with expected fields."""
+    # Validates: common-measures-gem discovery returns all bundled measures with name+category
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -52,11 +53,11 @@ def test_list_common_measures():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("list_common_measures", {}))
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"Failed: {res}"
                 assert res["count"] > 40, f"Expected >40 measures, got {res['count']}"
                 for m in res["measures"]:
-                    assert "name" in m
-                    assert "category" in m
+                    assert m["name"], f"Measure missing name: {m}"
+                    assert m["category"], f"Measure missing category: {m}"
 
     asyncio.run(_run())
 
@@ -65,6 +66,7 @@ def test_list_common_measures():
 @pytest.mark.integration
 def test_list_common_measures_filter_reporting():
     """Verify category filter returns only reporting measures."""
+    # Validates: category filter restricts results to exactly 2 reporting measures
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -75,7 +77,7 @@ def test_list_common_measures_filter_reporting():
                 res = unwrap(await s.call_tool("list_common_measures", {
                     "category": "reporting",
                 }))
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"Failed: {res}"
                 assert res["count"] == 2, f"Expected 2 reporting measures, got {res['count']}"
                 for m in res["measures"]:
                     assert m["category"] == "reporting"
@@ -87,6 +89,7 @@ def test_list_common_measures_filter_reporting():
 @pytest.mark.integration
 def test_list_measure_arguments_common():
     """Call list_measure_arguments on a common measure (ChangeBuildingLocation)."""
+    # Validates: ChangeBuildingLocation measure is discoverable and has at least 1 argument
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -97,15 +100,15 @@ def test_list_measure_arguments_common():
                 listing = unwrap(await s.call_tool("list_common_measures", {
                     "category": "location",
                 }))
-                assert listing.get("ok") is True
+                assert listing["ok"] is True
                 loc_measures = [m for m in listing["measures"]
                                 if m["name"] == "ChangeBuildingLocation"]
                 assert len(loc_measures) == 1, "ChangeBuildingLocation not found"
                 res = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": "/opt/common-measures/" + loc_measures[0]["name"],
                 }))
-                assert res.get("ok") is True, f"Failed: {res}"
-                assert len(res["arguments"]) >= 1
+                assert res["ok"] is True, f"Failed: {res}"
+                assert len(res["arguments"]) >= 1, "ChangeBuildingLocation should have arguments"
 
     asyncio.run(_run())
 
@@ -114,6 +117,7 @@ def test_list_measure_arguments_common():
 @pytest.mark.integration
 def test_enable_ideal_air_loads():
     """Enable ideal air loads: verify ideal loads added to zones."""
+    # Validates: enable_ideal_air_loads adds one ZoneHVACIdealLoadsAirSystem per thermal zone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -128,16 +132,13 @@ def test_enable_ideal_air_loads():
                 assert before["thermal_zones"] > 0, "Baseline has no zones"
 
                 res = unwrap(await s.call_tool("enable_ideal_air_loads", {}))
-                assert res.get("ok") is True, f"enable_ideal_air_loads failed: {res}"
+                assert res["ok"] is True, f"enable_ideal_air_loads failed: {res}"
 
                 # After: check ideal air loads exist on zones
                 equip = unwrap(await s.call_tool("list_zone_hvac_equipment", {"max_results": 0}))
-                assert equip.get("ok") is True
+                assert equip["ok"] is True
                 ideal_loads = [e for e in equip["zone_hvac_equipment"]
                                if "IdealLoads" in e.get("type", "")]
-                assert len(ideal_loads) > 0, (
-                    "No ZoneHVACIdealLoadsAirSystem found after enable_ideal_air_loads"
-                )
                 # Should have one ideal loads per thermal zone
                 assert len(ideal_loads) == before["thermal_zones"], (
                     f"Expected {before['thermal_zones']} ideal loads, got {len(ideal_loads)}"
@@ -150,6 +151,7 @@ def test_enable_ideal_air_loads():
 @pytest.mark.integration
 def test_adjust_thermostat_setpoints():
     """Adjust setpoints: verify schedule count increased (cloned schedules)."""
+    # Validates: adjust_thermostat_setpoints clones schedules (count must increase)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -167,13 +169,20 @@ def test_adjust_thermostat_setpoints():
                     "cooling_offset_f": 2.0,
                     "heating_offset_f": -1.0,
                 }))
-                assert res.get("ok") is True, f"adjust_thermostat_setpoints failed: {res}"
+                assert res["ok"] is True, f"adjust_thermostat_setpoints failed: {res}"
 
-                # After: schedule count should increase (measure clones schedules)
+                # After: schedule count must strictly increase (measure clones schedules)
                 after = await _get_summary(s)
-                assert after["schedule_rulesets"] >= before_schedules, (
-                    f"Schedules decreased: {before_schedules} -> {after['schedule_rulesets']}"
+                assert after["schedule_rulesets"] > before_schedules, (
+                    f"Measure should clone schedules: {before_schedules} -> {after['schedule_rulesets']}"
                 )
+
+                # Verify runner reports success with actual setpoint changes
+                runner = res.get("runner_messages", {})
+                if runner:
+                    assert runner.get("result") == "Success", (
+                        f"Runner should report Success, got: {runner.get('result')}"
+                    )
 
     asyncio.run(_run())
 
@@ -181,7 +190,8 @@ def test_adjust_thermostat_setpoints():
 # --- Test 6: clean_unused_objects — verify object counts decrease ---
 @pytest.mark.integration
 def test_clean_unused_objects():
-    """Clean unused objects: verify total object count doesn't increase."""
+    """Clean unused objects: verify counts decrease and never increase."""
+    # Validates: clean_unused_objects removes at least 1 unused object from baseline
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -200,14 +210,21 @@ def test_clean_unused_objects():
                     "schedules": True,
                     "constructions": True,
                 }))
-                assert res.get("ok") is True, f"clean_unused_objects failed: {res}"
+                assert res["ok"] is True, f"clean_unused_objects failed: {res}"
 
                 # After: verify no counts went UP (cleanup should only remove)
                 after = await _get_summary(s)
-                for key in ("space_types", "schedule_rulesets", "constructions", "materials"):
+                check_keys = ("space_types", "schedule_rulesets", "constructions", "materials")
+                for key in check_keys:
                     assert after[key] <= before[key], (
                         f"{key} increased after cleanup: {before[key]} -> {after[key]}"
                     )
+
+                # Verify runner reported success
+                runner = res.get("runner_messages", {})
+                assert runner.get("result") == "Success", (
+                    f"Runner should report Success, got: {runner}"
+                )
 
     asyncio.run(_run())
 
@@ -216,6 +233,7 @@ def test_clean_unused_objects():
 @pytest.mark.integration
 def test_view_model():
     """Generate 3D viewer: verify output files created in run_dir."""
+    # Validates: view_model produces HTML or JSON output files in run_dir
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -225,17 +243,17 @@ def test_view_model():
                 await s.initialize()
                 await _setup_baseline(s, _unique("view"))
                 res = unwrap(await s.call_tool("view_model", {}))
-                assert res.get("ok") is True, f"view_model failed: {res}"
+                assert res["ok"] is True, f"view_model failed: {res}"
 
                 # Verify run_dir returned and contains output files
-                run_dir = res.get("run_dir")
+                run_dir = res["run_dir"]
                 assert run_dir, "No run_dir in view_model response"
                 files = unwrap(await s.call_tool("list_files", {
                     "directory": run_dir,
                     "pattern": "*",
                     "max_results": 0,
                 }))
-                assert files.get("ok") is True, f"list_files failed: {files}"
+                assert files["ok"] is True, f"list_files failed: {files}"
                 assert files["count"] > 0, f"No files in run_dir {run_dir}"
                 # The view_model measure generates report.html or similar
                 file_names = [f["name"] for f in files["items"]]
@@ -252,6 +270,7 @@ def test_view_model():
 @pytest.mark.integration
 def test_replace_window_constructions():
     """Replace windows: verify subsurface constructions changed."""
+    # Validates: replace_window_constructions preserves subsurface count after replacement
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -261,30 +280,42 @@ def test_replace_window_constructions():
                 await s.initialize()
                 await _setup_baseline(s, _unique("win_repl"))
 
-                # Get existing constructions
+                # Get window/glazing constructions (not wall/roof)
                 consts = unwrap(await s.call_tool("list_model_objects", {"object_type": "Construction", "max_results": 0}))
-                assert consts.get("ok") is True
+                assert consts["ok"] is True
                 if consts.get("count", 0) == 0:
                     pytest.skip("No constructions in baseline model")
-                const_name = consts["objects"][0]["name"]
+                # Filter for window/glazing constructions by name
+                window_consts = [
+                    c for c in consts["objects"]
+                    if any(kw in c["name"].lower() for kw in ("window", "glass", "glazing"))
+                ]
+                if not window_consts:
+                    pytest.skip("No window/glazing constructions found in baseline model")
+                const_name = window_consts[0]["name"]
 
                 # Before: snapshot subsurface constructions
                 before_subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
-                assert before_subs.get("ok") is True
+                assert before_subs["ok"] is True
 
                 res = unwrap(await s.call_tool("replace_window_constructions", {
                     "construction_name": const_name,
                 }))
                 # May succeed or fail depending on construction type
-                assert "ok" in res, f"Unexpected response: {res}"
-
-                if res.get("ok") is True and before_subs.get("count", 0) > 0:
-                    # After: verify subsurfaces still exist (measure shouldn't delete them)
+                if res["ok"] is True:
                     after_subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
-                    assert after_subs.get("ok") is True
+                    assert after_subs["ok"] is True
                     assert after_subs["count"] == before_subs["count"], (
                         f"Subsurface count changed: {before_subs['count']} -> {after_subs['count']}"
                     )
+                else:
+                    error = res.get("error", "")
+                    log_tail = res.get("log_tail", "")
+                    combined = f"{error} {log_tail}".lower()
+                    if any(k in combined for k in ("construction", "glazing", "choice", "gem")):
+                        pytest.skip(f"Measure env issue: {error}")
+                    else:
+                        pytest.fail(f"replace_window_constructions failed: {error}")
 
     asyncio.run(_run())
 
@@ -293,6 +324,7 @@ def test_replace_window_constructions():
 @pytest.mark.integration
 def test_change_building_location():
     """Change location: verify weather file updated in model."""
+    # Validates: change_building_location sets Boston EPW on model
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -307,11 +339,11 @@ def test_change_building_location():
                 res = unwrap(await s.call_tool("change_building_location", {
                     "weather_file": epw,
                 }))
-                assert res.get("ok") is True, f"change_building_location failed: {res}"
+                assert res["ok"] is True, f"change_building_location failed: {res}"
 
                 # Verify weather file is set on model
                 weather = unwrap(await s.call_tool("get_weather_info", {}))
-                assert weather.get("ok") is True, f"get_weather_info failed: {weather}"
+                assert weather["ok"] is True, f"get_weather_info failed: {weather}"
                 epw_url = weather.get("epw_url") or weather.get("weather_file", "")
                 assert "Boston" in str(epw_url) or "725090" in str(epw_url), (
                     f"Weather file not updated to Boston: {epw_url}"
@@ -324,6 +356,7 @@ def test_change_building_location():
 @pytest.mark.integration
 def test_list_common_measures_filter_visualization():
     """Verify visualization category returns view_model and view_data."""
+    # Validates: visualization category contains exactly view_model and view_data
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -334,7 +367,7 @@ def test_list_common_measures_filter_visualization():
                 res = unwrap(await s.call_tool("list_common_measures", {
                     "category": "visualization",
                 }))
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"Failed: {res}"
                 assert res["count"] == 2, f"Expected 2 viz measures, got {res['count']}"
                 names = {m["name"] for m in res["measures"]}
                 assert "view_model" in names
@@ -351,10 +384,8 @@ def test_list_common_measures_filter_visualization():
 # --- Test 11: set_thermostat_schedules ---
 @pytest.mark.integration
 def test_set_thermostat_schedules():
-    """Set thermostat schedules on a zone using schedule names.
-
-    Note: OSW runner may reject Choice-type args as String — lenient assert.
-    """
+    """Set thermostat schedules on a zone using Temperature-type schedule."""
+    # Validates: set_thermostat_schedules applies cooling+heating schedules to a zone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -366,18 +397,58 @@ def test_set_thermostat_schedules():
 
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
+                # Measure requires Temperature-type schedules
                 scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
-                assert scheds["count"] > 0, "No schedules in baseline"
-                sched_name = scheds["objects"][0]["name"]
+                temp_scheds = [o["name"] for o in scheds["objects"]
+                               if any(k in o["name"].lower() for k in ("cool", "heat"))]
+                assert len(temp_scheds) >= 2, (
+                    f"Baseline needs cooling+heating schedules, got: "
+                    f"{[o['name'] for o in scheds['objects']]}"
+                )
+                cool_sched = next(n for n in temp_scheds if "cool" in n.lower())
+                heat_sched = next(n for n in temp_scheds if "heat" in n.lower())
 
                 res = unwrap(await s.call_tool("set_thermostat_schedules", {
                     "zone_name": zone_name,
-                    "cooling_schedule": sched_name,
-                    "heating_schedule": sched_name,
+                    "cooling_schedule": cool_sched,
+                    "heating_schedule": heat_sched,
                 }))
-                print("set_thermostat_schedules:", res)
-                # Choice args may fail with current OSW runner
-                assert "ok" in res, f"Unexpected response: {res}"
+                assert res["ok"] is True, f"set_thermostat_schedules failed: {res.get('error')}"
+
+                # Verify runner reports success
+                runner = res.get("runner_messages", {})
+                if runner:
+                    assert runner.get("result") == "Success", (
+                        f"Runner should report Success, got: {runner.get('result')}"
+                    )
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_set_thermostat_schedules_bad_type():
+    """Wrong schedule type returns clear validation error, not cryptic OSW failure."""
+    # Validates: wrapper rejects non-Temperature schedule with actionable error
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await _setup_baseline(s, _unique("therm_bad"))
+
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
+                zone_name = zones["thermal_zones"][0]["name"]
+                # Pick a non-Temperature schedule
+                res = unwrap(await s.call_tool("set_thermostat_schedules", {
+                    "zone_name": zone_name,
+                    "cooling_schedule": "Baseline Model Infiltration Schedule",
+                }))
+                assert res["ok"] is False
+                assert "unittype" in res["error"].lower() or "temperature" in res["error"].lower(), (
+                    f"Error should mention type mismatch, got: {res['error']}"
+                )
 
     asyncio.run(_run())
 
@@ -385,10 +456,8 @@ def test_set_thermostat_schedules():
 # --- Test 12: replace_thermostat_schedules ---
 @pytest.mark.integration
 def test_replace_thermostat_schedules():
-    """Replace thermostat schedules on a zone.
-
-    Note: OSW runner may reject Choice-type args as String — lenient assert.
-    """
+    """Replace thermostat schedules on a zone using Temperature-type schedule."""
+    # Validates: replace_thermostat_schedules applies cooling+heating schedules to a zone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -401,16 +470,28 @@ def test_replace_thermostat_schedules():
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
                 scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
-                sched_name = scheds["objects"][0]["name"]
+                temp_scheds = [o["name"] for o in scheds["objects"]
+                               if any(k in o["name"].lower() for k in ("cool", "heat"))]
+                assert len(temp_scheds) >= 2, (
+                    f"Baseline needs cooling+heating schedules, got: "
+                    f"{[o['name'] for o in scheds['objects']]}"
+                )
+                cool_sched = next(n for n in temp_scheds if "cool" in n.lower())
+                heat_sched = next(n for n in temp_scheds if "heat" in n.lower())
 
                 res = unwrap(await s.call_tool("replace_thermostat_schedules", {
                     "zone_name": zone_name,
-                    "cooling_schedule": sched_name,
-                    "heating_schedule": sched_name,
+                    "cooling_schedule": cool_sched,
+                    "heating_schedule": heat_sched,
                 }))
-                print("replace_thermostat_schedules:", res)
-                # Choice args may fail with current OSW runner
-                assert "ok" in res, f"Unexpected response: {res}"
+                assert res["ok"] is True, f"replace_thermostat_schedules failed: {res.get('error')}"
+
+                # Verify runner reports success
+                runner = res.get("runner_messages", {})
+                if runner:
+                    assert runner.get("result") == "Success", (
+                        f"Runner should report Success, got: {runner.get('result')}"
+                    )
 
     asyncio.run(_run())
 
@@ -419,6 +500,7 @@ def test_replace_thermostat_schedules():
 @pytest.mark.integration
 def test_shift_schedule_time():
     """Shift a schedule profile by 2 hours."""
+    # Validates: shift_schedule_time applies 2-hour shift to a schedule profile
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -436,8 +518,13 @@ def test_shift_schedule_time():
                     "schedule_name": sched_name,
                     "shift_hours": 2.0,
                 }))
-                print("shift_schedule_time:", res)
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"shift_schedule_time failed: {res}"
+
+                # Verify runner reports success with schedule shift details
+                runner = res.get("runner_messages", {})
+                assert runner.get("result") == "Success", (
+                    f"Runner should report Success for schedule shift, got: {runner.get('result')}"
+                )
 
     asyncio.run(_run())
 
@@ -449,6 +536,7 @@ def test_add_rooftop_pv():
 
     Note: May fail if openstudio-extension gem helpers not on Ruby load path.
     """
+    # Validates: add_rooftop_pv increases shading surface count when successful
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -466,11 +554,17 @@ def test_add_rooftop_pv():
                 }))
                 print("add_rooftop_pv:", res)
                 # May fail if Ruby gem dependencies not on load path
-                assert "ok" in res, f"Unexpected response: {res}"
-
-                if res.get("ok") is True:
+                if res["ok"] is True:
                     after = await _get_summary(s)
-                    assert after["shading_surfaces"] > before["shading_surfaces"]
+                    assert after["shading_surfaces"] > before["shading_surfaces"], (
+                        f"PV should add shading surfaces: {before['shading_surfaces']} -> {after['shading_surfaces']}"
+                    )
+                else:
+                    error = res.get("error", "")
+                    if "gem" in error.lower() or "load path" in error.lower() or "require" in error.lower():
+                        pytest.skip(f"Ruby gem dependency not available: {error}")
+                    else:
+                        pytest.fail(f"add_rooftop_pv failed unexpectedly: {error}")
 
     asyncio.run(_run())
 
@@ -482,6 +576,7 @@ def test_add_pv_to_shading():
 
     Note: EnergyPlusMeasure — may need forward translation context.
     """
+    # Validates: add_pv_to_shading runner reports Success when shading surfaces exist
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -496,9 +591,24 @@ def test_add_pv_to_shading():
                     "fraction": 0.3,
                     "cell_efficiency": 0.15,
                 }))
-                print("add_pv_to_shading:", res)
                 # May fail if shading surfaces don't exist or measure deps missing
-                assert "ok" in res, f"Unexpected response: {res}"
+                if res["ok"] is True:
+                    runner = res.get("runner_messages", {})
+                    runner_result = runner.get("result", "")
+                    if runner_result == "NA":
+                        pytest.skip(
+                            "Measure returned NA — baseline model has no shading surfaces. "
+                            f"Info: {runner.get('info', runner.get('initial_condition', ''))}",
+                        )
+                    assert runner_result == "Success", (
+                        f"add_pv_to_shading ok but runner not Success: {runner}"
+                    )
+                else:
+                    error = res.get("error", "")
+                    if "shading" in error.lower() or "gem" in error.lower() or "forward translation" in error.lower():
+                        pytest.skip(f"Known environment limitation: {error}")
+                    else:
+                        pytest.fail(f"add_pv_to_shading failed unexpectedly: {error}")
 
     asyncio.run(_run())
 
@@ -507,6 +617,7 @@ def test_add_pv_to_shading():
 @pytest.mark.integration
 def test_add_ev_load():
     """Add EV charging load to building."""
+    # Validates: add_ev_load runner reports Success and creates EV load schedules
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -522,9 +633,18 @@ def test_add_ev_load():
                     "station_type": "Typical Public",
                     "ev_percent": 50.0,
                 }))
-                print("add_ev_load:", res)
                 # May fail if EVI-Pro data files not bundled
-                assert "ok" in res, f"Unexpected response: {res}"
+                if res["ok"] is True:
+                    runner = res.get("runner_messages", {})
+                    assert runner.get("result") == "Success", (
+                        f"add_ev_load ok but runner not Success: {runner}"
+                    )
+                else:
+                    error = res.get("error", "")
+                    if "gem" in error.lower() or "load path" in error.lower() or "ev" in error.lower():
+                        pytest.skip(f"Known environment limitation: {error}")
+                    else:
+                        pytest.fail(f"add_ev_load failed unexpectedly: {error}")
 
     asyncio.run(_run())
 
@@ -532,10 +652,8 @@ def test_add_ev_load():
 # --- Test 17: add_zone_ventilation ---
 @pytest.mark.integration
 def test_add_zone_ventilation():
-    """Add zone ventilation to a thermal zone.
-
-    Note: Requires Choice args (zone, schedule) — may fail with OSW runner.
-    """
+    """Add zone ventilation to a thermal zone with schedule."""
+    # Validates: add_zone_ventilation creates ventilation object on a zone
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -547,9 +665,10 @@ def test_add_zone_ventilation():
 
                 zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
                 zone_name = zones["thermal_zones"][0]["name"]
-                # Provide a schedule (required arg)
+                # Measure requires a schedule with type limits
                 scheds = unwrap(await s.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
-                sched_name = scheds["objects"][0]["name"] if scheds["count"] > 0 else ""
+                assert scheds["count"] > 0, "Baseline needs at least 1 schedule"
+                sched_name = scheds["objects"][0]["name"]
 
                 res = unwrap(await s.call_tool("add_zone_ventilation", {
                     "zone_name": zone_name,
@@ -557,9 +676,35 @@ def test_add_zone_ventilation():
                     "ventilation_type": "Natural",
                     "schedule_name": sched_name,
                 }))
-                print("add_zone_ventilation:", res)
-                # Choice args may fail with current OSW runner
-                assert "ok" in res, f"Unexpected response: {res}"
+                assert res["ok"] is True, f"add_zone_ventilation failed: {res.get('error')}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_add_zone_ventilation_no_schedule():
+    """Omitting schedule returns clear error, not cryptic OSW failure."""
+    # Validates: wrapper rejects missing schedule_name with actionable error
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await _setup_baseline(s, _unique("zone_vent_no"))
+
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
+                zone_name = zones["thermal_zones"][0]["name"]
+
+                res = unwrap(await s.call_tool("add_zone_ventilation", {
+                    "zone_name": zone_name,
+                    "design_flow_rate": 0.1,
+                }))
+                assert res["ok"] is False
+                assert "required" in res["error"].lower(), (
+                    f"Error should mention schedule is required, got: {res['error']}"
+                )
 
     asyncio.run(_run())
 
@@ -568,6 +713,7 @@ def test_add_zone_ventilation():
 @pytest.mark.integration
 def test_set_lifecycle_cost_params():
     """Set lifecycle cost analysis period."""
+    # Validates: set_lifecycle_cost_params applies 30-year study period via measure
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -580,8 +726,11 @@ def test_set_lifecycle_cost_params():
                 res = unwrap(await s.call_tool("set_lifecycle_cost_params", {
                     "study_period": 30,
                 }))
-                print("set_lifecycle_cost_params:", res)
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"set_lifecycle_cost_params failed: {res}"
+                runner = res.get("runner_messages", {})
+                assert runner.get("result") == "Success", (
+                    f"Runner should report Success, got: {runner}"
+                )
 
     asyncio.run(_run())
 
@@ -590,6 +739,7 @@ def test_set_lifecycle_cost_params():
 @pytest.mark.integration
 def test_add_cost_per_floor_area():
     """Add lifecycle cost per floor area to building."""
+    # Validates: add_cost_per_floor_area applies material+OM cost via measure
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -604,8 +754,11 @@ def test_add_cost_per_floor_area():
                     "om_cost": 0.50,
                     "expected_life": 25,
                 }))
-                print("add_cost_per_floor_area:", res)
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"add_cost_per_floor_area failed: {res}"
+                runner = res.get("runner_messages", {})
+                assert runner.get("result") == "Success", (
+                    f"Runner should report Success, got: {runner}"
+                )
 
     asyncio.run(_run())
 
@@ -614,6 +767,7 @@ def test_add_cost_per_floor_area():
 @pytest.mark.integration
 def test_set_adiabatic_boundaries():
     """Set exterior surfaces to adiabatic: verify boundary condition changes."""
+    # Validates: set_adiabatic_boundaries converts ext surfaces to Adiabatic BC
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -629,7 +783,7 @@ def test_set_adiabatic_boundaries():
                     "ground_floors": True,
                 }))
                 print("set_adiabatic_boundaries:", res)
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"Failed: {res}"
 
                 # After: verify some surfaces changed to adiabatic
                 after_surfs = unwrap(await s.call_tool("list_surfaces", {"detailed": True, "max_results": 0}))
@@ -653,6 +807,7 @@ def test_set_adiabatic_boundaries():
 @pytest.mark.integration
 def test_qaqc_post_sim():
     """Full pipeline: baseline → weather → sim → run_qaqc_checks + generate_results_report."""
+    # Validates: post-sim reporting pipeline (results report + QAQC + view_simulation_data)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -669,20 +824,20 @@ def test_qaqc_post_sim():
                 wr = unwrap(await s.call_tool("change_building_location", {
                     "weather_file": EPW_PATH,
                 }))
-                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
+                assert wr["ok"] is True, f"change_building_location failed: {wr}"
 
                 # Save + run simulation
                 save_path = f"/runs/{name}_weather.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
                     "osm_path": save_path,
                 }))
-                assert sr.get("ok") is True
+                assert sr["ok"] is True
 
                 sim = unwrap(await s.call_tool("run_simulation", {
                     "osm_path": save_path,
                     "epw_path": EPW_PATH,
                 }))
-                assert sim.get("ok") is True, sim
+                assert sim["ok"] is True, sim
                 run_id = sim["run_id"]
 
                 # Poll until done
@@ -694,19 +849,19 @@ def test_qaqc_post_sim():
                 report = unwrap(await s.call_tool("generate_results_report", {
                     "run_id": run_id,
                 }))
-                assert report.get("ok") is True, f"generate_results_report failed: {report}"
+                assert report["ok"] is True, f"generate_results_report failed: {report}"
 
                 # run_qaqc_checks (reporting measure — needs SQL + climate zone)
                 qaqc = unwrap(await s.call_tool("run_qaqc_checks", {
                     "run_id": run_id,
                 }))
-                assert qaqc.get("ok") is True, f"run_qaqc_checks failed: {qaqc}"
+                assert qaqc["ok"] is True, f"run_qaqc_checks failed: {qaqc}"
 
                 # view_simulation_data (reporting measure — needs SQL)
                 view = unwrap(await s.call_tool("view_simulation_data", {
                     "run_id": run_id,
                 }))
-                assert view.get("ok") is True, f"view_simulation_data failed: {view}"
+                assert view["ok"] is True, f"view_simulation_data failed: {view}"
 
     asyncio.run(_run())
 
@@ -719,6 +874,7 @@ def test_qaqc_json_string_checks():
     error AFTER Pydantic validation. If checks were rejected by Pydantic,
     we'd get a validation error instead.
     """
+    # Regression: MCP clients sent checks as JSON string, caused Pydantic validation error
     import json
 
     if not integration_enabled():
@@ -736,8 +892,8 @@ def test_qaqc_json_string_checks():
                 result = unwrap(resp)
 
                 # Expected: run_id required error (not a Pydantic validation error)
-                assert result.get("ok") is False
-                assert "run_id" in result.get("error", "")
+                assert result["ok"] is False
+                assert "run_id" in result["error"]
 
     asyncio.run(_run())
 
@@ -750,6 +906,7 @@ def test_view_simulation_data_json_string_variables():
     the JSON string format. The tool will fail because no run_id, but that's
     expected and proves coercion worked.
     """
+    # Regression: MCP clients sent variable_names as JSON string, caused Pydantic error
     import json
 
     if not integration_enabled():
@@ -767,6 +924,7 @@ def test_view_simulation_data_json_string_variables():
                 result = unwrap(resp)
 
                 # Expected: fails because no run_id/SQL, not because of Pydantic
-                assert result.get("ok") is False
+                assert result["ok"] is False
+                assert "error" in result
 
     asyncio.run(_run())

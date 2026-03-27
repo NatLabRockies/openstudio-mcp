@@ -9,11 +9,13 @@ import pytest
 from mcp_server.skills.api_reference.operations import search_wiring_patterns_op
 from mcp_server.skills.api_reference.wiring_recipes import RECIPES
 
+pytestmark = pytest.mark.unit
+
 
 # ── Recipe quality checks ────────────────────────────────────────────────
 
 def test_all_recipes_have_required_fields():
-    """Every recipe must have component_type, connections, ruby, notes."""
+    # Validates: every recipe has component_type/connections/ruby/notes fields
     for key, recipe in RECIPES.items():
         for field in ("component_type", "connections", "ruby", "notes"):
             assert field in recipe, f"Recipe '{key}' missing '{field}'"
@@ -22,7 +24,7 @@ def test_all_recipes_have_required_fields():
 
 
 def test_recipe_ruby_has_no_geometry():
-    """Ruby snippets should not contain geometry/schedule boilerplate."""
+    # Validates: Ruby snippets focus on HVAC wiring, no geometry/schedule boilerplate
     geometry_markers = ["setLength", "setWidth", "num_floors", "addDefaultConstruction"]
     for key, recipe in RECIPES.items():
         ruby = recipe["ruby"].lower()
@@ -33,7 +35,7 @@ def test_recipe_ruby_has_no_geometry():
 
 
 def test_recipe_count():
-    """Should have at least 20 recipes covering major HVAC patterns."""
+    # Validates: at least 20 recipes covering major HVAC patterns
     assert len(RECIPES) >= 20, f"Only {len(RECIPES)} recipes, expected >= 20"
 
 
@@ -67,7 +69,7 @@ SEARCH_CASES = [
     ids=[c[1] for c in SEARCH_CASES],
 )
 def test_search_finds_recipe(query, expected_id):
-    """Search returns expected recipe in top 3 results."""
+    # Validates: search_wiring_patterns returns expected recipe in top 3 for each query
     result = search_wiring_patterns_op(query, max_results=3)
     assert result["ok"]
     found_ids = [r["recipe_id"] for r in result["recipes"]]
@@ -77,21 +79,22 @@ def test_search_finds_recipe(query, expected_id):
 
 
 def test_search_no_match():
-    """Nonsense query returns empty results."""
+    # Validates: nonsense query returns empty results (not error)
     result = search_wiring_patterns_op("zzzzNonexistent99")
     assert result["ok"]
     assert result["recipes"] == []
 
 
 def test_search_max_results():
-    """max_results caps output."""
+    # Validates: max_results parameter caps search output
     result = search_wiring_patterns_op("coil loop", max_results=2)
     assert result["ok"]
-    assert len(result["recipes"]) <= 2
+    assert len(result["recipes"]) > 0, "Search for 'coil loop' should find at least one recipe"
+    assert len(result["recipes"]) <= 2, "max_results=2 should cap output"
 
 
 def test_available_recipes_always_returned():
-    """Every search returns the full list of available recipe IDs."""
+    # Validates: every search response includes full available_recipes list
     result = search_wiring_patterns_op("anything")
     assert "available_recipes" in result
     assert len(result["available_recipes"]) == len(RECIPES)
@@ -100,7 +103,7 @@ def test_available_recipes_always_returned():
 # ── Ruby snippet validation ──────────────────────────────────────────────
 
 def test_terminal_recipes_have_addBranchForZone():
-    """Terminal recipes must show zone connection."""
+    # Validates: terminal recipes include addBranchForZone for zone wiring
     terminal_recipes = [k for k in RECIPES if "terminal" in k or "vav" in k
                         or "piu" in k or "induction" in k]
     for key in terminal_recipes:
@@ -110,7 +113,7 @@ def test_terminal_recipes_have_addBranchForZone():
 
 
 def test_plant_loop_recipes_have_spm():
-    """Plant loop construction recipes must show setpoint manager."""
+    # Validates: plant loop recipes include SetpointManager for loop control
     plant_recipes = ["hot_water_plant_loop", "chilled_water_plant_loop",
                      "condenser_water_loop"]
     for key in plant_recipes:
@@ -121,7 +124,7 @@ def test_plant_loop_recipes_have_spm():
 
 
 def test_zone_hvac_recipes_have_addToThermalZone():
-    """Zone HVAC recipes must show zone connection."""
+    # Validates: zone HVAC recipes include addToThermalZone for zone assignment
     zone_recipes = ["four_pipe_fan_coil", "baseboard_convective_water",
                     "water_to_air_heat_pump", "ptac", "pthp", "unit_heater"]
     for key in zone_recipes:

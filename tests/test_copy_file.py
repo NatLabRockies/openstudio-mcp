@@ -15,6 +15,7 @@ def _unique(prefix: str = "pytest_file") -> str:
 @pytest.mark.integration
 def test_read_file_absolute_path():
     """read_file reads a file by absolute path."""
+    # Validates: read_file returns text content with correct metadata for .osm files
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -28,17 +29,17 @@ def test_read_file_absolute_path():
                 # Create example model to get a known file
                 cr = await session.call_tool("create_example_osm", {"name": run_id})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 osm_path = cd["osm_path"]
 
                 # Read it via absolute path
                 resp = await session.call_tool("read_file", {"file_path": osm_path})
                 result = unwrap(resp)
-                print("read_file:", result.get("ok"), result.get("file_size"))
-                assert result.get("ok") is True, result
+                print("read_file:", result["ok"], result["file_size"])
+                assert result["ok"] is True, result
                 assert result["kind"] == "text"
                 assert result["file_size"] > 0
-                assert "file_path" in result
+                assert result["file_path"].endswith(".osm")
 
     asyncio.run(_run())
 
@@ -46,6 +47,7 @@ def test_read_file_absolute_path():
 @pytest.mark.integration
 def test_read_file_rejects_outside_mounts():
     """read_file returns error for paths outside allowed roots."""
+    # Validates: read_file blocks path traversal attempts outside /runs and /inputs
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -57,8 +59,8 @@ def test_read_file_rejects_outside_mounts():
                 resp = await session.call_tool("read_file", {"file_path": "/etc/passwd"})
                 result = unwrap(resp)
                 print("read_file reject:", result)
-                assert result.get("ok") is False
-                assert "invalid_path" in result.get("error", "")
+                assert result["ok"] is False
+                assert "invalid_path" in result["error"]
 
     asyncio.run(_run())
 
@@ -66,6 +68,7 @@ def test_read_file_rejects_outside_mounts():
 @pytest.mark.integration
 def test_copy_file_absolute_path():
     """copy_file copies a file by absolute path."""
+    # Validates: copy_file creates a copy with correct size and destination path
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -79,7 +82,7 @@ def test_copy_file_absolute_path():
                 # Create example model to get a known file
                 cr = await session.call_tool("create_example_osm", {"name": run_id})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 osm_path = cd["osm_path"]
 
                 # Copy via absolute path
@@ -88,8 +91,8 @@ def test_copy_file_absolute_path():
                 })
                 result = unwrap(resp)
                 print("copy_file:", result)
-                assert result.get("ok") is True, result
-                assert "destination" in result
+                assert result["ok"] is True, result
+                assert result["destination"].endswith(".osm")
                 assert result["size_bytes"] > 0
 
     asyncio.run(_run())
@@ -98,6 +101,7 @@ def test_copy_file_absolute_path():
 @pytest.mark.integration
 def test_copy_file_rejects_escape():
     """copy_file returns error for paths outside allowed roots."""
+    # Validates: copy_file blocks path traversal attempts outside allowed roots
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -111,6 +115,8 @@ def test_copy_file_rejects_escape():
                 })
                 result = unwrap(resp)
                 print("copy_file reject:", result)
-                assert result.get("ok") is False
+                assert result["ok"] is False
+                assert "error" in result, "Missing error message for path traversal attempt"
+                assert result["error"].strip(), "Error message should not be empty for path traversal rejection"
 
     asyncio.run(_run())

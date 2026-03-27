@@ -590,18 +590,8 @@ SYSTEMD_MODEL = SYSTEMD  # alias for the standalone test below
 
 @pytest.mark.parametrize("case", WORKFLOW_CASES, ids=[c["id"] for c in WORKFLOW_CASES])
 def test_workflow(case):
-    """Agent loads model and completes a multi-step workflow.
-
-    Verifies:
-      1. ALL required_tools appear in the tool call sequence
-      2. If any_of is specified, at least one of those tools appears
-      3. Tool ordering is NOT enforced (only presence)
-
-    Assumptions:
-      - Agent may call extra tools (context-gathering) — that's fine
-      - Each test is independent (fresh Docker container per claude -p call)
-      - Retries handle LLM non-determinism (conftest MAX_RETRIES)
-    """
+    """Agent loads model and completes a multi-step workflow."""
+    # Validates: Claude chains all required MCP tools for multi-step BEM workflows
     tier = get_tier()
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
@@ -650,16 +640,8 @@ def test_workflow(case):
 
 
 def test_create_measure_with_args_quality():
-    """LLM should create well-parameterized measures when asked for reusability.
-
-    Evaluates argument quality — not just presence, but whether the arguments
-    actually make the measure reusable:
-      1. Has arguments at all (vs hard-coding everything)
-      2. Includes a numeric param for the R-value (the core domain value)
-      3. Every argument has a name and type
-      4. At least one argument has a default_value (sensible defaults)
-      5. run_body references arguments (not ignoring them)
-    """
+    """LLM should create well-parameterized measures when asked for reusability."""
+    # Validates: Claude creates measures with typed arguments, defaults, and R-value param when asked for reusability
     tier = get_tier()
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
@@ -680,7 +662,7 @@ def test_create_measure_with_args_quality():
         if call["tool"].removeprefix(prefix) == "create_measure":
             create_input = call["input"]
             break
-    assert create_input is not None, "create_measure call not found"
+    assert create_input, "create_measure call not found in MCP tool calls"
 
     args = create_input.get("arguments")
     run_body = create_input.get("run_body", "")
@@ -737,12 +719,8 @@ def test_create_measure_with_args_quality():
 
 
 def test_complex_model_multi_query():
-    """Load 44-zone complex model and run multiple query tools — transport regression test.
-
-    Reproduces the failure mode from Claude Desktop: SWIG stdout warnings on
-    large models corrupt MCP JSON-RPC, causing "No result received" timeouts.
-    The agent must successfully complete all 4 queries without transport errors.
-    """
+    """Load 44-zone complex model and run multiple query tools."""
+    # Regression: SWIG stdout warnings on large models corrupted MCP JSON-RPC, causing transport timeouts
     tier = get_tier()
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
@@ -814,7 +792,7 @@ def _check_measure_args_quality(
     )
 
     create_input = _find_create_measure_input(result)
-    assert create_input is not None, f"[{label}] create_measure call not found"
+    assert create_input, f"[{label}] create_measure call not found in MCP tool calls"
 
     # Language check
     lang = create_input.get("language", "")
@@ -887,6 +865,7 @@ _PLUGLOAD_BODY_KEYWORDS = [
 @pytest.mark.parametrize("language", ["Ruby", "Python"])
 def test_measure_reduce_plugloads_quality(language):
     """LLM creates a well-parameterized plug-load reduction measure."""
+    # Validates: Claude creates plug-load measures with Choice/Double/Boolean args and correct body references
     tier = get_tier()
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")
@@ -926,6 +905,7 @@ _BOILER_BODY_KEYWORDS = [
 @pytest.mark.parametrize("language", ["Ruby", "Python"])
 def test_measure_boiler_efficiency_quality(language):
     """LLM creates a well-parameterized boiler efficiency measure."""
+    # Validates: Claude creates boiler efficiency measures with Choice/Double/Boolean args and correct body references
     tier = get_tier()
     if tier not in ("all", "2"):
         pytest.skip("Tier 2 not selected")

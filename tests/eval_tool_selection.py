@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -159,6 +161,7 @@ EVAL_CASES = [
 
 @pytest.mark.parametrize("intent,expected_tool", EVAL_CASES)
 def test_tool_selection(intent: str, expected_tool: str):
+    # Validates: each tool's docstring contains enough keywords for intent-based discovery
     """Verify the expected tool is discoverable from its description."""
     assert expected_tool in TOOLS, f"Tool '{expected_tool}' not found in registered tools"
     assert _keyword_match(intent, expected_tool), (
@@ -167,6 +170,7 @@ def test_tool_selection(intent: str, expected_tool: str):
 
 
 def test_best_match_accuracy():
+    # Validates: keyword-based tool ranking achieves >= 50% accuracy across all intent cases
     """Verify best-match selects the correct tool for most intents."""
     correct = 0
     failures = []
@@ -186,6 +190,7 @@ def test_best_match_accuracy():
 
 
 def test_all_tools_have_docstrings():
+    # Validates: every registered tool has a non-empty docstring for LLM discovery
     """Verify every registered tool has a non-empty docstring."""
     empty = [name for name, doc in TOOLS.items() if not doc.strip()]
     assert not empty, f"Tools with empty docstrings: {empty}"

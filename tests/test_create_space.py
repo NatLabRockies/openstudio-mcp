@@ -19,6 +19,7 @@ def _unique_name(prefix: str = "pytest_create_space") -> str:
 @pytest.mark.integration
 def test_create_space_minimal():
     """Test creating a space with minimal parameters."""
+    # Validates: create_space with name only creates space with 0 floor area (no surfaces)
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -32,19 +33,19 @@ def test_create_space_minimal():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create space
                 space_resp = await session.call_tool("create_space", {"name": "New Office"})
                 space_result = unwrap(space_resp)
 
-                assert space_result.get("ok") is True
+                assert space_result["ok"] is True
                 assert space_result["space"]["name"] == "New Office"
-                assert space_result["space"]["floor_area_m2"] == 0.0  # No surfaces yet
+                assert space_result["space"]["floor_area_m2"] == pytest.approx(0.0)  # No surfaces yet
 
                 # Verify it appears in list
                 list_resp = await session.call_tool("list_spaces", {"max_results": 0})
@@ -57,6 +58,7 @@ def test_create_space_minimal():
 @pytest.mark.integration
 def test_create_space_with_building_story():
     """Test creating a space with building story assigned."""
+    # Validates: create_space assigns building_story verified by independent get_space_details
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -70,16 +72,16 @@ def test_create_space_with_building_story():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Get existing building story
                 stories_resp = await session.call_tool("list_model_objects", {"object_type": "BuildingStory"})
                 stories_result = unwrap(stories_resp)
-                assert stories_result.get("ok") is True
+                assert stories_result["ok"] is True
                 assert len(stories_result["objects"]) > 0
                 story_name = stories_result["objects"][0]["name"]
 
@@ -90,7 +92,7 @@ def test_create_space_with_building_story():
                 })
                 space_result = unwrap(space_resp)
 
-                assert space_result.get("ok") is True
+                assert space_result["ok"] is True
                 assert space_result["space"]["building_story"] == story_name
 
                 # Independent query verification
@@ -105,6 +107,7 @@ def test_create_space_with_building_story():
 @pytest.mark.integration
 def test_create_space_with_space_type():
     """Test creating a space with space type assigned."""
+    # Validates: create_space assigns space_type verified by independent get_space_details
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -118,16 +121,16 @@ def test_create_space_with_space_type():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Get existing space type
                 space_types_resp = await session.call_tool("list_model_objects", {"object_type": "SpaceType"})
                 space_types_result = unwrap(space_types_resp)
-                assert space_types_result.get("ok") is True
+                assert space_types_result["ok"] is True
                 assert len(space_types_result["objects"]) > 0
                 space_type_name = space_types_result["objects"][0]["name"]
 
@@ -138,7 +141,7 @@ def test_create_space_with_space_type():
                 })
                 space_result = unwrap(space_resp)
 
-                assert space_result.get("ok") is True
+                assert space_result["ok"] is True
                 assert space_result["space"]["space_type"] == space_type_name
 
                 # Independent query verification
@@ -153,6 +156,7 @@ def test_create_space_with_space_type():
 @pytest.mark.integration
 def test_create_space_no_model_loaded():
     """Test error when no model is loaded."""
+    # Validates: create_space returns error when no model loaded
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -165,8 +169,7 @@ def test_create_space_no_model_loaded():
                 space_resp = await session.call_tool("create_space", {"name": "Should Fail"})
                 space_result = unwrap(space_resp)
 
-                assert space_result.get("ok") is False
-                assert "error" in space_result
+                assert space_result["ok"] is False
                 assert "No model loaded" in space_result["error"]
 
     asyncio.run(_run())
@@ -175,6 +178,7 @@ def test_create_space_no_model_loaded():
 @pytest.mark.integration
 def test_create_space_invalid_building_story():
     """Test error when building story doesn't exist."""
+    # Validates: create_space rejects nonexistent building_story with error
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -188,11 +192,11 @@ def test_create_space_invalid_building_story():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create space with invalid building story
                 space_resp = await session.call_tool("create_space", {
@@ -201,8 +205,7 @@ def test_create_space_invalid_building_story():
                 })
                 space_result = unwrap(space_resp)
 
-                assert space_result.get("ok") is False
-                assert "error" in space_result
+                assert space_result["ok"] is False
                 assert "not found" in space_result["error"]
 
     asyncio.run(_run())

@@ -64,13 +64,11 @@ FLAKY_TESTS = frozenset({
     "import_floorplan_L1",
     "thermostat_L1",
     "add_hvac_L1",
-    "list_dynamic_type_L1",
     # New cases — L1 prompts may trigger wrong tool
     "save_model_L1",
     "schedule_details_L1",
     "create_loads_L1",
     "set_wwr_L1",
-    "check_loads_L1",
     "ideal_air_L1",
     # Measure authoring — L1 may trigger related tools instead
     "test_measure_L1",

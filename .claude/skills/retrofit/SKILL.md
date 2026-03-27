@@ -65,10 +65,11 @@ extract_end_use_breakdown(run_id=<retrofit_id>)
 ```
 
 ### 5. Compare Results
-Present side-by-side comparison:
-- EUI change (absolute and percentage)
-- End-use breakdown delta (which categories improved)
-- Unmet hours change (ensure comfort wasn't sacrificed)
+```
+compare_runs(baseline_run_id=<baseline_id>, retrofit_run_id=<retrofit_id>)
+```
+Returns EUI delta, per-fuel end-use breakdown, and unmet hours change.
+For manual comparison, use `extract_summary_metrics` on both runs.
 
 ## Notes
 

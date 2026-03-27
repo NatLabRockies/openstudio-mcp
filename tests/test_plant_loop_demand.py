@@ -16,6 +16,7 @@ def _unique(prefix: str = "pytest_loop") -> str:
 @pytest.mark.integration
 def test_create_plant_loop_cooling():
     """create_plant_loop creates a cooling plant loop with pump and SPM."""
+    # Validates: create_plant_loop Cooling sets 7.22C exit temp and appears in list_plant_loops
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -26,7 +27,7 @@ def test_create_plant_loop_cooling():
 
                 name = _unique("chw_loop")
                 cr = unwrap(await session.call_tool("create_example_osm", {"name": name}))
-                assert cr.get("ok") is True, cr
+                assert cr["ok"] is True, cr
 
                 resp = unwrap(await session.call_tool("create_plant_loop", {
                     "name": "New CHW Loop",
@@ -34,9 +35,16 @@ def test_create_plant_loop_cooling():
                 }))
                 result = json.loads(resp) if isinstance(resp, str) else resp
                 print("create_plant_loop cooling:", result)
-                assert result.get("ok") is True, result
+                assert result["ok"] is True, result
                 assert result["loop_type"] == "Cooling"
-                assert result["design_exit_temp_c"] == 7.22
+                assert result["design_exit_temp_c"] == pytest.approx(7.22)
+
+                # Independent readback — verify design temp persisted in model
+                details = unwrap(await session.call_tool("get_plant_loop_details", {
+                    "plant_loop_name": "New CHW Loop",
+                }))
+                assert details["ok"] is True
+                assert details["plant_loop"]["design_loop_exit_temp_c"] == pytest.approx(7.22)
 
                 # Verify loop shows up
                 loops = unwrap(await session.call_tool("list_plant_loops", {}))
@@ -49,6 +57,7 @@ def test_create_plant_loop_cooling():
 @pytest.mark.integration
 def test_create_plant_loop_heating():
     """create_plant_loop creates a heating plant loop."""
+    # Validates: create_plant_loop Heating sets 82.0C exit temp with constant pump
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -59,7 +68,7 @@ def test_create_plant_loop_heating():
 
                 name = _unique("hw_loop")
                 cr = unwrap(await session.call_tool("create_example_osm", {"name": name}))
-                assert cr.get("ok") is True, cr
+                assert cr["ok"] is True, cr
 
                 resp = unwrap(await session.call_tool("create_plant_loop", {
                     "name": "New HW Loop",
@@ -68,9 +77,16 @@ def test_create_plant_loop_heating():
                 }))
                 result = json.loads(resp) if isinstance(resp, str) else resp
                 print("create_plant_loop heating:", result)
-                assert result.get("ok") is True, result
+                assert result["ok"] is True, result
                 assert result["loop_type"] == "Heating"
-                assert result["design_exit_temp_c"] == 82.0
+                assert result["design_exit_temp_c"] == pytest.approx(82.0)
+
+                # Independent readback — verify design temp persisted in model
+                details = unwrap(await session.call_tool("get_plant_loop_details", {
+                    "plant_loop_name": "New HW Loop",
+                }))
+                assert details["ok"] is True
+                assert details["plant_loop"]["design_loop_exit_temp_c"] == pytest.approx(82.0)
 
     asyncio.run(_run())
 
@@ -78,6 +94,7 @@ def test_create_plant_loop_heating():
 @pytest.mark.integration
 def test_add_remove_demand_component():
     """add_demand_component and remove_demand_component move coils between loops."""
+    # Validates: demand components can be moved between plant loops via remove + add
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -91,7 +108,7 @@ def test_add_remove_demand_component():
                 cr = unwrap(await session.call_tool("create_baseline_osm", {
                     "name": name, "ashrae_sys_num": "07",
                 }))
-                assert cr.get("ok") is True, cr
+                assert cr["ok"] is True, cr
 
                 # Create a new cooling loop
                 resp = unwrap(await session.call_tool("create_plant_loop", {
@@ -99,48 +116,50 @@ def test_add_remove_demand_component():
                     "loop_type": "Cooling",
                 }))
                 result = json.loads(resp) if isinstance(resp, str) else resp
-                assert result.get("ok") is True, result
+                assert result["ok"] is True, result
 
                 # List cooling coils
                 comps = unwrap(await session.call_tool("list_model_objects", {
                     "object_type": "CoilCoolingWater",
                 }))
                 cooling_coils = comps["objects"]
+                assert len(cooling_coils) > 0, "System 7 should have cooling water coils"
 
-                if cooling_coils:
-                    coil_name = cooling_coils[0]["name"]
+                coil_name = cooling_coils[0]["name"]
 
-                    # Find which plant loop has it on demand side
-                    loops = unwrap(await session.call_tool("list_plant_loops", {}))
-                    orig_loop = None
-                    for lp in loops["plant_loops"]:
-                        details = unwrap(await session.call_tool("get_plant_loop_details", {
-                            "plant_loop_name": lp["name"],
-                        }))
-                        for comp in details.get("demand_components", []):
-                            if comp.get("name") == coil_name:
-                                orig_loop = lp["name"]
-                                break
-                        if orig_loop:
+                # Find which plant loop has it on demand side
+                loops = unwrap(await session.call_tool("list_plant_loops", {}))
+                orig_loop = None
+                for lp in loops["plant_loops"]:
+                    details = unwrap(await session.call_tool("get_plant_loop_details", {
+                        "plant_loop_name": lp["name"],
+                    }))
+                    for comp in details.get("demand_components", []):
+                        if comp.get("name") == coil_name:
+                            orig_loop = lp["name"]
                             break
-
                     if orig_loop:
-                        # Remove from original loop
-                        rem = unwrap(await session.call_tool("remove_demand_component", {
-                            "component_name": coil_name,
-                            "plant_loop_name": orig_loop,
-                        }))
-                        rem_result = json.loads(rem) if isinstance(rem, str) else rem
-                        print("remove_demand:", rem_result)
-                        assert rem_result.get("ok") is True, rem_result
+                        break
 
-                        # Add to new loop
-                        add = unwrap(await session.call_tool("add_demand_component", {
-                            "component_name": coil_name,
-                            "plant_loop_name": "Alt CHW Loop",
-                        }))
-                        add_result = json.loads(add) if isinstance(add, str) else add
-                        print("add_demand:", add_result)
-                        assert add_result.get("ok") is True, add_result
+                if orig_loop is None:
+                    pytest.skip(f"Coil '{coil_name}' not on any plant loop demand side — cannot test move")
+
+                # Remove from original loop
+                rem = unwrap(await session.call_tool("remove_demand_component", {
+                    "component_name": coil_name,
+                    "plant_loop_name": orig_loop,
+                }))
+                rem_result = json.loads(rem) if isinstance(rem, str) else rem
+                print("remove_demand:", rem_result)
+                assert rem_result["ok"] is True, rem_result
+
+                # Add to new loop
+                add = unwrap(await session.call_tool("add_demand_component", {
+                    "component_name": coil_name,
+                    "plant_loop_name": "Alt CHW Loop",
+                }))
+                add_result = json.loads(add) if isinstance(add, str) else add
+                print("add_demand:", add_result)
+                assert add_result["ok"] is True, add_result
 
     asyncio.run(_run())

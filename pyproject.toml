@@ -24,6 +24,11 @@ openstudio-mcp = "mcp_server.server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "unit: pure Python tests, no Docker/OpenStudio needed",
+    "integration: requires Docker + OpenStudio + MCP server",
+    "llm: requires Claude CLI + MCP server",
+]
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]

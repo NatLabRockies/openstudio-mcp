@@ -19,6 +19,7 @@ def _unique_name(prefix: str = "pytest_add_air_loop") -> str:
 @pytest.mark.integration
 def test_add_air_loop_minimal():
     """Test adding an air loop with no zones."""
+    # Validates: add_air_loop creates named air loop with 0 zones on example model
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -32,19 +33,18 @@ def test_add_air_loop_minimal():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Add air loop
                 air_loop_resp = await session.call_tool("add_air_loop", {"name": "New VAV System"})
                 air_loop_result = unwrap(air_loop_resp)
 
-                assert air_loop_result.get("ok") is True
+                assert air_loop_result["ok"] is True, f"add_air_loop failed: {air_loop_result.get('error')}"
                 assert air_loop_result["air_loop"]["name"] == "New VAV System"
-                assert "handle" in air_loop_result["air_loop"]
                 assert air_loop_result["air_loop"]["num_thermal_zones"] == 0
 
                 # Verify it appears in list
@@ -58,6 +58,7 @@ def test_add_air_loop_minimal():
 @pytest.mark.integration
 def test_add_air_loop_with_zones():
     """Test adding an air loop with zones assigned."""
+    # Validates: add_air_loop assigns 1 zone and reports num_thermal_zones=1
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -71,16 +72,16 @@ def test_add_air_loop_with_zones():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Get existing thermal zones
                 zones_resp = await session.call_tool("list_thermal_zones", {"max_results": 0})
                 zones_result = unwrap(zones_resp)
-                assert len(zones_result["thermal_zones"]) > 0
+                assert len(zones_result["thermal_zones"]) > 0, "Example model should have thermal zones"
                 zone_names = [zones_result["thermal_zones"][0]["name"]]
 
                 # Add air loop with zones
@@ -90,7 +91,7 @@ def test_add_air_loop_with_zones():
                 })
                 air_loop_result = unwrap(air_loop_resp)
 
-                assert air_loop_result.get("ok") is True
+                assert air_loop_result["ok"] is True, f"add_air_loop failed: {air_loop_result.get('error')}"
                 assert air_loop_result["air_loop"]["num_thermal_zones"] == 1
                 assert zone_names[0] in air_loop_result["air_loop"]["thermal_zones"]
 
@@ -100,6 +101,7 @@ def test_add_air_loop_with_zones():
 @pytest.mark.integration
 def test_add_air_loop_verify_zone_connection():
     """Test that zone connection is reflected in air loop details."""
+    # Validates: zone added via add_air_loop appears in get_air_loop_details thermal_zones
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -113,21 +115,21 @@ def test_add_air_loop_verify_zone_connection():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Create a new space and thermal zone
                 space_resp = await session.call_tool("create_space", {"name": "Test Space"})
-                assert unwrap(space_resp).get("ok") is True
+                assert unwrap(space_resp)["ok"] is True
 
                 zone_resp = await session.call_tool("create_thermal_zone", {
                     "name": "Test Zone",
                     "space_names": ["Test Space"],
                 })
-                assert unwrap(zone_resp).get("ok") is True
+                assert unwrap(zone_resp)["ok"] is True
 
                 # Add air loop with the zone
                 air_loop_resp = await session.call_tool("add_air_loop", {
@@ -135,12 +137,12 @@ def test_add_air_loop_verify_zone_connection():
                     "thermal_zone_names": ["Test Zone"],
                 })
                 air_loop_result = unwrap(air_loop_resp)
-                assert air_loop_result.get("ok") is True
+                assert air_loop_result["ok"] is True, f"add_air_loop failed: {air_loop_result.get('error')}"
 
                 # Get air loop details
                 details_resp = await session.call_tool("get_air_loop_details", {"air_loop_name": "Test VAV"})
                 details_result = unwrap(details_resp)
-                assert details_result.get("ok") is True
+                assert details_result["ok"] is True, f"get_air_loop_details failed: {details_result.get('error')}"
                 assert "Test Zone" in details_result["air_loop"]["thermal_zones"]
 
     asyncio.run(_run())
@@ -149,6 +151,7 @@ def test_add_air_loop_verify_zone_connection():
 @pytest.mark.integration
 def test_add_air_loop_no_model_loaded():
     """Test error when no model is loaded."""
+    # Validates: add_air_loop returns ok=False with "No model loaded" when no model is loaded
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -161,8 +164,7 @@ def test_add_air_loop_no_model_loaded():
                 air_loop_resp = await session.call_tool("add_air_loop", {"name": "Should Fail"})
                 air_loop_result = unwrap(air_loop_resp)
 
-                assert air_loop_result.get("ok") is False
-                assert "error" in air_loop_result
+                assert air_loop_result["ok"] is False
                 assert "No model loaded" in air_loop_result["error"]
 
     asyncio.run(_run())
@@ -171,6 +173,7 @@ def test_add_air_loop_no_model_loaded():
 @pytest.mark.integration
 def test_add_air_loop_invalid_zone():
     """Test error when thermal zone doesn't exist."""
+    # Validates: add_air_loop returns ok=False with "not found" for nonexistent zone name
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -184,11 +187,11 @@ def test_add_air_loop_invalid_zone():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Add air loop with invalid zone
                 air_loop_resp = await session.call_tool("add_air_loop", {
@@ -197,8 +200,7 @@ def test_add_air_loop_invalid_zone():
                 })
                 air_loop_result = unwrap(air_loop_resp)
 
-                assert air_loop_result.get("ok") is False
-                assert "error" in air_loop_result
+                assert air_loop_result["ok"] is False
                 assert "not found" in air_loop_result["error"]
 
     asyncio.run(_run())
