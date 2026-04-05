@@ -123,6 +123,11 @@ class ClaudeResult:
         return usage.get("cache_read_input_tokens", 0)
 
     @property
+    def toolsearch_count(self) -> int:
+        """Number of ToolSearch calls — proxy for tool discovery overhead."""
+        return sum(1 for c in self.tool_calls if c["tool"] == "ToolSearch")
+
+    @property
     def stats(self) -> dict:
         """Summary stats for benchmarking."""
         return {
@@ -134,6 +139,9 @@ class ClaudeResult:
             "cache_read_tokens": self.cache_read_tokens,
             "tool_calls": self.tool_names,
             "num_tool_calls": len(self.tool_names),
+            "all_tool_calls": self.all_tool_names,
+            "toolsearch_count": self.toolsearch_count,
+            "is_timeout": self.is_error and "Timed out" in self.final_text,
         }
 
 
