@@ -1,0 +1,54 @@
+[
+  {
+    "timestamp": "2026-03-28T18:32:55+00:00",
+    "model": "haiku",
+    "retries": 0,
+    "total_tests": 180,
+    "passed": 160,
+    "failed": 20,
+    "pass_rate": 88.9,
+    "total_duration_s": 4774.9,
+    "total_input_tokens": 8870,
+    "total_output_tokens": 307749,
+    "total_cache_read_tokens": 66583856,
+    "total_cost_usd": 11.211,
+    "tiers": {
+      "setup": {
+        "total": 6,
+        "passed": 6,
+        "duration_s": 113.7,
+        "pass_rate": 100.0
+      },
+      "tier1": {
+        "total": 4,
+        "passed": 4,
+        "duration_s": 75.9,
+        "pass_rate": 100.0
+      },
+      "tier3": {
+        "total": 26,
+        "passed": 19,
+        "duration_s": 1127.4,
+        "pass_rate": 73.1
+      },
+      "tier2": {
+        "total": 37,
+        "passed": 31,
+        "duration_s": 1857.0,
+        "pass_rate": 83.8
+      },
+      "tier4": {
+        "total": 3,
+        "passed": 3,
+        "duration_s": 71.8,
+        "pass_rate": 100.0
+      },
+      "progressive": {
+        "total": 104,
+        "passed": 97,
+        "duration_s": 1529.1,
+        "pass_rate": 93.3
+      }
+    }
+  }
+]
