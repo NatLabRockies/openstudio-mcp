@@ -463,10 +463,15 @@ def pytest_sessionfinish(session, exitstatus):
     model = os.environ.get("LLM_TESTS_MODEL", "sonnet")
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
+    code_mode_tests = sum(1 for r in _benchmark_results if r.get("code_mode_active"))
+
     summary = {
         "timestamp": ts,
         "model": model,
         "retries": MAX_RETRIES,
+        "code_mode": code_mode == "1",
+        "code_mode_tests": code_mode_tests,
         "total_tests": total,
         "passed": passed,
         "failed": total - passed,
@@ -490,7 +495,9 @@ def pytest_sessionfinish(session, exitstatus):
     md.append(f"# LLM Benchmark Report")
     md.append(f"")
     md.append(f"**Date:** {ts}  ")
-    md.append(f"**Model:** {model} | **Retries:** {MAX_RETRIES}  ")
+    cm_label = "ON" if code_mode == "1" else "OFF"
+    md.append(f"**Model:** {model} | **Retries:** {MAX_RETRIES} "
+              f"| **CodeMode:** {cm_label}  ")
     md.append(f"**Result:** {passed}/{total} passed ({pass_rate}%) "
               f"in {total_time:.0f}s  ")
     md.append(f"**Tokens:** {_fmt_tokens(total_input)} in "
