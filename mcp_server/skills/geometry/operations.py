@@ -22,6 +22,7 @@ from mcp_server.osm_helpers import (
     list_paginated,
     optional_name,
 )
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def _extract_surface(model, surface, detailed: bool = True) -> dict[str, Any]:
@@ -544,7 +545,8 @@ def import_floorspacejs(
         run_dir = RUN_ROOT / "examples" / "floorspacejs"
         run_dir.mkdir(parents=True, exist_ok=True)
         osm_path = run_dir / "imported.osm"
-        model.save(str(osm_path), True)
+        with suppress_openstudio_warnings():
+            model.save(str(osm_path), True)
         model_manager.load_model(osm_path)
 
         # Build summary

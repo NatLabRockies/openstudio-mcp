@@ -14,6 +14,8 @@ from typing import Any
 
 import openstudio
 
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
+
 
 def _constructions_osm_path() -> Path:
     """Return path to baseline_model_constructions.osm shipped in tests/assets."""
@@ -199,8 +201,12 @@ class BaselineModel(openstudio.model.Model):
     def set_constructions(self):
         """Load constructions from baseline_model_constructions.osm."""
         lib_path = _constructions_osm_path()
-        vt = openstudio.osversion.VersionTranslator()
-        lib = vt.loadModel(str(lib_path)).get()
+        with suppress_openstudio_warnings():
+            vt = openstudio.osversion.VersionTranslator()
+            loaded = vt.loadModel(str(lib_path))
+        if not loaded.is_initialized():
+            raise RuntimeError(f"Failed to load constructions library: {lib_path}")
+        lib = loaded.get()
         default_set = lib.getDefaultConstructionSets()[0].clone(self).to_DefaultConstructionSet().get()
         self.getBuilding().setDefaultConstructionSet(default_set)
         # Clone air boundary construction
@@ -367,26 +373,30 @@ class BaselineModel(openstudio.model.Model):
         }
         fn = sys_map[ashrae_sys_num]
 
-        if ashrae_sys_num in ("01", "02"):
-            fn(self, zones)
-        elif ashrae_sys_num in ("03", "04", "09", "10"):
-            for zone in zones:
+        # Suppress SWIG leak warnings emitted during HVAC object construction.
+        # GC-triggered warnings can fire at any point during model mutation, so
+        # suppression must cover the entire block rather than individual calls.
+        with suppress_openstudio_warnings():
+            if ashrae_sys_num in ("01", "02"):
+                fn(self, zones)
+            elif ashrae_sys_num in ("03", "04", "09", "10"):
+                for zone in zones:
+                    hvac = fn(self).to_AirLoopHVAC().get()
+                    hvac.addBranchForZone(zone)
+                    outlet = hvac.supplyOutletNode()
+                    for spm in outlet.setpointManagers():
+                        szr = spm.to_SetpointManagerSingleZoneReheat()
+                        if szr.is_initialized():
+                            szr = szr.get()
+                            szr.setControlZone(zone)
+                            if ashrae_sys_num == "03":
+                                szr.setMinimumSupplyAirTemperature(14)
+                                szr.setMaximumSupplyAirTemperature(40)
+                            break
+            else:  # 05-08 multi-zone
                 hvac = fn(self).to_AirLoopHVAC().get()
-                hvac.addBranchForZone(zone)
-                outlet = hvac.supplyOutletNode()
-                for spm in outlet.setpointManagers():
-                    szr = spm.to_SetpointManagerSingleZoneReheat()
-                    if szr.is_initialized():
-                        szr = szr.get()
-                        szr.setControlZone(zone)
-                        if ashrae_sys_num == "03":
-                            szr.setMinimumSupplyAirTemperature(14)
-                            szr.setMaximumSupplyAirTemperature(40)
-                        break
-        else:  # 05-08 multi-zone
-            hvac = fn(self).to_AirLoopHVAC().get()
-            for zone in zones:
-                hvac.addBranchForZone(zone)
+                for zone in zones:
+                    hvac.addBranchForZone(zone)
 
     def add_windows(self, wwr: float = 0.4, offset: float = 1.0, application_type: str = "Above Floor"):
         if wwr <= 0 or wwr >= 1:

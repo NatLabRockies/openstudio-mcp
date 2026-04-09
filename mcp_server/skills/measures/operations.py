@@ -18,6 +18,7 @@ import openstudio
 
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
 from mcp_server.model_manager import get_model, load_model
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
 from mcp_server.util import resolve_run_dir
 
 
@@ -33,7 +34,8 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
             return {"ok": False, "error": f"Measure directory not found: {measure_dir}"}
 
         # Load BCLMeasure to read metadata
-        bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_path)))
+        with suppress_openstudio_warnings():
+            bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_path)))
 
         # Extract arguments from the measure XML
         args = []
@@ -156,7 +158,8 @@ def apply_measure(
 
         # Save current model to temp OSM
         temp_osm = run_dir / "in.osm"
-        model.save(str(temp_osm), True)
+        with suppress_openstudio_warnings():
+            model.save(str(temp_osm), True)
 
         # Copy measure into run dir so OSW can reference it by relative path
         measures_dir = run_dir / "measures"

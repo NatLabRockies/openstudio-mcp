@@ -18,6 +18,7 @@ from mcp_server import model_manager
 from mcp_server.config import RUN_ROOT
 from mcp_server.model_manager import get_model
 from mcp_server.skills.measures.operations import apply_measure
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 # Category classification for ComStock measures
 _BASELINE_PREFIXES = (
@@ -81,7 +82,8 @@ def list_comstock_measures(category: str | None = None) -> dict[str, Any]:
             "category": cat,
         }
         try:
-            bcl = openstudio.BCLMeasure(openstudio.toPath(str(d)))
+            with suppress_openstudio_warnings():
+                bcl = openstudio.BCLMeasure(openstudio.toPath(str(d)))
             entry["display_name"] = bcl.name()
             entry["description"] = bcl.description()[:200]
             entry["num_arguments"] = len(bcl.arguments())
@@ -293,8 +295,9 @@ def _create_empty_model() -> Path:
     run_dir = RUN_ROOT / "examples" / "bar_building"
     run_dir.mkdir(parents=True, exist_ok=True)
     osm_path = run_dir / "empty.osm"
-    empty = openstudio.model.Model()
-    empty.save(str(osm_path), True)
+    with suppress_openstudio_warnings():
+        empty = openstudio.model.Model()
+        empty.save(str(osm_path), True)
     model_manager.load_model(osm_path)
     return osm_path
 

@@ -14,6 +14,7 @@ import openstudio
 
 from mcp_server.config import COMSTOCK_MEASURES_DIR, INPUT_ROOT, OSCLI_GEM_PATH
 from mcp_server.model_manager import get_model
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 
 def _parse_climate_zone_from_stat(stat_path: Path) -> str | None:
@@ -224,7 +225,8 @@ def add_design_day(
 
         model = get_model()
 
-        dd = openstudio.model.DesignDay(model)
+        with suppress_openstudio_warnings():
+            dd = openstudio.model.DesignDay(model)
         dd.setName(name)
         dd.setDayType(day_type)
         dd.setMonth(month)

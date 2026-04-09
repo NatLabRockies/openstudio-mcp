@@ -11,6 +11,8 @@ from typing import Any
 
 import openstudio
 
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
+
 # Category classification for common measures.
 # Only the 20 curated measures are categorized; everything else is "other".
 _CATEGORY_MAP: dict[str, str] = {
@@ -75,7 +77,8 @@ def list_common_measures(category: str | None = None) -> dict[str, Any]:
             "category": cat,
         }
         try:
-            bcl = openstudio.BCLMeasure(openstudio.toPath(str(d)))
+            with suppress_openstudio_warnings():
+                bcl = openstudio.BCLMeasure(openstudio.toPath(str(d)))
             entry["display_name"] = bcl.name()
             entry["num_arguments"] = len(bcl.arguments())
         except Exception:

@@ -12,6 +12,18 @@ import atexit
 import contextlib
 import os
 import sys
+import threading
+
+# Process-wide reentrant lock so concurrent worker threads never interleave their
+# os.dup2() calls on fd 1 (stdout).  FastMCP dispatches sync tools via
+# anyio.to_thread.run_sync, so two tools CAN run simultaneously; without
+# this lock, Thread B can save a "corrupted" stderr as its saved_stdout_fd
+# and permanently point fd 1 at stderr after Thread A restores it.
+# RLock (not Lock) allows the same thread to re-enter the suppression block
+# safely — e.g., create_baseline_osm suppresses the entire create_baseline_model
+# call, which internally calls set_constructions, which also suppresses its
+# VersionTranslator.loadModel() call.
+_suppress_lock = threading.RLock()
 
 
 @contextlib.contextmanager
@@ -20,50 +32,25 @@ def suppress_openstudio_warnings():
 
     This ensures the MCP JSON-RPC protocol on stdout remains clean.
     Works at both Python and C level by redirecting file descriptors.
+
+    Thread-safe: holds a process-wide lock for the duration so concurrent
+    calls from worker threads cannot corrupt each other's saved fd state.
     """
-    # Save original file descriptors
-    stdout_fd = sys.stdout.fileno()
-    stderr_fd = sys.stderr.fileno()
+    with _suppress_lock:
+        stdout_fd = sys.stdout.fileno()
+        stderr_fd = sys.stderr.fileno()
 
-    # Duplicate the current stdout FD to restore later
-    saved_stdout_fd = os.dup(stdout_fd)
-
-    # Flush Python-level buffers before redirecting
-    sys.stdout.flush()
-    sys.stderr.flush()
-
-    try:
-        # Redirect stdout (fd 1) to stderr (fd 2) at OS level
-        # This catches C-level fprintf(stdout, ...) from SWIG
-        os.dup2(stderr_fd, stdout_fd)
-
-        yield
-
-    finally:
-        # Flush again before restoring
-        sys.stdout.flush()
-        sys.stderr.flush()
-
-        # Restore original stdout
-        os.dup2(saved_stdout_fd, stdout_fd)
-        os.close(saved_stdout_fd)
-
-
-def create_suppression_middleware():
-    """Create a FastMCP middleware that wraps ALL tool calls in stdout suppression.
-
-    Returns a Middleware instance. Factory function avoids importing fastmcp
-    at module level (this module is also used by model_manager which loads
-    before the server).
-    """
-    from fastmcp.server.middleware import Middleware
-
-    class _StdoutSuppressionMiddleware(Middleware):
-        async def on_call_tool(self, context, call_next):
-            with suppress_openstudio_warnings():
-                return await call_next(context)
-
-    return _StdoutSuppressionMiddleware()
+        saved_stdout_fd = os.dup(stdout_fd)
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(stderr_fd, stdout_fd)
+            yield
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(saved_stdout_fd, stdout_fd)
+            os.close(saved_stdout_fd)
 
 
 def _redirect_stdout_to_stderr_at_exit():

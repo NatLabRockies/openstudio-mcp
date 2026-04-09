@@ -14,6 +14,7 @@ from typing import Any
 import openstudio
 
 from mcp_server.config import INPUT_ROOT, RUN_ROOT
+from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 CUSTOM_MEASURES_DIR = RUN_ROOT / "custom_measures"
 
@@ -61,7 +62,8 @@ def _find_test_model() -> Path | None:
         model = get_model()
         tmp = CUSTOM_MEASURES_DIR / "_test_model.osm"
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        model.save(openstudio.toPath(str(tmp)), True)
+        with suppress_openstudio_warnings():
+            model.save(openstudio.toPath(str(tmp)), True)
         return tmp
     except Exception:
         pass
@@ -774,17 +776,18 @@ def create_measure_op(
         lang_args = []
         if language == "Python":
             lang_args = [openstudio.MeasureLanguage("Python")]
-        bcl = openstudio.BCLMeasure(
-            name.replace("_", " ").title(),  # display name
-            class_name,
-            openstudio.toPath(str(measure_dir)),
-            taxonomy_tag,
-            openstudio.MeasureType(measure_type),
-            description,
-            modeler_description or description,
-            *lang_args,
-        )
-        bcl.save()
+        with suppress_openstudio_warnings():
+            bcl = openstudio.BCLMeasure(
+                name.replace("_", " ").title(),  # display name
+                class_name,
+                openstudio.toPath(str(measure_dir)),
+                taxonomy_tag,
+                openstudio.MeasureType(measure_type),
+                description,
+                modeler_description or description,
+                *lang_args,
+            )
+            bcl.save()
 
         # Determine script file — dispatch to reporting variants if needed
         is_reporting = measure_type == "ReportingMeasure"
@@ -889,8 +892,9 @@ def _test_reporting_measure_with_run(
     else:
         # Fallback: create empty model
         import openstudio as _os
-        m = _os.model.Model()
-        m.save(str(temp_osm), True)
+        with suppress_openstudio_warnings():
+            m = _os.model.Model()
+            m.save(str(temp_osm), True)
 
     # Copy measure
     measures_dir = run_dir / "measures"
@@ -1195,9 +1199,10 @@ def edit_measure_op(
             changes.append("description")
             # Also update measure.xml via BCLMeasure
             try:
-                bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_dir)))
-                bcl.setDescription(description)
-                bcl.save()
+                with suppress_openstudio_warnings():
+                    bcl = openstudio.BCLMeasure(openstudio.toPath(str(measure_dir)))
+                    bcl.setDescription(description)
+                    bcl.save()
             except Exception:
                 pass
 
