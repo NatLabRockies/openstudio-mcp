@@ -1,0 +1,54 @@
+[
+  {
+    "timestamp": "2026-03-28T17:06:27+00:00",
+    "model": "sonnet",
+    "retries": 0,
+    "total_tests": 180,
+    "passed": 170,
+    "failed": 10,
+    "pass_rate": 94.4,
+    "total_duration_s": 9452.9,
+    "total_input_tokens": 1959,
+    "total_output_tokens": 250127,
+    "total_cache_read_tokens": 20447621,
+    "total_cost_usd": 18.9595,
+    "tiers": {
+      "setup": {
+        "total": 6,
+        "passed": 6,
+        "duration_s": 420.6,
+        "pass_rate": 100.0
+      },
+      "tier1": {
+        "total": 4,
+        "passed": 4,
+        "duration_s": 130.0,
+        "pass_rate": 100.0
+      },
+      "tier3": {
+        "total": 26,
+        "passed": 21,
+        "duration_s": 1702.9,
+        "pass_rate": 80.8
+      },
+      "tier2": {
+        "total": 37,
+        "passed": 33,
+        "duration_s": 3600.4,
+        "pass_rate": 89.2
+      },
+      "tier4": {
+        "total": 3,
+        "passed": 3,
+        "duration_s": 202.8,
+        "pass_rate": 100.0
+      },
+      "progressive": {
+        "total": 104,
+        "passed": 103,
+        "duration_s": 3396.2,
+        "pass_rate": 99.0
+      }
+    }
+  }
+]

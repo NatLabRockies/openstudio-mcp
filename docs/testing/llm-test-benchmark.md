@@ -4,9 +4,20 @@
 
 | Run | Date | Model | Tests | Passed | Rate | Runtime | Notes |
 |-----|------|-------|-------|--------|------|---------|-------|
-| **13** | **2026-03-26** | **sonnet** | **230** | **160** | **95.8%** | **151 min** | **Post #40 fix + test audit. 7 fail (3 qaqc, 3 measure quality, 1 sim_L1)** |
+| **15** | **2026-04-05** | **sonnet** | **129** | **123** | **95.3%** | **69 min** | **Progressive-only re-run, CodeMode A/B baseline. 6 fail — edit_measure L1/L2/L3 regression, thermal_zones_L1, test_measure_L1, zone_equipment_priority_L3.** |
+| 14 | 2026-03-28 | sonnet | 180 | 170 | 94.4% | 157 min | Full suite cross-model sweep baseline. 10 fail (eval + workflow). Also ran haiku (160/180 = 88.9%) and opus (170/180 = 94.4%) same day. |
+| 13 | 2026-03-26 | sonnet | 230 | 160 | 95.8% | 151 min | Post #40 fix + test audit. 7 fail (3 qaqc, 3 measure quality, 1 sim_L1). |
 
 *Cost is notional API pricing from Claude Code CLI — free on Claude Max.*
+
+## Cross-Run Experiments
+
+Two comparative runs on 2026-03-28 and 2026-04-05:
+
+| Experiment | Date | Variants | Finding |
+|---|---|---|---|
+| Cross-model sweep | 2026-03-28 | haiku / sonnet / opus, same 180-test suite | haiku 88.9% / sonnet 94.4% / opus 94.4%. Opus matches sonnet but costs ~1.7×. Haiku is 40% cheaper at the cost of 5.5pp. |
+| FastMCP CodeMode A/B | 2026-04-05 | CodeMode OFF / ON, same 129 progressive tests | OFF 95.3% / ON **24.0%** — 71pp regression. See [`../knowledge/codemode-benchmark-2026-04-05.md`](../knowledge/codemode-benchmark-2026-04-05.md). |
 
 ## Per-Tool Discovery Matrix
 
@@ -126,8 +137,12 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | 11 | 2026-03-20 | 171 | 164 | 95.9% | — | Full suite with ToolSearch + wiring recipes + enriched descriptions. 12/12 test_09 pass. 7 failures all known flaky (replace_windows_L1 new — agent called search_api instead). |
 | 12 | 2026-03-20 | 170 | 163 | 95.9% | — | Post description enrichment (all 142 tools ≥40 char). Same 7 flaky failures. No regression. |
 | 13 | 2026-03-26 | 230 | 160 | 95.8% | — | Post #40 fix + test audit. 63 skipped (test structure). 7 fail: 3 qaqc tier2, 3 measure quality, 1 run_simulation_L1. Previously flaky L1s (import_floorplan, list_dynamic_type, check_loads, thermostat, set_wwr, schedule_details, create_loads) ALL passed. |
+| 14 | 2026-03-28 | 180 | 170 | 94.4% | $18.96 | Cross-model sweep baseline (sonnet). 157 min. 10 fail: 9 wrong_tool (2× qaqc, 2× troubleshoot, 1× energy-report, 1× systemd_e2e, 2× measure quality, 1× misc) + 1 timeout. Haiku same day: 160/180 = 88.9%, $11.21, 80 min. Opus same day: 170/180 = 94.4%, $32.23, 185 min. |
+| 15 | 2026-04-05 | 129 | 123 | 95.3% | $9.29 | CodeMode A/B baseline (OFF). Progressive-only suite (43 cases × 3). 69 min. 6 fail: edit_measure L1/L2/L3 (all 3 → tool regression), thermal_zones_L1, test_measure_L1, zone_equipment_priority_L3. L1=93.0%, L2=97.7%, L3=95.3%. |
+| 16 | 2026-04-05 | 129 | 31 | **24.0%** | $22.35 | **CodeMode A/B experiment (ON) — 71pp regression.** 168 min. 67 wrong_tool + 30 timeout + 1 no_mcp_tool. Feature kept as opt-in toggle, NOT default. See `docs/knowledge/codemode-benchmark-2026-04-05.md`. |
 
 *Run 8 = combined results from two separate targeted runs (measure authoring 13/15 + cooled beam 10/10).*
+*Run 16 is an experimental outlier (CodeMode ON) and is excluded from the main pass-rate timeline in plots.*
 
 ## Tool Verification Failures
 
@@ -189,4 +204,4 @@ LLM_TESTS_ENABLED=1 pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -
 ```
 
 Reports written to `LLM_TESTS_RUNS_DIR/benchmark.md` and `benchmark.json`.
-After running, copy to `docs/llm-test-benchmark.md`.
+After running, copy to `docs/testing/llm-test-benchmark.md`.

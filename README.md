@@ -498,7 +498,7 @@ The component properties tools can query and modify these 15 HVAC component type
 
 ## Testing
 
-For the full testing guide — framework details, annotated examples, CI shards, and how to write new tests — see **[`docs/testing.md`](docs/testing.md)**.
+For the full testing guide — framework details, annotated examples, CI shards, and how to write new tests — see **[`docs/testing/`](docs/testing/README.md)** (or [`docs/testing/testing.md`](docs/testing/testing.md) for the contributor guide).
 
 ### Quick start
 

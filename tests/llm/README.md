@@ -20,8 +20,8 @@ LLM_TESTS_ENABLED=1 pytest "tests/llm/test_04_workflows.py::test_workflow[bar_th
 # Run only tier 1 (tool selection, fastest — ~5 min)
 LLM_TESTS_ENABLED=1 LLM_TESTS_TIER=1 pytest tests/llm/ -v
 
-# Reduce retries for faster iteration (default: 2)
-LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=0 pytest tests/llm/ -v
+# Add retries for CI-like confidence (default: 0)
+LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=2 pytest tests/llm/ -v
 ```
 
 ## Prerequisites
@@ -35,7 +35,7 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=0 pytest tests/llm/ -v
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_TESTS_ENABLED` | (unset) | Set to `1` to enable tests |
-| `LLM_TESTS_RETRIES` | `2` | Retry count for flaky LLM tests |
+| `LLM_TESTS_RETRIES` | `0` | Retry count for flaky LLM tests |
 | `LLM_TESTS_TIER` | `all` | Filter: `1`, `2`, `3`, `4`, or `all` |
 | `LLM_TESTS_MODEL` | `sonnet` | Model: `sonnet`, `haiku`, `opus` |
 | `LLM_TESTS_MAX_PROMPTS` | `180` | Hard cap on Claude invocations per run |
@@ -111,7 +111,7 @@ Each test invocation loads ~27K tokens of tool definitions (134 tools). Full sui
 - **`haiku` model** uses less quota: `LLM_TESTS_MODEL=haiku` (lower pass rate)
 
 ### Retries
-Default 2 retries handles ~80% pass-rate LLM non-determinism. Set `LLM_TESTS_RETRIES=0` when iterating on a single test to get fast feedback. Set to `1` for a quick check, `2-3` for CI-like confidence.
+Default 0 retries (single attempt) gives first-attempt signal for model comparison. Set `LLM_TESTS_RETRIES=2` for CI-like confidence with non-deterministic tests.
 
 ### Benchmark reports
 After each run, benchmark data is written to `LLM_TESTS_RUNS_DIR`:

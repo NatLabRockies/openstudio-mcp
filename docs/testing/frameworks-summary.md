@@ -159,7 +159,7 @@ Written at session end to `LLM_TESTS_RUNS_DIR/`:
 | `benchmark_history.json` | JSON array | Per-run summary (last 50 runs) for trend tracking |
 | `ndjson_logs/<test>.ndjson` | NDJSON | Raw Claude CLI stream per test (for debugging tool call sequences) |
 
-Latest results are copied to `docs/llm-test-benchmark.md` for version control.
+Latest results are copied to `docs/testing/llm-test-benchmark.md` for version control.
 
 ### Strengths
 
@@ -300,4 +300,4 @@ LLM_TESTS_ENABLED=1 pytest tests/llm/ -v                 # full (~160 tests, 2-3
 | `tests/llm/runner.py` | `run_claude()`, NDJSON parsing, `ClaudeResult` |
 | `tests/llm/eval_parser.py` | Auto-parse skill eval.md into test cases |
 | `.github/workflows/ci.yml` | CI pipeline, shard definitions |
-| `docs/llm-test-benchmark.md` | Latest benchmark results + run history |
+| `docs/testing/llm-test-benchmark.md` | Latest benchmark results + run history |

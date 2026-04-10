@@ -27,6 +27,8 @@ SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/skills"))
 
 INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolve()
 
+ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
+
 ALLOWED_PATH_ROOTS = [
     Path("/repo").resolve(),
     RUN_ROOT,

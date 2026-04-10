@@ -1,0 +1,54 @@
+[
+  {
+    "timestamp": "2026-03-28T21:44:31+00:00",
+    "model": "opus",
+    "retries": 0,
+    "total_tests": 180,
+    "passed": 170,
+    "failed": 10,
+    "pass_rate": 94.4,
+    "total_duration_s": 11078.5,
+    "total_input_tokens": 2019,
+    "total_output_tokens": 164420,
+    "total_cache_read_tokens": 22609596,
+    "total_cost_usd": 32.2343,
+    "tiers": {
+      "setup": {
+        "total": 6,
+        "passed": 6,
+        "duration_s": 512.4,
+        "pass_rate": 100.0
+      },
+      "tier1": {
+        "total": 4,
+        "passed": 4,
+        "duration_s": 135.2,
+        "pass_rate": 100.0
+      },
+      "tier3": {
+        "total": 26,
+        "passed": 19,
+        "duration_s": 1860.4,
+        "pass_rate": 73.1
+      },
+      "tier2": {
+        "total": 37,
+        "passed": 34,
+        "duration_s": 5343.5,
+        "pass_rate": 91.9
+      },
+      "tier4": {
+        "total": 3,
+        "passed": 3,
+        "duration_s": 135.3,
+        "pass_rate": 100.0
+      },
+      "progressive": {
+        "total": 104,
+        "passed": 104,
+        "duration_s": 3091.7,
+        "pass_rate": 100.0
+      }
+    }
+  }
+]

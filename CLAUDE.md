@@ -1,5 +1,5 @@
 # CLAUDE.md — Instructions for Claude Code
-
+always be brutally honest
 ## Project: openstudio-mcp
 MCP server giving AI agents full control of building energy modeling —
 create buildings, author measures, configure HVAC, run EnergyPlus sims, extract
@@ -73,7 +73,7 @@ docker run --rm \
 - Targeted: `LLM_TESTS_ENABLED=1 pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
 - Full suite only for final validation
 - Markers: `-m smoke` (12), `-m generic` (10), `-m progressive` (102)
-- Benchmark results go in `docs/llm-test-benchmark.md`
+- Benchmark results go in `docs/testing/llm-test-benchmark.md`
 
 ### Local Development
 - Lint: `ruff check mcp_server/`
