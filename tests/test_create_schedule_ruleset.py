@@ -19,6 +19,7 @@ def _unique_name(prefix: str = "pytest_create_schedule") -> str:
 @pytest.mark.integration
 def test_create_schedule_ruleset_fractional():
     """Test creating a fractional schedule (0-1)."""
+    # Validates: create_schedule_ruleset Fractional creates schedule with name and handle
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -32,11 +33,11 @@ def test_create_schedule_ruleset_fractional():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create fractional schedule
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {
@@ -46,9 +47,9 @@ def test_create_schedule_ruleset_fractional():
                 })
                 schedule_result = unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is True
+                assert schedule_result["ok"] is True
                 assert schedule_result["schedule"]["name"] == "Always On Test"
-                assert "handle" in schedule_result["schedule"]
+                assert len(schedule_result["schedule"]["handle"]) > 0, "Schedule should have a UUID handle"
 
                 # Verify it appears in list
                 list_resp = await session.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0})
@@ -61,6 +62,7 @@ def test_create_schedule_ruleset_fractional():
 @pytest.mark.integration
 def test_create_schedule_ruleset_temperature():
     """Test creating a temperature schedule."""
+    # Validates: create_schedule_ruleset Temperature type creates schedule with correct name
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -74,11 +76,11 @@ def test_create_schedule_ruleset_temperature():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create temperature schedule
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {
@@ -88,7 +90,7 @@ def test_create_schedule_ruleset_temperature():
                 })
                 schedule_result = unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is True
+                assert schedule_result["ok"] is True
                 assert schedule_result["schedule"]["name"] == "Constant 21C"
 
                 # Independent query verification
@@ -101,6 +103,7 @@ def test_create_schedule_ruleset_temperature():
 @pytest.mark.integration
 def test_create_schedule_ruleset_onoff():
     """Test creating an on/off schedule."""
+    # Validates: create_schedule_ruleset OnOff type creates schedule verified in model
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -114,11 +117,11 @@ def test_create_schedule_ruleset_onoff():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create on/off schedule
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {
@@ -128,7 +131,7 @@ def test_create_schedule_ruleset_onoff():
                 })
                 schedule_result = unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is True
+                assert schedule_result["ok"] is True
                 assert schedule_result["schedule"]["name"] == "Always Off"
 
                 lst = unwrap(await session.call_tool("list_model_objects", {"object_type": "ScheduleRuleset", "max_results": 0}))
@@ -140,6 +143,7 @@ def test_create_schedule_ruleset_onoff():
 @pytest.mark.integration
 def test_create_schedule_ruleset_no_model_loaded():
     """Test error when no model is loaded."""
+    # Validates: create_schedule_ruleset returns error when no model loaded
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -152,8 +156,7 @@ def test_create_schedule_ruleset_no_model_loaded():
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {"name": "Should Fail"})
                 schedule_result = unwrap(schedule_resp)
 
-                assert schedule_result.get("ok") is False
-                assert "error" in schedule_result
+                assert schedule_result["ok"] is False
                 assert "No model loaded" in schedule_result["error"]
 
     asyncio.run(_run())
@@ -162,6 +165,7 @@ def test_create_schedule_ruleset_no_model_loaded():
 @pytest.mark.integration
 def test_create_schedule_ruleset_details():
     """Test that created schedule has proper details."""
+    # Validates: newly created schedule has 0 rules verified by get_schedule_details
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -175,22 +179,22 @@ def test_create_schedule_ruleset_details():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Create schedule
                 schedule_resp = await session.call_tool("create_schedule_ruleset", {"name": "Test Schedule"})
                 schedule_result = unwrap(schedule_resp)
-                assert schedule_result.get("ok") is True
+                assert schedule_result["ok"] is True
 
                 # Get details
                 details_resp = await session.call_tool("get_schedule_details", {"schedule_name": "Test Schedule"})
                 details_result = unwrap(details_resp)
 
-                assert details_result.get("ok") is True
+                assert details_result["ok"] is True
                 assert details_result["schedule"]["name"] == "Test Schedule"
                 assert details_result["schedule"]["num_rules"] == 0  # No rules yet
 

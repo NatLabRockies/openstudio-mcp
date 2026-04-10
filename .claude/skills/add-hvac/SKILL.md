@@ -51,6 +51,14 @@ Guide the user through selecting and applying an HVAC system to their model.
 
 6. Report what was created: system name, zones served, equipment types, plant loops.
 
+## Custom HVAC Wiring
+
+For custom HVAC configurations beyond the baseline templates:
+```
+search_wiring_patterns("DOAS")                     # get working Ruby wiring code
+search_api("CoilCoolingFourPipeBeam")              # verify SDK method names
+```
+
 ## Notes
 
 - Get all zone names from `list_thermal_zones()` — names must match exactly

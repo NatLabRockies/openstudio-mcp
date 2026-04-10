@@ -32,7 +32,7 @@ Weather (EPW + design days, needed before simulation)
 
 ## Typical Model Build Order
 
-1. **Create or load model** — `create_example_osm` / `create_baseline_osm` / `load_osm_model`
+1. **Create or load model** — `create_new_building` (recommended) / `load_osm_model` / `create_bar_building`
 2. **Geometry** — `create_space_from_floor_print` (preferred) or `create_space` + `create_surface`
 3. **Match surfaces** — `match_surfaces` after all spaces created (finds shared walls)
 4. **Thermal zones** — `create_thermal_zone` with `space_names`
@@ -84,11 +84,29 @@ Weather (EPW + design days, needed before simulation)
 
 | Goal | Tool | Notes |
 |------|------|-------|
-| Quick test model (1 zone) | `create_example_osm` | Minimal geometry, no HVAC |
-| Baseline with HVAC (10 zones) | `create_baseline_osm` | Includes ASHRAE system, geometry, schedules |
-| Custom geometry | `create_space_from_floor_print` | Preferred — auto-creates walls, floor, ceiling from polygon |
-| Explicit surfaces | `create_surface` | Use only when floor print extrusion won't work |
-| Typical building (standards-based) | `create_typical_building` | ComStock measure, adds constructions + loads + HVAC + schedules |
+| Production building model | `create_new_building` | End-to-end: geometry + weather + HVAC + loads. Recommended starting point. |
+| Custom geometry only | `create_bar_building` | Bar geometry from building type/area. Follow with `create_typical_building` for loads+HVAC. |
+| Custom floor plan | `create_space_from_floor_print` | Extrude polygon into 3D space. Use for non-rectangular geometry. |
+| Standards template on existing geometry | `create_typical_building` | Adds constructions + loads + HVAC + schedules to model with geometry. |
+| Import from FloorSpaceJS | `import_floorspacejs` | Load custom geometry JSON, then `create_typical_building` for loads+HVAC. |
+| Quick test (1 zone, no HVAC) | `create_example_osm` | Testing/demos only. |
+| Baseline test (10 zones) | `create_baseline_osm` | Testing/demos only. |
+
+## Pre-Simulation Checklist
+
+Before `run_simulation`, call `validate_model` to verify:
+- Weather file set (EPW)
+- Design days present (from DDY)
+- HVAC assigned to zones
+- Constructions on surfaces
+
+## HVAC Measure Authoring
+
+Before writing measures that create HVAC objects:
+```
+search_api("CoilCoolingFourPipeBeam")       # verify real method names
+search_wiring_patterns("four pipe beam")     # get working connection code
+```
 
 ## Common Error Patterns
 

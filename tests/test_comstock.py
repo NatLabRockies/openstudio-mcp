@@ -35,6 +35,7 @@ async def _setup_baseline(session, model_name, set_weather=False):
 @pytest.mark.integration
 def test_list_comstock_measures():
     """Verify list_comstock_measures returns >50 measures with expected fields."""
+    # Validates: ComStock measure discovery returns all bundled measures with correct categories
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -43,13 +44,13 @@ def test_list_comstock_measures():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("list_comstock_measures", {}))
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"Failed: {res}"
                 assert res["count"] > 50, f"Expected >50 measures, got {res['count']}"
                 # Check each measure has required fields
                 for m in res["measures"]:
-                    assert "name" in m
-                    assert "category" in m
-                    assert m["category"] in ("baseline", "upgrade", "setup", "other")
+                    assert m["category"] in ("baseline", "upgrade", "setup", "other"), (
+                        f"Unexpected category '{m.get('category')}' for measure '{m.get('name')}'"
+                    )
 
     asyncio.run(_run())
 
@@ -58,6 +59,7 @@ def test_list_comstock_measures():
 @pytest.mark.integration
 def test_list_comstock_measures_filter_baseline():
     """Verify category filter returns only baseline measures."""
+    # Validates: category filter excludes non-matching measures
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -68,7 +70,7 @@ def test_list_comstock_measures_filter_baseline():
                 res = unwrap(await s.call_tool("list_comstock_measures", {
                     "category": "baseline",
                 }))
-                assert res.get("ok") is True, f"Failed: {res}"
+                assert res["ok"] is True, f"Failed: {res}"
                 assert res["count"] > 0, "Expected at least 1 baseline measure"
                 for m in res["measures"]:
                     assert m["category"] == "baseline", f"Got {m['category']} for {m['name']}"
@@ -80,6 +82,7 @@ def test_list_comstock_measures_filter_baseline():
 @pytest.mark.integration
 def test_list_measure_arguments_comstock():
     """Call list_measure_arguments on a ComStock measure (set_wall_template)."""
+    # Validates: list_measure_arguments reads BCLMeasure arguments from ComStock measures
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -91,7 +94,7 @@ def test_list_measure_arguments_comstock():
                 listing = unwrap(await s.call_tool("list_comstock_measures", {
                     "category": "baseline",
                 }))
-                assert listing.get("ok") is True
+                assert listing["ok"] is True
                 # Find set_wall_template
                 wall_measures = [m for m in listing["measures"]
                                  if m["name"] == "set_wall_template"]
@@ -101,8 +104,8 @@ def test_list_measure_arguments_comstock():
                 res = unwrap(await s.call_tool("list_measure_arguments", {
                     "measure_dir": measure_path,
                 }))
-                assert res.get("ok") is True, f"Failed: {res}"
-                assert len(res["arguments"]) >= 1, "Expected at least 1 argument"
+                assert res["ok"] is True, f"Failed: {res}"
+                assert len(res["arguments"]) >= 1, "set_wall_template needs at least 1 argument"
 
     asyncio.run(_run())
 
@@ -115,6 +118,7 @@ COMSTOCK_TEST_OSM = "/opt/comstock-measures/create_typical_building_from_model/t
 @pytest.mark.integration
 def test_create_typical_building_default():
     """Load ComStock test model, apply create_typical_building, verify model enriched."""
+    # Validates: create_typical_building adds HVAC and constructions to model with geometry
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -127,24 +131,24 @@ def test_create_typical_building_default():
                 lr = unwrap(await s.call_tool("load_osm_model", {
                     "osm_path": COMSTOCK_TEST_OSM,
                 }))
-                assert lr.get("ok") is True, f"load_osm_model failed: {lr}"
+                assert lr["ok"] is True, f"load_osm_model failed: {lr}"
 
                 # Set weather + design days + climate zone
                 wr = unwrap(await s.call_tool("change_building_location", {
                     "weather_file": "/opt/comstock-measures/ChangeBuildingLocation"
                                     "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw",
                 }))
-                assert wr.get("ok") is True, f"change_building_location failed: {wr}"
+                assert wr["ok"] is True, f"change_building_location failed: {wr}"
 
                 # Apply create_typical_building
                 res = unwrap(await s.call_tool("create_typical_building", {
                     "climate_zone": "ASHRAE 169-2013-2A",
                 }))
-                assert res.get("ok") is True, f"create_typical_building failed: {res}"
+                assert res["ok"] is True, f"create_typical_building failed: {res}"
 
                 # Verify the model now has HVAC and constructions
                 summary = unwrap(await s.call_tool("get_model_summary", {}))
-                assert summary.get("ok") is True
+                assert summary["ok"] is True
                 counts = summary.get("counts", summary.get("summary", {}))
                 # Should have air loops or zone equipment from HVAC
                 total_hvac = counts.get("air_loops", 0) + counts.get("zone_hvac_equipment", 0)
@@ -157,6 +161,7 @@ def test_create_typical_building_default():
 @pytest.mark.integration
 def test_apply_comstock_measure_direct():
     """Apply simulation_settings ComStock measure via generic apply_measure."""
+    # Validates: generic apply_measure works with ComStock bundled measures
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -170,7 +175,7 @@ def test_apply_comstock_measure_direct():
                 listing = unwrap(await s.call_tool("list_comstock_measures", {
                     "category": "setup",
                 }))
-                assert listing.get("ok") is True
+                assert listing["ok"] is True
                 sim_measures = [m for m in listing["measures"]
                                 if m["name"] == "simulation_settings"]
                 assert len(sim_measures) == 1, (
@@ -183,6 +188,6 @@ def test_apply_comstock_measure_direct():
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": measure_path,
                 }))
-                assert res.get("ok") is True, f"apply_measure failed: {res}"
+                assert res["ok"] is True, f"apply_measure failed: {res}"
 
     asyncio.run(_run())

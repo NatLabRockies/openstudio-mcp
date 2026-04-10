@@ -13,6 +13,7 @@ pytestmark = pytest.mark.skipif(not integration_enabled(), reason="integration d
 
 def test_replace_single_zone():
     """Replace terminal on single zone from System 5 to PFP_Electric."""
+    # Validates: replace_zone_terminal swaps VAV reheat to PFP_Electric on single-zone model
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -26,7 +27,7 @@ def test_replace_single_zone():
                     "thermal_zone_names": zone_names,
                     "system_name": "VAV System",
                 })
-                assert unwrap(sr).get("ok") is True
+                assert unwrap(sr)["ok"] is True
 
                 # Replace single zone terminal
                 rr = await session.call_tool("replace_zone_terminal", {
@@ -36,7 +37,7 @@ def test_replace_single_zone():
                 rd = unwrap(rr)
                 print("replace result:", rd)
 
-                assert rd.get("ok") is True
+                assert rd["ok"] is True
                 assert rd["zone"]["name"] == zone_names[0]
                 assert rd["zone"]["air_loop"] == "VAV System"
                 assert rd["zone"]["new_terminal_type"] == "PFP_Electric"
@@ -46,13 +47,14 @@ def test_replace_single_zone():
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "VAV System",
                 }))
-                assert ald.get("ok") is True
+                assert ald["ok"] is True
 
     asyncio.run(_run())
 
 
 def test_zone_not_on_air_loop():
     """Zone with no air terminal should error."""
+    # Validates: replace_zone_terminal errors for zone not connected to any air loop
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -76,7 +78,7 @@ def test_zone_not_on_air_loop():
                 rd = unwrap(rr)
                 print("no-loop result:", rd)
 
-                assert rd.get("ok") is False
+                assert rd["ok"] is False
                 assert "not connected" in rd["error"].lower()
 
     asyncio.run(_run())
@@ -84,6 +86,7 @@ def test_zone_not_on_air_loop():
 
 def test_zone_not_found():
     """Invalid zone name should error."""
+    # Validates: replace_zone_terminal errors with "not found" for nonexistent zone
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -98,7 +101,7 @@ def test_zone_not_found():
                 rd = unwrap(rr)
                 print("not-found result:", rd)
 
-                assert rd.get("ok") is False
+                assert rd["ok"] is False
                 assert "not found" in rd["error"].lower()
 
     asyncio.run(_run())
@@ -106,6 +109,7 @@ def test_zone_not_found():
 
 def test_invalid_terminal_type():
     """Bad terminal type should error."""
+    # Validates: replace_zone_terminal errors with "Invalid terminal_type" for unknown type
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -120,7 +124,7 @@ def test_invalid_terminal_type():
                 rd = unwrap(rr)
                 print("invalid-type result:", rd)
 
-                assert rd.get("ok") is False
+                assert rd["ok"] is False
                 assert "Invalid terminal_type" in rd["error"]
 
     asyncio.run(_run())
@@ -128,6 +132,7 @@ def test_invalid_terminal_type():
 
 def test_hw_terminal_no_loop():
     """VAV_Reheat on System 6 (no HW loop) should error."""
+    # Validates: replace_zone_terminal errors when VAV_Reheat needs HW loop that doesn't exist
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -141,7 +146,7 @@ def test_hw_terminal_no_loop():
                     "thermal_zone_names": zone_names,
                     "system_name": "PFP System",
                 })
-                assert unwrap(sr).get("ok") is True
+                assert unwrap(sr)["ok"] is True
 
                 # Try VAV_Reheat — needs HW loop which System 6 doesn't have
                 rr = await session.call_tool("replace_zone_terminal", {
@@ -151,7 +156,7 @@ def test_hw_terminal_no_loop():
                 rd = unwrap(rr)
                 print("no-hw result:", rd)
 
-                assert rd.get("ok") is False
+                assert rd["ok"] is False
                 assert "hot water" in rd["error"].lower()
 
     asyncio.run(_run())
@@ -161,6 +166,7 @@ def test_hw_terminal_no_loop():
 
 def test_replace_single_zone_baseline():
     """Replace 1 of 10 zones on System 7."""
+    # Validates: replace_zone_terminal works on 10-zone baseline, all zones stay connected
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -174,7 +180,7 @@ def test_replace_single_zone_baseline():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV",
                 })
-                assert unwrap(sr).get("ok") is True
+                assert unwrap(sr)["ok"] is True
 
                 # Replace first zone to PFP_Electric
                 rr = await session.call_tool("replace_zone_terminal", {
@@ -184,14 +190,14 @@ def test_replace_single_zone_baseline():
                 rd = unwrap(rr)
                 print("baseline single replace:", rd)
 
-                assert rd.get("ok") is True
+                assert rd["ok"] is True
                 assert rd["zone"]["name"] == zone_names[0]
                 assert rd["zone"]["new_terminal_type"] == "PFP_Electric"
 
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central VAV",
                 }))
-                assert ald.get("ok") is True
+                assert ald["ok"] is True
                 assert ald["air_loop"]["num_thermal_zones"] == 10
 
     asyncio.run(_run())
@@ -199,6 +205,7 @@ def test_replace_single_zone_baseline():
 
 def test_mixed_terminals_baseline():
     """Core zones -> VAV_NoReheat, perimeter keeps VAV_Reheat."""
+    # Validates: mixed terminal types on same air loop — core=NoReheat, perimeter=Reheat
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -212,7 +219,7 @@ def test_mixed_terminals_baseline():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV",
                 })
-                assert unwrap(sr).get("ok") is True
+                assert unwrap(sr)["ok"] is True
 
                 # Find core zones (contain "Core")
                 core_zones = [z for z in zone_names if "Core" in z]
@@ -226,7 +233,7 @@ def test_mixed_terminals_baseline():
                     })
                     rd = unwrap(rr)
                     print(f"mixed replace {cz}:", rd)
-                    assert rd.get("ok") is True
+                    assert rd["ok"] is True
                     assert rd["zone"]["new_terminal_type"] == "VAV_NoReheat"
 
                 # Verify all zones still connected
@@ -240,6 +247,7 @@ def test_mixed_terminals_baseline():
 
 def test_replace_preserves_other_zones_baseline():
     """Verify 9 zones unchanged after replacing 1."""
+    # Validates: replacing 1 zone terminal does not disconnect or alter remaining 9 zones
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -253,14 +261,14 @@ def test_replace_preserves_other_zones_baseline():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV",
                 })
-                assert unwrap(sr).get("ok") is True
+                assert unwrap(sr)["ok"] is True
 
                 # Replace only the first zone
                 rr = await session.call_tool("replace_zone_terminal", {
                     "zone_name": zone_names[0],
                     "terminal_type": "PFP_Electric",
                 })
-                assert unwrap(rr).get("ok") is True
+                assert unwrap(rr)["ok"] is True
 
                 # Check air loop still has all zones
                 alr = await session.call_tool("get_air_loop_details", {
@@ -268,7 +276,7 @@ def test_replace_preserves_other_zones_baseline():
                 })
                 ald = unwrap(alr)
                 print("air loop after replace:", ald)
-                assert ald.get("ok") is True
+                assert ald["ok"] is True
 
                 loop_zones = set(ald["air_loop"]["thermal_zones"])
                 original_zones = set(zone_names)
@@ -279,6 +287,7 @@ def test_replace_preserves_other_zones_baseline():
 
 def test_gradual_retrofit_baseline():
     """Replace 3 zones one-by-one sequentially."""
+    # Validates: sequential terminal replacements with different types all succeed
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -292,7 +301,7 @@ def test_gradual_retrofit_baseline():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV",
                 })
-                assert unwrap(sr).get("ok") is True
+                assert unwrap(sr)["ok"] is True
 
                 # Replace 3 zones sequentially with different types
                 replacements = [
@@ -307,7 +316,7 @@ def test_gradual_retrofit_baseline():
                     })
                     rd = unwrap(rr)
                     print(f"retrofit {zn} -> {tt}:", rd)
-                    assert rd.get("ok") is True
+                    assert rd["ok"] is True
                     assert rd["zone"]["new_terminal_type"] == tt
 
     asyncio.run(_run())
@@ -315,6 +324,7 @@ def test_gradual_retrofit_baseline():
 
 def test_replace_single_zone_four_pipe_beam():
     """Replace single zone terminal to FourPipeBeam on DOAS+FCU model."""
+    # Validates: replace_zone_terminal supports FourPipeBeam type on DOAS+FanCoil model
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -329,7 +339,7 @@ def test_replace_single_zone_four_pipe_beam():
                     "zone_equipment_type": "FanCoil",
                 })
                 sys_data = unwrap(sr)
-                assert sys_data.get("ok") is True
+                assert sys_data["ok"] is True
                 doas_loop_name = sys_data["system"]["doas_loop"]
 
                 # Replace single zone terminal to FourPipeBeam
@@ -340,7 +350,7 @@ def test_replace_single_zone_four_pipe_beam():
                 rd = unwrap(rr)
                 print("4pb replace result:", rd)
 
-                assert rd.get("ok") is True
+                assert rd["ok"] is True
                 assert rd["zone"]["name"] == zone_names[0]
                 assert rd["zone"]["new_terminal_type"] == "FourPipeBeam"
                 assert "FourPipeBeam" in rd["zone"]["new_terminal_name"]
@@ -350,6 +360,7 @@ def test_replace_single_zone_four_pipe_beam():
 
 def test_replace_to_pfp_baseline():
     """Replace perimeter zone to PFP_Electric on System 7."""
+    # Validates: PFP_Electric terminal replacement works on perimeter zones
     async def _run():
         sp = server_params()
         async with stdio_client(sp) as (read, write):
@@ -363,7 +374,7 @@ def test_replace_to_pfp_baseline():
                     "thermal_zone_names": zone_names,
                     "system_name": "Central VAV",
                 })
-                assert unwrap(sr).get("ok") is True
+                assert unwrap(sr)["ok"] is True
 
                 # Find a perimeter zone
                 perim_zones = [z for z in zone_names if "Perimeter" in z or "perim" in z.lower()]
@@ -377,13 +388,13 @@ def test_replace_to_pfp_baseline():
                 rd = unwrap(rr)
                 print(f"pfp replace {target}:", rd)
 
-                assert rd.get("ok") is True
+                assert rd["ok"] is True
                 assert rd["zone"]["new_terminal_type"] == "PFP_Electric"
                 assert "PFP" in rd["zone"]["new_terminal_name"]
 
                 ald = unwrap(await session.call_tool("get_air_loop_details", {
                     "air_loop_name": "Central VAV",
                 }))
-                assert ald.get("ok") is True
+                assert ald["ok"] is True
 
     asyncio.run(_run())

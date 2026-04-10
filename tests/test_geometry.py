@@ -20,12 +20,13 @@ async def _setup_with_space(session, model_name, space_name):
     """Create model, load it, and create a space for geometry tests."""
     await setup_example(session, model_name)
     sr = unwrap(await session.call_tool("create_space", {"name": space_name}))
-    assert sr.get("ok") is True
+    assert sr["ok"] is True
 
 
 @pytest.mark.integration
 def test_list_surfaces():
     """Test listing all surfaces."""
+    # Validates: example model surfaces have name, surface_type, gross_area_m2 fields
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -38,20 +39,19 @@ def test_list_surfaces():
 
                 # Create and load model
                 create_result = unwrap(await session.call_tool("create_example_osm", {"name": name}))
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_result = unwrap(await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]}))
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # List surfaces
                 surfaces_result = unwrap(await session.call_tool("list_surfaces", {"max_results": 0}))
-
-                assert isinstance(surfaces_result, dict)
-                assert surfaces_result.get("ok") is True
+                assert surfaces_result["ok"] is True
                 assert surfaces_result["count"] > 0
-                assert "name" in surfaces_result["surfaces"][0]
-                assert "surface_type" in surfaces_result["surfaces"][0]
-                assert "gross_area_m2" in surfaces_result["surfaces"][0]
+                first = surfaces_result["surfaces"][0]
+                assert first["name"], "Surface should have a name"
+                assert first["surface_type"], "Surface should have a type"
+                assert first["gross_area_m2"] > 0, "Surface should have positive area"
 
     asyncio.run(_run())
 
@@ -59,6 +59,7 @@ def test_list_surfaces():
 @pytest.mark.integration
 def test_list_subsurfaces():
     """Test listing all subsurfaces."""
+    # Validates: list_subsurfaces returns ok with count field on example model
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -71,18 +72,20 @@ def test_list_subsurfaces():
 
                 # Create and load model
                 create_result = unwrap(await session.call_tool("create_example_osm", {"name": name}))
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_result = unwrap(await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]}))
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # List subsurfaces
                 subsurfaces_result = unwrap(await session.call_tool("list_subsurfaces", {"max_results": 0}))
-
-                assert isinstance(subsurfaces_result, dict)
-                assert subsurfaces_result.get("ok") is True
+                assert subsurfaces_result["ok"] is True
                 # Example model may have 0 subsurfaces
-                assert "count" in subsurfaces_result
+                assert subsurfaces_result["count"] >= 0
+                actual_len = len(subsurfaces_result.get("subsurfaces", []))
+                assert actual_len == subsurfaces_result["count"], (
+                    f"List length should match count: {actual_len} != {subsurfaces_result['count']}"
+                )
 
     asyncio.run(_run())
 
@@ -90,6 +93,7 @@ def test_list_subsurfaces():
 @pytest.mark.integration
 def test_surfaces_baseline():
     """Test surfaces in 10-zone baseline model."""
+    # Validates: 10-zone baseline has >= 50 surfaces including Wall and Floor/RoofCeiling
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -101,14 +105,14 @@ def test_surfaces_baseline():
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 sr = await session.call_tool("list_surfaces", {"max_results": 0})
                 sd = unwrap(sr)
                 print("baseline surfaces:", sd)
-                assert sd.get("ok") is True
+                assert sd["ok"] is True
                 # 10-zone 2-story building should have many surfaces
                 assert sd["count"] >= 50
                 # Check for interior walls (surface boundary)
@@ -125,6 +129,7 @@ def test_surfaces_baseline():
 @pytest.mark.integration
 def test_create_surface_wall():
     """Create a wall surface with 4 vertices, verify type and area."""
+    # Validates: create_surface Wall adds 1 surface with correct type, ~30m2 area, 4 vertices
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -144,7 +149,7 @@ def test_create_surface_wall():
                     "space_name": sp_name,
                     "surface_type": "Wall",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 surf = res["surface"]
                 assert surf["surface_type"] == "Wall"
                 assert surf["gross_area_m2"] > 29  # ~30 m²
@@ -159,6 +164,7 @@ def test_create_surface_wall():
 @pytest.mark.integration
 def test_create_surface_floor():
     """Create a floor surface."""
+    # Validates: create_surface Floor with Ground BC adds 1 surface to model
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -178,7 +184,7 @@ def test_create_surface_floor():
                     "surface_type": "Floor",
                     "outside_boundary_condition": "Ground",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["surface"]["surface_type"] == "Floor"
 
                 surfs_after = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
@@ -189,6 +195,7 @@ def test_create_surface_floor():
 @pytest.mark.integration
 def test_create_surface_auto_type():
     """Omit surface_type — OS auto-detects from vertex tilt."""
+    # Validates: create_surface auto-detects Wall from vertical polygon tilt
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -207,7 +214,7 @@ def test_create_surface_auto_type():
                     "vertices": [[0, 0, 0], [5, 0, 0], [5, 0, 3], [0, 0, 3]],
                     "space_name": sp_name,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["surface"]["surface_type"] == "Wall"
 
                 surfs_after = unwrap(await s.call_tool("list_surfaces", {"max_results": 0}))
@@ -218,6 +225,7 @@ def test_create_surface_auto_type():
 @pytest.mark.integration
 def test_create_surface_invalid_space():
     """Bad space name should return error."""
+    # Validates: create_surface returns ok:false for nonexistent space name
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -231,7 +239,7 @@ def test_create_surface_invalid_space():
                     "vertices": [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
                     "space_name": "nonexistent_space",
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "not found" in res["error"]
     asyncio.run(_run())
 
@@ -242,6 +250,7 @@ def test_create_surface_invalid_space():
 @pytest.mark.integration
 def test_create_subsurface_window():
     """Create a window on a wall, verify in subsurface list."""
+    # Validates: create_subsurface FixedWindow on wall appears in subsurface list
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -265,7 +274,7 @@ def test_create_subsurface_window():
                     "parent_surface_name": "WallForWindow",
                     "subsurface_type": "FixedWindow",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 sub = res["subsurface"]
                 assert sub["subsurface_type"] == "FixedWindow"
                 assert sub["surface"] == "WallForWindow"
@@ -279,6 +288,7 @@ def test_create_subsurface_window():
 @pytest.mark.integration
 def test_create_subsurface_door():
     """Create a door on a wall."""
+    # Validates: create_subsurface Door on wall appears in subsurface list
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -300,7 +310,7 @@ def test_create_subsurface_door():
                     "parent_surface_name": "WallForDoor",
                     "subsurface_type": "Door",
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["subsurface"]["subsurface_type"] == "Door"
 
                 subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
@@ -311,6 +321,7 @@ def test_create_subsurface_door():
 @pytest.mark.integration
 def test_create_subsurface_invalid_parent():
     """Bad parent surface name should return error."""
+    # Validates: create_subsurface returns ok:false for nonexistent parent surface
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -324,7 +335,7 @@ def test_create_subsurface_invalid_parent():
                     "vertices": [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
                     "parent_surface_name": "nonexistent_surface",
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "not found" in res["error"]
     asyncio.run(_run())
 
@@ -335,6 +346,7 @@ def test_create_subsurface_invalid_parent():
 @pytest.mark.integration
 def test_create_space_from_floor_print():
     """Extrude a rectangular floor polygon, verify surfaces created."""
+    # Validates: floor print extrusion creates 6 surfaces (4 walls + floor + ceiling)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -349,7 +361,7 @@ def test_create_space_from_floor_print():
                     "floor_vertices": [[0, 0], [10, 0], [10, 10], [0, 10]],
                     "floor_to_ceiling_height": 3.0,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["space_name"] == "ExtrudedSpace"
                 # Rectangle → 4 walls + floor + ceiling = 6 surfaces
                 assert res["num_surfaces"] == 6
@@ -369,6 +381,7 @@ def test_create_space_from_floor_print():
 @pytest.mark.integration
 def test_match_surfaces_adjacent_spaces():
     """Two adjacent spaces — shared wall should become interior after matching."""
+    # Validates: match_surfaces converts shared wall to Surface BC between adjacent spaces
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -396,7 +409,7 @@ def test_match_surfaces_adjacent_spaces():
 
                 # Match
                 res = unwrap(await s.call_tool("match_surfaces", {}))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["matched_surfaces"] >= 2  # at least the shared wall pair
 
                 # After matching: shared wall should be "Surface"
@@ -412,6 +425,7 @@ def test_match_surfaces_adjacent_spaces():
 @pytest.mark.integration
 def test_match_surfaces_no_adjacency():
     """Single space — match_surfaces should succeed with 0 matched."""
+    # Validates: match_surfaces succeeds with 0 matches on isolated space
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -425,7 +439,7 @@ def test_match_surfaces_no_adjacency():
                     "floor_to_ceiling_height": 3.0,
                 }))
                 res = unwrap(await s.call_tool("match_surfaces", {}))
-                assert res.get("ok") is True
+                assert res["ok"] is True
     asyncio.run(_run())
 
 
@@ -435,6 +449,7 @@ def test_match_surfaces_no_adjacency():
 @pytest.mark.integration
 def test_set_window_to_wall_ratio():
     """Set 40% glazing on a wall, verify subsurface created."""
+    # Validates: 40% WWR creates ~12m2 window on 30m2 wall
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -456,9 +471,9 @@ def test_set_window_to_wall_ratio():
                     "surface_name": "WWR_Wall",
                     "ratio": 0.4,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["num_subsurfaces"] >= 1
-                assert res["ratio"] == 0.4
+                assert res["ratio"] == pytest.approx(0.4)
                 # Window area should be ~40% of wall (30 m² → ~12 m²)
                 win_area = sum(sub["gross_area_m2"] for sub in res["subsurfaces"])
                 assert 10 < win_area < 14
@@ -472,6 +487,7 @@ def test_set_window_to_wall_ratio():
 @pytest.mark.integration
 def test_set_window_to_wall_ratio_custom_sill():
     """Set glazing with custom sill height."""
+    # Validates: custom sill height parameter creates valid subsurface
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -492,7 +508,7 @@ def test_set_window_to_wall_ratio_custom_sill():
                     "ratio": 0.3,
                     "sill_height_m": 1.2,
                 }))
-                assert res.get("ok") is True
+                assert res["ok"] is True
                 assert res["num_subsurfaces"] >= 1
 
                 subs = unwrap(await s.call_tool("list_subsurfaces", {"max_results": 0}))
@@ -503,6 +519,7 @@ def test_set_window_to_wall_ratio_custom_sill():
 @pytest.mark.integration
 def test_set_window_to_wall_ratio_not_wall():
     """Floor surface should be rejected."""
+    # Validates: WWR rejects Floor surface with "not Wall" error
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -523,7 +540,7 @@ def test_set_window_to_wall_ratio_not_wall():
                     "surface_name": "MyFloor",
                     "ratio": 0.3,
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
                 assert "not Wall" in res["error"]
     asyncio.run(_run())
 
@@ -531,6 +548,7 @@ def test_set_window_to_wall_ratio_not_wall():
 @pytest.mark.integration
 def test_set_window_to_wall_ratio_invalid_ratio():
     """Ratio outside 0-1 should be rejected."""
+    # Validates: WWR rejects ratio > 1.0 with ok:false
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -550,5 +568,5 @@ def test_set_window_to_wall_ratio_invalid_ratio():
                     "surface_name": "Ratio_Wall",
                     "ratio": 1.5,
                 }))
-                assert res.get("ok") is False
+                assert res["ok"] is False
     asyncio.run(_run())

@@ -399,10 +399,13 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
     b_unmet = (b.get("unmet_hours_heating") or 0) + (b.get("unmet_hours_cooling") or 0)
     r_unmet = (r.get("unmet_hours_heating") or 0) + (r.get("unmet_hours_cooling") or 0)
 
-    # End-use deltas (both in IP/kBtu)
+    # End-use deltas per fuel (both in IP/kBtu), Water excluded from energy
     b_sql, _b_err = _resolve_sql(baseline_run_id)
     r_sql, _r_err = _resolve_sql(retrofit_run_id)
     end_use_deltas: list[dict[str, Any]] = []
+    fuel_totals: list[dict[str, Any]] = []
+    water_use: list[dict[str, Any]] = []
+    energy_grand_total = {"baseline": 0.0, "retrofit": 0.0}
     if b_sql and r_sql:
         b_eu = extract_end_use_breakdown(b_sql, units="IP")
         r_eu = extract_end_use_breakdown(r_sql, units="IP")
@@ -410,18 +413,68 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
             b_map = {e["name"]: e for e in b_eu["end_uses"]}
             r_map = {e["name"]: e for e in r_eu["end_uses"]}
             all_cats = list(dict.fromkeys(list(b_map.keys()) + list(r_map.keys())))
+            # Collect all fuel names across both runs
+            all_fuels: list[str] = []
+            for m in (b_map, r_map):
+                for entry in m.values():
+                    for k in entry:
+                        if k != "name" and k not in all_fuels:
+                            all_fuels.append(k)
+
+            # Per-fuel accumulator for fuel_totals
+            fuel_acc: dict[str, dict[str, float]] = {}
+
+            def _is_water(f: str) -> bool:
+                return "water" in f.lower()
+
             for cat in all_cats:
-                b_total = sum(v for k, v in b_map.get(cat, {}).items()
-                              if k != "name" and isinstance(v, (int, float)))
-                r_total = sum(v for k, v in r_map.get(cat, {}).items()
-                              if k != "name" and isinstance(v, (int, float)))
-                d = r_total - b_total
-                d_pct = (d / b_total * 100) if b_total else None
-                end_use_deltas.append({
-                    "category": cat, "baseline_kBtu": round(b_total, 2),
-                    "retrofit_kBtu": round(r_total, 2),
-                    "delta_kBtu": round(d, 2), "delta_pct": round(d_pct, 1) if d_pct is not None else None,
-                })
+                b_entry = b_map.get(cat, {})
+                r_entry = r_map.get(cat, {})
+                for fuel in all_fuels:
+                    b_val = b_entry.get(fuel, 0.0)
+                    r_val = r_entry.get(fuel, 0.0)
+                    if not isinstance(b_val, (int, float)):
+                        b_val = 0.0
+                    if not isinstance(r_val, (int, float)):
+                        r_val = 0.0
+                    if b_val == 0.0 and r_val == 0.0:
+                        continue
+                    d = r_val - b_val
+                    d_pct = (d / b_val * 100) if b_val else None
+                    row = {
+                        "category": cat, "fuel": fuel,
+                        "baseline": round(b_val, 2), "retrofit": round(r_val, 2),
+                        "delta": round(d, 2),
+                        "delta_pct": round(d_pct, 1) if d_pct is not None else None,
+                    }
+                    if _is_water(fuel):
+                        water_use.append(row)
+                    else:
+                        end_use_deltas.append(row)
+
+                    # Accumulate for fuel_totals
+                    acc = fuel_acc.setdefault(fuel, {"baseline": 0.0, "retrofit": 0.0})
+                    acc["baseline"] += b_val
+                    acc["retrofit"] += r_val
+
+            # Build fuel_totals list
+            for fuel, acc in fuel_acc.items():
+                d = acc["retrofit"] - acc["baseline"]
+                d_pct = (d / acc["baseline"] * 100) if acc["baseline"] else None
+                row = {
+                    "fuel": fuel,
+                    "baseline_total": round(acc["baseline"], 2),
+                    "retrofit_total": round(acc["retrofit"], 2),
+                    "delta": round(d, 2),
+                    "delta_pct": round(d_pct, 1) if d_pct is not None else None,
+                }
+                fuel_totals.append(row)
+                if not _is_water(fuel):
+                    energy_grand_total["baseline"] += acc["baseline"]
+                    energy_grand_total["retrofit"] += acc["retrofit"]
+
+    gt_delta = energy_grand_total["retrofit"] - energy_grand_total["baseline"]
+    gt_pct = (gt_delta / energy_grand_total["baseline"] * 100) if energy_grand_total["baseline"] else None
 
     return {
         "ok": True,
@@ -431,6 +484,14 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
         "delta_eui_pct": round(delta_pct, 1) if delta_pct is not None else None,
         "delta_unmet_hours": round(r_unmet - b_unmet, 1),
         "end_use_deltas": end_use_deltas,
+        "fuel_totals": fuel_totals,
+        "water_use": water_use,
+        "energy_grand_total_kBtu": {
+            "baseline": round(energy_grand_total["baseline"], 2),
+            "retrofit": round(energy_grand_total["retrofit"], 2),
+            "delta": round(gt_delta, 2),
+            "delta_pct": round(gt_pct, 1) if gt_pct is not None else None,
+        },
     }
 
 

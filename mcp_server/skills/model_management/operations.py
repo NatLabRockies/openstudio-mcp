@@ -229,32 +229,34 @@ def save_osm_model(osm_path: str | None = None) -> dict[str, Any]:
 def list_files(
     directory: str | None = None,
     pattern: str = "*",
-    max_depth: int | None = None,
+    max_depth: int = 2,
     max_results: int = 10,
 ) -> dict[str, Any]:
-    """List files and directories in mounted directories.
-
-    Do not call list_files more than once for the same directory.
+    """List files in /inputs and /runs only.
 
     Args:
-        directory: Specific directory to list. If None, scans both /inputs and /runs.
-        pattern: Glob pattern to filter files (e.g. "*.epw", "*.osm"). Default "*".
-        max_depth: Max directory depth (1 = top-level only, None = unlimited).
+        directory: Directory to list (must be under /inputs or /runs).
+                   If None, scans both /inputs and /runs.
+        pattern: Glob pattern to filter files (e.g. "*.osm"). Default "*".
+        max_depth: Max directory depth (1 = top-level only). Default 2.
         max_results: Max items to return (default 10, None = unlimited).
 
     Returns:
-        Dict with ok=True, total count, and file/directory list.
+        Dict with ok=True, count, and file list.
     """
     import fnmatch
 
+    _allowed_roots = [INPUT_ROOT, RUN_ROOT]
+
     # Determine which directories to scan
     if directory:
-        scan_dirs = [Path(directory).resolve()]
-        for d in scan_dirs:
-            if not is_path_allowed(d):
-                return {"ok": False, "error": f"Directory not allowed: {d}"}
+        d = Path(directory).resolve()
+        # Restrict to /inputs and /runs only
+        if not any(str(d).startswith(str(root)) or d == root for root in _allowed_roots):
+            return {"ok": False, "error": f"Directory not allowed: {d}. list_files is restricted to /inputs and /runs."}
+        scan_dirs = [d]
     else:
-        scan_dirs = [INPUT_ROOT, RUN_ROOT]
+        scan_dirs = _allowed_roots
 
     items: list[dict[str, Any]] = []
     for scan_dir in scan_dirs:
@@ -262,35 +264,18 @@ def list_files(
             continue
         for root, dirs, filenames in os.walk(scan_dir):
             root_path = Path(root)
-            # Calculate current depth relative to scan_dir
             try:
                 depth = len(root_path.resolve().relative_to(scan_dir.resolve()).parts)
             except ValueError:
                 depth = 0
 
             # Enforce max_depth
-            if max_depth is not None and depth >= max_depth:
-                dirs.clear()  # prevent os.walk from descending further
-                # Still process files at this level
+            if depth >= max_depth:
+                dirs.clear()
                 if depth > max_depth:
                     continue
 
-            # Skip measure internals (resources/, tests/) but keep 1 level into measures/
-            rel = str(root_path.resolve().relative_to(scan_dir.resolve())).replace("\\", "/")
-            if "/resources/" in rel or "/tests/" in rel:
-                dirs.clear()
-                continue
-
-            # Add directories at this level (only when no pattern filter)
-            if pattern == "*":
-                for dname in dirs:
-                    items.append({
-                        "name": dname,
-                        "path": str(root_path / dname),
-                        "type": "dir",
-                    })
-
-            # Add files
+            # Add files only (no directories)
             for fname in filenames:
                 if pattern != "*" and not fnmatch.fnmatch(fname, pattern):
                     continue
@@ -299,13 +284,19 @@ def list_files(
                     "path": str(root_path / fname),
                     "type": "file",
                 })
+                # Early exit once max_results collected
+                if max_results is not None and len(items) >= max_results:
+                    break
+            if max_results is not None and len(items) >= max_results:
+                break
+        if max_results is not None and len(items) >= max_results:
+            break
 
     items.sort(key=lambda f: f["name"])
     total = len(items)
     resp: dict[str, Any] = {"ok": True}
     if max_results is not None and total > max_results:
         items = items[:max_results]
-        resp["total_available"] = total
         resp["truncated"] = True
     resp["count"] = len(items)
     resp["items"] = items

@@ -12,7 +12,12 @@ Extract all result categories from a completed simulation and present a structur
 
 1. Identify the run. If user provides a run_id, use it. Otherwise check for the most recent simulation.
 
-2. Extract all result categories:
+2. For an HTML report with ~25 sections (fastest):
+   ```
+   generate_results_report(run_id=<id>)
+   ```
+
+3. Or extract individual categories for custom analysis:
    ```
    extract_summary_metrics(run_id=<id>)
    extract_end_use_breakdown(run_id=<id>)
@@ -20,9 +25,15 @@ Extract all result categories from a completed simulation and present a structur
    extract_hvac_sizing(run_id=<id>)
    extract_zone_summary(run_id=<id>)
    extract_component_sizing(run_id=<id>)
+   extract_simulation_errors(run_id=<id>)
    ```
 
-3. Optionally run QA/QC:
+4. For before/after comparison:
+   ```
+   compare_runs(baseline_run_id=<id1>, retrofit_run_id=<id2>)
+   ```
+
+5. Optionally run QA/QC:
    ```
    run_qaqc_checks()
    ```

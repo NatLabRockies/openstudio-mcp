@@ -13,7 +13,7 @@ Environment variables:
   LLM_TESTS_ENABLED  — set to "1" to enable LLM tests (default: disabled)
   LLM_TESTS_MAX_PROMPTS — hard cap on Claude invocations per run (default: 180)
   LLM_TESTS_TIER — filter to run specific tier: "1", "2", "3", "4", or "all"
-  LLM_TESTS_RETRIES — retry count for failed tests (default: 2)
+  LLM_TESTS_RETRIES — retry count for failed tests (default: 0)
   LLM_TESTS_MODEL — model to use: "sonnet", "haiku", "opus" (default: "sonnet")
   LLM_TESTS_RUNS_DIR — host path for /runs volume mount (default: /tmp/llm-test-runs)
 
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 from datetime import datetime, timezone
@@ -63,13 +64,11 @@ FLAKY_TESTS = frozenset({
     "import_floorplan_L1",
     "thermostat_L1",
     "add_hvac_L1",
-    "list_dynamic_type_L1",
     # New cases — L1 prompts may trigger wrong tool
     "save_model_L1",
     "schedule_details_L1",
     "create_loads_L1",
     "set_wwr_L1",
-    "check_loads_L1",
     "ideal_air_L1",
     # Measure authoring — L1 may trigger related tools instead
     "test_measure_L1",
@@ -218,7 +217,7 @@ def get_tier() -> str:
 # not block the suite. The retry hook re-runs failed tests up to MAX_RETRIES
 # times before reporting a final failure. This is similar to pytest-rerunfailures
 # but implemented as a custom hook to avoid an extra dependency.
-MAX_RETRIES = int(os.environ.get("LLM_TESTS_RETRIES", "2"))
+MAX_RETRIES = int(os.environ.get("LLM_TESTS_RETRIES", "0"))
 
 
 def _is_flaky(nodeid: str) -> bool:
@@ -380,20 +379,33 @@ def pytest_runtest_logreport(report):
     from .runner import _last_result
     stats = _last_result.stats if _last_result else {}
 
-    _benchmark_results.append({
+    # Classify failure mode for failed tests
+    failure_mode = None
+    if not report.passed and _last_result:
+        if _last_result.is_error and "Timed out" in _last_result.final_text:
+            failure_mode = "timeout"
+        elif not _last_result.tool_names:
+            failure_mode = "no_mcp_tool"
+        else:
+            failure_mode = "wrong_tool"
+
+    entry = {
         "test_id": report.nodeid,
         "passed": report.passed,
         "duration_s": round(duration, 1),
         "tier": tier,
         "attempt": attempt,
         **stats,
-    })
+    }
+    if failure_mode:
+        entry["failure_mode"] = failure_mode
+    _benchmark_results.append(entry)
 
     # Persist NDJSON log for debugging
     if _last_result and _last_result.raw_ndjson:
         log_dir = _RUNS_DIR / "ndjson_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_name = _short_test_id(report.nodeid).replace("/", "_")
+        log_name = re.sub(r'[<>:"/\\|?*]', '_', _short_test_id(report.nodeid))
         suffix = f"_attempt{attempt}" if attempt > 1 else ""
         (log_dir / f"{log_name}{suffix}.ndjson").write_text(
             _last_result.raw_ndjson, encoding="utf-8",
@@ -451,10 +463,15 @@ def pytest_sessionfinish(session, exitstatus):
     model = os.environ.get("LLM_TESTS_MODEL", "sonnet")
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
+    code_mode_tests = sum(1 for r in _benchmark_results if r.get("code_mode_active"))
+
     summary = {
         "timestamp": ts,
         "model": model,
         "retries": MAX_RETRIES,
+        "code_mode": code_mode == "1",
+        "code_mode_tests": code_mode_tests,
         "total_tests": total,
         "passed": passed,
         "failed": total - passed,
@@ -478,7 +495,9 @@ def pytest_sessionfinish(session, exitstatus):
     md.append(f"# LLM Benchmark Report")
     md.append(f"")
     md.append(f"**Date:** {ts}  ")
-    md.append(f"**Model:** {model} | **Retries:** {MAX_RETRIES}  ")
+    cm_label = "ON" if code_mode == "1" else "OFF"
+    md.append(f"**Model:** {model} | **Retries:** {MAX_RETRIES} "
+              f"| **CodeMode:** {cm_label}  ")
     md.append(f"**Result:** {passed}/{total} passed ({pass_rate}%) "
               f"in {total_time:.0f}s  ")
     md.append(f"**Tokens:** {_fmt_tokens(total_input)} in "
@@ -591,15 +610,49 @@ def pytest_sessionfinish(session, exitstatus):
                   f"L2={l2_pass}/{l_total} | L3={l3_pass}/{l_total}")
         md.append("")
 
-    # Failed tests detail
+    # ToolSearch overhead analysis
+    ts_counts = [r.get("toolsearch_count", 0) for r in _benchmark_results]
+    if any(ts_counts):
+        avg_ts = sum(ts_counts) / len(ts_counts) if ts_counts else 0
+        max_ts = max(ts_counts) if ts_counts else 0
+        zero_ts = sum(1 for c in ts_counts if c == 0)
+        md.append("## Tool Discovery Overhead")
+        md.append("")
+        md.append(f"| Metric | Value |")
+        md.append(f"|--------|-------|")
+        md.append(f"| Avg ToolSearch calls/test | {avg_ts:.1f} |")
+        md.append(f"| Max ToolSearch calls | {max_ts} |")
+        md.append(f"| Tests with 0 ToolSearch | {zero_ts}/{len(ts_counts)} |")
+        md.append("")
+
+    # Failure mode analysis
     failed_tests = [r for r in _benchmark_results if not r["passed"]]
     if failed_tests:
+        modes = {}
+        for r in failed_tests:
+            m = r.get("failure_mode", "unknown")
+            modes[m] = modes.get(m, 0) + 1
+        md.append("## Failure Mode Analysis")
+        md.append("")
+        md.append("| Mode | Count | Description |")
+        md.append("|------|-------|-------------|")
+        mode_desc = {
+            "wrong_tool": "MCP tool called but not the expected one",
+            "no_mcp_tool": "No MCP tool called (stuck in builtins)",
+            "timeout": "Timed out before completing",
+            "unknown": "Failure mode not classified",
+        }
+        for m, count in sorted(modes.items(), key=lambda x: -x[1]):
+            md.append(f"| {m} | {count} | {mode_desc.get(m, '')} |")
+        md.append("")
+
         md.append("## Failed Tests")
         md.append("")
         for r in failed_tests:
             name = _short_test_id(r["test_id"])
             tools = " -> ".join(r.get("tool_calls", [])) or "no tools called"
-            md.append(f"- **{name}** ({r['tier']}): {r['duration_s']:.0f}s, "
+            mode = r.get("failure_mode", "?")
+            md.append(f"- **{name}** ({r['tier']}, {mode}): {r['duration_s']:.0f}s, "
                       f"{r.get('num_turns', '?')} turns, tools: {tools}")
         md.append("")
 

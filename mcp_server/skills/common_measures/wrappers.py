@@ -321,19 +321,49 @@ def change_building_location_op(
 # ===================================================================
 
 
-def _resolve_handle(name: str) -> str:
-    """Resolve a model object name to its OpenStudio handle string.
+def _resolve_choice_name(name: str) -> str:
+    """Resolve object name for Choice-type measure arguments.
 
-    Measure Choice arguments reference objects by handle (UUID).
-    This helper looks up the in-memory model object by name and
-    returns its handle. Falls back to returning the name if not found.
+    Returns the canonical nameString() if object found, input unchanged
+    otherwise.  Names give better error diagnostics than UUID handles.
     """
     from mcp_server.model_manager import get_model
     model = get_model()
     obj = model.getModelObjectByName(name)
     if obj.is_initialized():
-        return str(obj.get().handle())
+        return obj.get().nameString()
     return name
+
+
+def _validate_schedule(
+    name: str,
+    required_unit_type: str | None = None,
+) -> tuple[str, str | None]:
+    """Validate a schedule for Choice-type measure arguments.
+
+    Returns (resolved_name, error_msg).  error_msg is None if valid.
+    """
+    from mcp_server.model_manager import get_model
+    model = get_model()
+    obj = model.getModelObjectByName(name)
+    if not obj.is_initialized():
+        return name, f"Schedule '{name}' not found in model"
+    mo = obj.get()
+    sch = mo.to_Schedule()
+    if sch.empty():
+        return name, f"'{name}' is not a Schedule object"
+    tl = sch.get().scheduleTypeLimits()
+    if not tl.is_initialized():
+        return mo.nameString(), (
+            f"Schedule '{name}' has no type limits — measure will reject it"
+        )
+    if required_unit_type and tl.get().unitType() != required_unit_type:
+        actual = tl.get().unitType()
+        return mo.nameString(), (
+            f"Schedule '{name}' has unitType '{actual}', "
+            f"measure requires '{required_unit_type}'"
+        )
+    return mo.nameString(), None
 
 
 # --- 11. set_thermostat_schedules ---
@@ -347,14 +377,20 @@ def set_thermostat_schedules_op(
 
     Args:
         zone_name: Thermal zone name
-        cooling_schedule: Name of cooling setpoint ScheduleRuleset
-        heating_schedule: Name of heating setpoint ScheduleRuleset
+        cooling_schedule: Name of cooling setpoint ScheduleRuleset (must be Temperature-type)
+        heating_schedule: Name of heating setpoint ScheduleRuleset (must be Temperature-type)
     """
-    args: dict[str, str] = {"zones": _resolve_handle(zone_name)}
+    args: dict[str, str] = {"zones": _resolve_choice_name(zone_name)}
     if cooling_schedule:
-        args["cooling_sch"] = _resolve_handle(cooling_schedule)
+        name, err = _validate_schedule(cooling_schedule, required_unit_type="Temperature")
+        if err:
+            return {"ok": False, "error": f"cooling_schedule: {err}"}
+        args["cooling_sch"] = name
     if heating_schedule:
-        args["heating_sch"] = _resolve_handle(heating_schedule)
+        name, err = _validate_schedule(heating_schedule, required_unit_type="Temperature")
+        if err:
+            return {"ok": False, "error": f"heating_schedule: {err}"}
+        args["heating_sch"] = name
     return _run("SetThermostatSchedules", args)
 
 
@@ -372,14 +408,20 @@ def replace_thermostat_schedules_op(
 
     Args:
         zone_name: Thermal zone name
-        cooling_schedule: Name of cooling setpoint ScheduleRuleset
-        heating_schedule: Name of heating setpoint ScheduleRuleset
+        cooling_schedule: Name of cooling setpoint ScheduleRuleset (must be Temperature-type)
+        heating_schedule: Name of heating setpoint ScheduleRuleset (must be Temperature-type)
     """
-    args: dict[str, str] = {"zones": _resolve_handle(zone_name)}
+    args: dict[str, str] = {"zones": _resolve_choice_name(zone_name)}
     if cooling_schedule:
-        args["cooling_sch"] = _resolve_handle(cooling_schedule)
+        name, err = _validate_schedule(cooling_schedule, required_unit_type="Temperature")
+        if err:
+            return {"ok": False, "error": f"cooling_schedule: {err}"}
+        args["cooling_sch"] = name
     if heating_schedule:
-        args["heating_sch"] = _resolve_handle(heating_schedule)
+        name, err = _validate_schedule(heating_schedule, required_unit_type="Temperature")
+        if err:
+            return {"ok": False, "error": f"heating_schedule: {err}"}
+        args["heating_sch"] = name
     return _run("ReplaceThermostatSchedules", args)
 
 
@@ -395,8 +437,11 @@ def shift_schedule_time_op(
         schedule_name: Name of the ScheduleRuleset to shift
         shift_hours: Hours to shift forward (use negative for backward, 24hr clock)
     """
+    name, err = _validate_schedule(schedule_name)
+    if err:
+        return {"ok": False, "error": f"schedule: {err}"}
     return _run("ShiftScheduleProfileTime", {
-        "schedule": _resolve_handle(schedule_name),
+        "schedule": name,
         "shift_value": str(shift_hours),
     })
 
@@ -488,13 +533,17 @@ def add_zone_ventilation_op(
         ventilation_type: "Natural", "Exhaust", "Intake", or "Balanced"
         schedule_name: Optional schedule name (defaults to always-on)
     """
+    if not schedule_name:
+        return {"ok": False, "error": "schedule_name is required (measure vent_sch arg is mandatory)"}
+    sched_name, err = _validate_schedule(schedule_name)
+    if err:
+        return {"ok": False, "error": f"schedule: {err}"}
     args: dict[str, str] = {
-        "zone": _resolve_handle(zone_name),
+        "zone": _resolve_choice_name(zone_name),
         "vent_type": ventilation_type,
         "design_flow_rate": str(design_flow_rate),
+        "vent_sch": sched_name,
     }
-    if schedule_name:
-        args["vent_sch"] = _resolve_handle(schedule_name)
     return _run("add_zone_ventilation_design_flow_rate_object", args)
 
 

@@ -515,7 +515,18 @@ def create_new_building(
     elif climate_zone != "Lookup From Stat File":
         typical_cz = _expand_climate_zone(climate_zone)
     else:
-        typical_cz = "Lookup From Model"
+        # No weather_file and no explicit climate_zone — check if model has one
+        model_cz = _read_climate_zone_from_model()
+        if model_cz:
+            typical_cz = _expand_climate_zone(model_cz)
+        else:
+            return {
+                "ok": False,
+                "error": (
+                    "climate_zone required when no weather_file provided. "
+                    "Use change_building_location first, or pass climate_zone='4A' directly."
+                ),
+            }
 
     typical_result = create_typical_building(
         template=template,

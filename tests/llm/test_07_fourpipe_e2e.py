@@ -25,15 +25,8 @@ BOSTON_EPW = "/inputs/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 
 
 def test_fourpipe_beam_retrofit_e2e():
-    """Full retrofit: load → weather → baseline sim → measure → apply → sim → compare.
-
-    Verifies:
-      1. Correct tool chain (load, weather, 2x sim, measure create/apply)
-      2. Measure is authored with arguments (reusable)
-      3. Both simulations complete (2x run_simulation)
-      4. EUI values are in plausible range (20-50 kBtu/ft2)
-      5. Agent compares results
-    """
+    """Full retrofit: load → weather → baseline sim → measure → apply → sim → compare."""
+    # Validates: Claude completes full 4-pipe beam retrofit workflow with measure authoring, 2 sims, and comparison
     prompt = (
         f"Do all steps in order using MCP tools only:\n"
         f"1. Load the model at {SYSTEMD} using load_osm_model.\n"
@@ -91,7 +84,7 @@ def test_fourpipe_beam_retrofit_e2e():
         if call["tool"].removeprefix(prefix) == "create_measure":
             create_input = call["input"]
             break
-    assert create_input is not None, "create_measure call not found"
+    assert create_input, "create_measure call not found in MCP tool calls"
 
     args = create_input.get("arguments")
     if isinstance(args, str):

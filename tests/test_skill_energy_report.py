@@ -15,6 +15,7 @@ from mcp.client.stdio import stdio_client
 @pytest.mark.integration
 def test_skill_energy_report_workflow():
     """/energy-report skill: simulate then extract all 6 result categories."""
+    # Validates: all 6 result extraction tools succeed after a complete simulation
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -28,25 +29,25 @@ def test_skill_energy_report_workflow():
                 cr = unwrap(await s.call_tool("create_baseline_osm", {
                     "name": name, "ashrae_sys_num": "03",
                 }))
-                assert cr.get("ok") is True
+                assert cr["ok"] is True
                 lr = unwrap(await s.call_tool("load_osm_model", {
                     "osm_path": cr["osm_path"],
                 }))
-                assert lr.get("ok") is True
+                assert lr["ok"] is True
                 wr = unwrap(await s.call_tool("change_building_location", {
                     "weather_file": EPW_PATH,
                 }))
-                assert wr.get("ok") is True
+                assert wr["ok"] is True
 
                 save_path = f"/runs/{name}.osm"
                 sr = unwrap(await s.call_tool("save_osm_model", {
                     "osm_path": save_path,
                 }))
-                assert sr.get("ok") is True
+                assert sr["ok"] is True
                 sim = unwrap(await s.call_tool("run_simulation", {
                     "osm_path": save_path, "epw_path": EPW_PATH,
                 }))
-                assert sim.get("ok") is True
+                assert sim["ok"] is True
                 run_id = sim["run_id"]
                 status = await poll_until_done(s, run_id)
                 assert status["run"]["status"] == "success", status
@@ -64,8 +65,15 @@ def test_skill_energy_report_workflow():
                     result = unwrap(await s.call_tool(tool_name, {
                         "run_id": run_id,
                     }))
-                    assert result.get("ok") is True, (
+                    assert result["ok"] is True, (
                         f"{tool_name} failed: {result}"
                     )
+                    # Verify non-empty payload
+                    data_keys = {k for k in result if k not in ("ok", "units_note", "warnings")}
+                    assert data_keys, f"{tool_name} returned no data keys: {list(result.keys())}"
+                    for dk in data_keys:
+                        val = result[dk]
+                        if isinstance(val, (list, dict)):
+                            assert len(val) > 0, f"{tool_name}['{dk}'] is empty"
 
     asyncio.run(_run())

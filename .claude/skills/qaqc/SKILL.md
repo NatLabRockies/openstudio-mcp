@@ -9,13 +9,19 @@ Inspect the current model for common issues before running a simulation.
 
 ## Steps
 
-1. Get model overview:
+1. Quick automated check:
    ```
-   inspect_osm_summary()
+   validate_model()
+   ```
+   Checks weather, design days, HVAC, constructions in one call.
+
+2. Get model overview:
+   ```
    get_model_summary()
+   get_building_info()
    ```
 
-2. Check for missing critical elements:
+3. Check for missing critical elements:
    - **Zones without HVAC:** `list_thermal_zones()` — look for zones with no equipment
    - **Spaces without zones:** `list_spaces()` — look for spaces not assigned to a thermal zone
    - **Missing constructions:** `list_surfaces()` — look for surfaces without constructions

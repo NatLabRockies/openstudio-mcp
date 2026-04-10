@@ -34,12 +34,8 @@ NO_MODEL_CASES = [
 @pytest.mark.parametrize(("prompt", "expected"), NO_MODEL_CASES,
                          ids=[c[0][:35] for c in NO_MODEL_CASES])
 def test_tool_selection_no_model(prompt, expected):
-    """Agent calls expected tool without needing model state.
-
-    Verifies:
-      - At least one expected tool appears in the tool call sequence
-      - No model loading needed (these tools work without model state)
-    """
+    """Agent calls expected tool without needing model state."""
+    # Validates: Claude selects correct no-model tools (server status, skills, geometry creation)
     tier = get_tier()
     if tier not in ("all", "1"):
         pytest.skip("Tier 1 not selected")

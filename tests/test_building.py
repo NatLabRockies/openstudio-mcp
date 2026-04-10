@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 import uuid
 
@@ -19,6 +20,7 @@ def _unique_name(prefix: str = "pytest_building") -> str:
 @pytest.mark.integration
 def test_get_building_info():
     """Test getting detailed building information."""
+    # Validates: example model building has name="Building 1", floor_area=400m2
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -32,28 +34,24 @@ def test_get_building_info():
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Get building info
                 building_resp = await session.call_tool("get_building_info", {})
                 building_result = unwrap(building_resp)
                 print("get_building_info:", building_result)
-
-                assert isinstance(building_result, dict)
-                assert building_result.get("ok") is True, building_result
-                assert "building" in building_result
+                assert building_result["ok"] is True, building_result
 
                 building = building_result["building"]
                 assert building["name"] == "Building 1"
-                assert building["floor_area_m2"] == 400.0
-                assert "conditioned_floor_area_m2" in building
-                assert "exterior_surface_area_m2" in building
-                assert "lighting_power_per_floor_area_w_m2" in building
-                assert "number_of_people" in building
+                assert building["floor_area_m2"] == pytest.approx(400.0)
+                assert building["conditioned_floor_area_m2"] >= 0, "Should have conditioned area"
+                assert building["exterior_surface_area_m2"] > 0, "Should have exterior surfaces"
+                assert building["number_of_people"] >= 0, "Should have people count"
 
     asyncio.run(_run())
 
@@ -61,6 +59,7 @@ def test_get_building_info():
 @pytest.mark.integration
 def test_get_model_summary():
     """Test getting model summary with object counts."""
+    # Validates: example model summary has 4 spaces, 1 zone, 1 space type, all expected keys
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -74,25 +73,22 @@ def test_get_model_summary():
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # Get model summary
                 summary_resp = await session.call_tool("get_model_summary", {})
                 summary_result = unwrap(summary_resp)
                 print("get_model_summary:", summary_result)
-
-                assert isinstance(summary_result, dict)
-                assert summary_result.get("ok") is True, summary_result
-                assert "summary" in summary_result
+                assert summary_result["ok"] is True, summary_result
 
                 summary = summary_result["summary"]
                 # Known values from OpenStudio example model
                 assert summary["building_name"] == "Building 1"
-                assert summary["floor_area_m2"] == 400.0
+                assert summary["floor_area_m2"] == pytest.approx(400.0)
                 assert summary["spaces"] == 4
                 assert summary["thermal_zones"] == 1
                 assert summary["space_types"] == 1
@@ -116,6 +112,7 @@ def test_get_model_summary():
 @pytest.mark.integration
 def test_list_building_stories():
     """Test listing building stories via list_model_objects."""
+    # Validates: example model has exactly 1 building story via list_model_objects
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -129,21 +126,17 @@ def test_list_building_stories():
                 # Create and load example model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True
 
                 # List building stories via generic object access
                 stories_resp = await session.call_tool("list_model_objects", {"object_type": "BuildingStory"})
                 stories_result = unwrap(stories_resp)
                 print("list_model_objects BuildingStory:", stories_result)
-
-                assert isinstance(stories_result, dict)
-                assert stories_result.get("ok") is True, stories_result
-                assert "objects" in stories_result
-                assert "count" in stories_result
+                assert stories_result["ok"] is True, stories_result
 
                 # Example model has 1 story
                 assert stories_result["count"] == 1
@@ -152,8 +145,8 @@ def test_list_building_stories():
 
                 # Check story attributes
                 story = stories[0]
-                assert "name" in story
-                assert "handle" in story
+                assert story["name"], "Story should have a name"
+                assert story["handle"], "Story should have a handle"
 
     asyncio.run(_run())
 
@@ -161,6 +154,7 @@ def test_list_building_stories():
 @pytest.mark.integration
 def test_building_info_baseline():
     """Test building info with 10-zone baseline model."""
+    # Validates: 10-zone baseline building floor area > 1000 m2
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -172,14 +166,14 @@ def test_building_info_baseline():
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 br = await session.call_tool("get_building_info", {})
                 bd = unwrap(br)
                 print("baseline building_info:", bd)
-                assert bd.get("ok") is True, bd
+                assert bd["ok"] is True, bd
                 b = bd["building"]
                 assert b["floor_area_m2"] > 1000  # 2 floors * 100m * 50m = 10000 m²
 
@@ -194,6 +188,7 @@ def test_conditioned_floor_area_with_hvac():
     Pre-v0.5: conditioned_floor_area_m2 returned 0.0 (SDK needs SQL).
     Now: computed from model objects (zones with thermostats).
     """
+    # Validates: conditioned floor area equals total when all zones have thermostats
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -208,13 +203,13 @@ def test_conditioned_floor_area_with_hvac():
                     "name": name, "ashrae_sys_num": "03", "num_floors": 1,
                 })
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 br = await session.call_tool("get_building_info", {})
                 bd = unwrap(br)
-                assert bd.get("ok") is True, bd
+                assert bd["ok"] is True, bd
                 b = bd["building"]
                 # All zones have thermostats → conditioned = total
                 assert b["conditioned_floor_area_m2"] == pytest.approx(
@@ -224,7 +219,7 @@ def test_conditioned_floor_area_with_hvac():
                 # Also check via get_model_summary
                 sr = await session.call_tool("get_model_summary", {})
                 sd = unwrap(sr)
-                assert sd.get("ok") is True, sd
+                assert sd["ok"] is True, sd
                 s = sd["summary"]
                 assert s["conditioned_floor_area_m2"] == pytest.approx(
                     s["floor_area_m2"], rel=0.01,
@@ -241,6 +236,7 @@ def test_conditioned_floor_area_no_hvac():
     even without ashrae_sys_num. So conditioned area should equal total
     floor area (thermostats present on all zones).
     """
+    # Validates: baseline without HVAC still has conditioned=total (thermostats always added)
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -254,13 +250,13 @@ def test_conditioned_floor_area_no_hvac():
                     "name": name, "num_floors": 1,
                 })
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 br = await session.call_tool("get_building_info", {})
                 bd = unwrap(br)
-                assert bd.get("ok") is True, bd
+                assert bd["ok"] is True, bd
                 b = bd["building"]
                 assert b["floor_area_m2"] > 0
                 # Baseline always adds thermostats → conditioned = total
@@ -274,6 +270,7 @@ def test_conditioned_floor_area_no_hvac():
 @pytest.mark.integration
 def test_building_stories_baseline():
     """Test building stories with 2-story baseline model via list_model_objects."""
+    # Validates: 2-story baseline model has exactly 2 BuildingStory objects
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -285,14 +282,14 @@ def test_building_stories_baseline():
                 await session.initialize()
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 sr = await session.call_tool("list_model_objects", {"object_type": "BuildingStory"})
                 sd = unwrap(sr)
                 print("baseline stories:", sd)
-                assert sd.get("ok") is True, sd
+                assert sd["ok"] is True, sd
                 assert sd["count"] == 2
                 assert len(sd["objects"]) == 2
 
@@ -307,6 +304,7 @@ def test_building_info_no_loads():
     OpenStudio when the model has geometry but no people/lights/equipment.
     Pydantic rejects NaN in JSON, causing a hard crash.
     """
+    # Regression: get_building_info crashed with NaN/Inf when model has no loads
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1")
 
@@ -319,14 +317,14 @@ def test_building_info_no_loads():
                 # Baseline model has geometry but no loads
                 cr = await session.call_tool("create_baseline_osm", {"name": name})
                 cd = unwrap(cr)
-                assert cd.get("ok") is True, cd
+                assert cd["ok"] is True, cd
                 lr = await session.call_tool("load_osm_model", {"osm_path": cd["osm_path"]})
-                assert unwrap(lr).get("ok") is True
+                assert unwrap(lr)["ok"] is True
 
                 br = await session.call_tool("get_building_info", {})
                 bd = unwrap(br)
                 print("no-loads building_info:", bd)
-                assert bd.get("ok") is True, f"get_building_info crashed: {bd}"
+                assert bd["ok"] is True, f"get_building_info crashed: {bd}"
 
                 b = bd["building"]
                 assert b["floor_area_m2"] > 0
@@ -335,7 +333,11 @@ def test_building_info_no_loads():
                             "electric_equipment_power_per_floor_area_w_m2",
                             "gas_equipment_power_per_floor_area_w_m2"]:
                     val = b[key]
-                    assert val is None or isinstance(val, (int, float)), f"{key} = {val!r}"
+                    if val is not None:
+                        assert isinstance(val, (int, float)), (
+                            f"{key} should be numeric, got {type(val).__name__}: {val!r}"
+                        )
+                        assert math.isfinite(val), f"{key} = {val!r} — NaN/Inf not allowed in building info"
 
     asyncio.run(_run())
 
@@ -343,6 +345,7 @@ def test_building_info_no_loads():
 @pytest.mark.integration
 def test_building_tools_without_loaded_model():
     """Test that building tools fail gracefully when no model is loaded."""
+    # Validates: building tools return ok:false with "no model loaded" when no model
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -355,10 +358,7 @@ def test_building_tools_without_loaded_model():
                 building_resp = await session.call_tool("get_building_info", {})
                 building_result = unwrap(building_resp)
                 print("get_building_info (no model):", building_result)
-
-                assert isinstance(building_result, dict)
-                assert building_result.get("ok") is False
-                assert "error" in building_result
+                assert building_result["ok"] is False
                 assert "no model loaded" in building_result["error"].lower()
 
     asyncio.run(_run())

@@ -10,10 +10,13 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("RUN_OPENSTUDIO_INTEGRATION"),
-    reason="requires OpenStudio (set RUN_OPENSTUDIO_INTEGRATION=1)",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.environ.get("RUN_OPENSTUDIO_INTEGRATION"),
+        reason="requires OpenStudio (set RUN_OPENSTUDIO_INTEGRATION=1)",
+    ),
+]
 
 
 @pytest.fixture(autouse=True)
@@ -27,13 +30,13 @@ def _clear_model():
 
 class TestValidateModel:
     def test_no_model_loaded(self):
+        # Validates: validate_model_op raises when no model is loaded
         from mcp_server.skills.simulation.operations import validate_model_op
-        # get_model raises when no model loaded
         with pytest.raises(Exception):
             validate_model_op()
 
     def test_example_model_passes(self):
-        """Example model has weather + design days — should pass basic checks."""
+        # Validates: example model passes validation with zones and design days, warns on weather
         from mcp_server.model_manager import load_model
         from mcp_server.skills.model_management.operations import create_example_osm
         from mcp_server.skills.simulation.operations import validate_model_op
@@ -52,7 +55,7 @@ class TestValidateModel:
         assert any("weather" in w.lower() for w in v["warnings"])
 
     def test_empty_model_fails(self):
-        """Empty model should have errors (no weather, no design days)."""
+        # Validates: empty model fails validation with design day error and weather warning
         import openstudio
         import mcp_server.model_manager as mm
         from mcp_server.skills.simulation.operations import validate_model_op

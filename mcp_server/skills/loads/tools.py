@@ -22,9 +22,11 @@ from mcp_server.skills.loads.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="get_load_details")
+    @mcp.tool(tags={"loads"}, name="get_load_details")
     def get_load_details_tool(load_name: str):
-        """Get detailed info for any load object (people, lights, electric/gas equipment, infiltration).
+        """Get load details — people, lights, electric equipment, gas equipment, or infiltration.
+        Use to check watts/m2, people density, schedules, and definitions.
+        For space geometry and surfaces, use get_space_details instead.
 
         Tries each load type by name until found. Returns load_type + all fields.
 
@@ -35,7 +37,7 @@ def register(mcp):
 
     # --- Creation tools ---
 
-    @mcp.tool(name="create_people_definition")
+    @mcp.tool(tags={"loads"}, name="create_people_definition")
     def create_people_definition_tool(
         name: str,
         space_name: str,
@@ -43,7 +45,7 @@ def register(mcp):
         num_people: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create a people (occupancy) load and assign to a space.
+        """Create occupancy load — people density (people/m2) or total count, assign to space.
 
         Args:
             name: Name for the people load
@@ -58,7 +60,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_lights_definition")
+    @mcp.tool(tags={"loads"}, name="create_lights_definition")
     def create_lights_definition_tool(
         name: str,
         space_name: str,
@@ -66,7 +68,7 @@ def register(mcp):
         lighting_level_w: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create a lighting load and assign to a space.
+        """Create lighting load — power density (W/m2) or total watts, assign to space.
 
         Args:
             name: Name for the lights load
@@ -81,7 +83,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_electric_equipment")
+    @mcp.tool(tags={"loads"}, name="create_electric_equipment")
     def create_electric_equipment_tool(
         name: str,
         space_name: str,
@@ -89,7 +91,7 @@ def register(mcp):
         design_level_w: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create an electric equipment (plug load) and assign to a space.
+        """Create electric equipment / plug load — power density (W/m2) or total watts, assign to space.
 
         Args:
             name: Name for the equipment
@@ -104,7 +106,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_gas_equipment")
+    @mcp.tool(tags={"loads"}, name="create_gas_equipment")
     def create_gas_equipment_tool(
         name: str,
         space_name: str,
@@ -112,7 +114,7 @@ def register(mcp):
         design_level_w: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create a gas equipment load and assign to a space.
+        """Create gas equipment load — power density (W/m2) or total watts, assign to space.
 
         Args:
             name: Name for the gas equipment
@@ -127,7 +129,7 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="create_infiltration")
+    @mcp.tool(tags={"loads"}, name="create_infiltration")
     def create_infiltration_tool(
         name: str,
         space_name: str,
@@ -135,7 +137,7 @@ def register(mcp):
         ach: float | None = None,
         schedule_name: str | None = None,
     ):
-        """Create an infiltration load and assign to a space.
+        """Create infiltration — air leakage by flow/area (m3/s/m2) or air changes per hour (ACH).
 
         Args:
             name: Name for the infiltration object

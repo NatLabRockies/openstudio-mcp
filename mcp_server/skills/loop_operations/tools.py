@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def register(mcp: FastMCP) -> None:
     """Register loop operations tools with MCP server."""
 
-    @mcp.tool(name="create_plant_loop")
+    @mcp.tool(tags={"hvac"}, name="create_plant_loop")
     def create_plant_loop_tool(
         name: str,
         loop_type: str,
@@ -24,7 +24,7 @@ def register(mcp: FastMCP) -> None:
         pump_head_pa: float = 179352.0,
         pump_motor_eff: float = 0.9,
     ) -> str:
-        """Create a new plant loop with pump, bypass pipes, and setpoint manager.
+        """Create a new plant loop (hot water, chilled water, condenser) with pump, bypass, and setpoint manager.
 
         Args:
             name: Name for the plant loop
@@ -45,12 +45,12 @@ def register(mcp: FastMCP) -> None:
             pump_motor_eff=pump_motor_eff,
         ), indent=2)
 
-    @mcp.tool(name="add_demand_component")
+    @mcp.tool(tags={"hvac"}, name="add_demand_component")
     def add_demand_component_tool(
         component_name: str,
         plant_loop_name: str,
     ) -> str:
-        """Add an existing component (coil, water heater, etc.) to a plant loop's demand side.
+        """Add existing coil or heat exchanger to a plant loop's demand side.
 
         Args:
             component_name: Name of the existing component
@@ -60,12 +60,12 @@ def register(mcp: FastMCP) -> None:
             component_name, plant_loop_name,
         ), indent=2)
 
-    @mcp.tool(name="remove_demand_component")
+    @mcp.tool(tags={"hvac"}, name="remove_demand_component")
     def remove_demand_component_tool(
         component_name: str,
         plant_loop_name: str,
     ) -> str:
-        """Remove a component from a plant loop's demand side.
+        """Remove coil or other component from a plant loop's demand side.
 
         Args:
             component_name: Name of the component to remove
@@ -75,18 +75,18 @@ def register(mcp: FastMCP) -> None:
             component_name, plant_loop_name,
         ), indent=2)
 
-    @mcp.tool(name="add_supply_equipment")
+    @mcp.tool(tags={"hvac"}, name="add_supply_equipment")
     def add_supply_equipment_tool(
         plant_loop_name: str,
         equipment_type: str,
         equipment_name: str,
         properties: str | None = None,
     ) -> str:
-        """Create equipment and add to a plant loop's supply side.
+        """Create boiler, chiller, cooling tower, heat pump, or pump and add to plant loop supply side.
 
         Supported types:
-        - BoilerHotWater: props — nominal_thermal_efficiency, fuel_type, nominal_capacity_w
-        - ChillerElectricEIR: props — reference_cop, reference_capacity_w
+        - BoilerHotWater: props -- nominal_thermal_efficiency, fuel_type, nominal_capacity_w
+        - ChillerElectricEIR: props -- reference_cop, reference_capacity_w
         - CoolingTowerSingleSpeed: no extra props
 
         Args:
@@ -108,12 +108,12 @@ def register(mcp: FastMCP) -> None:
             plant_loop_name, equipment_type, equipment_name, props,
         ), indent=2)
 
-    @mcp.tool(name="remove_supply_equipment")
+    @mcp.tool(tags={"hvac"}, name="remove_supply_equipment")
     def remove_supply_equipment_tool(
         plant_loop_name: str,
         equipment_name: str,
     ) -> str:
-        """Remove named equipment from a plant loop's supply side.
+        """Remove boiler, chiller, or other equipment from a plant loop's supply side.
 
         Args:
             plant_loop_name: Name of the plant loop
@@ -126,17 +126,17 @@ def register(mcp: FastMCP) -> None:
             plant_loop_name, equipment_name,
         ), indent=2)
 
-    @mcp.tool(name="add_zone_equipment")
+    @mcp.tool(tags={"hvac"}, name="add_zone_equipment")
     def add_zone_equipment_tool(
         zone_name: str,
         equipment_type: str,
         equipment_name: str,
         properties: str | None = None,
     ) -> str:
-        """Create zone-level equipment and add to a thermal zone.
+        """Add baseboard, unit heater, fan coil, PTAC, PTHP, or radiant panel to a thermal zone.
 
         Supported types:
-        - ZoneHVACBaseboardConvectiveElectric: props — nominal_capacity_w
+        - ZoneHVACBaseboardConvectiveElectric: props -- nominal_capacity_w
         - ZoneHVACUnitHeater: creates with fan + electric heating coil
 
         Args:
@@ -158,12 +158,12 @@ def register(mcp: FastMCP) -> None:
             zone_name, equipment_type, equipment_name, props,
         ), indent=2)
 
-    @mcp.tool(name="remove_zone_equipment")
+    @mcp.tool(tags={"hvac"}, name="remove_zone_equipment")
     def remove_zone_equipment_tool(
         zone_name: str,
         equipment_name: str,
     ) -> str:
-        """Remove named equipment from a thermal zone.
+        """Remove heating or cooling equipment from a thermal zone.
 
         Args:
             zone_name: Name of the thermal zone
@@ -173,16 +173,14 @@ def register(mcp: FastMCP) -> None:
             zone_name, equipment_name,
         ), indent=2)
 
-    @mcp.tool(name="set_zone_equipment_priority")
+    @mcp.tool(tags={"hvac"}, name="set_zone_equipment_priority")
     def set_zone_equipment_priority_tool(
         zone_name: str,
         equipment_names: list[str] | str,
     ) -> str:
-        """Reorder zone HVAC equipment by priority (1 = highest, served first).
-
-        EnergyPlus simulates zone equipment in priority order. Use this to ensure
-        primary equipment (e.g., chilled beams) is served before secondary (e.g., fan coils).
-        Sets both cooling and heating priority.
+        """Set heating and cooling priority order for zone HVAC equipment (1 = highest, served first).
+        EnergyPlus simulates zone equipment in priority order -- ensures primary equipment
+        (e.g., chilled beams) is served before secondary (e.g., fan coils).
 
         Args:
             zone_name: Thermal zone name
@@ -194,10 +192,9 @@ def register(mcp: FastMCP) -> None:
             equipment_names=parse_str_list(equipment_names),
         ), indent=2)
 
-    @mcp.tool(name="remove_all_zone_equipment")
+    @mcp.tool(tags={"hvac"}, name="remove_all_zone_equipment")
     def remove_all_zone_equipment_tool(zone_names: str) -> str:
-        """Remove ALL equipment from multiple thermal zones in one call.
-
+        """Batch clear all HVAC equipment from multiple thermal zones in one call.
         Use instead of calling remove_zone_equipment repeatedly.
 
         Args:

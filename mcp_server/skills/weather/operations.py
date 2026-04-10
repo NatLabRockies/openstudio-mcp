@@ -12,7 +12,7 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import is_path_allowed
+from mcp_server.config import COMSTOCK_MEASURES_DIR, INPUT_ROOT, OSCLI_GEM_PATH
 from mcp_server.model_manager import get_model
 
 
@@ -77,6 +77,68 @@ def _estimate_climate_zone_from_epw(epw_path: Path) -> str | None:
         return "8"
     except Exception:
         return None
+
+
+def list_weather_files() -> dict[str, Any]:
+    """Discover available EPW weather files with companion file info.
+
+    Scans openstudio-standards gem weather data dir and /inputs for EPW files.
+    Returns path, name, and whether .ddy/.stat companions exist.
+    """
+    try:
+        weather_files: list[dict[str, Any]] = []
+        sources: list[str] = []
+
+        # 1. openstudio-standards gem weather dir (version-proof glob)
+        gem_root = Path(OSCLI_GEM_PATH)
+        weather_dirs = list(gem_root.glob("ruby/*/gems/openstudio-standards-*/data/weather"))
+        for wd in weather_dirs:
+            if wd.is_dir():
+                sources.append(str(wd))
+                for epw in sorted(wd.glob("*.epw")):
+                    base = epw.with_suffix("")
+                    weather_files.append({
+                        "name": epw.name,
+                        "path": str(epw),
+                        "has_ddy": base.with_suffix(".ddy").exists(),
+                        "has_stat": base.with_suffix(".stat").exists(),
+                    })
+
+        # 2. ChangeBuildingLocation measure test EPWs
+        cbl_tests = COMSTOCK_MEASURES_DIR / "ChangeBuildingLocation" / "tests"
+        if cbl_tests.is_dir():
+            sources.append(str(cbl_tests))
+            for epw in sorted(cbl_tests.glob("*.epw")):
+                base = epw.with_suffix("")
+                weather_files.append({
+                    "name": epw.name,
+                    "path": str(epw),
+                    "has_ddy": base.with_suffix(".ddy").exists(),
+                    "has_stat": base.with_suffix(".stat").exists(),
+                })
+
+        # 3. /inputs directory
+        if INPUT_ROOT.exists():
+            input_epws = sorted(INPUT_ROOT.rglob("*.epw"))
+            if input_epws:
+                sources.append(str(INPUT_ROOT))
+                for epw in input_epws:
+                    base = epw.with_suffix("")
+                    weather_files.append({
+                        "name": epw.name,
+                        "path": str(epw),
+                        "has_ddy": base.with_suffix(".ddy").exists(),
+                        "has_stat": base.with_suffix(".stat").exists(),
+                    })
+
+        return {
+            "ok": True,
+            "count": len(weather_files),
+            "weather_files": weather_files,
+            "sources": sources,
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to list weather files: {e}"}
 
 
 def get_weather_info() -> dict[str, Any]:

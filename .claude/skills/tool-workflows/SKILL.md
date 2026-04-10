@@ -120,6 +120,12 @@ extract_summary_metrics(run_id=<retrofit_id>)
 
 See the `measure-authoring` skill for run_body patterns and language guidance.
 
+For HVAC measures, verify methods exist and get wiring code first:
+```
+search_api("CoilCoolingFourPipeBeam")             # check real setter/getter names
+search_wiring_patterns("four pipe beam")           # get working Ruby wiring code
+```
+
 ## Write and Apply a Custom ReportingMeasure
 
 ReportingMeasures run after simulation to analyze SQL results.

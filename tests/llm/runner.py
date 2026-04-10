@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -37,6 +38,7 @@ BUILTIN_TOOLS = frozenset({
     "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite",
     "AskUserQuestion", "Skill", "EnterPlanMode", "ExitPlanMode",
     "EnterWorktree", "LSP", "ListMcpResourcesTool", "ReadMcpResourceTool",
+    "Agent",
 })
 
 
@@ -75,10 +77,33 @@ class ClaudeResult:
         return [c for c in self.tool_calls if c["tool"] not in BUILTIN_TOOLS]
 
     @property
+    def code_mode_tool_calls(self) -> list[str]:
+        """Extract tool names from CodeMode execute calls."""
+        names = []
+        for c in self.mcp_tool_calls:
+            stripped = c["tool"].removeprefix("mcp__openstudio__")
+            if stripped == "execute":
+                code = c["input"].get("code", "")
+                for m in re.finditer(r'call_tool\(["\'](\w+)["\']', code):
+                    names.append(m.group(1))
+        return names
+
+    @property
     def tool_names(self) -> list[str]:
-        """MCP tool names with mcp__openstudio__ prefix stripped."""
+        """MCP tool names with mcp__openstudio__ prefix stripped.
+
+        Includes tools called inside CodeMode execute blocks.
+        """
         prefix = "mcp__openstudio__"
-        return [c["tool"].removeprefix(prefix) for c in self.mcp_tool_calls]
+        # CodeMode meta-tools (search, get_schema, execute) excluded from
+        # domain tool list — only the real tools they invoke count.
+        code_mode_meta = frozenset({"search", "get_schema", "execute"})
+        direct = [
+            c["tool"].removeprefix(prefix)
+            for c in self.mcp_tool_calls
+            if c["tool"].removeprefix(prefix) not in code_mode_meta
+        ]
+        return direct + self.code_mode_tool_calls
 
     @property
     def all_tool_names(self) -> list[str]:
@@ -122,6 +147,11 @@ class ClaudeResult:
         return usage.get("cache_read_input_tokens", 0)
 
     @property
+    def toolsearch_count(self) -> int:
+        """Number of ToolSearch calls — proxy for tool discovery overhead."""
+        return sum(1 for c in self.tool_calls if c["tool"] == "ToolSearch")
+
+    @property
     def stats(self) -> dict:
         """Summary stats for benchmarking."""
         return {
@@ -133,6 +163,14 @@ class ClaudeResult:
             "cache_read_tokens": self.cache_read_tokens,
             "tool_calls": self.tool_names,
             "num_tool_calls": len(self.tool_names),
+            "all_tool_calls": self.all_tool_names,
+            "toolsearch_count": self.toolsearch_count,
+            "is_timeout": self.is_error and "Timed out" in self.final_text,
+            "code_mode_active": bool(self.code_mode_tool_calls),
+            "code_executions": sum(
+                1 for c in self.mcp_tool_calls
+                if c["tool"].removeprefix("mcp__openstudio__") == "execute"
+            ),
         }
 
 
@@ -201,12 +239,12 @@ def run_claude(
     return _last_result
 
 
-def _parse_stream_json(raw: str) -> ClaudeResult:
+def _parse_stream_json(raw: str | None) -> ClaudeResult:
     """Parse newline-delimited JSON from stream-json output."""
     messages = []
     result_obj = {}
 
-    for line in raw.strip().splitlines():
+    for line in (raw or "").strip().splitlines():
         line = line.strip()
         if not line:
             continue
@@ -229,6 +267,7 @@ def _write_mcp_config() -> Path:
     runs_dir = os.environ.get("LLM_TESTS_RUNS_DIR", _default_runs)
     assets_dir = str(Path(__file__).resolve().parents[1] / "assets")
 
+    code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
     config = {
         "mcpServers": {
             "openstudio": {
@@ -239,6 +278,7 @@ def _write_mcp_config() -> Path:
                     "-v", f"{assets_dir}:/test-assets:ro",
                     "-v", f"{assets_dir}:/inputs:ro",
                     "-e", "OPENSTUDIO_MCP_MODE=prod",
+                    "-e", f"OSMCP_CODE_MODE={code_mode}",
                     "openstudio-mcp:dev",
                     "openstudio-mcp",
                 ],

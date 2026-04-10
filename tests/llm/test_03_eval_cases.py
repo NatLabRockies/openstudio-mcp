@@ -120,19 +120,8 @@ def _case_id(case: dict) -> str:
 
 @pytest.mark.parametrize("case", EVAL_CASES, ids=[_case_id(c) for c in EVAL_CASES])
 def test_eval_tool_selection(case):
-    """Verify agent calls at least one expected MCP tool for an eval.md prompt.
-
-    This test does NOT assert tool ordering — the agent may call tools in
-    any order. It only checks that at least one tool from the expected set
-    (eval.md + EXTRA_EXPECTED) appears in the full tool call sequence.
-
-    Assumptions:
-      - Agent has MCP tools available via --allowedTools "mcp__openstudio__*"
-      - For NEEDS_MODEL skills, model is pre-loaded via LOAD_PREFIX
-      - ToolSearch (deferred loading) consumes 1-3 turns before MCP tools
-      - Agent may call context-gathering tools before the target tool
-      - Retries (conftest MAX_RETRIES) handle LLM non-determinism
-    """
+    """Verify agent calls at least one expected MCP tool for an eval.md prompt."""
+    # Validates: Claude selects correct tool from eval.md skill tables for natural language prompts
     tier = get_tier()
     if tier not in ("all", "1"):
         pytest.skip("Tier 1 not selected")

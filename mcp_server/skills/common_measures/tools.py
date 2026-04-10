@@ -30,38 +30,40 @@ from mcp_server.skills.common_measures.wrappers import (
 def register(mcp):
     # --- Discovery tool ---
 
-    @mcp.tool(name="list_common_measures")
+    @mcp.tool(tags={"measures"}, name="list_common_measures")
     def list_common_measures_tool(category: str | None = None):
-        """List available common measures bundled in the server.
+        """List ~79 bundled measures by category: reporting, thermostat, envelope,
+        loads, renewables, schedule, cost, cleanup, visualization.
 
         Args:
             category: Optional filter — "reporting", "thermostat", "envelope",
                       "location", "loads", "renewables", "schedule", "cost",
                       "cleanup", "idf", "visualization", "other", or omit for all
 
-        Returns categorized list of ~79 measures. Use paths with
-        list_measure_arguments and apply_measure for direct access.
+        Use returned paths with list_measure_arguments and apply_measure.
         """
         return list_common_measures(category=category)
 
     # --- Tier 1 wrapper tools ---
 
-    @mcp.tool(name="view_model")
+    @mcp.tool(tags={"core"}, name="view_model")
     def view_model_tool(geometry_diagnostics: bool = False):
-        """Generate 3D HTML viewer of model geometry.
+        """Generate 3D HTML viewer of model geometry. Use this instead of
+        writing matplotlib/plotly visualization scripts.
 
         Args:
             geometry_diagnostics: Enable surface/space convexity checks (slower)
         """
         return view_model_op(geometry_diagnostics=geometry_diagnostics)
 
-    @mcp.tool(name="view_simulation_data")
+    @mcp.tool(tags={"results"}, name="view_simulation_data")
     def view_simulation_data_tool(
         run_id: str = "",
         variable_names: list[str] | str | None = None,
         reporting_frequency: str = "Timestep",
     ):
-        """Generate 3D HTML viewer with simulation data overlaid.
+        """Generate 3D HTML viewer with simulation data overlaid. Use this
+        instead of writing matplotlib/plotly scripts for data visualization.
 
         Args:
             run_id: Run ID from a completed simulation (required — provides SQL results)
@@ -75,9 +77,10 @@ def register(mcp):
             reporting_frequency=reporting_frequency,
         )
 
-    @mcp.tool(name="generate_results_report")
+    @mcp.tool(tags={"results"}, name="generate_results_report")
     def generate_results_report_tool(run_id: str = "", units: str = "IP"):
         """Generate comprehensive HTML report from simulation results (~25 sections).
+        Use this instead of writing Python/HTML extraction scripts.
 
         Args:
             run_id: Run ID from a completed simulation (required — provides SQL results)
@@ -85,17 +88,18 @@ def register(mcp):
         """
         return generate_results_report_op(run_id=run_id or None, units=units)
 
-    @mcp.tool(name="run_qaqc_checks")
+    @mcp.tool(tags={"results"}, name="run_qaqc_checks")
     def run_qaqc_checks_tool(
         run_id: str = "",
         template: str = "90.1-2013",
         checks: list[str] | str | None = None,
     ):
         """Run ASHRAE QA/QC checks on simulation results. Requires a completed
-        simulation — call run_simulation first, then pass its run_id here.
+        simulation run_id. Use to check model quality, compliance, and issues
+        after simulation.
 
-        For pre-simulation model validation (no run_id needed), use
-        inspect_osm_summary or get_model_summary instead.
+        For pre-simulation validation (no run_id needed), use validate_model
+        instead.
 
         Args:
             run_id: Run ID from a completed simulation (required — provides SQL results)
@@ -114,13 +118,14 @@ def register(mcp):
             }
         return run_qaqc_checks_op(run_id=run_id, template=template, checks=parse_str_list(checks))
 
-    @mcp.tool(name="adjust_thermostat_setpoints")
+    @mcp.tool(tags={"envelope"}, name="adjust_thermostat_setpoints")
     def adjust_thermostat_setpoints_tool(
         cooling_offset_f: float = 0.0,
         heating_offset_f: float = 0.0,
         alter_design_days: bool = False,
     ):
-        """Shift all thermostat setpoints by degree offsets. Clones schedules.
+        """Shift heating and cooling setpoint schedules by degrees F offset.
+        Use to raise or lower thermostat setpoints across the whole building. Clones schedules.
 
         Args:
             cooling_offset_f: Degrees F to raise cooling setpoint
@@ -133,13 +138,14 @@ def register(mcp):
             alter_design_days=alter_design_days,
         )
 
-    @mcp.tool(name="replace_window_constructions")
+    @mcp.tool(tags={"envelope"}, name="replace_window_constructions")
     def replace_window_constructions_tool(
         construction_name: str = "",
         fixed_windows: bool = True,
         operable_windows: bool = True,
     ):
-        """Replace all exterior window constructions with a named construction.
+        """Bulk-replace all exterior fixed and operable window constructions.
+        Use to upgrade windows, change glazing type, or apply a new window spec.
 
         Args:
             construction_name: Name of the window construction to apply
@@ -152,12 +158,14 @@ def register(mcp):
             operable_windows=operable_windows,
         )
 
-    @mcp.tool(name="enable_ideal_air_loads")
+    @mcp.tool(tags={"envelope"}, name="enable_ideal_air_loads")
     def enable_ideal_air_loads_tool():
-        """Enable ideal air loads on all zones. Disconnects existing HVAC."""
+        """Remove existing HVAC, add ideal air loads on all zones.
+        Use for quick load calculations, sizing studies, or when HVAC design is not needed.
+        """
         return enable_ideal_air_loads_op()
 
-    @mcp.tool(name="clean_unused_objects")
+    @mcp.tool(tags={"envelope"}, name="clean_unused_objects")
     def clean_unused_objects_tool(
         space_types: bool = True,
         load_defs: bool = True,
@@ -165,7 +173,7 @@ def register(mcp):
         constructions: bool = True,
         curves: bool = True,
     ):
-        """Remove orphan objects and unused resources.
+        """Remove orphan space types, load definitions, schedules, constructions, and curves.
 
         Args:
             space_types: Remove unused space types
@@ -182,7 +190,7 @@ def register(mcp):
             curves=curves,
         )
 
-    @mcp.tool(name="change_building_location")
+    @mcp.tool(tags={"simulation"}, name="change_building_location")
     def change_building_location_tool(
         weather_file: str = "",
         climate_zone: str = "Lookup From Stat File",
@@ -201,10 +209,7 @@ def register(mcp):
         EPW is "Boston.epw", then "Boston.stat" and "Boston.ddy" must also
         exist. The measure will fail if these are missing.
 
-        Available EPW files with .stat/.ddy companions:
-          /opt/comstock-measures/ChangeBuildingLocation/tests/
-          Use list_files(directory="/opt/comstock-measures/ChangeBuildingLocation/tests",
-          pattern="*.epw") to see available weather files.
+        Call list_weather_files() to see available EPW files with companions.
 
         Args:
             weather_file: EPW weather file path (absolute path to .epw file).
@@ -218,13 +223,15 @@ def register(mcp):
 
     # --- Tier 2 wrapper tools ---
 
-    @mcp.tool(name="set_thermostat_schedules")
+    @mcp.tool(tags={"envelope"}, name="set_thermostat_schedules")
     def set_thermostat_schedules_tool(
         zone_name: str = "",
         cooling_schedule: str = "",
         heating_schedule: str = "",
     ):
-        """Set thermostat heating/cooling schedules on a specific zone.
+        """Apply specific heating/cooling schedule to a thermal zone thermostat.
+        Use to set schedules on zones without existing thermostats.
+        To overwrite existing schedules, use replace_thermostat_schedules.
 
         Args:
             zone_name: Thermal zone name
@@ -237,13 +244,14 @@ def register(mcp):
             heating_schedule=heating_schedule,
         )
 
-    @mcp.tool(name="replace_thermostat_schedules")
+    @mcp.tool(tags={"envelope"}, name="replace_thermostat_schedules")
     def replace_thermostat_schedules_tool(
         zone_name: str = "",
         cooling_schedule: str = "",
         heating_schedule: str = "",
     ):
-        """Replace thermostat schedules on a zone (overwrites existing).
+        """Overwrite existing thermostat heating/cooling schedules on a zone.
+        To set on zones without thermostats, use set_thermostat_schedules instead.
 
         Args:
             zone_name: Thermal zone name
@@ -256,12 +264,12 @@ def register(mcp):
             heating_schedule=heating_schedule,
         )
 
-    @mcp.tool(name="shift_schedule_time")
+    @mcp.tool(tags={"envelope"}, name="shift_schedule_time")
     def shift_schedule_time_tool(
         schedule_name: str = "",
         shift_hours: float = 1.0,
     ):
-        """Shift a schedule's profile times forward or backward.
+        """Shift schedule profile times forward or backward by hours (24hr wrap).
 
         Args:
             schedule_name: Name of the ScheduleRuleset to shift
@@ -272,13 +280,13 @@ def register(mcp):
             shift_hours=shift_hours,
         )
 
-    @mcp.tool(name="add_rooftop_pv")
+    @mcp.tool(tags={"envelope"}, name="add_rooftop_pv")
     def add_rooftop_pv_tool(
         fraction_of_surface: float = 0.75,
         cell_efficiency: float = 0.18,
         inverter_efficiency: float = 0.98,
     ):
-        """Add rooftop PV panels as shading surfaces with photovoltaic generators.
+        """Add photovoltaic panels as rooftop shading surfaces with generators and inverter.
 
         Args:
             fraction_of_surface: Fraction of roof area covered (0-1)
@@ -291,13 +299,13 @@ def register(mcp):
             inverter_efficiency=inverter_efficiency,
         )
 
-    @mcp.tool(name="add_pv_to_shading")
+    @mcp.tool(tags={"envelope"}, name="add_pv_to_shading")
     def add_pv_to_shading_tool(
         shading_type: str = "Building Shading",
         fraction: float = 0.5,
         cell_efficiency: float = 0.12,
     ):
-        """Add simple PV generators to existing shading surfaces by type.
+        """Add simple PV generators on existing building/site/space shading surfaces.
 
         Args:
             shading_type: "Building Shading", "Site Shading", or "Space Shading"
@@ -310,7 +318,7 @@ def register(mcp):
             cell_efficiency=cell_efficiency,
         )
 
-    @mcp.tool(name="add_ev_load")
+    @mcp.tool(tags={"envelope"}, name="add_ev_load")
     def add_ev_load_tool(
         delay_type: str = "Min Delay",
         charge_behavior: str = "Business as Usual",
@@ -318,7 +326,7 @@ def register(mcp):
         ev_percent: float = 100.0,
         use_model_occupancy: bool = True,
     ):
-        """Add electric vehicle charging load to the building.
+        """Add electric vehicle charging: station type, charge behavior, EV percentage.
 
         Args:
             delay_type: "Min Delay", "Max Delay", or "Midnight"
@@ -335,14 +343,14 @@ def register(mcp):
             use_model_occupancy=use_model_occupancy,
         )
 
-    @mcp.tool(name="add_zone_ventilation")
+    @mcp.tool(tags={"envelope"}, name="add_zone_ventilation")
     def add_zone_ventilation_tool(
         zone_name: str = "",
         design_flow_rate: float = 0.0,
         ventilation_type: str = "Natural",
         schedule_name: str = "",
     ):
-        """Add a zone ventilation design flow rate object.
+        """Add natural, exhaust, intake, or balanced ventilation design flow rate to a zone.
 
         Args:
             zone_name: Thermal zone name
@@ -357,18 +365,18 @@ def register(mcp):
             schedule_name=schedule_name,
         )
 
-    @mcp.tool(name="set_lifecycle_cost_params")
+    @mcp.tool(tags={"envelope"}, name="set_lifecycle_cost_params")
     def set_lifecycle_cost_params_tool(
         study_period: int = 25,
     ):
-        """Set lifecycle cost analysis study period length.
+        """Set NIST lifecycle cost analysis study period (1-40 years).
 
         Args:
             study_period: Analysis period in years (1-40)
         """
         return set_lifecycle_cost_params_op(study_period=study_period)
 
-    @mcp.tool(name="add_cost_per_floor_area")
+    @mcp.tool(tags={"envelope"}, name="add_cost_per_floor_area")
     def add_cost_per_floor_area_tool(
         material_cost: float = 0.0,
         om_cost: float = 0.0,
@@ -376,7 +384,7 @@ def register(mcp):
         lcc_name: str = "Building - Life Cycle Costs",
         remove_existing: bool = True,
     ):
-        """Add lifecycle cost per floor area to the building.
+        """Add material and O&M cost per floor area for lifecycle cost analysis.
 
         Args:
             material_cost: Material/installation cost per area ($/ft²)
@@ -393,7 +401,7 @@ def register(mcp):
             remove_existing=remove_existing,
         )
 
-    @mcp.tool(name="set_adiabatic_boundaries")
+    @mcp.tool(tags={"envelope"}, name="set_adiabatic_boundaries")
     def set_adiabatic_boundaries_tool(
         ext_roofs: bool = True,
         ext_floors: bool = True,
@@ -403,7 +411,7 @@ def register(mcp):
         east_walls: bool = False,
         west_walls: bool = False,
     ):
-        """Set exterior surfaces to adiabatic boundary condition.
+        """Make exterior roof, floor, ground, or wall surfaces adiabatic boundary condition.
 
         Args:
             ext_roofs: Make exterior roof surfaces adiabatic

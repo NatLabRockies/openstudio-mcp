@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from mcp_server.skills import register_all_skills
+
+pytestmark = pytest.mark.unit
 
 EXPECTED_TOOLS = {
     "get_server_status",
@@ -94,6 +98,7 @@ EXPECTED_TOOLS = {
     "get_object_fields",
     "set_object_property",
     # Phase 6C: Weather, Design Days, SimControl, RunPeriod
+    "list_weather_files",
     "get_weather_info",
     "add_design_day",
     "get_simulation_control",
@@ -162,10 +167,16 @@ EXPECTED_TOOLS = {
     # Skill Discovery
     "list_skills",
     "get_skill",
+    # API Reference
+    "search_api",
+    "search_wiring_patterns",
+    # Tool Router
+    "recommend_tools",
 }
 
 
 def test_all_skills_registered():
+    # Validates: auto-discovery finds all skill modules and registers them by name
     """All expected skills are discovered and registered."""
     mcp = MagicMock()
     # mcp.tool() must return a decorator that returns the function
@@ -173,21 +184,18 @@ def test_all_skills_registered():
 
     skills = register_all_skills(mcp)
 
-    assert len(skills) >= 4, f"Expected >= 4 skills, got {skills}"
-    assert "server_info" in skills
-    assert "model_management" in skills
-    assert "simulation" in skills
-    assert "results" in skills
+    for expected_skill in ("server_info", "model_management", "simulation", "results"):
+        assert expected_skill in skills, f"Skill '{expected_skill}' not discovered"
 
 
 def test_all_tool_names_registered():
+    # Validates: all 142 expected tools are registered, no extras — migration backward-compatibility
     """Every expected tool function is registered via mcp.tool()."""
     registered_tools = {}
 
     class FakeMCP:
-        def tool(self, name=None):
+        def tool(self, name=None, **kwargs):
             def decorator(fn):
-                # Use explicit name if provided, otherwise function name
                 tool_name = name or fn.__name__
                 registered_tools[tool_name] = fn
                 return fn

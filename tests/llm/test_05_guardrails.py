@@ -47,12 +47,8 @@ LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 
 
 def test_create_uses_mcp_not_raw_idf():
-    """Agent must use MCP tools to create a building, not write raw IDF.
-
-    Verifies:
-      1. A valid MCP creation tool was called (primary check)
-      2. The response text doesn't contain raw IDF snippets
-    """
+    """Agent must use MCP tools to create a building, not write raw IDF."""
+    # Regression: Claude was writing raw IDF files instead of using MCP creation tools
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -78,11 +74,8 @@ def test_create_uses_mcp_not_raw_idf():
 
 
 def test_no_script_for_results():
-    """Agent must use MCP tools to extract results, not write scripts.
-
-    Verifies the agent calls an MCP extraction tool rather than writing
-    a Python/Ruby script to parse EnergyPlus SQL output.
-    """
+    """Agent must use MCP tools to extract results, not write scripts."""
+    # Regression: Claude was writing Python/Ruby scripts to parse EnergyPlus SQL instead of using extract_* tools
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")
@@ -115,6 +108,7 @@ LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then
 
 def test_inspect_component_uses_mcp_not_script():
     """Agent must use MCP tools to inspect components, not write Python."""
+    # Regression: Claude was writing Python scripts with 'import openstudio' to inspect components
     tier = get_tier()
     if tier not in ("all", "4"):
         pytest.skip("Tier 4 not selected")

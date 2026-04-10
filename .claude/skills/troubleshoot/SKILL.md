@@ -58,6 +58,14 @@ query_timeseries(run_id=..., variable_name="Zone Mean Air Temperature",
     frequency="Hourly", key_value="Zone 1")
 ```
 
+## Verify SDK Methods
+
+If a measure fails due to nonexistent API methods:
+```
+search_api("CoilCoolingFourPipeBeam")              # list real setters/getters
+search_api("BoilerHotWater", method_pattern="Efficiency")
+```
+
 ## Quick Fixes
 
 | Problem | Tool |

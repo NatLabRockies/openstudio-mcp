@@ -18,14 +18,19 @@ from mcp_server.skills.results.operations import (
 
 
 def register(mcp):
-    @mcp.tool(name="read_file")
+    @mcp.tool(tags={"core", "results"}, name="read_file")
     def read_file_tool(file_path: str, max_bytes: int | None = None, offset: int = 0):
-        """Read any file by absolute path (works across all mounts: /runs, /inputs, /repo, etc.).
+        """Read any file by absolute path. /inputs and /runs are inside the
+        MCP container, not the host shell — use this tool instead of bash.
+
+        For EnergyPlus IDF/IDD files, prefer inspect_component, extract_component_sizing,
+        or get_object_fields which return structured data with less context usage.
 
         Default 50KB. Use offset+max_bytes for chunked reading of large files.
 
         Args:
-            file_path: Absolute path to the file (e.g. /runs/my_run/run/eplusout.err)
+            file_path: Absolute path to the file (e.g. /runs/my_run/run/eplusout.err,
+                /inputs/eplusout.err)
             max_bytes: Max bytes to read (default 50KB)
             offset: Byte offset for chunked reading (default 0)
         """
@@ -35,9 +40,13 @@ def register(mcp):
             mb = 50_000
         return read_file(file_path=file_path, max_bytes=mb, offset=offset)
 
-    @mcp.tool(name="extract_summary_metrics")
+    @mcp.tool(tags={"core", "results"}, name="extract_summary_metrics")
     def extract_summary_metrics_tool(run_id: str, include_raw: bool = False):
-        """Extract summary metrics (EUI + unmet hours) from outputs.
+        """Extract EUI (energy use intensity, kBtu/ft2 and GJ/m2), total site
+        energy, and unmet heating/cooling hours from simulation results.
+        ALWAYS use this for EUI — do not parse eplusout.sql directly.
+        For per-category breakdown (heating, cooling, lighting), use
+        extract_end_use_breakdown instead.
 
         Args:
             run_id: Run identifier
@@ -45,12 +54,12 @@ def register(mcp):
         """
         return extract_summary_metrics(run_id, include_raw=include_raw)
 
-    @mcp.tool(name="copy_file")
+    @mcp.tool(tags={"results"}, name="copy_file")
     def copy_file_tool(file_path: str, destination: str = "/runs/exports"):
-        """Copy a file or directory to an accessible path.
+        """Copy a file or directory to an accessible path under /runs.
+        Use to export files to the host. To read file contents, use read_file instead.
 
         Supports both individual files and entire directories (e.g. measure dirs).
-        Bypasses the MCP size limit for large files like HTML reports.
 
         Args:
             file_path: Absolute path to the source file or directory
@@ -58,7 +67,7 @@ def register(mcp):
         """
         return copy_file(file_path=file_path, destination=destination)
 
-    @mcp.tool(name="extract_simulation_errors")
+    @mcp.tool(tags={"results"}, name="extract_simulation_errors")
     def extract_simulation_errors_tool(run_id: str):
         """Parse simulation errors from eplusout.err into categorized Fatal/Severe/Warning lists.
         Use after a failed simulation to diagnose what went wrong.
@@ -68,7 +77,7 @@ def register(mcp):
         """
         return extract_simulation_errors_op(run_id=run_id)
 
-    @mcp.tool(name="list_output_variables")
+    @mcp.tool(tags={"results"}, name="list_output_variables")
     def list_output_variables_tool(run_id: str):
         """List available output variables and meters from a completed simulation.
         Use this to discover what timeseries data you can query with query_timeseries.
@@ -78,12 +87,12 @@ def register(mcp):
         """
         return list_output_variables_op(run_id=run_id)
 
-    @mcp.tool(name="compare_runs")
+    @mcp.tool(tags={"results"}, name="compare_runs")
     def compare_runs_tool(baseline_run_id: str, retrofit_run_id: str):
-        """Compare two simulation runs: EUI delta, unmet hours delta, and per-end-use breakdown.
+        """Compare two simulation runs: EUI delta, unmet hours delta, per-fuel end-use breakdown.
         Use after running baseline + retrofit simulations to quantify the impact.
-        Includes full end-use breakdown for both runs — no need to call
-        extract_end_use_breakdown separately.
+        Returns per-fuel deltas (not summed across fuels), fuel_totals,
+        energy_grand_total_kBtu (excludes Water), and water_use separately.
 
         Args:
             baseline_run_id: Run identifier for the baseline simulation
@@ -93,7 +102,7 @@ def register(mcp):
 
     # --- Tier 1: Tabular report extraction ---
 
-    @mcp.tool(name="extract_end_use_breakdown")
+    @mcp.tool(tags={"results"}, name="extract_end_use_breakdown")
     def extract_end_use_breakdown_tool(run_id: str, units: str = "IP"):
         """Extract end-use energy breakdown by fuel type (heating, cooling, lighting, etc.).
 
@@ -103,22 +112,28 @@ def register(mcp):
         """
         return extract_end_use_breakdown_op(run_id=run_id, units=units)
 
-    @mcp.tool(name="extract_envelope_summary")
+    @mcp.tool(tags={"results"}, name="extract_envelope_summary")
     def extract_envelope_summary_tool(run_id: str):
-        """Extract envelope U-values and areas (opaque + fenestration)."""
+        """Extract envelope thermal properties: wall/roof/floor U-values and
+        R-values, window U-factor and SHGC, opaque and fenestration areas.
+        """
         return extract_envelope_summary_op(run_id=run_id)
 
-    @mcp.tool(name="extract_hvac_sizing")
+    @mcp.tool(tags={"results"}, name="extract_hvac_sizing")
     def extract_hvac_sizing_tool(run_id: str):
-        """Extract autosized zone and system HVAC capacities/airflows."""
+        """Extract autosized HVAC capacities and airflows: zone heating/cooling
+        design loads, system supply air flow rates, outdoor air flow rates.
+        """
         return extract_hvac_sizing_op(run_id=run_id)
 
-    @mcp.tool(name="extract_zone_summary")
+    @mcp.tool(tags={"results"}, name="extract_zone_summary")
     def extract_zone_summary_tool(run_id: str):
-        """Extract per-zone areas, conditions, and multipliers."""
+        """Extract per-zone summary: floor area, conditioned status, zone
+        multiplier, heating/cooling setpoints, and volume for each thermal zone.
+        """
         return extract_zone_summary_op(run_id=run_id)
 
-    @mcp.tool(name="extract_component_sizing")
+    @mcp.tool(tags={"results"}, name="extract_component_sizing")
     def extract_component_sizing_tool(
         run_id: str, component_type: str | None = None, max_results: int = 50,
     ):
@@ -138,7 +153,7 @@ def register(mcp):
 
     # --- Tier 2: Time-series ---
 
-    @mcp.tool(name="query_timeseries")
+    @mcp.tool(tags={"results"}, name="query_timeseries")
     def query_timeseries_tool(
         run_id: str,
         variable_name: str,

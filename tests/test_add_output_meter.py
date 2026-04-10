@@ -19,6 +19,7 @@ def _unique_name(prefix: str = "pytest_output_meter") -> str:
 @pytest.mark.integration
 def test_add_output_meter_default():
     """Test adding an output meter with default parameters."""
+    # Validates: add_output_meter creates Electricity:Facility meter with Hourly default frequency
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -32,11 +33,11 @@ def test_add_output_meter_default():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Add output meter
                 meter_resp = await session.call_tool("add_output_meter", {
@@ -44,7 +45,7 @@ def test_add_output_meter_default():
                 })
                 meter_result = unwrap(meter_resp)
 
-                assert meter_result.get("ok") is True
+                assert meter_result["ok"] is True, f"add_output_meter failed: {meter_result.get('error')}"
                 assert meter_result["output_meter"]["name"] == "Electricity:Facility"
                 assert meter_result["output_meter"]["reporting_frequency"] == "Hourly"
 
@@ -54,6 +55,7 @@ def test_add_output_meter_default():
 @pytest.mark.integration
 def test_add_output_meter_monthly():
     """Test adding an output meter with monthly reporting."""
+    # Validates: add_output_meter respects reporting_frequency=Monthly parameter
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -67,11 +69,11 @@ def test_add_output_meter_monthly():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Add output meter with monthly reporting
                 meter_resp = await session.call_tool("add_output_meter", {
@@ -80,7 +82,7 @@ def test_add_output_meter_monthly():
                 })
                 meter_result = unwrap(meter_resp)
 
-                assert meter_result.get("ok") is True
+                assert meter_result["ok"] is True, f"add_output_meter failed: {meter_result.get('error')}"
                 assert meter_result["output_meter"]["reporting_frequency"] == "Monthly"
 
     asyncio.run(_run())
@@ -89,6 +91,7 @@ def test_add_output_meter_monthly():
 @pytest.mark.integration
 def test_add_output_meter_no_model_loaded():
     """Test error when no model is loaded."""
+    # Validates: add_output_meter returns ok=False with "No model loaded" when no model is loaded
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -103,8 +106,7 @@ def test_add_output_meter_no_model_loaded():
                 })
                 meter_result = unwrap(meter_resp)
 
-                assert meter_result.get("ok") is False
-                assert "error" in meter_result
+                assert meter_result["ok"] is False
                 assert "No model loaded" in meter_result["error"]
 
     asyncio.run(_run())
@@ -113,6 +115,7 @@ def test_add_output_meter_no_model_loaded():
 @pytest.mark.integration
 def test_add_multiple_output_meters():
     """Test adding multiple output meters."""
+    # Validates: two meters (Electricity + Gas) get distinct handles
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -126,28 +129,29 @@ def test_add_multiple_output_meters():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Add electricity meter
                 elec_resp = await session.call_tool("add_output_meter", {
                     "meter_name": "Electricity:Facility",
                 })
                 elec_result = unwrap(elec_resp)
-                assert elec_result.get("ok") is True
+                assert elec_result["ok"] is True, f"add electricity meter failed: {elec_result.get('error')}"
 
                 # Add gas meter
                 gas_resp = await session.call_tool("add_output_meter", {
                     "meter_name": "Gas:Facility",
                 })
                 gas_result = unwrap(gas_resp)
-                assert gas_result.get("ok") is True
+                assert gas_result["ok"] is True, f"add gas meter failed: {gas_result.get('error')}"
 
                 # Both should have unique handles
-                assert elec_result["output_meter"]["handle"] != gas_result["output_meter"]["handle"]
+                assert elec_result["output_meter"]["handle"] != gas_result["output_meter"]["handle"], \
+                    "Electricity and Gas meters should have distinct handles"
 
     asyncio.run(_run())
 
@@ -155,6 +159,7 @@ def test_add_multiple_output_meters():
 @pytest.mark.integration
 def test_add_heating_cooling_meters():
     """Test adding heating and cooling meters."""
+    # Validates: Heating:Electricity and Cooling:Electricity meters created successfully
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -168,24 +173,24 @@ def test_add_heating_cooling_meters():
                 # Create and load model
                 create_resp = await session.call_tool("create_example_osm", {"name": name})
                 create_result = unwrap(create_resp)
-                assert create_result.get("ok") is True
+                assert create_result["ok"] is True, f"create_example_osm failed: {create_result.get('error')}"
 
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": create_result["osm_path"]})
                 load_result = unwrap(load_resp)
-                assert load_result.get("ok") is True
+                assert load_result["ok"] is True, f"load_osm_model failed: {load_result.get('error')}"
 
                 # Add heating electricity meter
                 heating_resp = await session.call_tool("add_output_meter", {
                     "meter_name": "Heating:Electricity",
                 })
                 heating_result = unwrap(heating_resp)
-                assert heating_result.get("ok") is True
+                assert heating_result["ok"] is True, f"add heating meter failed: {heating_result.get('error')}"
 
                 # Add cooling electricity meter
                 cooling_resp = await session.call_tool("add_output_meter", {
                     "meter_name": "Cooling:Electricity",
                 })
                 cooling_result = unwrap(cooling_resp)
-                assert cooling_result.get("ok") is True
+                assert cooling_result["ok"] is True, f"add cooling meter failed: {cooling_result.get('error')}"
 
     asyncio.run(_run())
