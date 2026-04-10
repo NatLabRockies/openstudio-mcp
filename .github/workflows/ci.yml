@@ -81,8 +81,8 @@ jobs:
               EXTRA_ENV=""
               ;;
             5)
-              # HVAC supply wiring simulation smoke tests (DOAS, radiant, district, beams)
-              FILES="tests/test_hvac_supply_sim.py"
+              # HVAC supply wiring simulation smoke tests (DOAS, radiant, district, beams) + concurrent regression
+              FILES="tests/test_hvac_supply_sim.py tests/test_concurrent_tools.py"
               EXTRA_ENV=""
               ;;
           esac
