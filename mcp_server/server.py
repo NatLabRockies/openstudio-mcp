@@ -4,7 +4,10 @@ from fastmcp import FastMCP
 
 from mcp_server.config import ENABLE_CODE_MODE
 from mcp_server.skills import register_all_skills
-from mcp_server.stdout_suppression import redirect_c_stdout_to_stderr
+from mcp_server.stdout_suppression import (
+    redirect_c_stdout_to_stderr,
+    silence_openstudio_stdout_logger,
+)
 
 mcp = FastMCP(
     "openstudio-mcp",
@@ -53,6 +56,7 @@ if ENABLE_CODE_MODE:
 
 
 def main():
+    silence_openstudio_stdout_logger()
     redirect_c_stdout_to_stderr()
     mcp.run()
 
