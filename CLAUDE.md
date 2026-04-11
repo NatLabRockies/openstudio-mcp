@@ -36,11 +36,12 @@ Always use openstudio-mcp tools for BEM tasks:
 - Key modules: `model_manager.py` (load/get/save/clear model), `osm_helpers.py` (fetch_object, optional_name, list_all_as_dicts), `skills/__init__.py` (auto-discovers all skills)
 
 ## Stdout Suppression
-OpenStudio SWIG bindings print memory leak warnings to stdout, breaking MCP JSON-RPC.
-- `stdout_suppression.py` — context manager redirects stdout→stderr; atexit handler catches cleanup warnings
-- `middleware.py` — wraps all MCP tool calls with suppression automatically
-- Already integrated into `model_manager.py` and `model_management/operations.py`
-- No action needed for new skills unless they create/load models outside `model_manager`
+OpenStudio SWIG + C++ geometry engine write to C stdout (fd 1), breaking MCP JSON-RPC.
+- `stdout_suppression.py::redirect_c_stdout_to_stderr()` — called once in `server.py::main()` before `mcp.run()`
+- Permanently dups fd 1 → stderr; Python `sys.stdout` gets a private fd to the real MCP client pipe
+- Catches all C-level pollution (SWIG GC, Polyhedron, future unknowns) with zero per-callsite wrappers
+- `suppress_openstudio_warnings()` retained as no-op for import compat
+- No action needed for new skills
 
 ## Commands
 

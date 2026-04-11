@@ -16,7 +16,7 @@ One-person remote access, zero tool changes.
   else:
       mcp.run()  # stdio default, backward compatible
   ```
-- **`mcp_server/stdout_suppression.py`** — no-op middleware in HTTP mode (stdout isn't the protocol channel; `os.dup2` isn't thread-safe)
+- **`mcp_server/stdout_suppression.py`** — skip `redirect_c_stdout_to_stderr()` in HTTP mode (stdout isn't the protocol channel, and the fd-1→stderr `os.dup2` isn't thread-safe for HTTP workers)
 - **`docker/Dockerfile`** — add `EXPOSE 9000`
 - **`docker/docker-compose.yml`** (new) — HTTP mode with port mapping + volume mounts
 

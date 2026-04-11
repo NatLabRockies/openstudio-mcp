@@ -291,7 +291,7 @@ from mcp.types import ToolAnnotations
 #### 1b. `isError` Flag on Error Responses
 When `{"ok": False}`, set `isError=True` on the MCP tool result content. This is a middleware-level change — inspect the JSON response and set the flag.
 
-**Approach**: Modify `_StdoutSuppressionMiddleware` (or add a second middleware) that parses the tool result, checks for `"ok": false`, and sets `isError=True`.
+**Approach**: Add a FastMCP middleware (`on_call_tool`) that parses the tool result, checks for `"ok": false`, and sets `isError=True`. Note: the server previously had `_StdoutSuppressionMiddleware`, but commit 2395d95 replaced it with a one-shot `redirect_c_stdout_to_stderr()` at startup — this would be a net-new middleware.
 
 #### 1c. Error Recovery Guidance
 Add `"suggestion"` field to error responses for common failures:
