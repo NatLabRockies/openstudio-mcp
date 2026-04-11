@@ -36,10 +36,11 @@ Always use openstudio-mcp tools for BEM tasks:
 - Key modules: `model_manager.py` (load/get/save/clear model), `osm_helpers.py` (fetch_object, optional_name, list_all_as_dicts), `skills/__init__.py` (auto-discovers all skills)
 
 ## Stdout Suppression
-OpenStudio SWIG + C++ geometry engine write to C stdout (fd 1), breaking MCP JSON-RPC.
-- `stdout_suppression.py::redirect_c_stdout_to_stderr()` — called once in `server.py::main()` before `mcp.run()`
-- Permanently dups fd 1 → stderr; Python `sys.stdout` gets a private fd to the real MCP client pipe
-- Catches all C-level pollution (SWIG GC, Polyhedron, future unknowns) with zero per-callsite wrappers
+Two real classes of stdout pollution corrupt MCP JSON-RPC — both caught by one fd redirect at startup.
+- `stdout_suppression.py::redirect_c_stdout_to_stderr()` — called once in `server.py::main()` before `mcp.run()`. Permanently dups fd 1 → stderr; Python `sys.stdout` gets a private fd to the real MCP client pipe.
+- **Class A — SWIG memleak warnings** (interpreter shutdown): `"swig/python detected a memory leak of type 'boost::optional< ... > *'"`. PyPI `openstudio==3.11.0` wheel was built WITHOUT `SWIG_PYTHON_SILENT_MEMLEAK`. Upstream SWIG#2638 / OpenStudio#5421; fix #5422 applied to .deb only, not the wheel we run.
+- **Class B — Polyhedron Logger** (during ops): `[utilities.Polyhedron] <0> ...` from `Space::volume()`/`Space::floorArea()` on imperfect geometry via OpenStudio `LOG(Warn, ...)`. Unfiled upstream.
+- `cbe6399`-style claims that FourPipeBeam / `add_baseline_system` emit stdout do NOT reproduce — the per-call wrappers that commit added are no-ops now; fd redirect covers real sources.
 - `suppress_openstudio_warnings()` retained as no-op for import compat
 - No action needed for new skills
 
