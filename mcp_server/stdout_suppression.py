@@ -1,26 +1,29 @@
-"""Redirect C-level stdout to stderr to protect MCP JSON-RPC protocol.
+"""Keep stdout clean for MCP JSON-RPC on the openstudio PyPI wheel.
 
-Two real sources of stdout pollution on our runtime (openstudio PyPI wheel
-3.11.0) that would corrupt the JSON-RPC stream:
+Two real sources of stdout pollution on our runtime corrupt the JSON-RPC
+stream. Two-layer defense at startup:
 
-1. SWIG memleak warnings at interpreter shutdown —
-     "swig/python detected a memory leak of type 'boost::optional< ... > *'"
-   Fires for boost::optional<Model>, boost::optional<double>, etc. The
-   PyPI wheel was built WITHOUT SWIG_PYTHON_SILENT_MEMLEAK. Root cause is
-   SWIG#2638 / NatLabRockies/OpenStudio#5421; fix #5422 was applied to the
-   .deb build only, not the wheel we actually run.
+Class A — SWIG memleak warnings at interpreter shutdown —
+    "swig/python detected a memory leak of type 'boost::optional< ... > *'"
+  Fires for boost::optional<Model>, boost::optional<double>, etc. The PyPI
+  `openstudio==3.11.0` wheel was built WITHOUT SWIG_PYTHON_SILENT_MEMLEAK
+  (root cause SWIG#2638; OpenStudio#5421 was "fixed" by #5422 for .deb only,
+  wheel build missed it — filed as NatLabRockies/OpenStudio#5608).
+  Caught by `redirect_c_stdout_to_stderr` (fd-level backstop).
 
-2. OpenStudio Logger output during Space::volume() / Space::floorArea() on
-   models with imperfect geometry —
-     "[utilities.Polyhedron] <0> Polyhedron is not enclosed in original
-      testing. Trying to add missing colinear points."
-   Source: LOG(Warn, ...) in OpenStudio utilities/Polyhedron. Unfiled
-   upstream as of 2026-04-11.
+Class B — OpenStudio Logger output during Space::volume() / floorArea() —
+    "[utilities.Polyhedron] <0> Polyhedron is not enclosed in original
+     testing. Trying to add missing colinear points."
+    "[openstudio.model.Space] <0> Object of type 'OS:Space' and named
+     '...' is not enclosed, there are N edges that aren't used..."
+  Source: the default `standardOutLogger` sink runs at Warn level and
+  writes to C stdout. Silenced via the intended Logger API in
+  `silence_openstudio_stdout_logger()`.
 
-Strategy: at process startup, permanently redirect fd 1 to stderr so ALL
-C-level and logger writes go there harmlessly. Then replace Python's
-sys.stdout with a wrapper around the saved original fd so FastMCP's stdio
-transport still writes JSON-RPC to the real client pipe.
+Call order in server.py::main():
+  1. silence_openstudio_stdout_logger()  # primary fix for Class B
+  2. redirect_c_stdout_to_stderr()       # backstop for Class A + unknowns
+  3. mcp.run()
 
 Done once — no per-call suppression, no races, no missed callsites.
 """
@@ -33,10 +36,24 @@ import os
 import sys
 
 
+def silence_openstudio_stdout_logger():
+    """Set OpenStudio's standardOutLogger to Fatal level.
+
+    Primary defense for Class B (Polyhedron/Space Logger warnings).
+    Uses the intended OpenStudio Logger API — no fd manipulation.
+    Call at process startup before any SDK operations.
+    """
+    import openstudio
+    openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
+
+
 def redirect_c_stdout_to_stderr():
     """Permanently redirect C-level stdout (fd 1) to stderr.
 
-    Must be called before FastMCP's stdio_server() captures sys.stdout.
+    Belt-and-suspenders backstop for anything the Logger config doesn't
+    catch (SWIG memleak fprintfs under odd fd states, future unknown C
+    stdout writes). Must be called before FastMCP's stdio_server()
+    captures sys.stdout.
     After this call:
       - C code (printf, SWIG, OpenStudio internals) -> fd 1 -> stderr
       - Python sys.stdout -> saved fd -> real MCP client pipe
