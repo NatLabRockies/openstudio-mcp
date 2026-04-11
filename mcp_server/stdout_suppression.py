@@ -67,9 +67,12 @@ def redirect_c_stdout_to_stderr():
     # Point fd 1 at stderr — all future C-level printf goes here
     os.dup2(stderr_fd, stdout_fd)
 
-    # Build a new Python stdout that writes to the saved fd.
-    # Line buffering so each JSON-RPC message flushes immediately.
-    binary = io.open(saved_fd, "wb", closefd=True)
+    # Build a new Python stdout that writes to the saved fd. This file must
+    # outlive the function — it becomes sys.stdout for the rest of the
+    # process, so a context manager would close it prematurely.
+    # PTH123: Path.open() takes a path, not an fd — builtin open is correct here.
+    # SIM115: this file intentionally outlives the function.
+    binary = open(saved_fd, "wb", closefd=True)  # noqa: SIM115, PTH123
     text = io.TextIOWrapper(binary, encoding="utf-8", line_buffering=True)
     sys.stdout = text
 
@@ -84,10 +87,8 @@ def suppress_openstudio_warnings():
 
 def _redirect_stdout_to_stderr_at_exit():
     """Safety net: ensure fd 1 points to stderr during interpreter shutdown."""
-    try:
+    with contextlib.suppress(Exception):
         os.dup2(2, 1)
-    except Exception:
-        pass
 
 
 atexit.register(_redirect_stdout_to_stderr_at_exit)
