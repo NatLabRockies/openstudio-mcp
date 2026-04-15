@@ -62,8 +62,7 @@ def _make_in_memory_setup():
 
 @pytest.mark.unit
 def test_init_no_endpoint_returns_false(monkeypatch):
-    """Validates: init_telemetry returns False when TRACELOOP_BASE_URL is unset,
-    and does NOT call McpInstrumentor or Traceloop.init."""
+    # Validates: init_telemetry returns False when TRACELOOP_BASE_URL is unset, and does NOT call McpInstrumentor or Traceloop.init.
     monkeypatch.delenv("TRACELOOP_BASE_URL", raising=False)
 
     mock_traceloop = MagicMock()
@@ -88,8 +87,7 @@ def test_init_no_endpoint_returns_false(monkeypatch):
 
 @pytest.mark.unit
 def test_init_no_sdk_returns_false(monkeypatch):
-    """Validates: init_telemetry returns False (no warning) when SDK is absent and
-    no endpoint is configured."""
+    # Validates: init_telemetry returns False (no warning) when SDK is absent and no endpoint is configured.
     monkeypatch.delenv("TRACELOOP_BASE_URL", raising=False)
 
     with _reset_telemetry_module():
@@ -102,7 +100,7 @@ def test_init_no_sdk_returns_false(monkeypatch):
 
 @pytest.mark.unit
 def test_init_sdk_missing_with_endpoint_logs_warning(monkeypatch, caplog):
-    """Validates: a warning is logged when endpoint is set but SDK is not installed."""
+    # Validates: a warning is logged when endpoint is set but SDK is not installed.
     import logging
     monkeypatch.setenv("TRACELOOP_BASE_URL", "http://localhost:4318")
 
@@ -117,8 +115,7 @@ def test_init_sdk_missing_with_endpoint_logs_warning(monkeypatch, caplog):
 
 @pytest.mark.unit
 def test_init_instruments_mcp_and_calls_traceloop_init(monkeypatch):
-    """Validates: when endpoint is set, McpInstrumentor().instrument() and
-    Traceloop.init() are both called."""
+    # Validates: when endpoint is set, McpInstrumentor().instrument() and Traceloop.init() are both called.
     monkeypatch.setenv("TRACELOOP_BASE_URL", "http://localhost:4318")
     monkeypatch.setenv("OTEL_SERVICE_NAME", "test-svc")
 
@@ -154,7 +151,7 @@ def test_init_instruments_mcp_and_calls_traceloop_init(monkeypatch):
 
 @pytest.mark.unit
 def test_init_idempotent(monkeypatch):
-    """Validates: calling init_telemetry twice only initializes once."""
+    # Validates: calling init_telemetry twice only initializes once.
     monkeypatch.setenv("TRACELOOP_BASE_URL", "http://localhost:4318")
 
     mock_traceloop_class = MagicMock()
@@ -187,7 +184,7 @@ def test_init_idempotent(monkeypatch):
 
 @pytest.mark.unit
 def test_init_idempotent_returns_false_when_disabled(monkeypatch):
-    """Validates: second call returns False (not True) when first call disabled telemetry."""
+    # Validates: second call returns False (not True) when first call disabled telemetry.
     monkeypatch.delenv("TRACELOOP_BASE_URL", raising=False)
 
     with _reset_telemetry_module():
@@ -202,7 +199,7 @@ def test_init_idempotent_returns_false_when_disabled(monkeypatch):
 
 @pytest.mark.unit
 def test_init_disable_batch_flag(monkeypatch):
-    """Validates: OTEL_EXPORT_BATCH=false sets disable_batch=True in Traceloop.init."""
+    # Validates: OTEL_EXPORT_BATCH=false sets disable_batch=True in Traceloop.init.
     monkeypatch.setenv("TRACELOOP_BASE_URL", "http://localhost:4318")
     monkeypatch.setenv("OTEL_EXPORT_BATCH", "false")
 
@@ -229,7 +226,7 @@ def test_init_disable_batch_flag(monkeypatch):
 
 @pytest.mark.unit
 def test_init_restores_stdout_on_exception(monkeypatch):
-    """Validates: sys.stdout is restored even when Traceloop.init() raises."""
+    # Validates: sys.stdout is restored even when Traceloop.init() raises.
     monkeypatch.setenv("TRACELOOP_BASE_URL", "http://localhost:4318")
 
     mock_traceloop_class = MagicMock()
@@ -262,7 +259,7 @@ def test_init_restores_stdout_on_exception(monkeypatch):
 
 @pytest.mark.unit
 def test_truncate_short_value():
-    """Validates: short values are returned unchanged."""
+    # Validates: short values are returned unchanged.
     from mcp_server.telemetry import _MAX_ATTR_LEN, _truncate
     assert _truncate("hello") == '"hello"'
     assert len(_truncate("hello")) < _MAX_ATTR_LEN
@@ -270,7 +267,7 @@ def test_truncate_short_value():
 
 @pytest.mark.unit
 def test_truncate_long_value():
-    """Validates: values longer than _MAX_ATTR_LEN are capped with ellipsis."""
+    # Validates: values longer than _MAX_ATTR_LEN are capped with ellipsis.
     from mcp_server.telemetry import _MAX_ATTR_LEN, _truncate
     long_val = "x" * 2000
     result = _truncate(long_val)
@@ -284,7 +281,7 @@ def test_truncate_long_value():
 
 @pytest.mark.unit
 def test_trace_operation_noop_when_no_provider():
-    """Validates: trace_operation is safe to call when no provider is configured."""
+    # Validates: trace_operation is safe to call when no provider is configured.
     from mcp_server.telemetry import trace_operation
     ran = []
     with trace_operation("test_op") as span:
@@ -296,11 +293,9 @@ def test_trace_operation_noop_when_no_provider():
 
 @pytest.mark.unit
 def test_trace_operation_noop_span_on_import_error():
-    """Validates: trace_operation yields a _NoopSpan when opentelemetry is absent.
-
-    Regression: trace_operation() must not raise ImportError in production
-    environments where dev extras (opentelemetry-api) are not installed.
-    """
+    # Validates: trace_operation yields a _NoopSpan when opentelemetry is absent.
+    # Regression: trace_operation() must not raise ImportError in production
+    # environments where dev extras (opentelemetry-api) are not installed.
     import sys
 
     from mcp_server.telemetry import _NoopSpan, trace_operation
@@ -320,8 +315,7 @@ def test_trace_operation_noop_span_on_import_error():
 
 @pytest.mark.unit
 def test_trace_operation_child_span():
-    """Validates: trace_operation creates a named child span when a TracerProvider
-    is configured."""
+    # Validates: trace_operation creates a named child span when a TracerProvider is configured.
     from opentelemetry import trace as otel_trace
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -344,7 +338,7 @@ def test_trace_operation_child_span():
 
 @pytest.mark.unit
 def test_trace_operation_records_exception():
-    """Validates: trace_operation sets ERROR status when an exception is raised."""
+    # Validates: trace_operation sets ERROR status when an exception is raised.
     from opentelemetry import trace as otel_trace
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -371,8 +365,7 @@ def test_trace_operation_records_exception():
 
 @pytest.mark.unit
 def test_traced_noop_when_telemetry_disabled():
-    """Validates: traced() wrapper calls the original function directly when
-    _TELEMETRY_ENABLED is False (SDK installed but no endpoint configured)."""
+    # Validates: traced() wrapper calls the original function directly when _TELEMETRY_ENABLED is False (SDK installed but no endpoint configured).
     with _reset_telemetry_module():
         import mcp_server.telemetry as tel
         tel._TELEMETRY_ENABLED = False
@@ -392,8 +385,7 @@ def test_traced_noop_when_telemetry_disabled():
 
 @pytest.mark.unit
 def test_traced_creates_span_when_enabled():
-    """Validates: traced() creates a span via trace_operation when _TELEMETRY_ENABLED
-    is True."""
+    # Validates: traced() creates a span via trace_operation when _TELEMETRY_ENABLED is True.
     from opentelemetry import trace as otel_trace
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -422,7 +414,7 @@ def test_traced_creates_span_when_enabled():
 
 @pytest.mark.unit
 def test_traced_marks_error_on_ok_false():
-    """Validates: traced() marks the span ERROR when result has ok=False."""
+    # Validates: traced() marks the span ERROR when result has ok=False.
     from opentelemetry import trace as otel_trace
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -453,7 +445,7 @@ def test_traced_marks_error_on_ok_false():
 
 @pytest.mark.unit
 def test_traced_uses_function_name_as_default_span_name():
-    """Validates: traced() uses the function name when op_name is not specified."""
+    # Validates: traced() uses the function name when op_name is not specified.
     from opentelemetry import trace as otel_trace
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor

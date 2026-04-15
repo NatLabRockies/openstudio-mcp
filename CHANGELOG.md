@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Optional OpenLLMetry tracing**: `pip install 'openstudio-mcp[telemetry]'` + `TRACELOOP_BASE_URL` env var enables distributed tracing via traceloop-sdk. Zero overhead when unset. Key operations (`run_simulation`, `apply_measure`, `create_measure`, `create_*_building`, `run_qaqc_checks`) emit named spans; every FastMCP tool call is auto-instrumented via `McpInstrumentor`.
+- **Per-client setup guides**: `docs/clients/` — detailed MCP config examples, tool limits, and performance notes for Claude Code, Claude Desktop, VS Code Copilot, Windsurf, Gemini CLI, and Cursor.
+- **Token context performance doc**: `docs/clients/token-context-performance.md` — benchmark of how each client handles the 142-tool surface and context overhead.
+- **SECURITY.md**: disclosure policy and supported versions.
+- **ECM package example**: `docs/examples/20_deep_retrofit_package.md` — wall insulation + thermostat + window + PV stack with expected EUI ranges.
+- **`.mcp.json.example`**: ready-to-use Claude Code MCP config.
+- **Docker tracing stack**: `docker/docker-compose.tracing.yml` + `docker/otel-collector-config.yaml` for local Jaeger/OTEL collector.
+- **`test_telemetry.py`**: 18 unit tests for telemetry module (no Docker required).
+- **`test_stdout_logger_silence.py`**: integration tests verifying Polyhedron/Space Logger warnings are fully suppressed after `silence_openstudio_stdout_logger()`.
+
+### Fixed
+- **ECM package example**: window ECM was incorrectly using `create_standard_opaque_material`; now correctly notes that glazing requires `SimpleGlazing` authored via `create_measure`.
+
 ## [0.9.0] - 2026-04-10
 
 ### Added
