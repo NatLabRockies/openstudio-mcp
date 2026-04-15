@@ -88,14 +88,14 @@ def init_telemetry() -> bool:
         from opentelemetry.instrumentation.mcp import McpInstrumentor
         from traceloop.sdk import Traceloop
 
-        # Patch FastMCP to emit a span for every tool call automatically.
-        McpInstrumentor().instrument()
-
         service_name = os.environ.get("OTEL_SERVICE_NAME", "openstudio-mcp")
         disable_batch = os.environ.get("OTEL_EXPORT_BATCH", "true").lower() == "false"
 
-        # Traceloop.init() uses print() for status messages.  Redirect sys.stdout
-        # to stderr during init to avoid corrupting the MCP JSON-RPC stdio pipe.
+        # Initialize Traceloop FIRST so its TracerProvider is live before we
+        # patch FastMCP.  McpInstrumentor wraps FastMCP tool calls; if the
+        # provider isn't established yet those spans have nowhere to go.
+        # Traceloop.init() uses print() for status messages — redirect sys.stdout
+        # to stderr to avoid corrupting the MCP JSON-RPC stdio pipe.
         _orig_stdout = sys.stdout
         sys.stdout = sys.stderr
         try:
@@ -106,6 +106,10 @@ def init_telemetry() -> bool:
             )
         finally:
             sys.stdout = _orig_stdout
+
+        # Patch FastMCP AFTER the provider is live so auto-traced tool calls
+        # have a real exporter destination.
+        McpInstrumentor().instrument()
 
         _TELEMETRY_INITIALIZED = True
         _TELEMETRY_ENABLED = True

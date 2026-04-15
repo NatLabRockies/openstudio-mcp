@@ -58,8 +58,12 @@ docker run --rm \
 ```
 
 - The host filesystem is **not mounted** except for the two explicit volumes.
-- No network access is required by the MCP server itself; OpenStudio/EnergyPlus are fully offline.
-- The server process runs as a non-root user inside the container (inherited from the base image).
+- By default, the server performs no outbound network calls; OpenStudio/EnergyPlus
+  are fully offline. **Exception:** when `TRACELOOP_BASE_URL` is set, the server
+  exports traces to that OTLP endpoint.
+- The server process runs as the user defined by the container runtime. The repo
+  Dockerfile does not set a `USER` instruction — it runs as root by default.
+  Production deployments should add a non-root `USER` in a derived image.
 
 ---
 

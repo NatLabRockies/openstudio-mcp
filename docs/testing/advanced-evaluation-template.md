@@ -80,10 +80,11 @@ simulation errors? Document the exact file size and token count where analysis d
 
 **Key behavior to verify:**
 - `read_file` returns `truncated: true` and `bytes_read` when file exceeds `max_bytes` (default 50 KB)
-- `copy_file` always succeeds for large files (no size limit) — use when analysis requires full content
+- `copy_file` has no built-in size limit, but can still fail on insufficient disk space,
+  permission errors, or same-filesystem copy constraints — check `ok` field in the response
 - Chunked reading via `offset` parameter allows paginating through large files
 
-**Automated coverage:** `tests/test_artifact_limits.py`
+**Automated coverage:** `tests/test_artifact_limits.py` (on `test/artifact-security-coverage` branch)
 
 ---
 
@@ -103,7 +104,7 @@ high-turn conversations.
 - SWIG `memory leak of type 'boost::optional...'` warnings in stderr
 - Model state diverging (e.g., a zone renamed in turn 3 showing original name in turn 20)
 
-**Automated coverage:** `tests/test_session_persistence.py` (20+ sequential operations)
+**Automated coverage:** `tests/test_session_persistence.py` (on `test/artifact-security-coverage` branch; 20+ sequential operations)
 
 ---
 
@@ -137,11 +138,11 @@ Quick check for path-traversal vulnerabilities or container leaks.
 - **[ ]** Attempted path traversal (`../../etc/passwd`) via `file_path`? **Result:** [Blocked/Allowed]
 - **[ ]** Attempted path traversal in `copy_file` `destination`? **Result:** [Blocked/Allowed]
 - **[ ]** Verified that `copy_file` stays within mounted volume? **Result:** [Yes/No]
-- **[ ]** Attempted to read `/repo` source code via `read_file`? **Result:** [Blocked/Allowed — note: `/repo` is in allowed roots for skill guide access]
+- **[ ]** Attempted to read `/repo` source code via `read_file`? **Result:** [Allowed — `/repo` is intentionally in allowed roots so skill guides and measure templates in the source tree are accessible; be aware this also exposes server source code]
 - **[ ]** Attempted `seed_file: "../../model.osm"` in OSW? **Result:** [Path flattened to basename]
 
 **Automated coverage:** `tests/test_path_safety.py`, `tests/test_artifact_limits.py`
-(see `TestCopyFilePathSafety` class)
+(both on `test/artifact-security-coverage` branch; see `TestCopyFilePathSafety` class)
 
 ---
 
