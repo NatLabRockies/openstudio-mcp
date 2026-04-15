@@ -3,11 +3,13 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from mcp_server.config import ENABLE_CODE_MODE
+from mcp_server.otel_middleware import OtelMiddleware
 from mcp_server.skills import register_all_skills
 from mcp_server.stdout_suppression import (
     redirect_c_stdout_to_stderr,
     silence_openstudio_stdout_logger,
 )
+from mcp_server.telemetry import init_telemetry
 
 mcp = FastMCP(
     "openstudio-mcp",
@@ -49,6 +51,7 @@ mcp = FastMCP(
 )
 
 register_all_skills(mcp)
+mcp.add_middleware(OtelMiddleware())
 
 if ENABLE_CODE_MODE:
     from fastmcp.experimental.transforms.code_mode import CodeMode
@@ -58,6 +61,7 @@ if ENABLE_CODE_MODE:
 def main():
     silence_openstudio_stdout_logger()
     redirect_c_stdout_to_stderr()
+    init_telemetry()
     mcp.run()
 
 

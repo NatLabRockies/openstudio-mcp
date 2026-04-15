@@ -82,7 +82,7 @@ jobs:
               ;;
             5)
               # HVAC supply sim smoke tests + hvac_validation + bar_building + concurrent regression
-              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py"
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_telemetry.py"
               EXTRA_ENV=""
               ;;
           esac
