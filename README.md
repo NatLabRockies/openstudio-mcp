@@ -532,6 +532,28 @@ In **prod mode**, stdout is reserved exclusively for MCP JSON-RPC messages. Logs
 
 ---
 
+## Tracing (OpenLLMetry)
+
+Distributed tracing via [traceloop-sdk](https://github.com/traceloop/openllmetry) is available in the dev image. Set `TRACELOOP_BASE_URL` to enable it:
+
+```bash
+docker run --rm -i \
+  -e TRACELOOP_BASE_URL=http://host.docker.internal:4318 \
+  openstudio-mcp:dev openstudio-mcp
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRACELOOP_BASE_URL` | *(unset — disabled)* | OTLP endpoint, e.g. `http://localhost:4318` or `https://api.traceloop.com` |
+| `TRACELOOP_API_KEY` | *(unset)* | API key for Traceloop cloud (not needed for generic OTLP) |
+| `OTEL_SERVICE_NAME` | `openstudio-mcp` | Service name on every span |
+| `OTEL_EXPORT_BATCH` | `true` | Set `false` for synchronous export in development |
+| `TRACELOOP_TRACE_CONTENT` | `true` | Set `false` to omit tool arguments from spans (privacy) |
+
+Tracing is **off by default** and has zero overhead when `TRACELOOP_BASE_URL` is unset. Key operations (`run_simulation`, `apply_measure`, `create_measure`, the three `create_*_building` variants, and `run_qaqc_checks`) emit named spans. Every FastMCP tool call is auto-instrumented via `McpInstrumentor`.
+
+---
+
 ## Architecture
 
 - **Transport:** stdio (container spawned by host)
