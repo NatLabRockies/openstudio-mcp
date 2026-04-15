@@ -16,7 +16,14 @@ Claude Code is the **optimal client** for openstudio-mcp. Its ToolSearch feature
 
 ## Configuration
 
-Create `.mcp.json` in your project root (or any directory you run `claude` from). This file is the standard Claude Code MCP config and can be committed to source control to share the setup with your team.
+Create `.mcp.json` in your project root (or any directory you run `claude` from). A template is provided at `.mcp.json.example` in the openstudio-mcp repo. Copy it and fill in your absolute paths:
+
+```bash
+cp .mcp.json.example .mcp.json
+# Edit .mcp.json and replace /ABSOLUTE/PATH/TO/... placeholders
+```
+
+`.mcp.json` contains machine-specific absolute paths so it is gitignored by default. Share the `.mcp.json.example` template with your team instead.
 
 ```json
 {
@@ -49,20 +56,29 @@ claude --mcp-config /path/to/mcp.json
 ## Verification
 
 ```bash
-# Start Claude Code in your project directory
+# Confirm .mcp.json is valid and openstudio-mcp is registered
+# (run from the project directory containing .mcp.json)
+claude mcp add openstudio-mcp --scope project docker -- run --rm -i \
+  -v "/absolute/path/to/inputs:/inputs" \
+  -v "/absolute/path/to/runs:/runs" \
+  -e OPENSTUDIO_MCP_MODE=prod openstudio-mcp:dev openstudio-mcp
+# → prints "MCP server openstudio-mcp already exists in .mcp.json" if it's registered
+```
+
+> **Note:** `claude mcp list` shows only user-scope servers. Project-scope `.mcp.json` servers load when you start an interactive `claude` session from that directory — they won't appear in `mcp list`.
+
+Start a session and test:
+
+```bash
+# Start Claude Code in the project directory
+cd /path/to/your/project
 claude
 
-# At the prompt, type:
+# At the prompt:
 > list_skills
 ```
 
-A successful response shows the available skill categories. You can also ask:
-
-```
-> What MCP tools do you have access to for building energy modeling?
-```
-
-Claude Code will call ToolSearch with relevant keywords and return the matching tools without loading all 142 schemas.
+A successful response shows available skill categories. Claude Code will use ToolSearch to find and load only the relevant tool schemas for each request.
 
 ---
 

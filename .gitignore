@@ -35,3 +35,4 @@ docs/review/
 
 # Codex CLI
 .codex/
+.mcp.json

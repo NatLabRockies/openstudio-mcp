@@ -12,9 +12,8 @@ Gemini CLI is a terminal-based AI agent with a **1M token context window** — t
 - **Gemini CLI** installed:
   ```bash
   npm install -g @google/gemini-cli
-  # or with Homebrew
-  brew install gemini-cli
   ```
+  > **Note:** The Homebrew formula (`brew install gemini-cli`) has a known dependency issue with `@google/gemini-cli-core`. Use npm.
 - **Google account** (free tier: 60 req/min, 1,000 req/day) or Gemini API key
 - openstudio-mcp image built: `docker build -t openstudio-mcp:dev -f docker/Dockerfile .`
 
@@ -86,14 +85,13 @@ Extend the `includeTools` list as needed. See [index.md](./index.md) for the ful
 ## Verification
 
 ```bash
-# Start Gemini CLI
+# Confirm openstudio-mcp is registered (no API call needed)
+gemini mcp list
+# → Should show "✓ openstudio-mcp: docker run ... (stdio) - Connected"
+
+# Start Gemini CLI and test interactively
 gemini
-
-# Test MCP connection
 > Use openstudio-mcp to list the available skills
-
-# Or check tools directly
-> What tools do you have access to from openstudio-mcp?
 ```
 
 ---
