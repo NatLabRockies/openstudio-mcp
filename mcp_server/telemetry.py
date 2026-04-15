@@ -39,6 +39,9 @@ from typing import Any, Callable, TypeVar
 logger = logging.getLogger(__name__)
 
 _TELEMETRY_INITIALIZED = False
+# True only after Traceloop.init() succeeds with a valid endpoint.
+# traced() checks this at call time to avoid traceloop stdout warnings.
+_TELEMETRY_ENABLED = False
 try:
     _SDK_AVAILABLE = importlib.util.find_spec("traceloop.sdk") is not None
 except (ModuleNotFoundError, ValueError):
@@ -54,13 +57,14 @@ def init_telemetry() -> bool:
     """Initialize OpenLLMetry tracing.  Idempotent — safe to call multiple times.
 
     Returns True if telemetry was enabled, False otherwise (SDK absent, no endpoint).
-    When the SDK is installed, also calls McpInstrumentor().instrument() to
-    automatically trace every FastMCP tool call.
+    When the SDK is installed and an endpoint is configured, calls
+    McpInstrumentor().instrument() to auto-trace every FastMCP tool call and
+    Traceloop.init() to configure the OTLP exporter.
     """
-    global _TELEMETRY_INITIALIZED
+    global _TELEMETRY_INITIALIZED, _TELEMETRY_ENABLED
 
     if _TELEMETRY_INITIALIZED:
-        return True
+        return _TELEMETRY_ENABLED
 
     import os
 
@@ -74,18 +78,18 @@ def init_telemetry() -> bool:
         _TELEMETRY_INITIALIZED = True
         return False
 
+    endpoint = os.environ.get("TRACELOOP_BASE_URL", "").strip()
+    if not endpoint:
+        logger.debug("TRACELOOP_BASE_URL not set -- telemetry disabled")
+        _TELEMETRY_INITIALIZED = True
+        return False
+
     try:
         from opentelemetry.instrumentation.mcp import McpInstrumentor
         from traceloop.sdk import Traceloop
 
         # Patch FastMCP to emit a span for every tool call automatically.
         McpInstrumentor().instrument()
-
-        endpoint = os.environ.get("TRACELOOP_BASE_URL", "").strip()
-        if not endpoint:
-            logger.debug("TRACELOOP_BASE_URL not set -- telemetry disabled")
-            _TELEMETRY_INITIALIZED = True
-            return False
 
         service_name = os.environ.get("OTEL_SERVICE_NAME", "openstudio-mcp")
         disable_batch = os.environ.get("OTEL_EXPORT_BATCH", "true").lower() == "false"
@@ -104,6 +108,7 @@ def init_telemetry() -> bool:
             sys.stdout = _orig_stdout
 
         _TELEMETRY_INITIALIZED = True
+        _TELEMETRY_ENABLED = True
         logger.info(
             "OpenLLMetry enabled: endpoint=%s service=%s batch=%s",
             endpoint,
@@ -157,11 +162,13 @@ def trace_operation(name: str, attributes: dict[str, Any] | None = None):
 
 
 def traced(op_name: str | None = None) -> Callable[[F], F]:
-    """Decorator that wraps a synchronous operation in an OpenLLMetry task span.
+    """Decorator that wraps a synchronous operation in a trace span.
 
-    Uses traceloop.sdk.decorators.task() when the SDK is available, falls back
-    to the identity decorator otherwise.  Marks the span ERROR when the function
-    returns a dict with ok=False.
+    Uses trace_operation() context manager to create a span.  Only active when
+    telemetry has been successfully enabled via init_telemetry().  This avoids
+    traceloop stdout warnings when the SDK is installed but no endpoint is set.
+
+    Marks the span ERROR when the function returns a dict with ok=False.
 
     Args:
         op_name: Span name override.  Defaults to the function name.
@@ -174,33 +181,29 @@ def traced(op_name: str | None = None) -> Callable[[F], F]:
     import functools
 
     def decorator(fn: F) -> F:
-        if not _SDK_AVAILABLE:
-            return fn
-
-        from traceloop.sdk.decorators import task
-
         span_name = op_name or fn.__name__
-        task_wrapped = task(name=span_name)(fn)
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            result = task_wrapped(*args, **kwargs)
-            if isinstance(result, dict) and result.get("ok") is False:
-                _mark_current_span_error(result)
-            return result
+            if not _TELEMETRY_ENABLED:
+                return fn(*args, **kwargs)
+
+            with trace_operation(span_name) as span:
+                result = fn(*args, **kwargs)
+                if isinstance(result, dict) and result.get("ok") is False:
+                    _mark_span_error(span, result)
+                return result
 
         return wrapper  # type: ignore[return-value]
 
     return decorator
 
 
-def _mark_current_span_error(result: dict[str, Any]) -> None:
-    """Set ERROR status on the currently active OTel span."""
+def _mark_span_error(span: Any, result: dict[str, Any]) -> None:
+    """Set ERROR status on the given span."""
     try:
-        from opentelemetry import trace
         from opentelemetry.trace import NonRecordingSpan, StatusCode
 
-        span = trace.get_current_span()
         if isinstance(span, NonRecordingSpan):
             return
         error_msg = result.get("error") or result.get("message") or "tool returned ok=False"
