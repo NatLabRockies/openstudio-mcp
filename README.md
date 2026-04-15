@@ -106,19 +106,21 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 
 ### Other MCP Hosts
 
-[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+See **[`docs/clients/`](docs/clients/index.md)** for per-client setup guides with config files, tool limits, and performance notes.
 
 ### Client Compatibility
 
-| Client | Status | Notes |
-|--------|--------|-------|
-| Claude Desktop | Full support | All 142 tools available |
-| Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
-| VS Code Copilot | Compatible | MCP support via config |
-| Windsurf | Compatible | Under 100-tool limit |
-| Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
-| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
-| OpenAI API | Compatible | Use defer_loading for best results |
+| Client | Tool Limit | Status | Guide |
+|--------|-----------|--------|-------|
+| Claude Code | Unlimited (ToolSearch) | ✅ Best | [claude-code.md](docs/clients/claude-code.md) |
+| Claude Desktop | ~100 practical | ✅ Full | [claude-desktop.md](docs/clients/claude-desktop.md) |
+| VS Code Copilot | 128 hard | ✅ Full | [vs-code-copilot.md](docs/clients/vs-code-copilot.md) |
+| Windsurf | 100 hard | ⚠️ Partial | [windsurf.md](docs/clients/windsurf.md) — manual tool selection required |
+| Gemini CLI | 100 soft / 512 API | ⚠️ Partial | [gemini-cli.md](docs/clients/gemini-cli.md) — use `includeTools` |
+| Cursor | 40 hard | ❌ Incompatible | [cursor.md](docs/clients/cursor.md) — 40-tool cap |
+| OpenAI API | 128 (recommends ~10) | ✅ Compatible | Use `defer_loading` for best results |
+
+See [token context & performance](docs/clients/token-context-performance.md) for a breakdown of how each client handles the 142-tool surface.
 
 ---
 
