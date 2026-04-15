@@ -29,12 +29,12 @@ INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolv
 
 ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
 
-# Telemetry (OpenTelemetry / OpenLlmetry) — opt-in via OTEL_EXPORTER_OTLP_ENDPOINT
+# Telemetry (OpenLLMetry / Traceloop) — opt-in via TRACELOOP_BASE_URL
 # These are read directly by mcp_server/telemetry.py at startup; they are listed
 # here for documentation and any code that needs to inspect them at import time.
-OTEL_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+TRACELOOP_BASE_URL = os.environ.get("TRACELOOP_BASE_URL", "").strip()
+TRACELOOP_API_KEY = os.environ.get("TRACELOOP_API_KEY", "").strip()
 OTEL_SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "openstudio-mcp")
-OTEL_EXPORT_BATCH = os.environ.get("OTEL_EXPORT_BATCH", "true").lower() != "false"
 
 ALLOWED_PATH_ROOTS = [
     Path("/repo").resolve(),

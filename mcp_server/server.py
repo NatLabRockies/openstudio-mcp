@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from mcp_server.config import ENABLE_CODE_MODE
-from mcp_server.otel_middleware import OtelMiddleware
 from mcp_server.skills import register_all_skills
 from mcp_server.stdout_suppression import (
     redirect_c_stdout_to_stderr,
@@ -51,7 +50,6 @@ mcp = FastMCP(
 )
 
 register_all_skills(mcp)
-mcp.add_middleware(OtelMiddleware())
 
 if ENABLE_CODE_MODE:
     from fastmcp.experimental.transforms.code_mode import CodeMode
