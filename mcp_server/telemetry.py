@@ -1,7 +1,10 @@
 """OpenLLMetry (Traceloop) tracing for the openstudio-mcp server.
 
-Dev-only: a no-op unless traceloop-sdk is installed (included in [dev] extras).
-Zero overhead in production: no import errors, all calls become pass-throughs.
+Optional: a no-op unless traceloop-sdk is installed (included in [telemetry] extra).
+Zero overhead when absent: no import errors, all calls become pass-throughs.
+
+Install:
+    pip install 'openstudio-mcp[telemetry]'
 
 Environment variables:
     TRACELOOP_BASE_URL    OTLP / Traceloop-compatible endpoint, e.g.:
@@ -86,7 +89,7 @@ def init_telemetry() -> bool:
         if endpoint:
             logger.warning(
                 "TRACELOOP_BASE_URL is set but traceloop-sdk is not installed. "
-                "Install dev extras: pip install 'openstudio-mcp[dev]'"
+                "Install telemetry extras: pip install 'openstudio-mcp[telemetry]'"
             )
         _TELEMETRY_INITIALIZED = True
         return False

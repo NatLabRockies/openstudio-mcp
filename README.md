@@ -536,7 +536,13 @@ In **prod mode**, stdout is reserved exclusively for MCP JSON-RPC messages. Logs
 
 ## Tracing (OpenLLMetry)
 
-Distributed tracing via [traceloop-sdk](https://github.com/traceloop/openllmetry) is available in the dev image. Set `TRACELOOP_BASE_URL` to enable it:
+Distributed tracing via [traceloop-sdk](https://github.com/traceloop/openllmetry) is available as an optional extra. Install it, then set `TRACELOOP_BASE_URL` to enable it:
+
+```bash
+pip install 'openstudio-mcp[telemetry]'
+```
+
+Or with Docker:
 
 ```bash
 docker run --rm -i \
