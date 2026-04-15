@@ -542,13 +542,19 @@ Distributed tracing via [traceloop-sdk](https://github.com/traceloop/openllmetry
 pip install 'openstudio-mcp[telemetry]'
 ```
 
-Or with Docker:
+Or with Docker (requires the tracing image built with `--build-arg TELEMETRY=1`):
 
 ```bash
+# Build the tracing-enabled image once:
+docker build --build-arg TELEMETRY=1 -t openstudio-mcp:tracing -f docker/Dockerfile .
+
+# Run with tracing enabled:
 docker run --rm -i \
   -e TRACELOOP_BASE_URL=http://host.docker.internal:4318 \
-  openstudio-mcp:dev openstudio-mcp
+  openstudio-mcp:tracing openstudio-mcp
 ```
+
+The standard `openstudio-mcp:dev` image does **not** include `traceloop-sdk`. Using it with `TRACELOOP_BASE_URL` set will log a warning and disable tracing — it will not work silently.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -556,7 +562,7 @@ docker run --rm -i \
 | `TRACELOOP_API_KEY` | *(unset)* | API key for Traceloop cloud (not needed for generic OTLP) |
 | `OTEL_SERVICE_NAME` | `openstudio-mcp` | Service name on every span |
 | `OTEL_EXPORT_BATCH` | `true` | Set `false` for synchronous export in development |
-| `TRACELOOP_TRACE_CONTENT` | `true` | Set `false` to omit tool arguments from spans (privacy) |
+| `TRACELOOP_TRACE_CONTENT` | `true` | **Set `false` to protect privacy** — when `true`, tool arguments and outputs (including file paths and model data) are exported to the OTLP backend. Recommended: start with `false` and enable only if your backend is self-hosted or you have reviewed the data. |
 
 Tracing is **off by default** and has zero overhead when `TRACELOOP_BASE_URL` is unset. Key operations (`run_simulation`, `apply_measure`, `create_measure`, the three `create_*_building` variants, and `run_qaqc_checks`) emit named spans. Every FastMCP tool call is auto-instrumented via `McpInstrumentor`.
 

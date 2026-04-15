@@ -10,11 +10,14 @@
 - **ECM package example**: `docs/examples/20_deep_retrofit_package.md` — wall insulation + thermostat + window + PV stack with expected EUI ranges.
 - **`.mcp.json.example`**: ready-to-use Claude Code MCP config.
 - **Docker tracing stack**: `docker/docker-compose.tracing.yml` + `docker/otel-collector-config.yaml` for local Jaeger/OTEL collector.
-- **`test_telemetry.py`**: 18 unit tests for telemetry module (no Docker required).
+- **`test_telemetry.py`**: 20 unit tests for telemetry module (no Docker required) — includes startup-wiring and decorator-coverage regression tests.
+- **`.env.example`**: template for telemetry environment variables with privacy guidance.
 - **`test_stdout_logger_silence.py`**: integration tests verifying Polyhedron/Space Logger warnings are fully suppressed after `silence_openstudio_stdout_logger()`.
 
 ### Fixed
 - **ECM package example**: window ECM was incorrectly using `create_standard_opaque_material`; now correctly notes that glazing requires `SimpleGlazing` authored via `create_measure`.
+- **README tracing Docker example**: corrected image tag from `openstudio-mcp:dev` to `openstudio-mcp:tracing` (the dev image does not include traceloop-sdk); added build command and explanatory note.
+- **`TRACELOOP_TRACE_CONTENT` docs**: expanded to warn that the default (`true`) exports tool arguments and outputs to the OTLP backend; recommends `false` as the safe starting point.
 
 ## [0.9.0] - 2026-04-10
 

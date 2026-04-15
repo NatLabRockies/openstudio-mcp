@@ -26,6 +26,15 @@ jobs:
           mkdir -p runs
           docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv -m "not integration"'
 
+      - name: Smoke-install telemetry extra
+        # Validates that traceloop-sdk and its deps install cleanly from the
+        # pinned constraint in [telemetry]. Catches packaging drift that would
+        # make openstudio-mcp[telemetry] uninstallable without needing a full
+        # Docker rebuild.
+        run: |
+          docker run --rm -v "$PWD:/repo" openstudio-mcp:dev bash -lc \
+            'pip install --quiet -e "/repo[telemetry]" && python -c "from traceloop.sdk import Traceloop; print(\"traceloop-sdk OK\")"'
+
       - name: Save Docker image
         run: docker save openstudio-mcp:dev | gzip > /tmp/image.tar.gz
 
