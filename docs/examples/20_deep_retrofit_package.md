@@ -75,13 +75,18 @@ Expand the heating/cooling deadband by 2°F in each direction.
 
 #### ECM 3: High-Performance Windows (requires gem environment)
 
-First create a high-performance glazing construction (e.g. low-e triple pane), then replace all windows with it:
+Use a `SimpleGlazing` material (U-factor + SHGC) to define window performance, then replace all glazing:
 
 ```
-18. create_standard_opaque_material(name="LowE_TriplePane", ...)   # or use SimpleGlazing
-19. create_construction(name="HighPerf_Window", material_names=["LowE_TriplePane"])
+18. create_measure(name="add_simple_glazing", ...)  # write a measure that calls
+    #   SimpleGlazing.new(model, u_factor, shgc) and wires it into a Construction
+19. apply_measure(measure_dir=..., arguments={u_factor: 1.2, shgc: 0.25})
 20. replace_window_constructions(construction_name="HighPerf_Window")
 ```
+
+> **Note:** `create_standard_opaque_material` creates wall/roof layers — not glazing.
+> Window constructions require glazing materials (SimpleGlazing or StandardGlazing)
+> authored via `create_measure`. See Example 01 for the measure-authoring pattern.
 
 #### ECM 4: Rooftop PV (requires gem environment)
 
@@ -112,7 +117,7 @@ First create a high-performance glazing construction (e.g. low-e triple pane), t
 | `create_baseline_osm` | 10-zone model with PSZ-AC system and glazing |
 | `change_building_location` | Weather file + design days (Boston TMY3) |
 | `create_standard_opaque_material` | Define insulation layer (k, density, Cp, thickness) |
-| `create_construction` | Assemble material layers into a wall construction |
+| `create_construction` | Assemble opaque material layers into a wall construction |
 | `get_construction_details` | Verify R-value of new assembly |
 | `list_surfaces` | Find all exterior walls by boundary condition |
 | `assign_construction_to_surface` | Apply new construction wall-by-wall |
