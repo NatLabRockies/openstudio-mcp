@@ -43,10 +43,8 @@ COPY pyproject.toml /repo/pyproject.toml
 COPY mcp_server /repo/mcp_server
 COPY docker /repo/docker
 
-ARG OTEL_ENABLED=0
 RUN pip install --no-cache-dir -U pip \
-    && pip install --no-cache-dir -e ".[dev]" \
-    && if [ "$OTEL_ENABLED" = "1" ]; then pip install --no-cache-dir -e ".[telemetry]"; fi
+    && pip install --no-cache-dir -e ".[dev]"
 
 # (Optional) If you want the container to include any other repo files too:
 # COPY . /repo
