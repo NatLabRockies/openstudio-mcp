@@ -18,6 +18,7 @@
 - **ECM package example**: window ECM was incorrectly using `create_standard_opaque_material`; now correctly notes that glazing requires `SimpleGlazing` authored via `create_measure`.
 - **README tracing Docker example**: corrected image tag from `openstudio-mcp:dev` to `openstudio-mcp:tracing` (the dev image does not include traceloop-sdk); added build command and explanatory note.
 - **`TRACELOOP_TRACE_CONTENT` docs**: expanded to warn that the default (`true`) exports tool arguments and outputs to the OTLP backend; recommends `false` as the safe starting point.
+- **`opentelemetry-sdk` version constraint**: tightened `[dev]` lower bound from `>=1.20` to `>=1.38.0` to match `traceloop-sdk`'s actual minimum; prevents pip resolving an incompatible version when both extras are installed.
 
 ## [0.9.0] - 2026-04-10
 
