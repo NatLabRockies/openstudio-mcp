@@ -295,6 +295,30 @@ def test_trace_operation_noop_when_no_provider():
 
 
 @pytest.mark.unit
+def test_trace_operation_noop_span_on_import_error():
+    """Validates: trace_operation yields a _NoopSpan when opentelemetry is absent.
+
+    Regression: trace_operation() must not raise ImportError in production
+    environments where dev extras (opentelemetry-api) are not installed.
+    """
+    import sys
+
+    from mcp_server.telemetry import _NoopSpan, trace_operation
+
+    # Simulate opentelemetry being absent
+    otel_keys = {"opentelemetry", "opentelemetry.trace"}
+    with patch.dict(sys.modules, dict.fromkeys(otel_keys, None)):
+        ran = []
+        with trace_operation("test_noop") as span:
+            ran.append(True)
+            assert isinstance(span, _NoopSpan)
+            span.set_attribute("key", "value")
+            span.set_status("ok")
+            span.record_exception(None)
+        assert ran == [True]
+
+
+@pytest.mark.unit
 def test_trace_operation_child_span():
     """Validates: trace_operation creates a named child span when a TracerProvider
     is configured."""

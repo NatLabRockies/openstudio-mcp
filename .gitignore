@@ -33,6 +33,11 @@ Thumbs.db
 # Code review artifacts
 docs/review/
 
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
 # Codex CLI
 .codex/
 .mcp.json

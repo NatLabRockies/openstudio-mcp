@@ -53,6 +53,19 @@ _MAX_ATTR_LEN = 512
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+class _NoopSpan:
+    """Minimal no-op span used when opentelemetry is not installed."""
+
+    def set_attribute(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def set_status(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def record_exception(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+
 def init_telemetry() -> bool:
     """Initialize OpenLLMetry tracing.  Idempotent — safe to call multiple times.
 
@@ -132,15 +145,15 @@ def trace_operation(name: str, attributes: dict[str, Any] | None = None):
     """Context manager that wraps a block in a child INTERNAL span.
 
     Uses the active OpenTelemetry TracerProvider (configured by Traceloop.init()).
-    Falls back to OTel API no-op tracer when telemetry is not configured — safe to
-    use unconditionally.
+    Falls back to a no-op span when opentelemetry is not installed or telemetry
+    is not configured — safe to use unconditionally.
 
     Args:
         name: Span name, e.g. "prepare_model".
         attributes: Optional initial attributes (values truncated to _MAX_ATTR_LEN).
 
     Yields:
-        The active Span (may be a NonRecordingSpan when telemetry is off).
+        The active Span (may be a NonRecordingSpan or _NoopSpan when telemetry is off).
 
     Example::
 
@@ -148,18 +161,23 @@ def trace_operation(name: str, attributes: dict[str, Any] | None = None):
             result = _do_apply(...)
             span.set_attribute("ok", str(result.get("ok", False)))
     """
-    from opentelemetry import trace
-    from opentelemetry.trace import NonRecordingSpan, SpanKind, StatusCode
+    try:
+        from opentelemetry import trace
+        from opentelemetry.trace import NonRecordingSpan, SpanKind, StatusCode
+    except ImportError:
+        yield _NoopSpan()
+        return
 
     tracer = trace.get_tracer("openstudio-mcp")
     with tracer.start_as_current_span(name, kind=SpanKind.INTERNAL) as span:
-        if not isinstance(span, NonRecordingSpan) and attributes:
+        is_recording = not isinstance(span, NonRecordingSpan)
+        if is_recording and attributes:
             for key, val in attributes.items():
                 span.set_attribute(key, _truncate(val))
         try:
             yield span
         except Exception as exc:
-            if not isinstance(span, NonRecordingSpan):
+            if is_recording:
                 span.record_exception(exc)
                 span.set_status(StatusCode.ERROR, str(exc))
             raise
