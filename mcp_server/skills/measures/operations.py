@@ -18,6 +18,7 @@ import openstudio
 
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
 from mcp_server.model_manager import get_model, load_model
+from mcp_server.telemetry import traced
 from mcp_server.util import resolve_run_dir
 
 
@@ -115,6 +116,7 @@ def _parse_runner_messages(out_osw_path: Path) -> dict[str, Any] | None:
         return None
 
 
+@traced()
 def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,

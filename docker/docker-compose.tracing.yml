@@ -1,0 +1,91 @@
+# OpenLLMetry / Traceloop tracing stack for openstudio-mcp
+#
+# Quick start:
+#   # 1. Build the tracing-enabled MCP image (adds traceloop-sdk):
+#   docker build --build-arg TELEMETRY=1 -t openstudio-mcp:tracing -f docker/Dockerfile .
+#
+#   # 2. Start Jaeger:
+#   docker compose -f docker/docker-compose.tracing.yml up -d
+#   open http://localhost:16686   # Jaeger UI — traces appear here
+#
+#   # 3. Configure your MCP client to use the tracing image on the shared network.
+#      Add these flags to your client's docker run command:
+#
+#   -e TRACELOOP_BASE_URL=http://jaeger:4318
+#   --network openstudio-mcp-tracing
+#   (and use openstudio-mcp:tracing instead of openstudio-mcp:dev)
+#
+# Example — Claude Code .mcp.json with tracing enabled:
+#
+#   {
+#     "mcpServers": {
+#       "openstudio-mcp": {
+#         "command": "docker",
+#         "args": [
+#           "run", "--rm", "-i",
+#           "-v", "/abs/path/inputs:/inputs",
+#           "-v", "/abs/path/runs:/runs",
+#           "--network", "openstudio-mcp-tracing",
+#           "-e", "OPENSTUDIO_MCP_MODE=prod",
+#           "-e", "TRACELOOP_BASE_URL=http://jaeger:4318",
+#           "-e", "OTEL_SERVICE_NAME=openstudio-mcp",
+#           "-e", "TRACELOOP_TRACE_CONTENT=true",
+#           "openstudio-mcp:tracing", "openstudio-mcp"
+#         ]
+#       }
+#     }
+#   }
+#
+# Environment variables understood by the MCP server (see mcp_server/telemetry.py):
+#   TRACELOOP_BASE_URL      OTLP HTTP endpoint (required to enable telemetry)
+#   TRACELOOP_API_KEY       API key for Traceloop cloud (omit for local Jaeger)
+#   OTEL_SERVICE_NAME       Service name on spans (default: openstudio-mcp)
+#   OTEL_EXPORT_BATCH       "false" for sync export in dev (default: batch)
+#   TRACELOOP_TRACE_CONTENT "false" to omit tool args from spans (privacy)
+
+services:
+  jaeger:
+    image: jaegertracing/jaeger:2.5.0
+    container_name: openstudio-mcp-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver (used by traceloop-sdk)
+    environment:
+      - SPAN_STORAGE_TYPE=memory
+    networks:
+      - tracing
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Optional: OpenTelemetry Collector as a middle layer.
+  # Useful if you want to fan-out to multiple backends (Jaeger + Prometheus + Loki).
+  # Comment out and point TRACELOOP_BASE_URL directly to jaeger:4318 for simplest setup.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    container_name: openstudio-mcp-otelcol
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4319:4318"   # OTLP HTTP (external port offset to avoid conflict with jaeger)
+      - "4320:4317"   # OTLP gRPC (external port offset)
+      - "8888:8888"   # Collector metrics (Prometheus scrape endpoint)
+    networks:
+      - tracing
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - collector   # only start with: docker compose --profile collector up
+
+networks:
+  tracing:
+    name: openstudio-mcp-tracing
+    driver: bridge

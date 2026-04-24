@@ -26,6 +26,15 @@ jobs:
           mkdir -p runs
           docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv -m "not integration"'
 
+      - name: Smoke-install telemetry extra
+        # Validates that traceloop-sdk and its deps install cleanly from the
+        # pinned constraint in [telemetry]. Catches packaging drift that would
+        # make openstudio-mcp[telemetry] uninstallable without needing a full
+        # Docker rebuild.
+        run: |
+          docker run --rm -v "$PWD:/repo" openstudio-mcp:dev bash -lc \
+            'pip install --quiet -e "/repo[telemetry]" && python -c "from traceloop.sdk import Traceloop; print(\"traceloop-sdk OK\")"'
+
       - name: Save Docker image
         run: docker save openstudio-mcp:dev | gzip > /tmp/image.tar.gz
 
@@ -81,8 +90,8 @@ jobs:
               EXTRA_ENV=""
               ;;
             5)
-              # HVAC supply sim smoke tests + hvac_validation + bar_building + concurrent regression
-              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py"
+              # HVAC supply sim smoke tests + hvac_validation + bar_building + concurrent regression + telemetry
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_telemetry.py"
               EXTRA_ENV=""
               ;;
           esac

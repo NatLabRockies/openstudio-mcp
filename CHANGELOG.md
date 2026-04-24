@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Optional OpenLLMetry tracing**: `pip install 'openstudio-mcp[telemetry]'` + `TRACELOOP_BASE_URL` env var enables distributed tracing via traceloop-sdk. Zero overhead when unset. Key operations (`run_simulation`, `apply_measure`, `create_measure`, `create_*_building`, `run_qaqc_checks`) emit named spans; every FastMCP tool call is auto-instrumented via `McpInstrumentor`.
+- **Docker tracing stack**: `docker/docker-compose.tracing.yml` + `docker/otel-collector-config.yaml` for local Jaeger/OTEL collector.
+- **`test_telemetry.py`**: 20 unit tests for telemetry module (no Docker required) — includes startup-wiring and decorator-coverage regression tests.
+- **`.env.example`**: template for telemetry environment variables with privacy guidance.
+
+### Fixed
+- **README tracing Docker example**: corrected image tag from `openstudio-mcp:dev` to `openstudio-mcp:tracing` (the dev image does not include traceloop-sdk); added build command and explanatory note.
+- **`TRACELOOP_TRACE_CONTENT` docs**: expanded to warn that the default (`true`) exports tool arguments and outputs to the OTLP backend; recommends `false` as the safe starting point.
+- **`opentelemetry-sdk` version constraint**: tightened `[dev]` lower bound from `>=1.20` to `>=1.38.0` to match `traceloop-sdk`'s actual minimum; prevents pip resolving an incompatible version when both extras are installed.
+
 ## [0.9.0] - 2026-04-10
 
 ### Added
