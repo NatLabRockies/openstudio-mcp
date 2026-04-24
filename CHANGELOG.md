@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Per-client setup guides**: `docs/clients/` — detailed MCP config examples, tool limits, and performance notes for Claude Code, Claude Desktop, VS Code Copilot, Windsurf, Gemini CLI, and Cursor.
+- **Token context performance doc**: `docs/clients/token-context-performance.md` — benchmark of how each client handles the 142-tool surface and context overhead.
+- **SECURITY.md**: disclosure policy and supported versions.
+- **ECM package example**: `docs/examples/20_deep_retrofit_package.md` — wall insulation + thermostat + window + PV stack with expected EUI ranges.
+- **`.mcp.json.example`**: ready-to-use Claude Code MCP config.
+
+### Fixed
+- **ECM package example**: window ECM was incorrectly using `create_standard_opaque_material`; now correctly notes that glazing requires `SimpleGlazing` authored via `create_measure`.
+
 ## [0.9.0] - 2026-04-10
 
 ### Added
