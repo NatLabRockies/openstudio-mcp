@@ -39,6 +39,14 @@ cd openstudio-mcp
 docker build -t openstudio-mcp:dev -f docker/Dockerfile .
 ```
 
+**Apple Silicon (M-series):** the upstream `nrel/openstudio` base image is `amd64`-only, so the command above runs under Rosetta emulation. For a native `arm64` build that uses the official NREL arm64 `.deb`, use the `Dockerfile.arm64` variant instead:
+
+```bash
+docker build --platform linux/arm64 -t openstudio-mcp:arm64 -f docker/Dockerfile.arm64 .
+```
+
+Then reference `openstudio-mcp:arm64` in your MCP host config below.
+
 ### Step 2: Configure Claude Desktop
 
 Open your Claude Desktop config file:
