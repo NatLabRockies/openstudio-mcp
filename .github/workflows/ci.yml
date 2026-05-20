@@ -55,9 +55,9 @@ jobs:
             set -euo pipefail
             test -d /opt/comstock-measures
             test -d /opt/common-measures
-            # at least one .rb measure script in each
-            find /opt/comstock-measures -name measure.rb | head -1 | grep -q .
-            find /opt/common-measures   -name measure.rb | head -1 | grep -q .
+            # at least one measure.rb in each (-quit avoids SIGPIPE under pipefail)
+            test -n "$(find /opt/comstock-measures -name measure.rb -print -quit)"
+            test -n "$(find /opt/common-measures   -name measure.rb -print -quit)"
           '
 
       - name: Sanity — python openstudio binding
