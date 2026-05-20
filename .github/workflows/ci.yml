@@ -43,9 +43,21 @@ jobs:
             cd /var/oscli
             bundle list > /tmp/gems.txt
             cat /tmp/gems.txt
-            grep -q openstudio-standards  /tmp/gems.txt
-            grep -q openstudio-extension  /tmp/gems.txt
-            grep -q openstudio-common-measures /tmp/gems.txt
+            grep -q openstudio-standards /tmp/gems.txt
+            grep -q openstudio-extension /tmp/gems.txt
+            grep -q openstudio-workflow  /tmp/gems.txt
+            grep -q openstudio-gems      /tmp/gems.txt
+          '
+
+      - name: Sanity — measure dirs from tarballs
+        run: |
+          docker run --rm openstudio-mcp:arm64 bash -lc '
+            set -euo pipefail
+            test -d /opt/comstock-measures
+            test -d /opt/common-measures
+            # at least one .rb measure script in each
+            find /opt/comstock-measures -name measure.rb | head -1 | grep -q .
+            find /opt/common-measures   -name measure.rb | head -1 | grep -q .
           '
 
       - name: Sanity — python openstudio binding
