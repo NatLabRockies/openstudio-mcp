@@ -82,6 +82,54 @@ jobs:
             openstudio-mcp:arm64 \
             bash -lc 'cd /repo && pytest -vv -m "not integration" --timeout=60'
 
+      - name: Save Docker image (arm64)
+        run: docker save openstudio-mcp:arm64 | gzip > /tmp/image-arm64.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-arm64
+          path: /tmp/image-arm64.tar.gz
+          retention-days: 1
+
+  arm64-test:
+    # Start of arm64 test matrix: shard 1 only (real EnergyPlus sim via SEB4 OSW,
+    # asserts EUI ≈ 1.875 ± 2%). Expand to [1..5] once arm64 sim parity is proven.
+    needs: arm64-build
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image-arm64
+          path: /tmp
+
+      - name: Load Docker image (arm64)
+        run: docker load < /tmp/image-arm64.tar.gz
+
+      - name: Run tests (arm64 shard ${{ matrix.shard }})
+        env:
+          RUN_OPENSTUDIO_INTEGRATION: "1"
+          MCP_SERVER_CMD: "openstudio-mcp"
+        run: |
+          mkdir -p runs
+          case ${{ matrix.shard }} in
+            1)
+              # Mirrors amd64 shard 1: SEB4 sim + component/weather + loop ops + skill_retrofit
+              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py"
+              EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
+              ;;
+          esac
+          docker run --rm \
+            -v "$PWD:/repo" -v "$PWD/runs:/runs" \
+            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD \
+            $EXTRA_ENV \
+            openstudio-mcp:arm64 bash -lc "cd /repo && pytest -vv -s $FILES"
+
   build:
     runs-on: ubuntu-latest
     steps:
