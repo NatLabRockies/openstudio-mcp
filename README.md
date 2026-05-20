@@ -36,16 +36,16 @@ The server handles all the OpenStudio/EnergyPlus complexity behind MCP tool call
 ```bash
 git clone https://github.com/NatLabRockies/openstudio-mcp.git
 cd openstudio-mcp
-docker build -t openstudio-mcp:dev -f docker/Dockerfile .
 ```
 
-**Apple Silicon (M-series):** the upstream `nrel/openstudio` base image is `amd64`-only, so the command above runs under Rosetta emulation. For a native `arm64` build that uses the official NREL arm64 `.deb`, use the `Dockerfile.arm64` variant instead:
+**Pick the right Dockerfile for your machine** — both produce the same `openstudio-mcp:dev` image, so Step 2's config below works either way.
 
-```bash
-docker build --platform linux/arm64 -t openstudio-mcp:arm64 -f docker/Dockerfile.arm64 .
-```
+| Machine | Command |
+|---------|---------|
+| Intel/AMD (Linux, Windows, Intel Mac) | `docker build -t openstudio-mcp:dev -f docker/Dockerfile .` |
+| Apple Silicon (M-series Mac) | `docker build --platform linux/arm64 -t openstudio-mcp:dev -f docker/Dockerfile.arm64 .` |
 
-Then reference `openstudio-mcp:arm64` in your MCP host config below.
+Why two files? The upstream `nrel/openstudio` base image is `amd64`-only. On Apple Silicon, `docker/Dockerfile` runs under slow Rosetta emulation; `docker/Dockerfile.arm64` builds natively from the official NREL arm64 `.deb` and is several times faster at runtime.
 
 ### Step 2: Configure Claude Desktop
 
@@ -74,9 +74,11 @@ Add (or merge into) the `mcpServers` block:
 }
 ```
 
+**About the `-v` flags** — each one is `-v <host-path>:<container-path>[:ro]`. Docker exposes the host folder inside the container at the second path, so the MCP server can read/write your files. The optional `:ro` makes it read-only. The `./` prefix is **relative to wherever your MCP host launches `docker` from** — if it doesn't resolve, swap in absolute paths (e.g. `/Users/you/openstudio-mcp/runs:/runs` on macOS, `C:\projects\openstudio-mcp\runs:/runs` on Windows).
+
 - `./tests/assets:/inputs` — mounts the included test models so you can experiment right away. Replace with your own folder (e.g. `~/my-models:/inputs`) when ready.
 - `./runs:/runs` — simulation outputs are written here
-- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools
+- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
 - **Restart Claude Desktop** after saving the config file
 
 ### Step 3: Verify Connection
