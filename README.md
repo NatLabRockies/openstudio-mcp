@@ -74,9 +74,11 @@ Add (or merge into) the `mcpServers` block:
 }
 ```
 
+**About the `-v` flags** — each one is `-v <host-path>:<container-path>[:ro]`. Docker exposes the host folder inside the container at the second path, so the MCP server can read/write your files. The optional `:ro` makes it read-only. The `./` prefix is **relative to wherever your MCP host launches `docker` from** — if it doesn't resolve, swap in absolute paths (e.g. `/Users/you/openstudio-mcp/runs:/runs` on macOS, `C:\projects\openstudio-mcp\runs:/runs` on Windows).
+
 - `./tests/assets:/inputs` — mounts the included test models so you can experiment right away. Replace with your own folder (e.g. `~/my-models:/inputs`) when ready.
 - `./runs:/runs` — simulation outputs are written here
-- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools
+- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
 - **Restart Claude Desktop** after saving the config file
 
 ### Step 3: Verify Connection
