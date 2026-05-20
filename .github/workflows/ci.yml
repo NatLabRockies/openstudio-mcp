@@ -5,6 +5,71 @@ on:
   pull_request:
 
 jobs:
+  arm64-build:
+    # Validates Dockerfile.arm64 builds end-to-end and /var/oscli is populated
+    # (without it, every measure-based MCP tool fails at runtime). Native arm64
+    # runner — free on public repos, ~5-10x faster than QEMU on amd64.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.arm64
+          platforms: linux/arm64
+          tags: openstudio-mcp:arm64
+          load: true
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
+
+      - name: Sanity — openstudio CLI
+        run: |
+          docker run --rm openstudio-mcp:arm64 bash -lc '
+            set -euo pipefail
+            openstudio --version
+            openstudio openstudio_version | grep -F "3.11.0"
+          '
+
+      - name: Sanity — /var/oscli gems installed
+        run: |
+          docker run --rm openstudio-mcp:arm64 bash -lc '
+            set -euo pipefail
+            test -f /var/oscli/Gemfile.lock
+            test -f /var/oscli/Gemfile
+            test -d /var/oscli/gems
+            cd /var/oscli
+            bundle list > /tmp/gems.txt
+            cat /tmp/gems.txt
+            grep -q openstudio-standards  /tmp/gems.txt
+            grep -q openstudio-extension  /tmp/gems.txt
+            grep -q openstudio-common-measures /tmp/gems.txt
+          '
+
+      - name: Sanity — python openstudio binding
+        run: |
+          docker run --rm openstudio-mcp:arm64 bash -lc '
+            set -euo pipefail
+            python -c "import openstudio; v = openstudio.openStudioVersion(); print(v); assert v == \"3.11.0\", v"
+          '
+
+      - name: Sanity — mcp_server imports
+        run: |
+          docker run --rm openstudio-mcp:arm64 bash -lc '
+            set -euo pipefail
+            python -c "from mcp_server.server import main; print(\"main:\", main)"
+          '
+
+      - name: Sanity — unit tests
+        run: |
+          mkdir -p runs
+          docker run --rm \
+            -v "$PWD:/repo" -v "$PWD/runs:/runs" \
+            openstudio-mcp:arm64 \
+            bash -lc 'cd /repo && pytest -vv -m "not integration" --timeout=60'
+
   build:
     runs-on: ubuntu-latest
     steps:

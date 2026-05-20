@@ -6,28 +6,52 @@
 
 ARG OPENSTUDIO_VERSION=3.11.0
 ARG OPENSTUDIO_SHA=241b8abb4d
+ARG OS_BUNDLER_VERSION=2.4.10
 
 FROM --platform=linux/arm64 ubuntu:24.04
 ARG OPENSTUDIO_VERSION
 ARG OPENSTUDIO_SHA
+ARG OS_BUNDLER_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Base deps + ruby/bundler toolchain so we can populate /var/oscli below.
+# Mirrors NREL docker-openstudio: ruby-full + libyaml-dev + native build deps,
+# plus gdebi for the .deb install (resolves deps cleanly).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip \
-    ca-certificates curl \
-    libssl-dev libffi-dev \
+    ca-certificates curl gdebi-core \
+    libssl-dev libffi-dev libsqlite3-dev libyaml-dev zlib1g-dev \
+    build-essential git \
+    ruby-full \
     && rm -rf /var/lib/apt/lists/*
 
-# OpenStudio arm64 — official NREL .deb. Pulls in Ruby, libstdc++, etc. as deps.
+# OpenStudio arm64 — official NREL .deb. Pulls in libstdc++ etc. as deps.
 RUN curl -fSL \
       "https://github.com/NREL/OpenStudio/releases/download/v${OPENSTUDIO_VERSION}/OpenStudio-${OPENSTUDIO_VERSION}+${OPENSTUDIO_SHA}-Ubuntu-24.04-arm64.deb" \
       -o /tmp/openstudio.deb \
     && apt-get update \
-    && apt-get install -y --no-install-recommends /tmp/openstudio.deb \
+    && gdebi -n /tmp/openstudio.deb \
     && rm /tmp/openstudio.deb \
     && rm -rf /var/lib/apt/lists/* \
     && openstudio --version
+
+# /var/oscli — Bundler gems that `openstudio run` loads when executing measures.
+# The nrel/openstudio base image does this; the .deb does not. Without it,
+# every measure-based MCP tool fails at runtime (ComStock, common-measures,
+# apply_measure). Mirrors NREL/docker-openstudio's /var/oscli setup.
+RUN OPENSTUDIO_FOLDER=$(find /usr -maxdepth 2 -name "openstudio-${OPENSTUDIO_VERSION}*" -type d | head -n1) \
+    && test -n "$OPENSTUDIO_FOLDER" || { echo "openstudio install dir not found"; exit 1; } \
+    && echo "OPENSTUDIO_FOLDER=$OPENSTUDIO_FOLDER" \
+    && gem install bundler -v ${OS_BUNDLER_VERSION} --no-document \
+    && gem install zip --no-document \
+    && mkdir -p /var/oscli \
+    && cp "$OPENSTUDIO_FOLDER/Ruby/Gemfile" /var/oscli/ \
+    && cp "$OPENSTUDIO_FOLDER/Ruby/Gemfile.lock" /var/oscli/ \
+    && cp "$OPENSTUDIO_FOLDER/Ruby/openstudio-gems.gemspec" /var/oscli/ \
+    && cd /var/oscli \
+    && bundle _${OS_BUNDLER_VERSION}_ install --path=gems --without=native_ext --jobs=4 --retry=3 \
+    && test -d /var/oscli/gems || { echo "/var/oscli/gems missing after bundle install"; exit 1; }
 
 # ComStock measures (openstudio-standards-based templates for space types,
 # constructions, HVAC, schedules). Only the measures/ directory is kept (~50 MB).
