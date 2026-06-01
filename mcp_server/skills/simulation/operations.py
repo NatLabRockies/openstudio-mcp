@@ -14,6 +14,7 @@ from typing import Any, Literal
 import psutil
 
 from mcp_server.config import LOG_TAIL_DEFAULT, OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
+from mcp_server.telemetry import traced
 from mcp_server.util import resolve_run_dir
 
 # Where the MCP server stores runs inside the container
@@ -603,6 +604,7 @@ def validate_model_op() -> dict[str, Any]:
     }
 
 
+@traced()
 def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None = None) -> dict[str, Any]:
     """Create a minimal OSW from an OSM file and run the simulation.
 

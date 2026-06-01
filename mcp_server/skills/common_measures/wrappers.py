@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.skills.measures.operations import apply_measure
+from mcp_server.telemetry import traced
 
 
 def _ensure_climate_zone() -> None:
@@ -154,6 +155,7 @@ def generate_results_report_op(units: str = "IP", run_id: str | None = None) -> 
 
 # --- 4. run_qaqc_checks: ASHRAE QA/QC ---
 
+@traced()
 def run_qaqc_checks_op(
     template: str = "90.1-2013",
     checks: list[str] | None = None,

@@ -18,6 +18,7 @@ from mcp_server import model_manager
 from mcp_server.config import RUN_ROOT
 from mcp_server.model_manager import get_model
 from mcp_server.skills.measures.operations import apply_measure
+from mcp_server.telemetry import traced
 
 # Category classification for ComStock measures
 _BASELINE_PREFIXES = (
@@ -115,6 +116,7 @@ _TYPICAL_ARG_MAP = {
 }
 
 
+@traced()
 def create_typical_building(
     template: str = "90.1-2019",
     building_type: str = "SmallOffice",
@@ -299,6 +301,7 @@ def _create_empty_model() -> Path:
     return osm_path
 
 
+@traced()
 def create_bar_building(
     building_type: str = "SmallOffice",
     total_bldg_floor_area: float = 10000,
@@ -407,6 +410,7 @@ def create_bar_building(
     return result
 
 
+@traced()
 def create_new_building(
     # Bar geometry args
     building_type: str = "SmallOffice",

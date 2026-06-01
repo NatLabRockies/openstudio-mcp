@@ -43,8 +43,13 @@ COPY pyproject.toml /repo/pyproject.toml
 COPY mcp_server /repo/mcp_server
 COPY docker /repo/docker
 
+# TELEMETRY=1 installs traceloop-sdk + opentelemetry instrumentation for MCP.
+# Default off to keep the image lean. Set to 1 for the tracing variant:
+#   docker build --build-arg TELEMETRY=1 -t openstudio-mcp:tracing -f docker/Dockerfile .
+ARG TELEMETRY=0
 RUN pip install --no-cache-dir -U pip \
-    && pip install --no-cache-dir -e ".[dev]"
+    && pip install --no-cache-dir -e ".[dev]" \
+    && if [ "$TELEMETRY" = "1" ]; then pip install --no-cache-dir -e ".[telemetry]"; fi
 
 # (Optional) If you want the container to include any other repo files too:
 # COPY . /repo

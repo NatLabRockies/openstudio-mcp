@@ -14,6 +14,7 @@ from typing import Any
 import openstudio
 
 from mcp_server.config import INPUT_ROOT, RUN_ROOT
+from mcp_server.telemetry import traced
 
 CUSTOM_MEASURES_DIR = RUN_ROOT / "custom_measures"
 
@@ -740,6 +741,7 @@ def _write_test_file(measure_dir: Path, class_name: str, args: list[dict],
 
 # ── Public operations ────────────────────────────────────────────────
 
+@traced()
 def create_measure_op(
     name: str,
     description: str,
