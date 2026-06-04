@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 
 def _mk_rec(run_id: str) -> ops.RunRecord:
     return ops.RunRecord(
-        run_id=run_id, name=run_id, status="queued",
+        run_id=run_id, user_key="local", name=run_id, status="queued",
         created_at=0.0, started_at=None, ended_at=None, pid=None,
         run_dir=Path(run_id), osw_path=Path(run_id) / "w.osw",
         epw_path=None, exit_code=None, error=None,
@@ -22,7 +22,9 @@ def _mk_rec(run_id: str) -> ops.RunRecord:
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
+def _reset_registry(monkeypatch):
+    # Never touch disk: dummy records have relative run_dirs.
+    monkeypatch.setattr(ops, "_persist_run_record", lambda _rec: None)
     ops._RUNS.clear()
     ops._queue.clear()
     yield

@@ -8,7 +8,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed
+from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
 from mcp_server.skills.model_management.baseline_model import create_baseline_model
 
 
@@ -24,14 +24,14 @@ def _os_path(p: Path):
 def create_example_osm(name: str | None = None, out_dir: str | None = None) -> dict[str, Any]:
     """Create the built-in OpenStudio example model and save it as an OSM."""
     safe = _safe_name(name or "example_model")
-    base_dir = Path(out_dir) if out_dir else (RUN_ROOT / "examples")
+    base_dir = Path(out_dir) if out_dir else (user_run_root() / "examples")
     base_dir = base_dir.resolve()
 
-    if not is_path_allowed(base_dir):
+    if not is_path_allowed(base_dir, write=True):
         return {"ok": False, "error": f"Output directory is not allowed: {base_dir}"}
 
     model_dir = (base_dir / safe).resolve()
-    if not is_path_allowed(model_dir):
+    if not is_path_allowed(model_dir, write=True):
         return {"ok": False, "error": f"Output directory is not allowed after resolution: {model_dir}"}
 
     osm_path = model_dir / "example_model.osm"
@@ -201,7 +201,7 @@ def save_osm_model(osm_path: str | None = None) -> dict[str, Any]:
         p = current_path.resolve()
 
     # Validate path
-    if not is_path_allowed(p):
+    if not is_path_allowed(p, write=True):
         return {"ok": False, "error": f"Save path is not allowed: {p}"}
 
     # Ensure parent directory exists
@@ -246,11 +246,14 @@ def list_files(
     """
     import fnmatch
 
-    _allowed_roots = [INPUT_ROOT, RUN_ROOT]
+    _allowed_roots = [INPUT_ROOT, user_run_root()]
 
     # Determine which directories to scan
     if directory:
         d = Path(directory).resolve()
+        # A bare "/runs" request means the caller's own run area (per-user scoping)
+        if d == RUN_ROOT:
+            d = user_run_root()
         # Restrict to /inputs and /runs only
         if not any(str(d).startswith(str(root)) or d == root for root in _allowed_roots):
             return {"ok": False, "error": f"Directory not allowed: {d}. list_files is restricted to /inputs and /runs."}
@@ -314,14 +317,14 @@ def create_baseline_osm(
 ) -> dict[str, Any]:
     """Create a baseline 10-zone commercial building model and save as OSM."""
     safe = _safe_name(name or "baseline_model")
-    base_dir = Path(out_dir) if out_dir else (RUN_ROOT / "examples")
+    base_dir = Path(out_dir) if out_dir else (user_run_root() / "examples")
     base_dir = base_dir.resolve()
 
-    if not is_path_allowed(base_dir):
+    if not is_path_allowed(base_dir, write=True):
         return {"ok": False, "error": f"Output directory not allowed: {base_dir}"}
 
     model_dir = (base_dir / safe).resolve()
-    if not is_path_allowed(model_dir):
+    if not is_path_allowed(model_dir, write=True):
         return {"ok": False, "error": f"Output directory not allowed: {model_dir}"}
 
     osm_path = model_dir / "baseline_model.osm"

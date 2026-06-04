@@ -16,7 +16,8 @@ from typing import Any, Literal
 
 import psutil
 
-from mcp_server.config import LOG_TAIL_DEFAULT, MAX_CONCURRENCY, OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
+from mcp_server.config import LOG_TAIL_DEFAULT, MAX_CONCURRENCY, OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
+from mcp_server.identity import user_key
 from mcp_server.util import resolve_run_dir
 
 # Where the MCP server stores runs inside the container
@@ -28,6 +29,7 @@ LogStream = Literal["openstudio", "energyplus"]
 @dataclass
 class RunRecord:
     run_id: str
+    user_key: str
     name: str
     status: Literal["queued", "running", "success", "failed", "cancelled"]
     created_at: float
@@ -63,6 +65,7 @@ def _persist_run_record(rec: RunRecord) -> None:
         rec.run_dir.mkdir(parents=True, exist_ok=True)
         data = {
             "run_id": rec.run_id,
+            "user_key": rec.user_key,
             "name": rec.name,
             "status": rec.status,
             "created_at": rec.created_at,
@@ -84,7 +87,7 @@ def _persist_run_record(rec: RunRecord) -> None:
 def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
     """Load run metadata from disk if present."""
     try:
-        run_dir = resolve_run_dir(RUN_ROOT, run_id)
+        run_dir = resolve_run_dir(user_run_root(), run_id)
     except FileNotFoundError:
         return None
 
@@ -95,6 +98,7 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
         data = json.loads(meta_path.read_text())
         return RunRecord(
             run_id=data["run_id"],
+            user_key=data.get("user_key") or user_key(),
             name=data.get("name") or run_id,
             status=data.get("status") or "unknown",
             created_at=float(data.get("created_at") or 0.0),
@@ -112,14 +116,16 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
 
 
 def _get_run_record(run_id: str) -> RunRecord | None:
-    """Look up a run record by ID, checking memory first then disk."""
+    """Look up a run record owned by the caller, checking memory then disk."""
+    me = user_key()
     rec = _RUNS.get(run_id)
-    if rec:
-        return rec
-    rec = _load_run_record_from_disk(run_id)
-    if rec:
+    if rec is not None:
+        return rec if rec.user_key == me else None
+    rec = _load_run_record_from_disk(run_id)  # disk lookup is already user-scoped
+    if rec is not None and rec.user_key == me:
         _RUNS[run_id] = rec
-    return rec
+        return rec
+    return None
 
 
 
@@ -334,7 +340,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
 
     # Create run directory
     run_id = uuid.uuid4().hex
-    run_dir = (RUN_ROOT / run_id).resolve()
+    run_dir = (user_run_root() / run_id).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Stage OSW directory contents
@@ -381,6 +387,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
 
     rec = RunRecord(
         run_id=run_id,
+        user_key=user_key(),
         name=run_name,
         status="queued",
         created_at=_now(),
@@ -548,7 +555,7 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
     else:
         # Fall back to filesystem lookup — measure runs aren't registered
         try:
-            run_dir = resolve_run_dir(RUN_ROOT, run_id)
+            run_dir = resolve_run_dir(user_run_root(), run_id)
         except FileNotFoundError:
             return {"ok": False, "error": f"Unknown run_id: {run_id}"}
     candidates = [
@@ -699,7 +706,7 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
 
     # Create a temporary OSW alongside the OSM
     run_id = uuid.uuid4().hex[:12]
-    osw_dir = RUN_ROOT / f"sim_{run_id}"
+    osw_dir = user_run_root() / f"sim_{run_id}"
     osw_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy OSM into the run dir so OSW can reference it by relative path

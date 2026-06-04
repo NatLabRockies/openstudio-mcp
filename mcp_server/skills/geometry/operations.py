@@ -13,12 +13,11 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import RUN_ROOT, is_path_allowed
+from mcp_server.config import is_path_allowed, user_run_root
 from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import (
     build_list_response,
     fetch_object,
-    list_all_as_dicts,
     list_paginated,
     optional_name,
 )
@@ -541,7 +540,7 @@ def import_floorspacejs(
                     matched += 1
 
         # Save model and load into model_manager
-        run_dir = RUN_ROOT / "examples" / "floorspacejs"
+        run_dir = user_run_root() / "examples" / "floorspacejs"
         run_dir.mkdir(parents=True, exist_ok=True)
         osm_path = run_dir / "imported.osm"
         model.save(str(osm_path), True)

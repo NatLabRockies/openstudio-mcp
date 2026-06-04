@@ -16,7 +16,7 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
+from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
 from mcp_server.model_manager import get_model, load_model
 from mcp_server.util import resolve_run_dir
 
@@ -220,7 +220,7 @@ def apply_measure(
         postprocess = False
         if run_id:
             try:
-                sim_dir = resolve_run_dir(RUN_ROOT, run_id)
+                sim_dir = resolve_run_dir(user_run_root(), run_id)
             except FileNotFoundError:
                 return {"ok": False, "error": f"Simulation run not found: {run_id}"}
             sql_src = sim_dir / "run" / "eplusout.sql"

@@ -43,11 +43,18 @@ class TestSeedFilePathTraversal:
 
         from mcp_server.skills.simulation.operations import run_osw
         run_root = tmp_path / "runs"
-        monkeypatch.setattr(
-            "mcp_server.skills.simulation.operations.RUN_ROOT",
-            run_root,
-        )
         run_root.mkdir()
+        # Per-user run dirs: run_osw resolves its run dir via user_run_root().
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations.user_run_root",
+            lambda: run_root,
+        )
+        # Don't start the background dispatcher thread in-process (it would race
+        # other unit tests that drive _dispatch_once manually).
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations._ensure_dispatcher",
+            lambda: None,
+        )
 
         # Stub Popen so staging completes but subprocess "fails"
         class _FakePopen:
@@ -86,11 +93,18 @@ class TestSeedFilePathTraversal:
 
         from mcp_server.skills.simulation.operations import run_osw
         run_root = tmp_path / "runs"
-        monkeypatch.setattr(
-            "mcp_server.skills.simulation.operations.RUN_ROOT",
-            run_root,
-        )
         run_root.mkdir()
+        # Per-user run dirs: run_osw resolves its run dir via user_run_root().
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations.user_run_root",
+            lambda: run_root,
+        )
+        # Don't start the background dispatcher thread in-process (it would race
+        # other unit tests that drive _dispatch_once manually).
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations._ensure_dispatcher",
+            lambda: None,
+        )
 
         # Stub Popen so staging completes but subprocess "fails"
         class _FakePopen:

@@ -29,15 +29,45 @@ INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolv
 
 ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
 
-ALLOWED_PATH_ROOTS = [
+# Shared roots are read-only for everyone; the only per-user writable area is
+# RUN_ROOT/<user_key> (see user_run_root). Writes elsewhere are denied.
+_SHARED_READ_ROOTS = [
     Path("/repo").resolve(),
-    RUN_ROOT,
     INPUT_ROOT,
-    COMSTOCK_MEASURES_DIR,
-    COMMON_MEASURES_DIR,
-    SKILLS_DIR,
+    COMSTOCK_MEASURES_DIR.resolve(),
+    COMMON_MEASURES_DIR.resolve(),
+    SKILLS_DIR.resolve(),
 ]
 
-def is_path_allowed(p: Path) -> bool:
+
+def user_run_root() -> Path:
+    """The caller's private run root (RUN_ROOT/<user_key>), created if missing.
+
+    Identity is resolved per-call, so one code path serves every user. In stdio
+    / off-request contexts user_key() is "local" — single-user behavior unchanged.
+    """
+    from mcp_server.identity import user_key
+    root = (RUN_ROOT / user_key()).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _under(p: Path, root: Path) -> bool:
+    return p == root or str(p).startswith(str(root) + os.sep)
+
+
+def is_path_allowed(p: Path, *, write: bool = False) -> bool:
+    """Whether the caller may access path `p`.
+
+    - Own run root (RUN_ROOT/<user_key>): read + write.
+    - Elsewhere under RUN_ROOT (another user's runs): always denied.
+    - Shared roots (repo, inputs, measures, skills): read-only.
+    """
     rp = p.resolve()
-    return any(str(rp).startswith(str(root) + os.sep) or rp == root for root in ALLOWED_PATH_ROOTS)
+    if _under(rp, user_run_root()):
+        return True
+    if _under(rp, RUN_ROOT):
+        return False  # another user's run area
+    if write:
+        return False  # shared roots are read-only
+    return any(_under(rp, root) for root in _SHARED_READ_ROOTS)
