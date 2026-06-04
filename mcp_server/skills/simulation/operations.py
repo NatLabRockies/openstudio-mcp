@@ -1,19 +1,22 @@
 # mcp_server/tools/workflow_tools.py
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 import psutil
 
-from mcp_server.config import LOG_TAIL_DEFAULT, OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
+from mcp_server.config import LOG_TAIL_DEFAULT, MAX_CONCURRENCY, OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
 from mcp_server.util import resolve_run_dir
 
 # Where the MCP server stores runs inside the container
@@ -40,6 +43,13 @@ class RunRecord:
 
 # In-memory registry (good enough for one-container dev right now)
 _RUNS: dict[str, RunRecord] = {}
+
+# Global FIFO scheduling + concurrency cap. run_osw enqueues (status="queued");
+# a daemon dispatcher launches up to MAX_CONCURRENCY and drains as sims finish,
+# so queued runs start without needing another tool call.
+_sim_lock = threading.RLock()
+_queue: deque[str] = deque()
+_dispatcher_started = False
 
 
 def _run_record_path(run_dir: Path) -> Path:
@@ -216,6 +226,83 @@ def validate_osw(osw_path: str, epw_path: str | None = None) -> dict[str, Any]:
     return {"ok": len(fatal_issues) == 0, "issues": issues, "osw_dir": str(base), "osw": osw}
 
 
+def _pid_alive(pid: int) -> bool:
+    """True if the process is still running (not a reaped/zombie process)."""
+    try:
+        p = psutil.Process(pid)
+        return p.is_running() and p.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+def _build_run_cmd(osw_path: Path) -> list[str]:
+    """openstudio CLI command to run a staged OSW (with bundle flags)."""
+    return [
+        "openstudio",
+        "--bundle", OSCLI_GEMFILE,
+        "--bundle_path", OSCLI_GEM_PATH,
+        "--bundle_without", "native_ext",
+        "run", "-w", str(osw_path),
+    ]
+
+
+def _launch(rec: RunRecord) -> None:
+    """Start the EnergyPlus subprocess for a queued run. Caller holds _sim_lock."""
+    log = rec.run_dir / "openstudio.log"
+    proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
+        _build_run_cmd(rec.osw_path),
+        cwd=str(rec.run_dir),
+        stdout=log.open("w", encoding="utf-8"),
+        stderr=subprocess.STDOUT,
+        env=os.environ.copy(),
+    )
+    rec.pid = proc.pid
+    rec.status = "running"
+    rec.started_at = _now()
+
+
+def _running_count() -> int:
+    """Number of currently-executing runs. Caller holds _sim_lock."""
+    return sum(1 for r in _RUNS.values() if r.status == "running")
+
+
+def _dispatch_once() -> None:
+    """Reap finished runs and launch queued ones up to MAX_CONCURRENCY (global FIFO)."""
+    with _sim_lock:
+        for rec in _RUNS.values():
+            if rec.status == "running" and rec.pid is not None and not _pid_alive(rec.pid):
+                _refresh_status(rec)
+                _persist_run_record(rec)
+        while _queue and _running_count() < MAX_CONCURRENCY:
+            run_id = _queue.popleft()
+            rec = _RUNS.get(run_id)
+            if rec is not None and rec.status == "queued":
+                _launch(rec)
+                _persist_run_record(rec)
+
+
+def _dispatch_loop() -> None:
+    while True:
+        with contextlib.suppress(Exception):
+            _dispatch_once()
+        time.sleep(0.5)
+
+
+def _ensure_dispatcher() -> None:
+    """Start the background dispatcher thread once (drains queue as slots free)."""
+    global _dispatcher_started
+    with _sim_lock:
+        if _dispatcher_started:
+            return
+        _dispatcher_started = True
+    threading.Thread(target=_dispatch_loop, daemon=True, name="sim-dispatcher").start()
+
+
+def _enqueue(run_id: str) -> None:
+    with _sim_lock:
+        _queue.append(run_id)
+
+
 def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None) -> dict[str, Any]:
     """
     Stage the OSW + referenced files into /runs/<run_id>/ and execute:
@@ -289,47 +376,34 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
     # Determine run display name
     run_name = _safe_name(name or osw.get("name") or src_osw.stem)
 
-    # Create log files
-    openstudio_log = run_dir / "openstudio.log"
-
-    # Kick off openstudio run with bundle flags for gem dependencies
-    # Note: use Popen so it can run async.
-    cmd = [
-        "openstudio",
-        "--bundle", OSCLI_GEMFILE,
-        "--bundle_path", OSCLI_GEM_PATH,
-        "--bundle_without", "native_ext",
-        "run", "-w", str(staged_osw),
-    ]
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(run_dir),
-        stdout=open(openstudio_log, "w", encoding="utf-8"),
-        stderr=open(openstudio_log, "a", encoding="utf-8"),
-        env=os.environ.copy(),
-    )
+    # Build the run command (executed later by the dispatcher when a slot frees)
+    cmd = _build_run_cmd(staged_osw)
 
     rec = RunRecord(
         run_id=run_id,
         name=run_name,
-        status="running",
+        status="queued",
         created_at=_now(),
-        started_at=_now(),
+        started_at=None,
         ended_at=None,
-        pid=proc.pid,
+        pid=None,
         run_dir=run_dir,
         osw_path=staged_osw,
         epw_path=staged_epw,
         exit_code=None,
         error=None,
     )
-    _RUNS[run_id] = rec
+    with _sim_lock:
+        _RUNS[run_id] = rec
+    _enqueue(run_id)
+    _ensure_dispatcher()
+    _dispatch_once()  # launch immediately if under the concurrency cap
 
-    # Return immediately
     return {
         "ok": True,
         "run_id": run_id,
         "name": run_name,
+        "status": rec.status,
         "run_dir": str(run_dir),
         "osw_path": str(staged_osw),
         "epw_path": str(staged_epw) if staged_epw else None,
@@ -365,10 +439,7 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
     if out_osw.exists():
         try:
             out = _load_json(out_osw)
-            if out.get("completed_status") == "Success":
-                status = "success"
-            else:
-                status = "failed"
+            status = "success" if out.get("completed_status") == "Success" else "failed"
         except Exception as e:
             err = f"Failed to parse out.osw: {e}"
 
@@ -393,9 +464,10 @@ def get_run_status(run_id: str) -> dict[str, Any]:
                     "simulation run directories, or run_simulation() to create one.",
         }
 
-    rec = _refresh_status(rec)
-    _RUNS[run_id] = rec
-    _persist_run_record(rec)
+    with _sim_lock:
+        rec = _refresh_status(rec)
+        _RUNS[run_id] = rec
+        _persist_run_record(rec)
 
     run_dict = {
         "run_id": rec.run_id,
@@ -517,26 +589,31 @@ def cancel_run(run_id: str) -> dict[str, Any]:
     if not rec:
         return {"ok": False, "error": f"Unknown run_id: {run_id}"}
 
-    if rec.pid is None:
-        rec.status = "cancelled"
-        rec.ended_at = rec.ended_at or _now()
-        _RUNS[run_id] = rec
+    pid = rec.pid
+    if pid is None:
+        # Queued (or never started) — mark cancelled; dispatcher skips non-queued.
+        with _sim_lock:
+            rec.status = "cancelled"
+            rec.ended_at = rec.ended_at or _now()
+            _RUNS[run_id] = rec
         return {"ok": True, "run_id": run_id, "cancelled": True}
 
     try:
-        p = psutil.Process(rec.pid)
+        p = psutil.Process(pid)
         p.terminate()
         try:
             p.wait(timeout=5)
         except psutil.TimeoutExpired:
             p.kill()
-        rec.status = "cancelled"
-        rec.ended_at = rec.ended_at or _now()
-        _RUNS[run_id] = rec
+        with _sim_lock:
+            rec.status = "cancelled"
+            rec.ended_at = rec.ended_at or _now()
+            _RUNS[run_id] = rec
         return {"ok": True, "run_id": run_id, "cancelled": True}
     except psutil.NoSuchProcess:
-        rec = _refresh_status(rec)
-        _RUNS[run_id] = rec
+        with _sim_lock:
+            rec = _refresh_status(rec)
+            _RUNS[run_id] = rec
         return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     except Exception as e:
         return {"ok": False, "run_id": run_id, "error": str(e)}
