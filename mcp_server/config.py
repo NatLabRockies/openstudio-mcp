@@ -15,6 +15,13 @@ def _safe_int(env_val: str, default: int) -> int:
 _raw_concurrency = os.environ.get("OPENSTUDIO_MCP_MAX_CONCURRENCY", os.environ.get("OSMCP_MAX_CONCURRENCY", "1"))
 MAX_CONCURRENCY = _safe_int(_raw_concurrency, 1)
 
+# Optional per-user fairness cap on simultaneous sims (0 = no per-user limit).
+_raw_per_user = os.environ.get(
+    "OPENSTUDIO_MCP_MAX_CONCURRENCY_PER_USER",
+    os.environ.get("OSMCP_MAX_CONCURRENCY_PER_USER", "0"),
+)
+MAX_CONCURRENCY_PER_USER = _safe_int(_raw_per_user, 0)
+
 _raw_tail = os.environ.get("OPENSTUDIO_MCP_DEFAULT_LOG_TAIL", os.environ.get("OSMCP_LOG_TAIL_DEFAULT", "200"))
 LOG_TAIL_DEFAULT = _safe_int(_raw_tail, 200)
 

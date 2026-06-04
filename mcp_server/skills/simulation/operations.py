@@ -16,7 +16,14 @@ from typing import Any, Literal
 
 import psutil
 
-from mcp_server.config import LOG_TAIL_DEFAULT, MAX_CONCURRENCY, OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
+from mcp_server.config import (
+    LOG_TAIL_DEFAULT,
+    MAX_CONCURRENCY,
+    MAX_CONCURRENCY_PER_USER,
+    OSCLI_GEM_PATH,
+    OSCLI_GEMFILE,
+    user_run_root,
+)
 from mcp_server.identity import user_key
 from mcp_server.util import resolve_run_dir
 
@@ -267,24 +274,44 @@ def _launch(rec: RunRecord) -> None:
     rec.started_at = _now()
 
 
-def _running_count() -> int:
-    """Number of currently-executing runs. Caller holds _sim_lock."""
-    return sum(1 for r in _RUNS.values() if r.status == "running")
-
-
 def _dispatch_once() -> None:
-    """Reap finished runs and launch queued ones up to MAX_CONCURRENCY (global FIFO)."""
+    """Reap finished runs and launch queued ones, respecting the global cap and
+    (when set) the per-user cap. FIFO, but a user already at their per-user limit
+    is skipped so they can't monopolize the queue."""
     with _sim_lock:
+        # Reap finished processes to free slots.
         for rec in _RUNS.values():
             if rec.status == "running" and rec.pid is not None and not _pid_alive(rec.pid):
                 _refresh_status(rec)
                 _persist_run_record(rec)
-        while _queue and _running_count() < MAX_CONCURRENCY:
-            run_id = _queue.popleft()
+
+        # Tally what's running, globally and per user.
+        per_user: dict[str, int] = {}
+        for rec in _RUNS.values():
+            if rec.status == "running":
+                per_user[rec.user_key] = per_user.get(rec.user_key, 0) + 1
+        running_total = sum(per_user.values())
+
+        # Walk the queue in order: launch runnable runs, drop stale/cancelled ones,
+        # leave per-user-capped runs queued for a later pass.
+        drop: list[str] = []
+        for run_id in list(_queue):
+            if running_total >= MAX_CONCURRENCY:
+                break
             rec = _RUNS.get(run_id)
-            if rec is not None and rec.status == "queued":
-                _launch(rec)
-                _persist_run_record(rec)
+            if rec is None or rec.status != "queued":
+                drop.append(run_id)  # cancelled or vanished
+                continue
+            if MAX_CONCURRENCY_PER_USER > 0 and per_user.get(rec.user_key, 0) >= MAX_CONCURRENCY_PER_USER:
+                continue  # this user is at their cap; try the next run
+            _launch(rec)
+            _persist_run_record(rec)
+            per_user[rec.user_key] = per_user.get(rec.user_key, 0) + 1
+            running_total += 1
+            drop.append(run_id)
+        for run_id in drop:
+            with contextlib.suppress(ValueError):
+                _queue.remove(run_id)
 
 
 def _dispatch_loop() -> None:

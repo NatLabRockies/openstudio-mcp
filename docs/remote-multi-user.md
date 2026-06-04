@@ -142,6 +142,7 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_AUTH` | `token` on HTTP, else `none` | `none` (open) or `token` |
 | `MCP_TOKENS` | `{}` | JSON map `{"<bearer-token>":"<username>"}` |
 | `OSMCP_MAX_CONCURRENCY` | `1` | max simultaneous EnergyPlus simulations |
+| `OSMCP_MAX_CONCURRENCY_PER_USER` | `0` | per-user sim cap for fairness (`0` = no limit) |
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
 | `OSMCP_SESSION_TTL` | `1800` | idle seconds before a session model is dropped (`0` disables) |
 | `OSMCP_RUN_ROOT` | `/runs` | base directory for per-user run dirs |

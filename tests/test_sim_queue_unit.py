@@ -113,3 +113,37 @@ def test_cancelled_queued_run_is_not_launched(monkeypatch):
 
     assert launched == ["r0"], f"cancelled run must be skipped, launched={launched}"
     assert ops._RUNS["r1"].status == "cancelled"
+
+
+def test_per_user_cap_prevents_monopoly(monkeypatch):
+    # Validates: a per-user cap stops one user taking all global slots — another
+    # user's queued run launches instead (FIFO with per-user fairness).
+    monkeypatch.setattr(ops, "MAX_CONCURRENCY", 4)
+    monkeypatch.setattr(ops, "MAX_CONCURRENCY_PER_USER", 1)
+    running: set[int] = set()
+
+    def fake_launch(rec):
+        rec.pid = hash(rec.run_id) & 0xFFFF
+        rec.status = "running"
+        running.add(rec.pid)
+
+    monkeypatch.setattr(ops, "_launch", fake_launch)
+    monkeypatch.setattr(ops, "_pid_alive", lambda pid: pid in running)
+
+    # alice submits 3, bob submits 2 (alice first in FIFO order).
+    for rid, uk in [("a0", "alice"), ("a1", "alice"), ("a2", "alice"), ("b0", "bob"), ("b1", "bob")]:
+        rec = _mk_rec(rid)
+        rec.user_key = uk
+        ops._RUNS[rid] = rec
+        ops._enqueue(rid)
+    ops._dispatch_once()
+
+    by_user: dict[str, int] = {}
+    for r in ops._RUNS.values():
+        if r.status == "running":
+            by_user[r.user_key] = by_user.get(r.user_key, 0) + 1
+    assert by_user.get("alice", 0) == 1, f"alice must be capped at 1: {by_user}"
+    assert by_user.get("bob", 0) == 1, f"bob must be capped at 1: {by_user}"
+    assert sum(by_user.values()) == 2, f"per-user caps leave global slots idle for fairness: {by_user}"
+    queued = sorted(r.run_id for r in ops._RUNS.values() if r.status == "queued")
+    assert queued == ["a1", "a2", "b1"], f"capped runs must stay queued: {queued}"
