@@ -150,7 +150,7 @@ def apply_measure(
 
         # Create temp directory for the run
         measure_run_id = uuid.uuid4().hex[:12]
-        runs_dir = Path(os.environ.get("MCP_RUNS_DIR", "/runs"))
+        runs_dir = Path(os.environ["MCP_RUNS_DIR"]) if "MCP_RUNS_DIR" in os.environ else user_run_root()
         run_dir = runs_dir / f"measure_{measure_run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
 

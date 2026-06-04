@@ -871,7 +871,7 @@ def _test_reporting_measure_with_run(
 
     # Build temp run dir
     test_run_id = _uuid.uuid4().hex[:12]
-    runs_dir = Path(os.environ.get("MCP_RUNS_DIR", "/runs"))
+    runs_dir = Path(os.environ["MCP_RUNS_DIR"]) if "MCP_RUNS_DIR" in os.environ else user_run_root()
     run_dir = runs_dir / f"measure_test_{test_run_id}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
