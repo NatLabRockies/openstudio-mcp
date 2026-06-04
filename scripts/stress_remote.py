@@ -144,7 +144,7 @@ async def phase1_worker(url, i, calls, token, m: M):
         print(f"  worker {i} error: {type(e).__name__}: {e}", file=sys.stderr)
 
 
-async def phase2_queue(url, users, token):
+async def phase2_queue(url, users, token, drain=False, timeout=1200):
     from contextlib import AsyncExitStack
     sessions = []
     async with AsyncExitStack() as stack:
@@ -166,21 +166,40 @@ async def phase2_queue(url, users, token):
             d = _unwrap(await sessions[i].call_tool("get_run_status", {"run_id": rid}))
             return d.get("run", {}).get("status") if d.get("ok") else "not_found"
 
-        max_running, samples = 0, 12
-        for _ in range(samples):
-            sts = await asyncio.gather(*[status(i, rid) for i, rid in live])
-            max_running = max(max_running, sum(1 for x in sts if x == "running"))
-            await asyncio.sleep(0.3)
-
+        # Cross-user ownership: session B must not see session A's run.
         cross_blocked = True
         if len(live) >= 2:
-            other = await status(live[1][0], live[0][1])  # session B asks for A's run
-            cross_blocked = (other == "not_found")
+            cross_blocked = (await status(live[1][0], live[0][1]) == "not_found")
 
+        terminal = {"success", "failed", "cancelled", "error"}
+        peak = 0
+        counts: dict[str, int] = {}
+        if drain:
+            t0 = time.perf_counter()
+            while time.perf_counter() - t0 < timeout:
+                sts = await asyncio.gather(*[status(i, rid) for i, rid in live])
+                counts = {}
+                for x in sts:
+                    counts[x] = counts.get(x, 0) + 1
+                peak = max(peak, counts.get("running", 0))
+                print(f"  t={time.perf_counter() - t0:4.0f}s  "
+                      + "  ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+                if all(x in terminal for x in sts):
+                    break
+                await asyncio.sleep(3)
+            return {"launched": len(live), "max_running": peak,
+                    "cross_blocked": cross_blocked, "final": counts, "drained": True}
+
+        # Sample-and-cancel mode (fast: proves cap + ownership without waiting).
+        for _ in range(12):
+            sts = await asyncio.gather(*[status(i, rid) for i, rid in live])
+            peak = max(peak, sum(1 for x in sts if x == "running"))
+            await asyncio.sleep(0.3)
         await asyncio.gather(*[
             sessions[i].call_tool("cancel_run", {"run_id": rid}) for i, rid in live
         ])
-        return {"launched": len(live), "max_running": max_running, "cross_blocked": cross_blocked}
+        return {"launched": len(live), "max_running": peak,
+                "cross_blocked": cross_blocked, "drained": False}
 
 
 def rss_mb(proc) -> float:
@@ -216,15 +235,23 @@ async def amain(args):
 
         # Phase 2
         if args.sims:
-            print("\nPhase 2 — queue saturation (real sims)")
-            q = await phase2_queue(srv.url, args.users, token)
+            mode = "run to completion" if args.drain else "launch + sample + cancel"
+            print(f"\nPhase 2 — queue saturation (real sims, {mode})")
+            q = await phase2_queue(srv.url, args.users, token, drain=args.drain)
             cap_ok = q["max_running"] <= args.cap
             print(f"  sims launched={q['launched']}  cap={args.cap}")
             print(f"  max concurrent running observed={q['max_running']}  "
                   f"(<= cap: {'PASS' if cap_ok else 'FAIL'})")
             print(f"  cross-user run access blocked: {'PASS' if q['cross_blocked'] else 'FAIL'}")
-            print("  (sims cancelled — not run to completion)")
-            result_ok = result_ok and cap_ok and q["cross_blocked"]
+            if q.get("drained"):
+                f = q["final"]
+                ok_n = f.get("success", 0)
+                print(f"  drained: success={ok_n} failed={f.get('failed', 0)} "
+                      f"cancelled={f.get('cancelled', 0)}")
+                result_ok = result_ok and cap_ok and q["cross_blocked"] and ok_n > 0
+            else:
+                print("  (sims cancelled — not run to completion; use --drain to run them)")
+                result_ok = result_ok and cap_ok and q["cross_blocked"]
 
         # Phase 3
         print("\nPhase 3 — memory")
@@ -255,6 +282,7 @@ def main():
     ap.add_argument("--max-sessions", type=int, dest="max_sessions")
     ap.add_argument("--sims", dest="sims", action="store_true", default=None)
     ap.add_argument("--no-sims", dest="sims", action="store_false")
+    ap.add_argument("--drain", action="store_true", help="run sims to completion (not cancel)")
     args = ap.parse_args()
     defs = PROFILES[args.profile]
     for k, v in defs.items():

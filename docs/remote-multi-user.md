@@ -181,3 +181,11 @@ burst), `heavy` (64 sessions + sims). Override any knob with
 `--users N --calls K --cap C --sims/--no-sims --max-sessions M` — a tiny
 `--max-sessions` forces LRU/TTL eviction so you can watch that path too.
 
+By default Phase 2 launches the sims, checks the cap + ownership, and cancels
+them (fast). Add **`--drain`** to instead run them to completion with a live
+`queued/running/success` readout — e.g. watch the cap throttle real work:
+
+```bash
+python scripts/stress_remote.py --users 6 --cap 2 --drain
+```
+
