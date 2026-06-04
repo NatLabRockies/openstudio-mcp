@@ -15,10 +15,12 @@ from mcp_server.stdout_suppression import (
 def _build_auth():
     """Auth verifier from MCP_AUTH env, or None (open server).
 
-    MCP_AUTH=none (default) — no app auth; identity falls back to session id.
-    MCP_AUTH=token          — StaticTokenVerifier; MCP_TOKENS={"<token>":"<user>"}.
+    Default: HTTP transport requires a token (secure-by-default); stdio stays open.
+    MCP_AUTH=none   — no app auth; identity falls back to session id (use on a VPN).
+    MCP_AUTH=token  — StaticTokenVerifier; MCP_TOKENS={"<token>":"<user>"}.
     """
-    mode = os.environ.get("MCP_AUTH", "none").lower()
+    http = os.environ.get("MCP_TRANSPORT", "stdio").lower() in ("http", "streamable-http")
+    mode = os.environ.get("MCP_AUTH", "token" if http else "none").lower()
     if mode in ("", "none"):
         return None
     if mode == "token":

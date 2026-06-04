@@ -111,14 +111,15 @@ unit under test. CI: light integration → shard 4, sims → shard 5, `*_unit` �
 
 ## 6. Increment plan & status
 
-1. **Transport + identity + session-keyed model + HTTP harness** — ✅ DONE,
-   verified (5 tests pass; stdio regression intact; lint clean).
-2. (folded into 1)
-3. **Per-user run dirs + path scoping + run ownership** — ⏳ in progress.
-4. **Sim queue (FIFO, MAX_CONCURRENCY)** — ⏳ in progress.
-5. **Token auth + flip HTTP default to `token`** — pending.
-6. **Session idle-TTL eviction** — pending (LRU cap already shipped).
-7. **CI shards + Dockerfile `EXPOSE` + docs** — pending.
+1. **Transport + identity + session-keyed model + HTTP harness** — ✅ DONE, verified.
+2. **Sim queue (FIFO, MAX_CONCURRENCY)** — ✅ DONE, verified (unit + integration + e2e).
+3. **Per-user run dirs + path scoping + run ownership** — ✅ DONE, verified across all changed skills.
+4. **Token auth + HTTP default `token` (secure-by-default)** — ✅ DONE, verified (accept/reject + principal→run-dir).
+5. **CI shards (2 + 5) + Dockerfile `EXPOSE 8000`** — ✅ DONE.
+6. **Session idle-TTL eviction** — follow-up (LRU cap shipped as the RAM backstop).
+
+Follow-ups (noted in commits): scope the two `MCP_RUNS_DIR` measure-exec temp
+dirs (`measures`/`measure_authoring`) per-user; idle-TTL session eviction.
 
 ## 7. Risks & honest caveats
 

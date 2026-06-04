@@ -62,4 +62,8 @@ ENV OSMCP_CODE_MODE=0
 ENV PYTHONUNBUFFERED=1
 ENV OPENSTUDIO_MCP_MODE=dev
 
+# Streamable-HTTP (remote multi-user) listens here; opt in with -e MCP_TRANSPORT=http
+# (default transport is stdio). See docs/plans/multi-user-remote-mcp.md
+EXPOSE 8000
+
 CMD ["openstudio-mcp"]

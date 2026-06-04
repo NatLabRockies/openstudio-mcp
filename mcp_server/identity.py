@@ -36,15 +36,26 @@ def session_key() -> str:
     return sid or LOCAL
 
 
+def _access_token():
+    """The verified access token for this request, or None (no auth / off-request)."""
+    try:
+        from fastmcp.server.dependencies import get_access_token
+
+        return get_access_token()
+    except Exception:
+        return None
+
+
 def user_key() -> str:
     """Filesystem-safe key identifying the user (auth principal, else session)."""
+    # With auth, the verified token's client_id is the principal (StaticToken/JWT).
+    tok = _access_token()
+    cid = getattr(tok, "client_id", None) if tok is not None else None
+    if cid:
+        return _sanitize(cid)
     ctx = _ctx()
     if ctx is None:
         return LOCAL
-    # StaticTokenVerifier / JWTVerifier populate client_id with the principal.
-    cid = getattr(ctx, "client_id", None)
-    if cid:
-        return _sanitize(cid)
     sid = getattr(ctx, "session_id", None)
     return _sanitize(sid) if sid else LOCAL
 
