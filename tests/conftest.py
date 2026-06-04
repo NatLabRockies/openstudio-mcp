@@ -8,10 +8,15 @@ Public API (no leading underscore):
   EPW_PATH / POLL_SECONDS / SIM_TIMEOUT — simulation constants
 """
 import asyncio
+import contextlib
 import json
 import os
 import shlex
+import socket
+import subprocess
 import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from mcp import StdioServerParameters
 
@@ -122,3 +127,83 @@ async def setup_example(session, model_name):
     assert cr.get("ok") is True
     lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
     assert lr.get("ok") is True
+
+
+# ---------------------------------------------------------------------------
+# HTTP (streamable) transport harness — multi-user isolation tests
+# ---------------------------------------------------------------------------
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@contextlib.contextmanager
+def http_server(env_overrides: dict | None = None, port: int | None = None):
+    """Spawn the MCP server in streamable-HTTP mode; yield (url, proc).
+
+    Runs inside the same host as pytest, so the client connects to 127.0.0.1 —
+    no published Docker port needed.
+    """
+    port = port or _free_port()
+    cmd = os.environ.get("MCP_SERVER_CMD", "openstudio-mcp")
+    args = shlex.split(os.environ.get("MCP_SERVER_ARGS", "") or "")
+    env = os.environ.copy()
+    env.update({
+        "MCP_TRANSPORT": "http", "MCP_HOST": "127.0.0.1",
+        "MCP_PORT": str(port), "MCP_PATH": "/mcp",
+    })
+    if env_overrides:
+        env.update(env_overrides)
+
+    run_root = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT",
+                                   os.environ.get("OSMCP_RUN_ROOT", "/runs")))
+    run_root.mkdir(parents=True, exist_ok=True)
+    log_path = run_root / f"_httpsrv_{port}.log"
+    logf = log_path.open("w")
+    proc = subprocess.Popen(  # noqa: S603 - cmd is the trusted MCP_SERVER_CMD
+        [cmd, *args], env=env, stdout=logf, stderr=subprocess.STDOUT,
+    )
+
+    def _tail() -> str:
+        try:
+            return "\n".join(log_path.read_text(errors="replace").splitlines()[-30:])
+        except Exception:
+            return "(no server log)"
+
+    try:
+        deadline = time.time() + 60
+        while True:
+            if proc.poll() is not None:
+                raise RuntimeError(f"HTTP server exited (code {proc.returncode}).\n{_tail()}")
+            with socket.socket() as s:
+                s.settimeout(0.5)
+                if s.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            if time.time() > deadline:
+                raise TimeoutError(f"HTTP server not ready on :{port}.\n{_tail()}")
+            time.sleep(0.3)
+        yield f"http://127.0.0.1:{port}/mcp", proc
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            proc.kill()
+        logf.close()
+
+
+@asynccontextmanager
+async def http_session(url: str, token: str | None = None):
+    """Open an initialized MCP ClientSession over streamable HTTP."""
+    # streamablehttp_client (deprecated alias) takes headers/auth directly;
+    # streamable_http_client wants a pre-built httpx client instead.
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    headers = {"Authorization": f"Bearer {token}"} if token else None
+    async with streamablehttp_client(url, headers=headers) as (read, write, _get_sid):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            yield session

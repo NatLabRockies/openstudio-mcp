@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastmcp import FastMCP
 
 from mcp_server.config import ENABLE_CODE_MODE
@@ -8,6 +10,27 @@ from mcp_server.stdout_suppression import (
     redirect_c_stdout_to_stderr,
     silence_openstudio_stdout_logger,
 )
+
+
+def _build_auth():
+    """Auth verifier from MCP_AUTH env, or None (open server).
+
+    MCP_AUTH=none (default) — no app auth; identity falls back to session id.
+    MCP_AUTH=token          — StaticTokenVerifier; MCP_TOKENS={"<token>":"<user>"}.
+    """
+    mode = os.environ.get("MCP_AUTH", "none").lower()
+    if mode in ("", "none"):
+        return None
+    if mode == "token":
+        import json
+
+        from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+
+        mapping = json.loads(os.environ.get("MCP_TOKENS", "") or "{}")
+        tokens = {t: {"client_id": u, "scopes": []} for t, u in mapping.items()}
+        return StaticTokenVerifier(tokens=tokens)
+    raise ValueError(f"Unknown MCP_AUTH mode: {mode!r}")
+
 
 mcp = FastMCP(
     "openstudio-mcp",
@@ -46,6 +69,7 @@ mcp = FastMCP(
         "When polling get_run_status, wait at least 1-2 minutes between calls. "
         "For multi-step workflows, call list_skills() first."
     ),
+    auth=_build_auth(),
 )
 
 register_all_skills(mcp)
@@ -58,7 +82,16 @@ if ENABLE_CODE_MODE:
 def main():
     silence_openstudio_stdout_logger()
     redirect_c_stdout_to_stderr()
-    mcp.run()
+    transport = os.environ.get("MCP_TRANSPORT", "stdio").lower()
+    if transport in ("http", "streamable-http"):
+        mcp.run(
+            transport="http",
+            host=os.environ.get("MCP_HOST", "0.0.0.0"),  # noqa: S104 - container binds all interfaces; lock down via VPN/proxy
+            port=int(os.environ.get("MCP_PORT", "8000")),
+            path=os.environ.get("MCP_PATH", "/mcp"),
+        )
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":
