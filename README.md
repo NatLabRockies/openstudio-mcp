@@ -118,6 +118,17 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 
 [VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
 
+### Remote & Multi-User (HTTP)
+
+The Quick Start above runs the server locally over stdio (one process per user).
+To host it on one machine and let teammates connect from their own laptops —
+each with an isolated session, run directory, and optional bearer-token auth —
+run it over streamable HTTP instead (`-e MCP_TRANSPORT=http`). Works with Claude
+Code, Cursor, and VS Code.
+
+See **[docs/remote-multi-user.md](docs/remote-multi-user.md)** for server setup,
+client config, auth, and the isolation model.
+
 ### Client Compatibility
 
 | Client | Status | Notes |

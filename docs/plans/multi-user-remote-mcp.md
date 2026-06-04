@@ -116,10 +116,11 @@ unit under test. CI: light integration → shard 4, sims → shard 5, `*_unit` �
 3. **Per-user run dirs + path scoping + run ownership** — ✅ DONE, verified across all changed skills.
 4. **Token auth + HTTP default `token` (secure-by-default)** — ✅ DONE, verified (accept/reject + principal→run-dir).
 5. **CI shards (2 + 5) + Dockerfile `EXPOSE 8000`** — ✅ DONE.
-6. **Session idle-TTL eviction** — follow-up (LRU cap shipped as the RAM backstop).
+6. **Session idle-TTL eviction** (`OSMCP_SESSION_TTL`, default 30 min) + LRU cap — ✅ DONE.
+7. **Setup docs** (`docs/remote-multi-user.md` + README pointer) — ✅ DONE.
 
-Follow-ups (noted in commits): scope the two `MCP_RUNS_DIR` measure-exec temp
-dirs (`measures`/`measure_authoring`) per-user; idle-TTL session eviction.
+Follow-up (noted in commits): scope the two `MCP_RUNS_DIR` measure-exec temp
+dirs (`measures`/`measure_authoring`) per-user.
 
 ## 7. Risks & honest caveats
 
