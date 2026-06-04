@@ -4,6 +4,10 @@ Each MCP session (one connection) gets its own loaded OpenStudio model,
 keyed by identity.session_key(). stdio / off-request callers collapse to a
 single "local" session, so single-user behavior is unchanged.
 
+Idle sessions are evicted after OSMCP_SESSION_TTL seconds (swept on the next
+access); a hard LRU cap (OSMCP_MAX_SESSIONS) bounds resident heavy models
+regardless of activity.
+
 All model-querying skills call get_model() — they never see the session key,
 so the 100+ call sites are untouched by the multi-user refactor.
 """
@@ -12,6 +16,7 @@ from __future__ import annotations
 import atexit
 import os
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,26 +26,38 @@ from mcp_server.identity import session_key
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 # Hard RAM backstop: heavy OSM models must not accumulate unbounded across
-# sessions. Idle-TTL eviction is a follow-up; this LRU cap is the safety net.
+# sessions. Idle sessions are swept after the TTL; the LRU cap is the floor.
 MAX_SESSIONS = max(1, int(os.environ.get("OSMCP_MAX_SESSIONS", "16")))
+# Idle timeout (seconds) before a session's model is dropped. 0 disables TTL.
+SESSION_TTL_SECONDS = float(os.environ.get("OSMCP_SESSION_TTL", "1800"))
 
 
 @dataclass
 class _SessionState:
     model: openstudio.model.Model | None = None
     path: Path | None = None
-    last_access: int = 0
+    last_access: float = 0.0  # time.monotonic() of last touch
 
 
 _lock = threading.RLock()
 _sessions: dict[str, _SessionState] = {}
-_tick = 0
+
+
+def _now() -> float:
+    return time.monotonic()
 
 
 def _touch(state: _SessionState) -> None:
-    global _tick
-    _tick += 1
-    state.last_access = _tick
+    state.last_access = _now()
+
+
+def _sweep_idle() -> None:
+    """Drop sessions idle longer than the TTL. Caller holds _lock."""
+    if SESSION_TTL_SECONDS <= 0:
+        return
+    cutoff = _now() - SESSION_TTL_SECONDS
+    for key in [k for k, st in _sessions.items() if st.last_access < cutoff]:
+        _sessions.pop(key, None)  # drop Model ref -> GC
 
 
 def _evict_if_needed(keep: str) -> None:
@@ -69,6 +86,7 @@ def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.mod
         model = loaded.get()
     key = session_key()
     with _lock:
+        _sweep_idle()
         _evict_if_needed(keep=key)
         st = _sessions.setdefault(key, _SessionState())
         st.model = model
@@ -81,6 +99,7 @@ def save_model(save_path: Path | None = None) -> Path:
     """Save current session's model. Returns the path saved to."""
     key = session_key()
     with _lock:
+        _sweep_idle()
         st = _sessions.get(key)
         if st is None or st.model is None:
             raise RuntimeError("No model loaded.")
@@ -98,6 +117,7 @@ def get_model() -> openstudio.model.Model:
     """Get the currently loaded model for this session, or raise."""
     key = session_key()
     with _lock:
+        _sweep_idle()
         st = _sessions.get(key)
         if st is None or st.model is None:
             raise RuntimeError("No model loaded. Call load_osm_model first.")
@@ -108,15 +128,23 @@ def get_model() -> openstudio.model.Model:
 def get_model_path() -> Path | None:
     """Return the file path of the current session's model, or None."""
     with _lock:
+        _sweep_idle()
         st = _sessions.get(session_key())
-        return st.path if st else None
+        if st is None:
+            return None
+        _touch(st)
+        return st.path
 
 
 def get_model_if_loaded() -> openstudio.model.Model | None:
     """Return the current session's model without raising, or None."""
     with _lock:
+        _sweep_idle()
         st = _sessions.get(session_key())
-        return st.model if st else None
+        if st is None:
+            return None
+        _touch(st)
+        return st.model
 
 
 def clear_model() -> None:
