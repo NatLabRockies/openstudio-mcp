@@ -52,8 +52,9 @@ set `MCP_TRANSPORT=http` and forget `MCP_AUTH`, it defaults to `token` and — w
 no `MCP_TOKENS` — rejects everyone (fail-closed). Use `MCP_AUTH=none` to opt out.
 
 > **Token storage is plaintext** (`StaticTokenVerifier`). Fine for a trusted team
-> behind a VPN. For public/SSO deployments, swap in a JWT verifier via the
-> `auth=` seam in `mcp_server/server.py::_build_auth()`.
+> behind a VPN. For SSO/public deployments use `MCP_AUTH=jwt` and point it at your
+> IdP's verifying key (`MCP_JWT_PUBLIC_KEY`, a PEM) or JWKS endpoint
+> (`MCP_JWT_JWKS_URI`), optionally constraining `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE`.
 
 ---
 
@@ -139,8 +140,10 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_HOST` | `0.0.0.0` | bind address (HTTP mode) |
 | `MCP_PORT` | `8000` | listen port (HTTP mode) |
 | `MCP_PATH` | `/mcp` | URL path of the MCP endpoint |
-| `MCP_AUTH` | `token` on HTTP, else `none` | `none` (open) or `token` |
-| `MCP_TOKENS` | `{}` | JSON map `{"<bearer-token>":"<username>"}` |
+| `MCP_AUTH` | `token` on HTTP, else `none` | `none` (open), `token`, or `jwt` |
+| `MCP_TOKENS` | `{}` | JSON map `{"<bearer-token>":"<username>"}` (token mode) |
+| `MCP_JWT_PUBLIC_KEY` / `MCP_JWT_JWKS_URI` | — | verifying key (PEM) or JWKS endpoint (jwt mode) |
+| `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE` | — | optional JWT issuer/audience checks |
 | `OSMCP_MAX_CONCURRENCY` | `1` | max simultaneous EnergyPlus simulations |
 | `OSMCP_MAX_CONCURRENCY_PER_USER` | `0` | per-user sim cap for fairness (`0` = no limit) |
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
@@ -153,7 +156,8 @@ Don't expose port 8000 to the public internet directly.
 
 - **Single box only** — in-memory model state isn't shared across machines.
   Horizontal scale would need a per-user-container topology behind a router.
-- **Plaintext token auth** — swap in `JWTVerifier` (OAuth/SSO) for public use.
+- **Static token auth is plaintext** — use `MCP_AUTH=jwt` (IdP-signed JWTs) for
+  SSO/public deployments.
 - Two internal measure-execution temp dirs still write to shared `/runs`
   (no cross-user read exposure) — to be scoped per-user in a follow-up.
 

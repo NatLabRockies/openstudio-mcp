@@ -18,6 +18,8 @@ def _build_auth():
     Default: HTTP transport requires a token (secure-by-default); stdio stays open.
     MCP_AUTH=none   — no app auth; identity falls back to session id (use on a VPN).
     MCP_AUTH=token  — StaticTokenVerifier; MCP_TOKENS={"<token>":"<user>"}.
+    MCP_AUTH=jwt    — JWTVerifier; MCP_JWT_PUBLIC_KEY or MCP_JWT_JWKS_URI
+                      (+ optional MCP_JWT_ISSUER / MCP_JWT_AUDIENCE) for IdP/SSO.
     """
     http = os.environ.get("MCP_TRANSPORT", "stdio").lower() in ("http", "streamable-http")
     mode = os.environ.get("MCP_AUTH", "token" if http else "none").lower()
@@ -31,6 +33,15 @@ def _build_auth():
         mapping = json.loads(os.environ.get("MCP_TOKENS", "") or "{}")
         tokens = {t: {"client_id": u, "scopes": []} for t, u in mapping.items()}
         return StaticTokenVerifier(tokens=tokens)
+    if mode == "jwt":
+        from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+        return JWTVerifier(
+            public_key=os.environ.get("MCP_JWT_PUBLIC_KEY") or None,
+            jwks_uri=os.environ.get("MCP_JWT_JWKS_URI") or None,
+            issuer=os.environ.get("MCP_JWT_ISSUER") or None,
+            audience=os.environ.get("MCP_JWT_AUDIENCE") or None,
+        )
     raise ValueError(f"Unknown MCP_AUTH mode: {mode!r}")
 
 
