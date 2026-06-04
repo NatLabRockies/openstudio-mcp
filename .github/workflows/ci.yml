@@ -209,7 +209,7 @@ jobs:
             5)
               # HVAC supply sim smoke tests + hvac_validation + bar_building + concurrent regression
               # + sim queue (concurrency cap) & per-user run-dir isolation
-              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_sim_queue.py tests/test_per_user_run_dirs.py"
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_sim_queue.py tests/test_per_user_run_dirs.py tests/test_audit_log.py"
               EXTRA_ENV=""
               ;;
           esac

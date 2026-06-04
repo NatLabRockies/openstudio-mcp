@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 import psutil
 
+from mcp_server.audit import audit
 from mcp_server.config import (
     LOG_TAIL_DEFAULT,
     MAX_CONCURRENCY,
@@ -59,6 +60,7 @@ _RUNS: dict[str, RunRecord] = {}
 _sim_lock = threading.RLock()
 _queue: deque[str] = deque()
 _dispatcher_started = False
+_TERMINAL = frozenset({"success", "failed", "cancelled", "error"})
 
 
 def _run_record_path(run_dir: Path) -> Path:
@@ -272,6 +274,7 @@ def _launch(rec: RunRecord) -> None:
     rec.pid = proc.pid
     rec.status = "running"
     rec.started_at = _now()
+    audit("sim_launched", run_id=rec.run_id, user=rec.user_key, name=rec.name, pid=rec.pid)
 
 
 def _dispatch_once() -> None:
@@ -429,6 +432,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
     )
     with _sim_lock:
         _RUNS[run_id] = rec
+    audit("sim_queued", run_id=run_id, user=rec.user_key, name=run_name)
     _enqueue(run_id)
     _ensure_dispatcher()
     _dispatch_once()  # launch immediately if under the concurrency cap
@@ -447,6 +451,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
 
 def _refresh_status(rec: RunRecord) -> RunRecord:
     """Check if the OS process has ended and update run status accordingly."""
+    _prev = rec.status
     if rec.pid is None:
         return rec
 
@@ -485,6 +490,9 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
     rec.ended_at = rec.ended_at or _now()
     rec.exit_code = exit_code if exit_code is not None else rec.exit_code
     rec.error = err or rec.error
+    if _prev not in _TERMINAL and rec.status in _TERMINAL:
+        audit("sim_finished", run_id=rec.run_id, user=rec.user_key,
+              status=rec.status, exit_code=rec.exit_code)
     return rec
 
 
@@ -630,6 +638,7 @@ def cancel_run(run_id: str) -> dict[str, Any]:
             rec.status = "cancelled"
             rec.ended_at = rec.ended_at or _now()
             _RUNS[run_id] = rec
+        audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
 
     try:
@@ -643,6 +652,7 @@ def cancel_run(run_id: str) -> dict[str, Any]:
             rec.status = "cancelled"
             rec.ended_at = rec.ended_at or _now()
             _RUNS[run_id] = rec
+        audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
     except psutil.NoSuchProcess:
         with _sim_lock:

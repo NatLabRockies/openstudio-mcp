@@ -115,6 +115,18 @@ On a VPN with `MCP_AUTH=none`, drop the `headers` block. The local stdio config
   (default 1) EnergyPlus simulations execute at once. Excess runs report
   `status: "queued"` and start automatically as slots free.
 
+**Audit log.** Every tool call and the full sim lifecycle are recorded as JSON
+lines — to stderr (`docker logs`) and, if `MCP_AUDIT_FILE` is set, to that file:
+
+```jsonc
+{"ts":1717532001.2, "event":"tool_call",   "user":"alice", "tool":"run_simulation", "ok":true, "ms":38}
+{"ts":1717532001.3, "event":"sim_queued",   "run_id":"…", "user":"alice"}
+{"ts":1717532001.4, "event":"sim_launched", "run_id":"…", "user":"alice", "pid":123}
+{"ts":1717532019.9, "event":"sim_finished", "run_id":"…", "user":"alice", "status":"success"}
+```
+
+So you can answer "who ran what, when, did it succeed". Disable with `MCP_AUDIT=off`.
+
 ---
 
 ## 4. Network & security
@@ -149,6 +161,8 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
 | `OSMCP_SESSION_TTL` | `1800` | idle seconds before a session model is dropped (`0` disables) |
 | `OSMCP_RUN_ROOT` | `/runs` | base directory for per-user run dirs |
+| `MCP_AUDIT` | `on` | structured audit logging (tool calls + sim lifecycle); `off` to disable |
+| `MCP_AUDIT_FILE` | — | also append audit JSON lines to this file (e.g. `/runs/audit.log`) |
 
 ---
 
