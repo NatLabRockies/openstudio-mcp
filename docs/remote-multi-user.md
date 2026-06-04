@@ -162,3 +162,22 @@ Don't expose port 8000 to the public internet directly.
   (no cross-user read exposure) — to be scoped per-user in a follow-up.
 
 See `docs/plans/multi-user-remote-mcp.md` for the full design rationale.
+
+---
+
+## 7. Stress testing locally
+
+`scripts/stress_remote.py` drives many concurrent sessions at one server and
+asserts the multi-user invariants under load — session isolation, the sim
+concurrency cap, cross-user run ownership, and bounded memory:
+
+```bash
+docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" openstudio-mcp:dev \
+  bash -lc "cd /repo && python scripts/stress_remote.py --profile moderate"
+```
+
+Profiles: `smoke` (8 sessions, fast, no sims), `moderate` (24 sessions + a sim
+burst), `heavy` (64 sessions + sims). Override any knob with
+`--users N --calls K --cap C --sims/--no-sims --max-sessions M` — a tiny
+`--max-sessions` forces LRU/TTL eviction so you can watch that path too.
+
