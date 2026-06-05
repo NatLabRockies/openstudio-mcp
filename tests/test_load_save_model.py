@@ -142,8 +142,9 @@ def test_load_nonexistent_file_fails():
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
-                # Try to load a file that doesn't exist
-                fake_path = "/runs/nonexistent_model_xyz123.osm"
+                # Try to load a file that doesn't exist (in an allowed shared root,
+                # so we hit the not-found path rather than the path-scope guard)
+                fake_path = "/inputs/nonexistent_model_xyz123.osm"
                 load_resp = await session.call_tool("load_osm_model", {"osm_path": fake_path})
                 load_result = unwrap(load_resp)
                 print("load_osm_model (nonexistent file):", load_result)

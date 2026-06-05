@@ -5,7 +5,6 @@ Marked with RUN_OPENSTUDIO_INTEGRATION so they only run in Docker.
 from __future__ import annotations
 
 import os
-
 from pathlib import Path
 
 import pytest
@@ -32,7 +31,7 @@ class TestValidateModel:
     def test_no_model_loaded(self):
         # Validates: validate_model_op raises when no model is loaded
         from mcp_server.skills.simulation.operations import validate_model_op
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError, match="model"):
             validate_model_op()
 
     def test_example_model_passes(self):
@@ -54,15 +53,19 @@ class TestValidateModel:
         # Weather file warning is expected (EPW passed via OSW)
         assert any("weather" in w.lower() for w in v["warnings"])
 
-    def test_empty_model_fails(self):
+    def test_empty_model_fails(self, tmp_path):
         # Validates: empty model fails validation with design day error and weather warning
         import openstudio
-        import mcp_server.model_manager as mm
+
+        from mcp_server.model_manager import load_model
         from mcp_server.skills.simulation.operations import validate_model_op
 
+        # Inject an empty in-memory model via the public load path (the old
+        # mm._current_model back-door was removed in the session-keyed refactor).
         model = openstudio.model.Model()
-        mm._current_model = model
-        mm._current_model_path = "/tmp/empty.osm"
+        osm = tmp_path / "empty.osm"
+        model.save(str(osm), True)
+        load_model(osm)
 
         v = validate_model_op()
         assert v["ok"] is False

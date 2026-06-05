@@ -192,7 +192,8 @@ jobs:
               ;;
             2)
               # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py"
+              # + remote HTTP transport, session isolation, token auth & session eviction (no-sim, fast)
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py"
               EXTRA_ENV=""
               ;;
             3)
@@ -207,7 +208,8 @@ jobs:
               ;;
             5)
               # HVAC supply sim smoke tests + hvac_validation + bar_building + concurrent regression
-              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py"
+              # + sim queue (concurrency cap) & per-user run-dir isolation + run retention/cleanup
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_sim_queue.py tests/test_per_user_run_dirs.py tests/test_audit_log.py tests/test_retention.py"
               EXTRA_ENV=""
               ;;
           esac

@@ -1,19 +1,32 @@
 # mcp_server/tools/workflow_tools.py
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import subprocess
+import tempfile
+import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 import psutil
 
-from mcp_server.config import LOG_TAIL_DEFAULT, OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
+from mcp_server.audit import audit
+from mcp_server.config import (
+    LOG_TAIL_DEFAULT,
+    MAX_CONCURRENCY,
+    MAX_CONCURRENCY_PER_USER,
+    OSCLI_GEM_PATH,
+    OSCLI_GEMFILE,
+    user_run_root,
+)
+from mcp_server.identity import user_key
 from mcp_server.util import resolve_run_dir
 
 # Where the MCP server stores runs inside the container
@@ -25,6 +38,7 @@ LogStream = Literal["openstudio", "energyplus"]
 @dataclass
 class RunRecord:
     run_id: str
+    user_key: str
     name: str
     status: Literal["queued", "running", "success", "failed", "cancelled"]
     created_at: float
@@ -41,6 +55,14 @@ class RunRecord:
 # In-memory registry (good enough for one-container dev right now)
 _RUNS: dict[str, RunRecord] = {}
 
+# Global FIFO scheduling + concurrency cap. run_osw enqueues (status="queued");
+# a daemon dispatcher launches up to MAX_CONCURRENCY and drains as sims finish,
+# so queued runs start without needing another tool call.
+_sim_lock = threading.RLock()
+_queue: deque[str] = deque()
+_dispatcher_started = False
+_TERMINAL = frozenset({"success", "failed", "cancelled", "error"})
+
 
 def _run_record_path(run_dir: Path) -> Path:
     """Return path to the JSON metadata file for a run."""
@@ -53,6 +75,7 @@ def _persist_run_record(rec: RunRecord) -> None:
         rec.run_dir.mkdir(parents=True, exist_ok=True)
         data = {
             "run_id": rec.run_id,
+            "user_key": rec.user_key,
             "name": rec.name,
             "status": rec.status,
             "created_at": rec.created_at,
@@ -74,7 +97,7 @@ def _persist_run_record(rec: RunRecord) -> None:
 def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
     """Load run metadata from disk if present."""
     try:
-        run_dir = resolve_run_dir(RUN_ROOT, run_id)
+        run_dir = resolve_run_dir(user_run_root(), run_id)
     except FileNotFoundError:
         return None
 
@@ -85,6 +108,7 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
         data = json.loads(meta_path.read_text())
         return RunRecord(
             run_id=data["run_id"],
+            user_key=data.get("user_key") or user_key(),
             name=data.get("name") or run_id,
             status=data.get("status") or "unknown",
             created_at=float(data.get("created_at") or 0.0),
@@ -102,14 +126,16 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
 
 
 def _get_run_record(run_id: str) -> RunRecord | None:
-    """Look up a run record by ID, checking memory first then disk."""
+    """Look up a run record owned by the caller, checking memory then disk."""
+    me = user_key()
     rec = _RUNS.get(run_id)
-    if rec:
-        return rec
-    rec = _load_run_record_from_disk(run_id)
-    if rec:
+    if rec is not None:
+        return rec if rec.user_key == me else None
+    rec = _load_run_record_from_disk(run_id)  # disk lookup is already user-scoped
+    if rec is not None and rec.user_key == me:
         _RUNS[run_id] = rec
-    return rec
+        return rec
+    return None
 
 
 
@@ -216,6 +242,104 @@ def validate_osw(osw_path: str, epw_path: str | None = None) -> dict[str, Any]:
     return {"ok": len(fatal_issues) == 0, "issues": issues, "osw_dir": str(base), "osw": osw}
 
 
+def _pid_alive(pid: int) -> bool:
+    """True if the process is still running (not a reaped/zombie process)."""
+    try:
+        p = psutil.Process(pid)
+        return p.is_running() and p.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+def _build_run_cmd(osw_path: Path) -> list[str]:
+    """openstudio CLI command to run a staged OSW (with bundle flags)."""
+    return [
+        "openstudio",
+        "--bundle", OSCLI_GEMFILE,
+        "--bundle_path", OSCLI_GEM_PATH,
+        "--bundle_without", "native_ext",
+        "run", "-w", str(osw_path),
+    ]
+
+
+def _launch(rec: RunRecord) -> None:
+    """Start the EnergyPlus subprocess for a queued run. Caller holds _sim_lock."""
+    log = rec.run_dir / "openstudio.log"
+    proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
+        _build_run_cmd(rec.osw_path),
+        cwd=str(rec.run_dir),
+        stdout=log.open("w", encoding="utf-8"),
+        stderr=subprocess.STDOUT,
+        env=os.environ.copy(),
+    )
+    rec.pid = proc.pid
+    rec.status = "running"
+    rec.started_at = _now()
+    audit("sim_launched", run_id=rec.run_id, user=rec.user_key, name=rec.name, pid=rec.pid)
+
+
+def _dispatch_once() -> None:
+    """Reap finished runs and launch queued ones, respecting the global cap and
+    (when set) the per-user cap. FIFO, but a user already at their per-user limit
+    is skipped so they can't monopolize the queue."""
+    with _sim_lock:
+        # Reap finished processes to free slots.
+        for rec in _RUNS.values():
+            if rec.status == "running" and rec.pid is not None and not _pid_alive(rec.pid):
+                _refresh_status(rec)
+                _persist_run_record(rec)
+
+        # Tally what's running, globally and per user.
+        per_user: dict[str, int] = {}
+        for rec in _RUNS.values():
+            if rec.status == "running":
+                per_user[rec.user_key] = per_user.get(rec.user_key, 0) + 1
+        running_total = sum(per_user.values())
+
+        # Walk the queue in order: launch runnable runs, drop stale/cancelled ones,
+        # leave per-user-capped runs queued for a later pass.
+        drop: list[str] = []
+        for run_id in list(_queue):
+            if running_total >= MAX_CONCURRENCY:
+                break
+            rec = _RUNS.get(run_id)
+            if rec is None or rec.status != "queued":
+                drop.append(run_id)  # cancelled or vanished
+                continue
+            if MAX_CONCURRENCY_PER_USER > 0 and per_user.get(rec.user_key, 0) >= MAX_CONCURRENCY_PER_USER:
+                continue  # this user is at their cap; try the next run
+            _launch(rec)
+            _persist_run_record(rec)
+            per_user[rec.user_key] = per_user.get(rec.user_key, 0) + 1
+            running_total += 1
+            drop.append(run_id)
+        for run_id in drop:
+            with contextlib.suppress(ValueError):
+                _queue.remove(run_id)
+
+
+def _dispatch_loop() -> None:
+    while True:
+        with contextlib.suppress(Exception):
+            _dispatch_once()
+        time.sleep(0.5)
+
+
+def _ensure_dispatcher() -> None:
+    """Start the background dispatcher thread once (drains queue as slots free)."""
+    global _dispatcher_started
+    with _sim_lock:
+        if _dispatcher_started:
+            return
+        _dispatcher_started = True
+    threading.Thread(target=_dispatch_loop, daemon=True, name="sim-dispatcher").start()
+
+
+def _enqueue(run_id: str) -> None:
+    with _sim_lock:
+        _queue.append(run_id)
+
+
 def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None) -> dict[str, Any]:
     """
     Stage the OSW + referenced files into /runs/<run_id>/ and execute:
@@ -247,7 +371,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
 
     # Create run directory
     run_id = uuid.uuid4().hex
-    run_dir = (RUN_ROOT / run_id).resolve()
+    run_dir = (user_run_root() / run_id).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Stage OSW directory contents
@@ -289,47 +413,36 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
     # Determine run display name
     run_name = _safe_name(name or osw.get("name") or src_osw.stem)
 
-    # Create log files
-    openstudio_log = run_dir / "openstudio.log"
-
-    # Kick off openstudio run with bundle flags for gem dependencies
-    # Note: use Popen so it can run async.
-    cmd = [
-        "openstudio",
-        "--bundle", OSCLI_GEMFILE,
-        "--bundle_path", OSCLI_GEM_PATH,
-        "--bundle_without", "native_ext",
-        "run", "-w", str(staged_osw),
-    ]
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(run_dir),
-        stdout=open(openstudio_log, "w", encoding="utf-8"),
-        stderr=open(openstudio_log, "a", encoding="utf-8"),
-        env=os.environ.copy(),
-    )
+    # Build the run command (executed later by the dispatcher when a slot frees)
+    cmd = _build_run_cmd(staged_osw)
 
     rec = RunRecord(
         run_id=run_id,
+        user_key=user_key(),
         name=run_name,
-        status="running",
+        status="queued",
         created_at=_now(),
-        started_at=_now(),
+        started_at=None,
         ended_at=None,
-        pid=proc.pid,
+        pid=None,
         run_dir=run_dir,
         osw_path=staged_osw,
         epw_path=staged_epw,
         exit_code=None,
         error=None,
     )
-    _RUNS[run_id] = rec
+    with _sim_lock:
+        _RUNS[run_id] = rec
+    audit("sim_queued", run_id=run_id, user=rec.user_key, name=run_name)
+    _enqueue(run_id)
+    _ensure_dispatcher()
+    _dispatch_once()  # launch immediately if under the concurrency cap
 
-    # Return immediately
     return {
         "ok": True,
         "run_id": run_id,
         "name": run_name,
+        "status": rec.status,
         "run_dir": str(run_dir),
         "osw_path": str(staged_osw),
         "epw_path": str(staged_epw) if staged_epw else None,
@@ -339,6 +452,12 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
 
 def _refresh_status(rec: RunRecord) -> RunRecord:
     """Check if the OS process has ended and update run status accordingly."""
+    _prev = rec.status
+    if rec.status in _TERMINAL:
+        # Already terminal (incl. cancelled) — never reclassify. Keeps a cancelled
+        # run sticky (a dead pid would otherwise be read as "failed") and makes
+        # refresh idempotent.
+        return rec
     if rec.pid is None:
         return rec
 
@@ -365,21 +484,17 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
     if out_osw.exists():
         try:
             out = _load_json(out_osw)
-            if out.get("completed_status") == "Success":
-                status = "success"
-            else:
-                status = "failed"
+            status = "success" if out.get("completed_status") == "Success" else "failed"
         except Exception as e:
             err = f"Failed to parse out.osw: {e}"
-
-    # If we couldn't parse out.osw and exit_code is known non-zero, keep failed.
-    if status != "success" and rec.status != "cancelled":
-        status = "failed"
 
     rec.status = status  # type: ignore[assignment]
     rec.ended_at = rec.ended_at or _now()
     rec.exit_code = exit_code if exit_code is not None else rec.exit_code
     rec.error = err or rec.error
+    if _prev not in _TERMINAL and rec.status in _TERMINAL:
+        audit("sim_finished", run_id=rec.run_id, user=rec.user_key,
+              status=rec.status, exit_code=rec.exit_code)
     return rec
 
 
@@ -389,13 +504,14 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         return {
             "ok": False,
             "error": f"Unknown run_id: {run_id}",
-            "hint": "Use list_files(directory='/runs', pattern='sim_*') to find "
-                    "simulation run directories, or run_simulation() to create one.",
+            "hint": "Use list_files(directory='/runs') to find simulation run "
+                    "directories, or run_simulation() to create one.",
         }
 
-    rec = _refresh_status(rec)
-    _RUNS[run_id] = rec
-    _persist_run_record(rec)
+    with _sim_lock:
+        rec = _refresh_status(rec)
+        _RUNS[run_id] = rec
+        _persist_run_record(rec)
 
     run_dict = {
         "run_id": rec.run_id,
@@ -441,8 +557,8 @@ def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "open
         return {
             "ok": False,
             "error": f"Unknown run_id: {run_id}",
-            "hint": "Use list_files(directory='/runs', pattern='sim_*') to find "
-                    "simulation run directories, or run_simulation() to create one.",
+            "hint": "Use list_files(directory='/runs') to find simulation run "
+                    "directories, or run_simulation() to create one.",
         }
 
     try:
@@ -476,7 +592,7 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
     else:
         # Fall back to filesystem lookup — measure runs aren't registered
         try:
-            run_dir = resolve_run_dir(RUN_ROOT, run_id)
+            run_dir = resolve_run_dir(user_run_root(), run_id)
         except FileNotFoundError:
             return {"ok": False, "error": f"Unknown run_id: {run_id}"}
     candidates = [
@@ -517,26 +633,35 @@ def cancel_run(run_id: str) -> dict[str, Any]:
     if not rec:
         return {"ok": False, "error": f"Unknown run_id: {run_id}"}
 
-    if rec.pid is None:
-        rec.status = "cancelled"
-        rec.ended_at = rec.ended_at or _now()
-        _RUNS[run_id] = rec
+    pid = rec.pid
+    if pid is None:
+        # Queued (or never started) — mark cancelled; dispatcher skips non-queued.
+        with _sim_lock:
+            rec.status = "cancelled"
+            rec.ended_at = rec.ended_at or _now()
+            _RUNS[run_id] = rec
+        _persist_run_record(rec)  # disk record must read 'cancelled' so GC can reclaim it
+        audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
 
     try:
-        p = psutil.Process(rec.pid)
+        p = psutil.Process(pid)
         p.terminate()
         try:
             p.wait(timeout=5)
         except psutil.TimeoutExpired:
             p.kill()
-        rec.status = "cancelled"
-        rec.ended_at = rec.ended_at or _now()
-        _RUNS[run_id] = rec
+        with _sim_lock:
+            rec.status = "cancelled"
+            rec.ended_at = rec.ended_at or _now()
+            _RUNS[run_id] = rec
+        _persist_run_record(rec)  # disk record must read 'cancelled' so GC can reclaim it
+        audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
     except psutil.NoSuchProcess:
-        rec = _refresh_status(rec)
-        _RUNS[run_id] = rec
+        with _sim_lock:
+            rec = _refresh_status(rec)
+            _RUNS[run_id] = rec
         return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     except Exception as e:
         return {"ok": False, "run_id": run_id, "error": str(e)}
@@ -620,23 +745,6 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
     if not osm.exists():
         return {"ok": False, "error": f"OSM file not found: {osm_path}"}
 
-    # Create a temporary OSW alongside the OSM
-    run_id = uuid.uuid4().hex[:12]
-    osw_dir = RUN_ROOT / f"sim_{run_id}"
-    osw_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy OSM into the run dir so OSW can reference it by relative path
-    staged_osm = osw_dir / osm.name
-    shutil.copy2(str(osm), str(staged_osm))
-
-    # Build minimal OSW
-    osw: dict[str, Any] = {
-        "seed_file": osm.name,
-        "file_paths": [],
-        "measure_paths": [],
-        "steps": [],
-    }
-
     # Validate EPW path upfront if provided
     epw_abs: str | None = None
     if epw_path:
@@ -645,8 +753,22 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
             return {"ok": False, "error": f"EPW file not found: {epw_path}"}
         epw_abs = str(epw.resolve())
 
-    osw_path_out = osw_dir / "workflow.osw"
-    osw_path_out.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+    # Stage the minimal OSW in a throwaway temp dir. run_osw() copies the staged
+    # files into the real per-user run dir before it returns, so nothing here
+    # needs to persist — this avoids leaving an orphan sim_* dir under /runs.
+    with tempfile.TemporaryDirectory(prefix="osw_stage_") as tmp:
+        stage = Path(tmp)
+        staged_osm = stage / osm.name
+        shutil.copy2(str(osm), str(staged_osm))
 
-    # Delegate to run_osw — pass epw_path so it handles staging into files/
-    return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name)
+        osw: dict[str, Any] = {
+            "seed_file": osm.name,
+            "file_paths": [],
+            "measure_paths": [],
+            "steps": [],
+        }
+        osw_path_out = stage / "workflow.osw"
+        osw_path_out.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+
+        # Delegate to run_osw — pass epw_path so it handles staging into files/
+        return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name)

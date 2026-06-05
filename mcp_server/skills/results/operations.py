@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from mcp_server.config import RUN_ROOT
+from mcp_server.config import user_run_root
 from mcp_server.util import resolve_run_dir, safe_read_text  # resolve_run_dir still used by extract_* ops
 
 
@@ -106,7 +106,7 @@ def _to_kbtu(value: float, units: str | None) -> float | None:
 def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str, Any]:
     """Extract headline metrics from a completed run (restart-safe)."""
     try:
-        run_dir = resolve_run_dir(RUN_ROOT, run_id)
+        run_dir = resolve_run_dir(user_run_root(), run_id)
     except FileNotFoundError:
         return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
 
@@ -270,7 +270,7 @@ def read_file(
 def _resolve_sql(run_id: str) -> tuple[Path | None, dict | None]:
     """Resolve run_dir and find eplusout.sql. Returns (sql_path, error_dict)."""
     try:
-        run_dir = resolve_run_dir(RUN_ROOT, run_id)
+        run_dir = resolve_run_dir(user_run_root(), run_id)
     except FileNotFoundError:
         return None, {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
     sql_path = _find_first_existing(run_dir, ["run/eplusout.sql", "eplusout.sql"])
@@ -353,7 +353,7 @@ def extract_simulation_errors_op(run_id: str) -> dict[str, Any]:
     """Parse eplusout.err into categorized Fatal/Severe/Warning lists."""
     from mcp_server.skills.results.err_parser import parse_err_file
     try:
-        run_dir = resolve_run_dir(RUN_ROOT, run_id)
+        run_dir = resolve_run_dir(user_run_root(), run_id)
     except FileNotFoundError:
         return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
 
@@ -495,7 +495,7 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
     }
 
 
-def copy_file(file_path: str, destination: str = "/runs/exports") -> dict[str, Any]:
+def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
     """Copy a file or directory to an accessible location.
 
     Bypasses the MCP 1MB transport limit for large files like HTML reports.
@@ -514,8 +514,8 @@ def copy_file(file_path: str, destination: str = "/runs/exports") -> dict[str, A
     if not full.exists():
         return {"ok": False, "error": "not_found", "message": f"Not found: {file_path}"}
 
-    dest_dir = Path(destination)
-    if not is_path_allowed(dest_dir):
+    dest_dir = Path(destination) if destination else (user_run_root() / "exports")
+    if not is_path_allowed(dest_dir, write=True):
         return {
             "ok": False, "error": "invalid_destination",
             "message": f"Destination not in allowed roots: {destination}",

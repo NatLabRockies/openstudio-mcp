@@ -1,0 +1,149 @@
+"""Unit tests for the simulation queue policy (FIFO + concurrency cap).
+
+The queue *logic* is the unit under test; only its dependencies are mocked
+(the subprocess launch and process-liveness check). No Docker/OpenStudio.
+"""
+from pathlib import Path
+
+import pytest
+
+import mcp_server.skills.simulation.operations as ops
+
+pytestmark = pytest.mark.unit
+
+
+def _mk_rec(run_id: str) -> ops.RunRecord:
+    return ops.RunRecord(
+        run_id=run_id, user_key="local", name=run_id, status="queued",
+        created_at=0.0, started_at=None, ended_at=None, pid=None,
+        run_dir=Path(run_id), osw_path=Path(run_id) / "w.osw",
+        epw_path=None, exit_code=None, error=None,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_registry(monkeypatch):
+    # Never touch disk: dummy records have relative run_dirs.
+    monkeypatch.setattr(ops, "_persist_run_record", lambda _rec: None)
+    ops._RUNS.clear()
+    ops._queue.clear()
+    yield
+    ops._RUNS.clear()
+    ops._queue.clear()
+
+
+def test_queue_caps_running_at_max_concurrency(monkeypatch):
+    # Validates: the dispatcher never launches more than MAX_CONCURRENCY at once
+    monkeypatch.setattr(ops, "MAX_CONCURRENCY", 2)
+    alive: set[int] = set()
+
+    def fake_launch(rec):
+        rec.pid = int(rec.run_id[1:]) + 1000
+        rec.status = "running"
+        alive.add(rec.pid)
+
+    monkeypatch.setattr(ops, "_launch", fake_launch)
+    monkeypatch.setattr(ops, "_pid_alive", lambda pid: pid in alive)
+
+    for i in range(4):
+        rid = f"r{i}"
+        ops._RUNS[rid] = _mk_rec(rid)
+        ops._enqueue(rid)
+    ops._dispatch_once()
+
+    running = [r.run_id for r in ops._RUNS.values() if r.status == "running"]
+    queued = [r.run_id for r in ops._RUNS.values() if r.status == "queued"]
+    assert len(running) == 2, f"cap=2 must cap concurrent runs, got running={running}"
+    assert len(queued) == 2, f"remaining must stay queued, got queued={queued}"
+    assert running == ["r0", "r1"], f"FIFO: first-enqueued launch first, got {running}"
+
+
+def test_slot_frees_on_completion_launches_next_fifo(monkeypatch):
+    # Validates: when a running sim finishes, the next queued sim (FIFO) starts
+    monkeypatch.setattr(ops, "MAX_CONCURRENCY", 1)
+    alive: set[int] = set()
+
+    def fake_launch(rec):
+        rec.pid = int(rec.run_id[1:]) + 1000
+        rec.status = "running"
+        alive.add(rec.pid)
+
+    def fake_refresh(rec):
+        rec.status = "success"
+        return rec
+
+    monkeypatch.setattr(ops, "_launch", fake_launch)
+    monkeypatch.setattr(ops, "_pid_alive", lambda pid: pid in alive)
+    monkeypatch.setattr(ops, "_refresh_status", fake_refresh)
+    monkeypatch.setattr(ops, "_persist_run_record", lambda _rec: None)
+
+    for i in range(3):
+        rid = f"r{i}"
+        ops._RUNS[rid] = _mk_rec(rid)
+        ops._enqueue(rid)
+    ops._dispatch_once()
+    assert ops._RUNS["r0"].status == "running", "first run starts under cap=1"
+    assert ops._RUNS["r1"].status == "queued"
+    assert ops._RUNS["r2"].status == "queued"
+
+    # r0's process exits -> next dispatch reaps it and launches r1
+    alive.discard(ops._RUNS["r0"].pid)
+    ops._dispatch_once()
+    assert ops._RUNS["r0"].status == "success", "finished run is reaped"
+    assert ops._RUNS["r1"].status == "running", "freed slot launches next FIFO run"
+    assert ops._RUNS["r2"].status == "queued", "third run still waits"
+
+
+def test_cancelled_queued_run_is_not_launched(monkeypatch):
+    # Regression: a queued run cancelled before launch must never start
+    monkeypatch.setattr(ops, "MAX_CONCURRENCY", 1)
+    launched: list[str] = []
+    monkeypatch.setattr(ops, "_launch", lambda rec: launched.append(rec.run_id))
+    monkeypatch.setattr(ops, "_pid_alive", lambda _pid: True)
+
+    for i in range(2):
+        rid = f"r{i}"
+        ops._RUNS[rid] = _mk_rec(rid)
+        ops._enqueue(rid)
+    # Cancel the queued tail before any dispatch
+    ops._RUNS["r1"].status = "cancelled"
+    ops._dispatch_once()  # launches r0
+    ops._RUNS["r0"].status = "success"  # free the slot
+    ops._dispatch_once()  # r1 is cancelled -> skipped, nothing else to run
+
+    assert launched == ["r0"], f"cancelled run must be skipped, launched={launched}"
+    assert ops._RUNS["r1"].status == "cancelled"
+
+
+def test_per_user_cap_prevents_monopoly(monkeypatch):
+    # Validates: a per-user cap stops one user taking all global slots — another
+    # user's queued run launches instead (FIFO with per-user fairness).
+    monkeypatch.setattr(ops, "MAX_CONCURRENCY", 4)
+    monkeypatch.setattr(ops, "MAX_CONCURRENCY_PER_USER", 1)
+    running: set[int] = set()
+
+    def fake_launch(rec):
+        rec.pid = hash(rec.run_id) & 0xFFFF
+        rec.status = "running"
+        running.add(rec.pid)
+
+    monkeypatch.setattr(ops, "_launch", fake_launch)
+    monkeypatch.setattr(ops, "_pid_alive", lambda pid: pid in running)
+
+    # alice submits 3, bob submits 2 (alice first in FIFO order).
+    for rid, uk in [("a0", "alice"), ("a1", "alice"), ("a2", "alice"), ("b0", "bob"), ("b1", "bob")]:
+        rec = _mk_rec(rid)
+        rec.user_key = uk
+        ops._RUNS[rid] = rec
+        ops._enqueue(rid)
+    ops._dispatch_once()
+
+    by_user: dict[str, int] = {}
+    for r in ops._RUNS.values():
+        if r.status == "running":
+            by_user[r.user_key] = by_user.get(r.user_key, 0) + 1
+    assert by_user.get("alice", 0) == 1, f"alice must be capped at 1: {by_user}"
+    assert by_user.get("bob", 0) == 1, f"bob must be capped at 1: {by_user}"
+    assert sum(by_user.values()) == 2, f"per-user caps leave global slots idle for fairness: {by_user}"
+    queued = sorted(r.run_id for r in ops._RUNS.values() if r.status == "queued")
+    assert queued == ["a1", "a2", "b1"], f"capped runs must stay queued: {queued}"

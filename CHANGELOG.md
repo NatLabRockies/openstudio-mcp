@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.0.0-beta] - 2026-06-05
+
+First major release (beta): openstudio-mcp can now run as a shared, multi-user
+remote server while the original single-container stdio workflow is unchanged.
+
+### Added
+- **Remote multi-user server** over Streamable HTTP (`MCP_TRANSPORT=http`),
+  alongside the default stdio transport. Works for Claude Code, Cursor, and VS Code.
+- **Authentication**: bearer-token (`MCP_AUTH=token`, `MCP_TOKENS`) and JWT/IdP
+  (`MCP_AUTH=jwt`, `MCP_JWT_*`); HTTP defaults to fail-closed token auth.
+- **Per-session isolation**: each connection gets its own loaded model, with an
+  LRU cap (`OSMCP_MAX_SESSIONS`) and idle-TTL eviction (`OSMCP_SESSION_TTL`).
+- **Per-user run dirs, path scoping, and run ownership**: a user can't read,
+  write, or query another user's runs/files.
+- **Simulation queue**: global FIFO with a concurrency cap (`OSMCP_MAX_CONCURRENCY`)
+  and optional per-user fairness cap; excess runs queue and start as slots free.
+- **Audit logging**: one structured JSON line per tool call plus the full sim
+  lifecycle and retention events, to stderr and optional `MCP_AUDIT_FILE`.
+- **Run retention / disk GC** (off by default): opt-in background sweeper via
+  `--gc` / `--gc-days N` / `OSMCP_RUN_RETENTION_DAYS`, containment-hardened
+  (no symlink escape, no system roots, run-dirs only); plus `cleanup_runs`,
+  `delete_run`, `pin_run`, `unpin_run` tools (146 tools total).
+- Docs: `docs/remote-multi-user.md`, `docs/run-retention.md`; stress harness
+  `scripts/stress_remote.py`; CI shards for HTTP transport, isolation, auth,
+  eviction, sim queue, audit, and retention.
+
+### Fixed
+- **stdio single-user workflow restored**: stdio resolves to one "local" user
+  owning all of `/runs` (FastMCP's per-connection session id had splintered it
+  into `/runs/<uuid>/` and broken direct `/runs/*.osm` saves).
+- **`run_simulation`** no longer leaves orphan `sim_*` staging dirs — it stages
+  in an ephemeral temp dir, so only the real run dir persists.
+- **`cancel_run`** now persists the `cancelled` status, so cancelled runs are
+  correctly terminal (and reclaimable) across restarts.
+
+### Changed
+- Tool count 142 → 146 (4 run-retention tools).
+
 ## [0.9.0] - 2026-04-10
 
 ### Added

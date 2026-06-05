@@ -48,3 +48,5 @@ select = [
 # Deferred imports (PLC0415) avoid load-time failures; global state (PLW0603) is intentional in model_manager
 # ARG001: _extract_*(model, obj) and baseline system signatures require unused args for interface contracts
 "mcp_server/**" = ["BLE001", "S110", "S112", "PLC0415", "PLW0603", "ARG001", "ARG002"]
+# Dev/CLI scripts (stress harness, etc.): deferred imports, broad except, subprocess are intentional
+"scripts/**" = ["BLE001", "S603", "S607", "S110", "PLC0415"]

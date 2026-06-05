@@ -13,9 +13,12 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import INPUT_ROOT, RUN_ROOT
+from mcp_server.config import INPUT_ROOT, user_run_root
 
-CUSTOM_MEASURES_DIR = RUN_ROOT / "custom_measures"
+
+def custom_measures_dir() -> Path:
+    """The caller's private custom-measures directory (RUN_ROOT/<user_key>/custom_measures)."""
+    return user_run_root() / "custom_measures"
 
 # Default test model for measure tests — rich model with HVAC, plant loops,
 # constructions, schedules.  Searched in order; first hit wins.
@@ -59,7 +62,7 @@ def _find_test_model() -> Path | None:
     try:
         from mcp_server.model_manager import get_model
         model = get_model()
-        tmp = CUSTOM_MEASURES_DIR / "_test_model.osm"
+        tmp = custom_measures_dir() / "_test_model.osm"
         tmp.parent.mkdir(parents=True, exist_ok=True)
         model.save(openstudio.toPath(str(tmp)), True)
         return tmp
@@ -764,7 +767,7 @@ def create_measure_op(
 
         args = arguments or []
         class_name = _to_class_name(name)
-        measure_dir = CUSTOM_MEASURES_DIR / name
+        measure_dir = custom_measures_dir() / name
         # Clean existing dir for idempotent re-creation (safe: name is validated)
         if measure_dir.exists():
             shutil.rmtree(measure_dir)
@@ -854,11 +857,11 @@ def _test_reporting_measure_with_run(
     import os
     import uuid as _uuid
 
-    from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, RUN_ROOT
+    from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
     from mcp_server.util import resolve_run_dir
 
     try:
-        sim_dir = resolve_run_dir(RUN_ROOT, run_id)
+        sim_dir = resolve_run_dir(user_run_root(), run_id)
     except FileNotFoundError:
         return {"ok": False, "error": f"Simulation run not found: {run_id}"}
 
@@ -868,7 +871,7 @@ def _test_reporting_measure_with_run(
 
     # Build temp run dir
     test_run_id = _uuid.uuid4().hex[:12]
-    runs_dir = Path(os.environ.get("MCP_RUNS_DIR", "/runs"))
+    runs_dir = Path(os.environ["MCP_RUNS_DIR"]) if "MCP_RUNS_DIR" in os.environ else user_run_root()
     run_dir = runs_dir / f"measure_test_{test_run_id}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1088,7 +1091,7 @@ def edit_measure_op(
         err = _validate_measure_name(measure_name)
         if err:
             return {"ok": False, "error": err}
-        measure_dir = CUSTOM_MEASURES_DIR / measure_name
+        measure_dir = custom_measures_dir() / measure_name
         if not measure_dir.is_dir():
             return {"ok": False, "error": f"Measure not found: {measure_name}"}
 
@@ -1233,13 +1236,14 @@ def edit_measure_op(
 
 
 def list_custom_measures_op() -> dict[str, Any]:
-    """List all custom measures in /runs/custom_measures/."""
+    """List all custom measures under the caller's run root (custom_measures/)."""
     try:
-        if not CUSTOM_MEASURES_DIR.is_dir():
+        cm_dir = custom_measures_dir()
+        if not cm_dir.is_dir():
             return {"ok": True, "count": 0, "measures": []}
 
         measures = []
-        for d in sorted(CUSTOM_MEASURES_DIR.iterdir()):
+        for d in sorted(cm_dir.iterdir()):
             if not d.is_dir():
                 continue
             has_rb = (d / "measure.rb").is_file()

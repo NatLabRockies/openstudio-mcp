@@ -55,15 +55,15 @@ def register(mcp):
         return extract_summary_metrics(run_id, include_raw=include_raw)
 
     @mcp.tool(tags={"results"}, name="copy_file")
-    def copy_file_tool(file_path: str, destination: str = "/runs/exports"):
-        """Copy a file or directory to an accessible path under /runs.
+    def copy_file_tool(file_path: str, destination: str | None = None):
+        """Copy a file or directory to an accessible path under your run dir.
         Use to export files to the host. To read file contents, use read_file instead.
 
         Supports both individual files and entire directories (e.g. measure dirs).
 
         Args:
             file_path: Absolute path to the source file or directory
-            destination: Target directory (default /runs/exports/)
+            destination: Target directory (default: your run dir's exports/)
         """
         return copy_file(file_path=file_path, destination=destination)
 

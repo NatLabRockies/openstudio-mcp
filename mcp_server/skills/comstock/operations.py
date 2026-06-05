@@ -15,7 +15,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import RUN_ROOT
+from mcp_server.config import user_run_root
 from mcp_server.model_manager import get_model
 from mcp_server.skills.measures.operations import apply_measure
 
@@ -290,7 +290,7 @@ def _create_empty_model() -> Path:
 
     Returns the path to the saved OSM file.
     """
-    run_dir = RUN_ROOT / "examples" / "bar_building"
+    run_dir = user_run_root() / "examples" / "bar_building"
     run_dir.mkdir(parents=True, exist_ok=True)
     osm_path = run_dir / "empty.osm"
     empty = openstudio.model.Model()

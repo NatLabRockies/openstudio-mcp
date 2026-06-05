@@ -3,7 +3,7 @@ always be brutally honest
 ## Project: openstudio-mcp
 MCP server giving AI agents full control of building energy modeling —
 create buildings, author measures, configure HVAC, run EnergyPlus sims, extract
-results — all through 142 MCP tools backed by the OpenStudio SDK.
+results — all through 146 MCP tools backed by the OpenStudio SDK.
 
 ## Critical: Use MCP Tools — Do Not Reinvent
 Always use openstudio-mcp tools for BEM tasks:
