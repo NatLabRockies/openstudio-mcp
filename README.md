@@ -2,59 +2,48 @@
 
 [![MCP Badge](https://lobehub.com/badge/mcp/natlabrockies-openstudio-mcp?style=for-the-badge)](https://lobehub.com/mcp/natlabrockies-openstudio-mcp)
 
-**Model Context Protocol (MCP)** server for **OpenStudio** building energy simulation. Enables LLMs and MCP hosts (Claude Desktop, Cursor, Claude Code, etc.) to create, query, and modify OpenStudio models, run EnergyPlus simulations, and inspect results — all through natural language.
+**Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**23 skills &bull; 142 tools &bull; 6 prompts &bull; 4 resources &bull; 480+ integration tests**
+**146 tools · 12 workflow skills · 480+ integration tests**
 
 ---
 
-## What Can It Do?
+## What you can ask for
 
-Ask your AI assistant to do things like:
-
-- *"Create a 10-zone office building with VAV reheat and run an annual simulation"*
+- *"Create a 10-zone office with VAV reheat and run an annual simulation."*
 - *"What's the EUI? Show me the unmet heating hours."*
-- *"Switch the HVAC from VAV to VRF heat pumps and compare energy use"*
-- *"Add R-30 roof insulation and see how it affects the cooling load"*
-- *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing"*
-- *"Write a custom measure to set all lights to 8 W/m2, test it, apply it, and compare the EUI"*
-- *"Apply the AEDG Small Office measure from my local measures directory"*
+- *"Switch the HVAC from VAV to VRF heat pumps and compare energy use."*
+- *"Add R-30 roof insulation and see how it affects the cooling load."*
+- *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing."*
+- *"Write a measure that sets all lights to 8 W/m², test it, apply it, and compare the EUI."*
 
-The server handles all the OpenStudio/EnergyPlus complexity behind MCP tool calls.
+The AI picks the right tools, calls them in sequence, and summarizes — no scripting.
 
 ---
 
-## Quick Start
+## Quick start (local)
 
-### Prerequisites
+Runs the server locally over stdio — one container per user, launched by your MCP host. For a shared deployment, see [Remote & multi-user](#remote--multi-user-http).
 
-- **Docker Desktop** installed and running ([download](https://www.docker.com/products/docker-desktop/))
-- **An MCP host** — an AI application that can connect to MCP tool servers. [Claude Desktop](https://claude.ai/download) is the recommended starting point.
+**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) running, and an MCP host ([Claude Desktop](https://claude.ai/download) is the easiest start).
 
-### Step 1: Clone & Build
+### 1. Build the image
 
 ```bash
 git clone https://github.com/NatLabRockies/openstudio-mcp.git
 cd openstudio-mcp
 ```
 
-**Pick the right Dockerfile for your machine** — both produce the same `openstudio-mcp:dev` image, so Step 2's config below works either way.
-
-| Machine | Command |
-|---------|---------|
+| Machine | Build command |
+|---------|---------------|
 | Intel/AMD (Linux, Windows, Intel Mac) | `docker build -t openstudio-mcp:dev -f docker/Dockerfile .` |
-| Apple Silicon (M-series Mac) | `docker build --platform linux/arm64 -t openstudio-mcp:dev -f docker/Dockerfile.arm64 .` |
+| Apple Silicon (M-series) | `docker build --platform linux/arm64 -t openstudio-mcp:dev -f docker/Dockerfile.arm64 .` |
 
-Why two files? The upstream `nrel/openstudio` base image is `amd64`-only. On Apple Silicon, `docker/Dockerfile` runs under slow Rosetta emulation; `docker/Dockerfile.arm64` builds natively from the official NREL arm64 `.deb` and is several times faster at runtime.
+Both produce the same `openstudio-mcp:dev` image. The arm64 Dockerfile builds natively from NREL's arm64 `.deb` (the upstream `nrel/openstudio` base is amd64-only, so plain `Dockerfile` runs under slow emulation on Apple Silicon).
 
-### Step 2: Configure Claude Desktop
+### 2. Configure your host
 
-Open your Claude Desktop config file:
-
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-Add (or merge into) the `mcpServers` block:
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), then restart Claude Desktop:
 
 ```json
 {
@@ -74,454 +63,437 @@ Add (or merge into) the `mcpServers` block:
 }
 ```
 
-**About the `-v` flags** — each one is `-v <host-path>:<container-path>[:ro]`. Docker exposes the host folder inside the container at the second path, so the MCP server can read/write your files. The optional `:ro` makes it read-only. The `./` prefix is **relative to wherever your MCP host launches `docker` from** — if it doesn't resolve, swap in absolute paths (e.g. `/Users/you/openstudio-mcp/runs:/runs` on macOS, `C:\projects\openstudio-mcp\runs:/runs` on Windows).
+The `-v host:container` mounts expose your folders inside the container: `/inputs` for your models (starts with the bundled test models), `/runs` for simulation outputs, `/skills` for the workflow guides. Use absolute paths if `./` doesn't resolve from where your host launches Docker.
 
-- `./tests/assets:/inputs` — mounts the included test models so you can experiment right away. Replace with your own folder (e.g. `~/my-models:/inputs`) when ready.
-- `./runs:/runs` — simulation outputs are written here
-- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
-- **Restart Claude Desktop** after saving the config file
+### 3. Verify and chat
 
-### Step 3: Verify Connection
+Look for the **hammer icon** in Claude Desktop's input — click it to see the openstudio-mcp tools. Then try, in order:
 
-Open Claude Desktop and look for the **hammer icon** (MCP tools indicator) in the chat input area. Click it to see the openstudio-mcp tools listed. If the icon doesn't appear, check that Docker is running and the config JSON is valid.
+> "Create an example model and tell me about it" → "Create a baseline office with ASHRAE System 3 and show me the HVAC components" → "Load /inputs/MyBuilding.osm, apply the 90.1-2019 typical template, and run a simulation"
 
-### Step 4: Start Chatting
+**Use the `/inputs` mount for your own files** rather than uploading through chat — Claude Desktop's upload sandbox can't reach MCP tools, so the AI may fall back to writing scripts. Drop a file in the host folder mapped to `/inputs` and reference it by that path. Simulation outputs in `/runs` are already reachable.
 
-Try these prompts in order of complexity:
-
-> **Simple:** "Create an example model and tell me about it"
-
-> **Medium:** "Create a baseline office with ASHRAE System 3 and show me the HVAC components"
-
-> **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
-
-The AI reads your prompt, picks the right tools from the 142 available, calls them in sequence, and summarizes the results — no scripting required.
-
-### Working with Your Own Files
-
-**Place files in the `/inputs` mount** (the host folder mapped to `/inputs` in the config above) rather than uploading them through the chat interface. This ensures the MCP tools can access them directly.
-
-```
-# Example: analyzing an EnergyPlus error file
-# 1. Copy to your inputs folder
-cp eplusout.err ./tests/assets/
-
-# 2. Reference by MCP path in your prompt
-"Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
-```
-
-**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 142 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
-
-For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
-
-### Other MCP Hosts
-
-[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
-
-### Remote & Multi-User (HTTP)
-
-The Quick Start above runs the server locally over stdio (one process per user).
-To host it on one machine and let teammates connect from their own laptops —
-each with an isolated session, run directory, and optional bearer-token auth —
-run it over streamable HTTP instead (`-e MCP_TRANSPORT=http`). Works with Claude
-Code, Cursor, and VS Code.
-
-See **[docs/remote-multi-user.md](docs/remote-multi-user.md)** for server setup,
-client config, auth, and the isolation model.
-
-### Client Compatibility
+**Other hosts:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [VS Code Copilot](https://code.visualstudio.com/), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) use similar JSON config — see the [MCP docs](https://modelcontextprotocol.io/quickstart/user).
 
 | Client | Status | Notes |
 |--------|--------|-------|
-| Claude Desktop | Full support | All 142 tools available |
-| Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
-| VS Code Copilot | Compatible | MCP support via config |
-| Windsurf | Compatible | Under 100-tool limit |
-| Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
-| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
-| OpenAI API | Compatible | Use defer_loading for best results |
+| Claude Desktop | ✅ Full | all tools available |
+| Claude Code | ✅ Full | ToolSearch auto-defers tools for efficient discovery |
+| VS Code Copilot | ✅ Compatible | MCP via config |
+| Windsurf | ✅ Compatible | under the 100-tool limit |
+| Gemini CLI | ✅ Compatible | use includeTools/excludeTools if needed |
+| OpenAI API | ✅ Compatible | use defer_loading for best results |
+| Cursor | ⚠️ Limited | 40-tool hard cap — use Claude Code or Windsurf |
 
 ---
 
-## Claude Code Skills
+## Remote & multi-user (HTTP)
 
-When using openstudio-mcp with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), 12 bundled skills provide workflow automation and domain knowledge:
+The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, Cursor, and VS Code.
 
-| Skill | Type | Description |
-|-------|------|-------------|
-| `/simulate` | Workflow | One-command simulate + results extraction |
-| `/energy-report` | Workflow | Comprehensive multi-category energy report |
-| `/qaqc` | Task | Pre-simulation model quality check |
-| `/add-hvac` | Task | Guided HVAC system selection |
-| `/new-building` | Workflow | Full model creation from scratch |
-| `/retrofit` | Workflow | Before/after ECM analysis |
-| `/view` | Task | Quick 3D model visualization |
-| `/troubleshoot` | Task | Diagnose simulation failures and unexpected results |
-| `measure-authoring` | Knowledge | Measure creation, SDK method verification, wiring patterns (auto-loaded) |
-| `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection criteria (auto-loaded) |
-| `openstudio-patterns` | Knowledge | Tool dependencies and model relationships (auto-loaded) |
-| `tool-workflows` | Knowledge | Multi-tool recipes for common operations (auto-loaded) |
-
-Workflow/task skills are invoked with `/skill-name`. Knowledge skills load automatically when relevant.
-
-### Workflow Guides for All MCP Clients
-
-The same workflow guides are also available as MCP tools, so any MCP client (Claude Desktop, Cursor, etc.) can discover them:
-
-- `list_skills()` — see available workflows with descriptions
-- `get_skill(name)` — get step-by-step instructions for a specific workflow
-
-Mount the skills directory when running the container: `-v ./.claude/skills:/skills:ro`
+See **[docs/remote-multi-user.md](docs/remote-multi-user.md)** for setup, auth, the isolation model, and log access — and **[docs/run-retention.md](docs/run-retention.md)** for optional disk garbage-collection.
 
 ---
 
-## Skills & Tools (142 total)
+## Workflow skills
 
-### Skill Discovery (2 tools)
+In Claude Code, 12 bundled skills add workflow automation and domain knowledge:
+
+| Skill | Type | What it does |
+|-------|------|--------------|
+| `/simulate` | Workflow | one-command simulate + results extraction |
+| `/energy-report` | Workflow | comprehensive multi-category energy report |
+| `/new-building` | Workflow | full model creation from scratch |
+| `/retrofit` | Workflow | before/after ECM analysis |
+| `/add-hvac` | Task | guided HVAC system selection |
+| `/qaqc` | Task | pre-simulation model quality check |
+| `/view` | Task | quick 3D model visualization |
+| `/troubleshoot` | Task | diagnose simulation failures |
+| `measure-authoring` | Knowledge | measure creation, SDK verification, wiring patterns |
+| `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection |
+| `openstudio-patterns` | Knowledge | tool dependencies and model relationships |
+| `tool-workflows` | Knowledge | multi-tool recipes for common operations |
+
+Workflow/task skills are invoked with `/name`; knowledge skills load automatically. Any MCP host can also discover these guides via the `list_skills()` and `get_skill(name)` tools (mount `-v ./.claude/skills:/skills:ro`).
+
+---
+
+## Tool reference
+
+146 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
+
+<details>
+<summary><b>Model creation & management</b> — 13 tools</summary>
+
 | Tool | Description |
 |------|-------------|
-| `list_skills` | List available workflow guides |
-| `get_skill` | Get step-by-step instructions for a workflow |
-
-### Server Info (2 tools)
-| Tool | Description |
-|------|-------------|
-| `get_server_status` | Server health check |
-| `get_versions` | OpenStudio, EnergyPlus, Ruby versions |
-
-### Model Creation (5 tools)
-
-Primary tools for creating building energy models. `create_new_building` is the recommended starting point for most workflows.
-
-| Tool | Description |
-|------|-------------|
-| `create_new_building` | Create complete building end-to-end (geometry + weather + typical template) |
-| `create_bar_building` | Create bar building geometry from building type, floor area, and aspect ratio |
+| `create_new_building` | Create a complete building end-to-end (geometry + weather + typical template) |
+| `create_bar_building` | Create bar-building geometry from type, floor area, aspect ratio |
 | `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry |
-| `create_example_osm` | Create minimal single-zone example (testing/demos) |
-| `create_baseline_osm` | Create 10-zone baseline with ASHRAE system 1-10 (testing/demos) |
-
-### Model Management (4 tools)
-| Tool | Description |
-|------|-------------|
-| `inspect_osm_summary` | Quick structural summary of OSM file |
+| `create_example_osm` | Minimal single-zone example (testing/demos) |
+| `create_baseline_osm` | 10-zone baseline with ASHRAE system 1–10 (testing/demos) |
+| `inspect_osm_summary` | Quick structural summary of an OSM file |
 | `load_osm_model` | Load OSM into memory for querying/editing |
-| `save_osm_model` | Save in-memory model to disk |
-| `list_files` | Discover files in /inputs and /runs (OSM, EPW, results) |
-
-### Building (2 tools)
-
-List building stories via `list_model_objects("BuildingStory")`.
-
-| Tool | Description |
-|------|-------------|
+| `save_osm_model` | Save the in-memory model to disk |
+| `list_files` | Discover files in /inputs and /runs |
 | `get_building_info` | Building name, area, volume, orientation |
 | `get_model_summary` | Object counts by category |
+| `delete_object` | Delete any named object (28+ types) |
+| `rename_object` | Rename any named object |
 
-### Spaces (6 tools)
+</details>
+
+<details>
+<summary><b>Generic object access</b> — 3 tools</summary>
+
+Read/write any OpenStudio object by introspection — covers types without a dedicated tool.
+
 | Tool | Description |
 |------|-------------|
-| `list_spaces` | List all spaces with area/volume |
-| `get_space_details` | Detailed space info (surfaces, loads, zone) |
+| `list_model_objects` | List objects of any type (CamelCase, IDD colon, or underscore) |
+| `get_object_fields` | Read all properties of an object — returns values + available setters |
+| `set_object_property` | Write any property via official setters — auto-coerces types |
+
+</details>
+
+<details>
+<summary><b>Spaces & thermal zones</b> — 6 tools</summary>
+
+| Tool | Description |
+|------|-------------|
+| `list_spaces` | List spaces with area/volume |
+| `get_space_details` | Surfaces, loads, zone for a space |
 | `list_thermal_zones` | List thermal zones with spaces |
 | `get_thermal_zone_details` | Zone equipment, thermostat, multiplier |
-| `create_space` | Create space with optional story/space type |
-| `create_thermal_zone` | Create thermal zone, assign spaces |
+| `create_space` | Create a space (optional story/space type) |
+| `create_thermal_zone` | Create a thermal zone, assign spaces |
 
-### Geometry (9 tools)
+</details>
+
+<details>
+<summary><b>Geometry</b> — 9 tools</summary>
+
 | Tool | Description |
 |------|-------------|
 | `list_surfaces` | List surfaces (walls, floors, roofs) |
-| `get_surface_details` | Surface vertices, construction, boundary |
+| `get_surface_details` | Vertices, construction, boundary |
 | `list_subsurfaces` | List windows, doors, skylights |
-| `create_surface` | Create surface with explicit 3D vertices |
-| `create_subsurface` | Create window/door on a parent surface |
-| `create_space_from_floor_print` | Extrude floor polygon into space with all surfaces |
+| `create_surface` | Create a surface from explicit 3D vertices |
+| `create_subsurface` | Create a window/door on a parent surface |
+| `create_space_from_floor_print` | Extrude a floor polygon into a space with all surfaces |
 | `match_surfaces` | Intersect + match shared walls between adjacent spaces |
-| `set_window_to_wall_ratio` | Add centered window by glazing ratio (e.g. 0.4 = 40%) |
-| `import_floorspacejs` | Import custom geometry from FloorSpaceJS JSON file |
+| `set_window_to_wall_ratio` | Add a centered window by glazing ratio |
+| `import_floorspacejs` | Import geometry from a FloorSpaceJS JSON file |
 
-### Constructions (5 tools)
+</details>
 
-List constructions via `list_model_objects("Construction")`, construction sets via `list_model_objects("DefaultConstructionSet")`.
+<details>
+<summary><b>Constructions & materials</b> — 5 tools</summary>
+
+List constructions/sets via `list_model_objects("Construction")` / `("DefaultConstructionSet")`.
 
 | Tool | Description |
 |------|-------------|
-| `list_materials` | List materials with thermal properties |
+| `list_materials` | Materials with thermal properties |
 | `get_construction_details` | Construction layers with thermal properties |
-| `create_standard_opaque_material` | Create material with conductivity/density |
-| `create_construction` | Create layered construction from materials |
-| `assign_construction_to_surface` | Assign construction to surface |
+| `create_standard_opaque_material` | Material with conductivity/density |
+| `create_construction` | Layered construction from materials |
+| `assign_construction_to_surface` | Assign a construction to a surface |
 
-### Schedules (2 tools)
+</details>
+
+<details>
+<summary><b>Schedules</b> — 2 tools</summary>
 
 List schedules via `list_model_objects("ScheduleRuleset")`.
 
 | Tool | Description |
 |------|-------------|
 | `get_schedule_details` | Schedule type, values, rules |
-| `create_schedule_ruleset` | Create constant schedule (Fractional/Temp/OnOff) |
+| `create_schedule_ruleset` | Constant schedule (Fractional/Temp/OnOff) |
 
-### HVAC (7 tools)
-| Tool | Description |
-|------|-------------|
-| `list_air_loops` | List air loops with zones served |
-| `get_air_loop_details` | Air loop components, sizing, OA system |
-| `add_air_loop` | Create air loop and connect zones |
-| `list_plant_loops` | List plant loops (heating, cooling, condenser) |
-| `get_plant_loop_details` | Plant loop supply/demand components |
-| `list_zone_hvac_equipment` | List zone-level HVAC equipment |
-| `get_zone_hvac_details` | Zone equipment details |
+</details>
 
-### Loads (6 tools)
+<details>
+<summary><b>Loads</b> — 6 tools</summary>
 
-List loads via `list_model_objects("People")`, `list_model_objects("Lights")`, etc. Use `get_object_fields` for definition details.
+List loads via `list_model_objects("People")`, `("Lights")`, etc.; use `get_object_fields` for definitions.
 
 | Tool | Description |
 |------|-------------|
-| `get_load_details` | Get detailed info for any load by name (type dispatcher) |
-| `create_people_definition` | Create people load (by area or count) |
-| `create_lights_definition` | Create lighting load (by area or wattage) |
-| `create_electric_equipment` | Create electric equipment load |
-| `create_gas_equipment` | Create gas equipment load |
-| `create_infiltration` | Create infiltration (by area or ACH) |
+| `get_load_details` | Detailed info for any load by name |
+| `create_people_definition` | People load (by area or count) |
+| `create_lights_definition` | Lighting load (by area or wattage) |
+| `create_electric_equipment` | Electric equipment load |
+| `create_gas_equipment` | Gas equipment load |
+| `create_infiltration` | Infiltration (by area or ACH) |
 
-### Space Types (1 tool)
+</details>
+
+<details>
+<summary><b>Space types</b> — 1 tool</summary>
 
 List space types via `list_model_objects("SpaceType")`.
 
 | Tool | Description |
 |------|-------------|
-| `get_space_type_details` | Space type loads, schedules, standards |
+| `get_space_type_details` | Space-type loads, schedules, standards |
 
-### Simulation (8 tools)
+</details>
+
+<details>
+<summary><b>HVAC — query & build</b> — 7 tools</summary>
+
 | Tool | Description |
 |------|-------------|
-| `validate_osw` | Validate OSW workflow file |
-| `run_osw` | Run EnergyPlus simulation from an OSW file |
-| `run_simulation` | Run simulation from just an OSM + optional EPW |
-| `get_run_status` | Poll simulation run status |
-| `get_run_logs` | Tail simulation logs |
-| `get_run_artifacts` | List simulation output files |
-| `cancel_run` | Cancel running simulation |
-| `validate_model` | Pre-simulation check: weather, design days, HVAC, constructions |
+| `list_air_loops` | Air loops with zones served |
+| `get_air_loop_details` | Air-loop components, sizing, OA system |
+| `add_air_loop` | Create an air loop and connect zones |
+| `list_plant_loops` | Plant loops (heating, cooling, condenser) |
+| `get_plant_loop_details` | Plant-loop supply/demand components |
+| `list_zone_hvac_equipment` | Zone-level HVAC equipment |
+| `get_zone_hvac_details` | Zone equipment details |
 
-### Results (12 tools)
+</details>
+
+<details>
+<summary><b>HVAC systems (templates)</b> — 8 tools</summary>
+
 | Tool | Description |
 |------|-------------|
-| `extract_summary_metrics` | Extract EUI, energy, unmet hours from results |
-| `read_file` | Read any file by absolute path (all mounts) |
-| `copy_file` | Copy file to host-mounted path |
-| `extract_end_use_breakdown` | Energy breakdown by end use and fuel type (IP/SI) |
-| `extract_envelope_summary` | Opaque + fenestration U-values and areas |
-| `extract_hvac_sizing` | Autosized zone and system HVAC capacities |
-| `extract_zone_summary` | Per-zone areas, conditions, multipliers |
-| `extract_component_sizing` | Autosized HVAC component values (filterable) |
-| `query_timeseries` | Time-series output variable data with date/cap filters |
-| `extract_simulation_errors` | Parse eplusout.err into Fatal/Severe/Warning lists |
-| `list_output_variables` | List available output variables from completed simulation |
-| `compare_runs` | Compare two runs: EUI delta, per-fuel end-use breakdown |
-
-### Simulation Outputs (2 tools)
-| Tool | Description |
-|------|-------------|
-| `add_output_variable` | Add EnergyPlus output variable |
-| `add_output_meter` | Add EnergyPlus output meter |
-
-### HVAC Systems (8 tools)
-| Tool | Description |
-|------|-------------|
-| `add_baseline_system` | Add ASHRAE 90.1 baseline system (types 1-10) |
-| `list_baseline_systems` | List all baseline + modern template types |
-| `get_baseline_system_info` | Get metadata for specific system type |
+| `add_baseline_system` | ASHRAE 90.1 baseline system (types 1–10) |
+| `list_baseline_systems` | All baseline + modern template types |
+| `get_baseline_system_info` | Metadata for a specific system type |
 | `replace_air_terminals` | Replace ALL terminals on an air loop |
-| `replace_zone_terminal` | Replace terminal on a single zone |
-| `add_doas_system` | Add DOAS with fan coils, radiant, or chilled beams |
-| `add_vrf_system` | Add VRF multi-zone heat pump system |
-| `add_radiant_system` | Add low-temperature radiant heating/cooling |
+| `replace_zone_terminal` | Replace the terminal on a single zone |
+| `add_doas_system` | DOAS with fan coils, radiant, or chilled beams |
+| `add_vrf_system` | VRF multi-zone heat-pump system |
+| `add_radiant_system` | Low-temperature radiant heating/cooling |
 
-### Component Properties (10 tools)
+</details>
 
-List HVAC components via `list_model_objects("BoilerHotWater")`, loop detail tools, etc.
+<details>
+<summary><b>HVAC component properties</b> — 10 tools</summary>
+
+List components via `list_model_objects("BoilerHotWater")`, loop detail tools, etc. Covers 15 component types (see [reference](#hvac-component-types)).
 
 | Tool | Description |
 |------|-------------|
 | `get_component_properties` | Read all properties of a named component |
 | `set_component_properties` | Modify properties on a named component |
-| `set_economizer_properties` | Modify OA economizer settings on air loop |
-| `set_sizing_properties` | Modify plant loop sizing (exit temp, delta-T) |
-| `set_sizing_system_properties` | Set air loop SizingSystem properties (SAT, OA, flow methods) |
-| `get_sizing_system_properties` | Read all SizingSystem properties for air loop |
-| `set_sizing_zone_properties` | Set SizingZone properties (bulk, supports zone lists) |
-| `get_sizing_zone_properties` | Read all SizingZone properties for a zone |
-| `get_setpoint_manager_properties` | Read SPM properties (7 types supported) |
-| `set_setpoint_manager_properties` | Modify SPM properties (7 types supported) |
+| `set_economizer_properties` | OA economizer settings on an air loop |
+| `set_sizing_properties` | Plant-loop sizing (exit temp, delta-T) |
+| `set_sizing_system_properties` | Air-loop SizingSystem (SAT, OA, flow methods) |
+| `get_sizing_system_properties` | Read all SizingSystem properties |
+| `set_sizing_zone_properties` | SizingZone properties (supports zone lists) |
+| `get_sizing_zone_properties` | Read all SizingZone properties |
+| `get_setpoint_manager_properties` | Read SPM properties (7 types) |
+| `set_setpoint_manager_properties` | Modify SPM properties (7 types) |
 
-### Loop Operations (9 tools)
+</details>
+
+<details>
+<summary><b>Plant loops & zone equipment</b> — 9 tools</summary>
+
 | Tool | Description |
 |------|-------------|
-| `create_plant_loop` | Create plant loop with pump, bypass, and SPM |
-| `add_supply_equipment` | Add boiler/chiller/tower to plant loop supply |
-| `remove_supply_equipment` | Remove equipment from plant loop supply |
-| `add_demand_component` | Add coil/heater to plant loop demand side |
-| `remove_demand_component` | Remove component from plant loop demand |
-| `add_zone_equipment` | Add baseboard/unit heater to thermal zone |
-| `remove_zone_equipment` | Remove equipment from thermal zone |
-| `remove_all_zone_equipment` | Batch-remove ALL equipment from multiple zones |
-| `set_zone_equipment_priority` | Reorder zone equipment cooling/heating priority |
+| `create_plant_loop` | Plant loop with pump, bypass, SPM |
+| `add_supply_equipment` | Add boiler/chiller/tower to supply side |
+| `remove_supply_equipment` | Remove supply-side equipment |
+| `add_demand_component` | Add coil/heater to the demand side |
+| `remove_demand_component` | Remove a demand-side component |
+| `add_zone_equipment` | Add baseboard/unit heater to a zone |
+| `remove_zone_equipment` | Remove zone equipment |
+| `remove_all_zone_equipment` | Batch-remove all equipment from zones |
+| `set_zone_equipment_priority` | Reorder zone cooling/heating priority |
 
-### Object Management (5 tools)
+</details>
+
+<details>
+<summary><b>Weather & simulation config</b> — 7 tools</summary>
+
 | Tool | Description |
 |------|-------------|
-| `delete_object` | Delete any named object (28+ supported types) |
-| `rename_object` | Rename any named object |
-| `list_model_objects` | List objects of any type (CamelCase, IDD colon, or underscore formats) |
-| `get_object_fields` | Read all properties of any object via introspection — returns values + available setters |
-| `set_object_property` | Write any property on any object via official setters — auto-coerces value types |
-
-### Weather & Simulation Config (7 tools)
-| Tool | Description |
-|------|-------------|
-| `list_weather_files` | List available EPW files with companion .stat/.ddy files |
-| `get_weather_info` | Read weather file info (city, lat, lon, timezone) |
-| `add_design_day` | Add heating/cooling design day |
-| `get_simulation_control` | Read sizing flags and timesteps per hour |
+| `list_weather_files` | Available EPW files (with .stat/.ddy) |
+| `get_weather_info` | City, lat, lon, timezone from a weather file |
+| `add_design_day` | Add a heating/cooling design day |
+| `get_simulation_control` | Read sizing flags and timesteps/hour |
 | `set_simulation_control` | Modify sizing flags and/or timestep |
-| `get_run_period` | Read run period begin/end dates |
-| `set_run_period` | Set run period dates (auto-enables weather file run) |
+| `get_run_period` | Read run-period dates |
+| `set_run_period` | Set run-period dates |
 
-### Measures (2 tools)
-| Tool | Description |
-|------|-------------|
-| `list_measure_arguments` | List measure arguments with defaults and choices |
-| `apply_measure` | Apply OpenStudio measure to in-memory model |
+</details>
 
-### Measure Authoring (4 tools)
-
-Create custom OpenStudio measures with AI-generated code, test them, and apply to models. See [Example 1](docs/examples/01_custom_measure_lighting.md), [Example 2](docs/examples/02_custom_measure_hvac.md), and [Example 19](docs/examples/19_systemd_fourpipebeam_retrofit.md) (full E2E retrofit).
+<details>
+<summary><b>Simulation & outputs</b> — 10 tools</summary>
 
 | Tool | Description |
 |------|-------------|
-| `list_custom_measures` | List all custom measures created with create_measure |
-| `create_measure` | Create custom Ruby/Python ModelMeasure with user-provided code |
-| `test_measure` | Run tests for a custom measure (auto-detects language) |
-| `edit_measure` | Edit an existing custom measure's code or arguments |
+| `run_simulation` | Run a simulation from an OSM + optional EPW |
+| `run_osw` | Run EnergyPlus from an OSW file |
+| `validate_osw` | Validate an OSW workflow file |
+| `validate_model` | Pre-sim check: weather, design days, HVAC, constructions |
+| `get_run_status` | Poll run status |
+| `get_run_logs` | Tail simulation logs |
+| `get_run_artifacts` | List output files |
+| `cancel_run` | Cancel a running simulation |
+| `add_output_variable` | Add an EnergyPlus output variable |
+| `add_output_meter` | Add an EnergyPlus output meter |
 
-### ComStock Measures (1 tool)
+</details>
 
-~61 bundled [ComStock](https://github.com/NREL/ComStock) measures (openstudio-standards-based templates for space types, constructions, HVAC, schedules). Pre-installed in Docker image. Creation tools that use these measures are listed in [Model Creation](#model-creation-5-tools) above.
+<details>
+<summary><b>Run retention</b> — 4 tools</summary>
 
-| Tool | Description |
-|------|-------------|
-| `list_comstock_measures` | List bundled measures with category filter (baseline/upgrade/setup) |
-
-### API Reference (2 tools)
-| Tool | Description |
-|------|-------------|
-| `search_api` | Look up OpenStudio SDK classes and setter/getter methods — verify methods exist before calling |
-| `search_wiring_patterns` | Find Ruby wiring recipes for HVAC components (24 patterns: beams, DOAS, VRF, plant loops, etc.) |
-
-### Tool Router (1 tool)
-| Tool | Description |
-|------|-------------|
-| `recommend_tools` | Given a task description, recommend the relevant tool group |
-
-### Common Measures (20 tools)
-
-~79 bundled [openstudio-common-measures-gem](https://github.com/NREL/openstudio-common-measures-gem) measures (reporting, thermostats, envelope, renewables, visualization, model cleanup). Pre-installed in Docker image. 20 curated measures with 21 dedicated wrapper tools.
+Reclaim disk from old run directories. See [docs/run-retention.md](docs/run-retention.md).
 
 | Tool | Description |
 |------|-------------|
-| `list_common_measures` | List bundled measures with category filter (reporting/thermostat/envelope/loads/renewables/etc.) |
-| `view_model` | Generate interactive 3D Three.js HTML viewer of model geometry |
-| `view_simulation_data` | Generate 3D viewer with simulation data overlaid on surfaces |
-| `generate_results_report` | Comprehensive HTML report (~25 sections: energy, HVAC, envelope, zones) |
-| `run_qaqc_checks` | ASHRAE baseline QA/QC checks (efficiency, capacity, envelope, loads) |
-| `adjust_thermostat_setpoints` | Shift all heating/cooling setpoints by degree offset |
-| `replace_window_constructions` | Bulk-replace all exterior window constructions |
-| `enable_ideal_air_loads` | Enable ideal air loads on all zones (quick sizing studies) |
-| `clean_unused_objects` | Remove orphan objects and unused resources |
-| `change_building_location` | Set weather file + climate zone + design days |
-| `set_thermostat_schedules` | Apply thermostat schedules from library |
+| `cleanup_runs` | Delete old run dirs you own (preview with `dry_run`, then delete) |
+| `delete_run` | Delete one of your run directories |
+| `pin_run` | Protect a run from automatic cleanup |
+| `unpin_run` | Allow a pinned run to be cleaned up again |
+
+</details>
+
+<details>
+<summary><b>Results extraction</b> — 12 tools</summary>
+
+| Tool | Description |
+|------|-------------|
+| `extract_summary_metrics` | EUI, energy, unmet hours |
+| `extract_end_use_breakdown` | Energy by end use and fuel (IP/SI) |
+| `extract_envelope_summary` | Opaque + fenestration U-values and areas |
+| `extract_hvac_sizing` | Autosized zone/system HVAC capacities |
+| `extract_zone_summary` | Per-zone areas, conditions, multipliers |
+| `extract_component_sizing` | Autosized component values (filterable) |
+| `query_timeseries` | Time-series output data with date/cap filters |
+| `extract_simulation_errors` | Parse eplusout.err into Fatal/Severe/Warning |
+| `list_output_variables` | Output variables from a completed run |
+| `compare_runs` | Compare two runs: EUI delta + end-use breakdown |
+| `read_file` | Read any file by absolute path (mounts only) |
+| `copy_file` | Copy a file to a host-mounted path |
+
+</details>
+
+<details>
+<summary><b>Measures & authoring</b> — 7 tools</summary>
+
+Apply bundled measures, or write/test/apply custom ones. See examples [1](docs/examples/01_custom_measure_lighting.md), [2](docs/examples/02_custom_measure_hvac.md), [19](docs/examples/19_systemd_fourpipebeam_retrofit.md).
+
+| Tool | Description |
+|------|-------------|
+| `apply_measure` | Apply an OpenStudio measure to the in-memory model |
+| `list_measure_arguments` | List a measure's arguments, defaults, choices |
+| `create_measure` | Create a custom Ruby/Python ModelMeasure |
+| `edit_measure` | Edit a custom measure's code or arguments |
+| `test_measure` | Run a custom measure's tests (auto-detects language) |
+| `list_custom_measures` | List custom measures you've created |
+| `list_comstock_measures` | List ~61 bundled [ComStock](https://github.com/NREL/ComStock) measures |
+
+</details>
+
+<details>
+<summary><b>Common measures (curated wrappers)</b> — 20 tools</summary>
+
+Typed wrappers over ~79 bundled [common measures](https://github.com/NREL/openstudio-common-measures-gem) (reporting, envelope, renewables, visualization, cleanup).
+
+| Tool | Description |
+|------|-------------|
+| `list_common_measures` | List bundled measures by category |
+| `view_model` | Interactive 3D Three.js viewer of geometry |
+| `view_simulation_data` | 3D viewer with simulation data on surfaces |
+| `generate_results_report` | ~25-section HTML report |
+| `run_qaqc_checks` | ASHRAE baseline QA/QC checks |
+| `adjust_thermostat_setpoints` | Shift heating/cooling setpoints |
+| `replace_window_constructions` | Bulk-replace exterior window constructions |
+| `enable_ideal_air_loads` | Ideal air loads on all zones (quick sizing) |
+| `clean_unused_objects` | Remove orphan/unused objects |
+| `change_building_location` | Set weather + climate zone + design days |
+| `set_thermostat_schedules` | Apply thermostat schedules from a library |
 | `replace_thermostat_schedules` | Replace existing thermostat schedules |
 | `shift_schedule_time` | Shift schedule profiles by hours |
 | `add_rooftop_pv` | Add rooftop PV panels |
-| `add_pv_to_shading` | Add PV to shading surfaces by type |
-| `add_ev_load` | Add electric vehicle charging load |
-| `add_zone_ventilation` | Add zone ventilation design flow rate |
-| `set_lifecycle_cost_params` | Set lifecycle cost analysis parameters |
-| `add_cost_per_floor_area` | Add cost per floor area to building |
-| `set_adiabatic_boundaries` | Set exterior walls/floors to adiabatic |
+| `add_pv_to_shading` | Add PV to shading surfaces |
+| `add_ev_load` | Add EV charging load |
+| `add_zone_ventilation` | Add zone ventilation design flow |
+| `set_lifecycle_cost_params` | Set lifecycle-cost parameters |
+| `add_cost_per_floor_area` | Add cost per floor area |
+| `set_adiabatic_boundaries` | Set walls/floors adiabatic |
+
+</details>
+
+<details>
+<summary><b>Discovery, info & routing</b> — 7 tools</summary>
+
+| Tool | Description |
+|------|-------------|
+| `list_skills` | List available workflow guides |
+| `get_skill` | Step-by-step instructions for a workflow |
+| `recommend_tools` | Recommend the relevant tool group for a task |
+| `search_api` | Look up OpenStudio SDK classes + methods (verify before calling) |
+| `search_wiring_patterns` | Ruby wiring recipes for HVAC (24 patterns) |
+| `get_server_status` | Server health check |
+| `get_versions` | OpenStudio, EnergyPlus, Ruby versions |
+
+</details>
 
 ---
 
-## ASHRAE Baseline Systems
+## Reference
 
-All 10 ASHRAE 90.1 Appendix G baseline systems are supported via `add_baseline_system`:
+### ASHRAE baseline systems
 
-| System | Type | Description |
-|--------|------|-------------|
-| 01 | PTAC | Packaged terminal AC (zone-level) |
-| 02 | PTHP | Packaged terminal heat pump (zone-level) |
-| 03 | PSZ-AC | Packaged single-zone rooftop AC |
-| 04 | PSZ-HP | Packaged single-zone heat pump |
-| 05 | Packaged VAV w/ Reheat | VAV with hot water reheat coils |
-| 06 | Packaged VAV w/ PFP Boxes | VAV with parallel fan-powered boxes |
-| 07 | VAV w/ Reheat | Central VAV, chiller + boiler + cooling tower |
-| 08 | VAV w/ PFP Boxes | Central VAV with parallel fan-powered terminal |
-| 09 | Gas Unit Heater | Heating-only (warehouses, garages) |
+All 10 ASHRAE 90.1 Appendix G baseline systems via `add_baseline_system`, plus modern templates **DOAS**, **VRF**, **Radiant**.
+
+| # | Type | Description |
+|---|------|-------------|
+| 1 | PTAC | Packaged terminal AC (zone-level) |
+| 2 | PTHP | Packaged terminal heat pump (zone-level) |
+| 3 | PSZ-AC | Packaged single-zone rooftop AC |
+| 4 | PSZ-HP | Packaged single-zone heat pump |
+| 5 | Packaged VAV w/ Reheat | VAV with hot-water reheat |
+| 6 | Packaged VAV w/ PFP Boxes | VAV with parallel fan-powered boxes |
+| 7 | VAV w/ Reheat | Central VAV, chiller + boiler + tower |
+| 8 | VAV w/ PFP Boxes | Central VAV, parallel fan-powered terminals |
+| 9 | Gas Unit Heater | Heating-only (warehouses, garages) |
 | 10 | Electric Unit Heater | Heating-only, electric |
 
-Plus 3 modern templates: **DOAS**, **VRF**, **Radiant**.
+### HVAC component types
 
----
-
-## Supported HVAC Component Types
-
-The component properties tools can query and modify these 15 HVAC component types:
+The component-properties tools query/modify these 15 types:
 
 | Category | Components |
 |----------|------------|
-| **Coils** | CoilHeatingGas, CoilHeatingElectric, CoilHeatingWater, CoilCoolingWater, CoilCoolingDXSingleSpeed, CoilCoolingDXTwoSpeed, CoilHeatingDXSingleSpeed |
-| **Plant** | BoilerHotWater, ChillerElectricEIR, CoolingTowerSingleSpeed |
-| **Fans** | FanConstantVolume, FanVariableVolume, FanOnOff |
-| **Pumps** | PumpConstantSpeed, PumpVariableSpeed |
+| Coils | CoilHeatingGas, CoilHeatingElectric, CoilHeatingWater, CoilCoolingWater, CoilCoolingDXSingleSpeed, CoilCoolingDXTwoSpeed, CoilHeatingDXSingleSpeed |
+| Plant | BoilerHotWater, ChillerElectricEIR, CoolingTowerSingleSpeed |
+| Fans | FanConstantVolume, FanVariableVolume, FanOnOff |
+| Pumps | PumpConstantSpeed, PumpVariableSpeed |
 
 ---
 
 ## Examples
 
-19 worked examples with full tool-call sequences — click to expand:
+19 worked examples with full tool-call sequences:
 
-| # | Example | Description |
-|---|---------|-------------|
-| 1 | [Custom Measure: Lighting](docs/examples/01_custom_measure_lighting.md) | Write a measure to reduce lighting, compare before/after EUI |
-| 2 | [Custom Measure: Chilled Beams](docs/examples/02_custom_measure_hvac.md) | Write a complex HVAC measure, replace terminals, compare energy |
-| 3 | [Baseline Comparison](docs/examples/03_baseline_comparison.md) | Compare ASHRAE System 3 vs System 7 EUI |
-| 4 | [HVAC Design Exploration](docs/examples/04_hvac_design_exploration.md) | DOAS + fan coils, tune setpoints, resize components |
-| 5 | [Envelope Retrofit](docs/examples/05_envelope_retrofit.md) | Upgrade wall insulation, measure heating impact |
-| 6 | [Internal Loads](docs/examples/06_internal_loads.md) | People, lighting, plug loads with schedules |
-| 7 | [Full Building Model](docs/examples/07_full_building.md) | Spaces, zones, HVAC, loads, weather, simulate |
-| 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | Floor-print extrusion, surface matching, glazing |
-| 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | Per-orientation window-to-wall ratios |
-| 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | 90.1-2019 template: constructions, loads, HVAC |
-| 11 | [Results Deep Dive](docs/examples/11_results_extraction.md) | End-use breakdown, envelope, HVAC sizing, timeseries |
-| 12 | [`/simulate`](docs/examples/12_simulate.md) | One-command simulate + results |
-| 13 | [`/energy-report`](docs/examples/13_energy_report.md) | Comprehensive multi-category report |
-| 14 | [`/qaqc`](docs/examples/14_qaqc.md) | Pre-simulation model quality check |
-| 15 | [`/add-hvac`](docs/examples/15_add_hvac.md) | Guided ASHRAE system selection |
-| 16 | [`/new-building`](docs/examples/16_new_building.md) | Full model creation from scratch |
-| 17 | [`/retrofit`](docs/examples/17_retrofit.md) | Before/after ECM analysis |
-| 18 | [`/view`](docs/examples/18_view.md) | Interactive 3D model visualization |
-| 19 | [SystemD Four-Pipe Beam Retrofit](docs/examples/19_systemd_fourpipebeam_retrofit.md) | End-to-end: load 44-zone model, baseline sim, author measure, retrofit sim, compare |
+| # | Example | # | Example |
+|---|---------|---|---------|
+| 1 | [Custom Measure: Lighting](docs/examples/01_custom_measure_lighting.md) | 11 | [Results Deep Dive](docs/examples/11_results_extraction.md) |
+| 2 | [Custom Measure: Chilled Beams](docs/examples/02_custom_measure_hvac.md) | 12 | [`/simulate`](docs/examples/12_simulate.md) |
+| 3 | [Baseline Comparison](docs/examples/03_baseline_comparison.md) | 13 | [`/energy-report`](docs/examples/13_energy_report.md) |
+| 4 | [HVAC Design Exploration](docs/examples/04_hvac_design_exploration.md) | 14 | [`/qaqc`](docs/examples/14_qaqc.md) |
+| 5 | [Envelope Retrofit](docs/examples/05_envelope_retrofit.md) | 15 | [`/add-hvac`](docs/examples/15_add_hvac.md) |
+| 6 | [Internal Loads](docs/examples/06_internal_loads.md) | 16 | [`/new-building`](docs/examples/16_new_building.md) |
+| 7 | [Full Building Model](docs/examples/07_full_building.md) | 17 | [`/retrofit`](docs/examples/17_retrofit.md) |
+| 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | 18 | [`/view`](docs/examples/18_view.md) |
+| 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | 19 | [Four-Pipe Beam Retrofit (E2E)](docs/examples/19_systemd_fourpipebeam_retrofit.md) |
+| 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | | |
 
 ---
 
 ## Testing
 
-For the full testing guide — framework details, annotated examples, CI shards, and how to write new tests — see **[`docs/testing/`](docs/testing/README.md)** (or [`docs/testing/testing.md`](docs/testing/testing.md) for the contributor guide).
-
-### Quick start
+Full guide — framework, annotated examples, CI shards, writing tests — in **[docs/testing/](docs/testing/README.md)**.
 
 ```bash
 # Unit tests (no Docker)
@@ -529,7 +501,6 @@ pytest tests/test_skill_registration.py -v
 
 # Integration tests (Docker)
 docker build -t openstudio-mcp:dev -f docker/Dockerfile .
-
 docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
   -e RUN_OPENSTUDIO_INTEGRATION=1 -e MCP_SERVER_CMD=openstudio-mcp \
   openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv -s tests/'
@@ -537,72 +508,37 @@ docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
 
 ---
 
-## Dev vs Prod Mode
-
-| Mode | Purpose | Behavior |
-|------|---------|----------|
-| `dev` (default) | Local development | FastMCP banner + INFO logs |
-| `prod` | MCP host usage | Banner disabled, quieter logs |
-
-```bash
-# Prod mode (recommended for MCP hosts)
-docker run --rm -i -e OPENSTUDIO_MCP_MODE=prod openstudio-mcp:dev openstudio-mcp
-```
-
-In **prod mode**, stdout is reserved exclusively for MCP JSON-RPC messages. Logs go to stderr.
-
----
-
 ## Architecture
 
-- **Transport:** stdio (container spawned by host)
-- **Protocol:** MCP (JSON-RPC over stdin/stdout)
-- **Model state:** single in-memory model via `model_manager`
-- **Runs:** stored under `/runs/<run_id>/`
-- **Skills pattern:** each skill in `mcp_server/skills/<name>/` with `tools.py` (MCP registration) + `operations.py` (business logic)
+- **Transport:** stdio (default) or streamable HTTP for [remote/multi-user](#remote--multi-user-http)
+- **Protocol:** MCP (JSON-RPC); in stdio prod mode, stdout is reserved for JSON-RPC and logs go to stderr
+- **Skills:** 27 skill modules under `mcp_server/skills/<name>/`, each with `tools.py` (MCP registration) + `operations.py` (business logic); they auto-register
+- **State:** per-session in-memory model via `model_manager`; runs under `/runs/<run_id>/` (or `/runs/<user>/<run_id>/` in HTTP mode)
 
-Full system diagram, security analysis & hardening recommendations: **[docs/architecture.md](docs/architecture.md)**
+Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full system diagram, security analysis, and hardening notes: **[docs/architecture.md](docs/architecture.md)**.
 
----
+<details>
+<summary><b>Contributing</b> — adding skills, tools, and component types</summary>
 
-## Contributing
-
-### Adding a new MCP skill
-
+**New MCP skill**
 1. Create `mcp_server/skills/<name>/__init__.py`, `operations.py`, `tools.py`
-2. `operations.py` — pure business logic, returns `{"ok": True/False, ...}` dicts
-3. `tools.py` — exports `register(mcp)`, defines MCP tool schemas
-4. Add tests in `tests/test_<name>.py`
-5. Add CI step in `.github/workflows/ci.yml`
-6. The skill auto-registers via `skills/__init__.py` discovery
-7. Update `EXPECTED_TOOLS` in `tests/test_skill_registration.py`
-8. Update tool counts in `README.md` and `CLAUDE.md`
+2. `operations.py` — pure logic, returns `{"ok": True/False, ...}`
+3. `tools.py` — exports `register(mcp)`, defines tool schemas
+4. Add `tests/test_<name>.py` and a CI step in `.github/workflows/ci.yml`
+5. Auto-registers via `skills/__init__.py`; add names to `EXPECTED_TOOLS` and bump counts in `tests/test_tool_baseline.py`
 
-### Adding a new Claude Code skill (workflow guide)
+**New Claude Code skill (workflow guide)**
+1. Create `.claude/skills/<name>/SKILL.md` with YAML frontmatter (`name`, `description`)
+2. Add workflow instructions referencing MCP tool names; `user-invocable: true|false`, `context: fork` for fire-and-forget
+3. Add `tests/test_skill_<name>.py` + a CI shard, an example in `docs/examples/`, and a README row
+4. Auto-appears in `list_skills()` via the `/skills` mount
 
-1. Create `.claude/skills/<name>/SKILL.md` with YAML frontmatter:
-   ```yaml
-   ---
-   name: my-skill
-   description: Short description for discovery
-   ---
-   ```
-2. Add workflow instructions in the markdown body referencing MCP tool names
-3. For user-invocable skills, add `user-invocable: true` (or omit — default)
-4. For background knowledge, add `user-invocable: false`
-5. For fire-and-forget workflows, add `context: fork`
-6. Add integration test in `tests/test_skill_<name>.py` exercising the tool sequence
-7. Add test to a CI shard in `.github/workflows/ci.yml`
-8. Add example doc in `docs/examples/<N>_<name>.md`
-9. Update README examples section and Claude Code Skills table
-10. The skill auto-appears in `list_skills()` / `get_skill()` via the `/skills` mount
+**New HVAC component type**
+1. Add `_get_<type>_props(obj)` / `_set_<type>_props(obj, props)` in `components.py`
+2. Add an entry to `COMPONENT_TYPES`; add a test in `tests/test_component_properties.py`
+3. No dynamic dispatch — every OpenStudio API call must be explicit and grepable
 
-### Adding a new HVAC component type
-
-1. Add `_get_<type>_props(obj)` and `_set_<type>_props(obj, properties)` in `components.py`
-2. Add entry to `COMPONENT_TYPES` dict
-3. Add test in `tests/test_component_properties.py`
-4. No dynamic dispatch — every OpenStudio API call must be explicit and grepable
+</details>
 
 ---
 
