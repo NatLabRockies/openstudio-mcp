@@ -125,6 +125,11 @@ EXPECTED_TOOLS = {
     "get_run_logs",
     "get_run_artifacts",
     "cancel_run",
+    # Run retention / disk management
+    "cleanup_runs",
+    "delete_run",
+    "pin_run",
+    "unpin_run",
     "read_file",
     "extract_summary_metrics",
     "copy_file",
@@ -189,7 +194,7 @@ def test_all_skills_registered():
 
 
 def test_all_tool_names_registered():
-    # Validates: all 142 expected tools are registered, no extras — migration backward-compatibility
+    # Validates: all 146 expected tools are registered, no extras — migration backward-compatibility
     """Every expected tool function is registered via mcp.tool()."""
     registered_tools = {}
 
