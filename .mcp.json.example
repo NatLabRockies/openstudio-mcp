@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "openstudio-mcp": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "/ABSOLUTE/PATH/TO/inputs:/inputs",
+        "-v", "/ABSOLUTE/PATH/TO/runs:/runs",
+        "-v", "/ABSOLUTE/PATH/TO/openstudio-mcp/.claude/skills:/skills:ro",
+        "-e", "OPENSTUDIO_MCP_MODE=prod",
+        "openstudio-mcp:dev", "openstudio-mcp"
+      ]
+    }
+  }
+}
