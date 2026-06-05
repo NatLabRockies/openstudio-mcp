@@ -96,12 +96,14 @@ def list_weather_files() -> dict[str, Any]:
             if wd.is_dir():
                 sources.append(str(wd))
                 for epw in sorted(wd.glob("*.epw")):
-                    base = epw.with_suffix("")
+                    # with_suffix(".ddy") on the .epw path itself — an
+                    # intermediate with_suffix("") mangles dotted names
+                    # (USA_MA_Boston-Logan.Intl.AP.725090_TMY3 -> ...AP.ddy)
                     weather_files.append({
                         "name": epw.name,
                         "path": str(epw),
-                        "has_ddy": base.with_suffix(".ddy").exists(),
-                        "has_stat": base.with_suffix(".stat").exists(),
+                        "has_ddy": epw.with_suffix(".ddy").exists(),
+                        "has_stat": epw.with_suffix(".stat").exists(),
                     })
 
         # 2. ChangeBuildingLocation measure test EPWs
@@ -109,12 +111,11 @@ def list_weather_files() -> dict[str, Any]:
         if cbl_tests.is_dir():
             sources.append(str(cbl_tests))
             for epw in sorted(cbl_tests.glob("*.epw")):
-                base = epw.with_suffix("")
                 weather_files.append({
                     "name": epw.name,
                     "path": str(epw),
-                    "has_ddy": base.with_suffix(".ddy").exists(),
-                    "has_stat": base.with_suffix(".stat").exists(),
+                    "has_ddy": epw.with_suffix(".ddy").exists(),
+                    "has_stat": epw.with_suffix(".stat").exists(),
                 })
 
         # 3. /inputs directory
@@ -123,12 +124,11 @@ def list_weather_files() -> dict[str, Any]:
             if input_epws:
                 sources.append(str(INPUT_ROOT))
                 for epw in input_epws:
-                    base = epw.with_suffix("")
                     weather_files.append({
                         "name": epw.name,
                         "path": str(epw),
-                        "has_ddy": base.with_suffix(".ddy").exists(),
-                        "has_stat": base.with_suffix(".stat").exists(),
+                        "has_ddy": epw.with_suffix(".ddy").exists(),
+                        "has_stat": epw.with_suffix(".stat").exists(),
                     })
 
         return {
@@ -139,6 +139,46 @@ def list_weather_files() -> dict[str, Any]:
         }
     except Exception as e:
         return {"ok": False, "error": f"Failed to list weather files: {e}"}
+
+
+def _epw_search_dirs() -> list[Path]:
+    """Known EPW locations, priority order: user /inputs first, then
+    openstudio-standards gem data, then ChangeBuildingLocation test files."""
+    dirs: list[Path] = []
+    if INPUT_ROOT.exists():
+        dirs.append(INPUT_ROOT)
+    gem_root = Path(OSCLI_GEM_PATH)
+    dirs.extend(
+        d for d in gem_root.glob("ruby/*/gems/openstudio-standards-*/data/weather")
+        if d.is_dir()
+    )
+    cbl_tests = COMSTOCK_MEASURES_DIR / "ChangeBuildingLocation" / "tests"
+    if cbl_tests.is_dir():
+        dirs.append(cbl_tests)
+    return dirs
+
+
+def find_epw_by_name(basename: str) -> Path | None:
+    """Locate an EPW by exact filename across known weather dirs.
+
+    Resolves bare-filename OS:WeatherFile urls (the OSM convention) to a
+    real file. Exact name match only — EPW filenames encode location, WMO
+    station, and dataset vintage, so same name means same data; guessing a
+    "close" EPW would silently corrupt results. /inputs is searched
+    recursively (user files), gem/comstock dirs are flat.
+    """
+    if not basename.lower().endswith(".epw"):
+        return None
+    for d in _epw_search_dirs():
+        if d == INPUT_ROOT:
+            hits = sorted(d.rglob(basename))
+            if hits:
+                return hits[0]
+        else:
+            candidate = d / basename
+            if candidate.is_file():
+                return candidate
+    return None
 
 
 def get_weather_info() -> dict[str, Any]:
