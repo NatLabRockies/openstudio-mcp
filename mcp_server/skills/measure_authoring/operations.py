@@ -1236,7 +1236,7 @@ def edit_measure_op(
 
 
 def list_custom_measures_op() -> dict[str, Any]:
-    """List all custom measures in /runs/custom_measures/."""
+    """List all custom measures under the caller's run root (custom_measures/)."""
     try:
         cm_dir = custom_measures_dir()
         if not cm_dir.is_dir():

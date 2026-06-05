@@ -31,7 +31,15 @@ def _build_auth():
 
         from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
-        mapping = json.loads(os.environ.get("MCP_TOKENS", "") or "{}")
+        try:
+            mapping = json.loads(os.environ.get("MCP_TOKENS", "") or "{}")
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                'MCP_TOKENS must be valid JSON mapping token -> username, '
+                f'e.g. {{"s3cret":"alice"}} — got invalid JSON: {e}',
+            ) from e
+        if not isinstance(mapping, dict):
+            raise ValueError("MCP_TOKENS must be a JSON object mapping token -> username")
         tokens = {t: {"client_id": u, "scopes": []} for t, u in mapping.items()}
         return StaticTokenVerifier(tokens=tokens)
     if mode == "jwt":

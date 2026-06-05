@@ -87,3 +87,18 @@ def test_http_jwt_auth_accepts_signed_rejects_unsigned():
             assert rejected, "JWT mode must reject connections without a token"
 
         asyncio.run(_run())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("bad_tokens", ["not-json", "[1, 2, 3]"])
+def test_invalid_mcp_tokens_fails_fast_with_clear_error(bad_tokens):
+    # Regression: invalid MCP_TOKENS crashed startup with a cryptic JSONDecodeError /
+    # AttributeError. With MCP_AUTH=token (the HTTP default), it must fail fast with
+    # an actionable message naming MCP_TOKENS.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    with pytest.raises(RuntimeError) as exc:  # http_server raises if the server exits at startup
+        with http_server({"MCP_AUTH": "token", "MCP_TOKENS": bad_tokens}):
+            pass
+    assert "MCP_TOKENS must be" in str(exc.value), str(exc.value)

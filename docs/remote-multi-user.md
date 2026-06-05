@@ -213,8 +213,6 @@ for the full setup, safety model, and the `cleanup_runs` / `delete_run` /
   Horizontal scale would need a per-user-container topology behind a router.
 - **Static token auth is plaintext** — use `MCP_AUTH=jwt` (IdP-signed JWTs) for
   SSO/public deployments.
-- Two internal measure-execution temp dirs still write to shared `/runs`
-  (no cross-user read exposure) — to be scoped per-user in a follow-up.
 
 See `docs/plans/multi-user-remote-mcp.md` for the full design rationale.
 

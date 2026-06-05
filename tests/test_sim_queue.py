@@ -84,3 +84,46 @@ def test_run_simulation_leaves_no_orphan_staging_dir():
                     await s.call_tool("cancel_run", {"run_id": rs["run_id"]})
 
         asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_cancelled_running_sim_stays_cancelled():
+    # Regression: _refresh_status reclassified a cancelled (running) run as "failed"
+    # on the next get_run_status — a killed pid reads as failure — breaking the
+    # cancel contract and corrupting retention/audit (cancelled must stay terminal).
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    async def _status(s, run_id):
+        return unwrap(await s.call_tool("get_run_status", {"run_id": run_id}))["run"]["status"]
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                cr = unwrap(await s.call_tool(
+                    "create_example_osm", {"name": f"cxl_{uuid.uuid4().hex[:8]}"}))
+                assert cr["ok"] is True, cr
+                rs = unwrap(await s.call_tool(
+                    "run_simulation", {"osm_path": cr["osm_path"], "epw_path": EPW_PATH}))
+                assert rs["ok"] is True, rs
+                run_id = rs["run_id"]
+
+                # Wait until the sim is actually running (pid set), not just queued.
+                state = rs["status"]
+                for _ in range(60):
+                    state = await _status(s, run_id)
+                    if state in ("running", "success", "failed"):
+                        break
+                    await asyncio.sleep(0.5)
+                assert state == "running", f"sim never reached running (got {state!r})"
+
+                cancelled = unwrap(await s.call_tool("cancel_run", {"run_id": run_id}))
+                assert cancelled["ok"] is True, cancelled
+
+                # Re-poll: a cancelled run must stay 'cancelled', never flip to 'failed'.
+                for _ in range(3):
+                    again = await _status(s, run_id)
+                    assert again == "cancelled", f"cancelled run reclassified to {again!r}"
+                    await asyncio.sleep(0.3)
+
+        asyncio.run(_run())

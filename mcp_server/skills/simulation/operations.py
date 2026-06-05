@@ -453,6 +453,11 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
 def _refresh_status(rec: RunRecord) -> RunRecord:
     """Check if the OS process has ended and update run status accordingly."""
     _prev = rec.status
+    if rec.status in _TERMINAL:
+        # Already terminal (incl. cancelled) — never reclassify. Keeps a cancelled
+        # run sticky (a dead pid would otherwise be read as "failed") and makes
+        # refresh idempotent.
+        return rec
     if rec.pid is None:
         return rec
 
@@ -482,10 +487,6 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
             status = "success" if out.get("completed_status") == "Success" else "failed"
         except Exception as e:
             err = f"Failed to parse out.osw: {e}"
-
-    # If we couldn't parse out.osw and exit_code is known non-zero, keep failed.
-    if status != "success" and rec.status != "cancelled":
-        status = "failed"
 
     rec.status = status  # type: ignore[assignment]
     rec.ended_at = rec.ended_at or _now()

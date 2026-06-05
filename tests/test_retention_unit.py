@@ -123,9 +123,11 @@ def test_run_root_sanity_guard(path, sane):
     (["--gc"], 14.0, 14.0),               # CLI opt-in honours env window
     (["--gc-days", "3"], 0.0, 3.0),       # CLI sets explicit window
     (["--gc-days", "0"], 7.0, 0.0),       # CLI explicitly turns it off
+    (["--gc-days", "-5"], 0.0, 0.0),      # negative CLI window clamped to off (fail-safe)
+    ([], -3.0, 0.0),                      # negative env window clamped to off
     (["--http"], 30.0, 30.0),             # unrelated args ignored
 ])
 def test_resolve_gc_days_opt_in(argv, env_days, expected):
     # Validates: GC is off unless explicitly enabled (--gc / --gc-days / env>0),
-    # with CLI taking precedence over the env default.
+    # with CLI taking precedence over the env default; negatives clamp to off.
     assert resolve_gc_days(argv, env_days) == expected

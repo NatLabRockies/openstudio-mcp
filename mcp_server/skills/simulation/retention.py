@@ -56,10 +56,10 @@ def resolve_gc_days(argv: list[str], env_days: float) -> float:
     ap.add_argument("--gc-days", type=float, default=None)
     ns, _ = ap.parse_known_args(argv)
     if ns.gc_days is not None:
-        return ns.gc_days
+        return max(0.0, ns.gc_days)  # negative window = off (fail-safe, never "delete all")
     if ns.gc:
         return env_days if env_days > 0 else 7.0
-    return env_days
+    return max(0.0, env_days)
 
 # GC refuses to operate if RUN_ROOT is (mis)configured to a system location —
 # a backstop against a catastrophic OSMCP_RUN_ROOT value wiping real data.
