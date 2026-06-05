@@ -171,9 +171,11 @@ def find_epw_by_name(basename: str) -> Path | None:
         return None
     for d in _epw_search_dirs():
         if d == INPUT_ROOT:
-            hits = sorted(d.rglob(basename))
-            if hits:
-                return hits[0]
+            # First hit short-circuits the recursive walk — same EPW name
+            # means same data, so picking among duplicates is cosmetic
+            hit = next(d.rglob(basename), None)
+            if hit is not None:
+                return hit
         else:
             candidate = d / basename
             if candidate.is_file():

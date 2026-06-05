@@ -40,9 +40,12 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
         return out
     epw = Path(str(url.get()))
 
-    # Tier 1: url already resolves (absolute path still valid on this machine)
+    # Tier 1: url already resolves (absolute path still valid on this
+    # machine). resolve() so a url relative to the server cwd doesn't
+    # produce a relative file_paths entry — the runner executes with
+    # cwd=run_dir and would resolve it against the wrong base
     if epw.is_file():
-        out["file_paths"].append(str(epw.parent))
+        out["file_paths"].append(str(epw.resolve().parent))
         return out
 
     # Tier 2: bare/stale name — look in known weather dirs, stage like run_osw
