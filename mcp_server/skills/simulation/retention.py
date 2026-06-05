@@ -36,6 +36,30 @@ from mcp_server.util import resolve_run_dir
 
 PIN_MARKER = ".pinned"
 _NOT_A_RUN = {"examples", "exports"}  # user working dirs, never GC'd
+_CLEANUP_FALLBACK_DAYS = 7.0  # manual cleanup_runs default window when GC is off
+
+# Effective retention window for the auto-GC daemon. Starts from the env value
+# (RUN_RETENTION_DAYS, default 0 = off) and may be raised at startup by the
+# --gc / --gc-days CLI flag via start_retention_gc(days=...). 0 = daemon disabled.
+_retention_days = RUN_RETENTION_DAYS
+
+
+def resolve_gc_days(argv: list[str], env_days: float) -> float:
+    """Resolve the effective auto-GC window from CLI args + the env default.
+
+    Precedence: --gc-days N  >  --gc (env window, else 7)  >  env_days (default 0).
+    Returns 0.0 when GC should stay off — the off-by-default contract.
+    """
+    import argparse
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--gc", action="store_true")
+    ap.add_argument("--gc-days", type=float, default=None)
+    ns, _ = ap.parse_known_args(argv)
+    if ns.gc_days is not None:
+        return ns.gc_days
+    if ns.gc:
+        return env_days if env_days > 0 else 7.0
+    return env_days
 
 # GC refuses to operate if RUN_ROOT is (mis)configured to a system location —
 # a backstop against a catastrophic OSMCP_RUN_ROOT value wiping real data.
@@ -177,10 +201,10 @@ def _sweep_user_root(
 
 def _gc_sweep_all(now: float | None = None) -> dict[str, Any]:
     """One whole-container sweep across every user's runs (used by the daemon)."""
-    if RUN_RETENTION_DAYS <= 0 or not RUN_ROOT.exists() or not _run_root_is_sane(RUN_ROOT):
+    if _retention_days <= 0 or not RUN_ROOT.exists() or not _run_root_is_sane(RUN_ROOT):
         return {"deleted": [], "freed_mb": 0.0}
     now = time.time() if now is None else now
-    max_age_s = RUN_RETENTION_DAYS * 86400.0
+    max_age_s = _retention_days * 86400.0
     deleted: list[dict] = []
     freed = 0
     for user_dir in sorted(RUN_ROOT.iterdir()):
@@ -207,11 +231,18 @@ _started = False
 _start_lock = threading.Lock()
 
 
-def start_retention_gc() -> bool:
-    """Start the background retention daemon once. No-op if GC is disabled or the
-    configured RUN_ROOT is unsafe to sweep."""
-    global _started
-    if RUN_RETENTION_DAYS <= 0:
+def start_retention_gc(days: float | None = None) -> bool:
+    """Start the background retention daemon once. Off by default: returns False
+    (no daemon) unless an effective window > 0 is given here or via the env. Also
+    refuses if the configured RUN_ROOT is unsafe to sweep.
+
+    `days` is the resolved CLI/env window (see resolve_gc_days); None keeps the
+    env-derived default.
+    """
+    global _started, _retention_days
+    if days is not None:
+        _retention_days = days
+    if _retention_days <= 0:
         return False
     if not _run_root_is_sane(RUN_ROOT):
         audit("retention_disabled", reason="unsafe_run_root", run_root=str(RUN_ROOT))
@@ -230,9 +261,15 @@ def start_retention_gc() -> bool:
 
 def cleanup_runs(older_than_days: float | None = None, dry_run: bool = True) -> dict[str, Any]:
     """Delete the caller's run dirs older than `older_than_days` (default: the
-    server retention window). dry_run previews without deleting. 0 days = all
-    terminal runs. Pinned and queued/running runs are skipped."""
-    days = RUN_RETENTION_DAYS if older_than_days is None else float(older_than_days)
+    active GC window, or 7 days when auto-GC is off). dry_run previews without
+    deleting. 0 days = all terminal runs. Pinned and queued/running runs are
+    skipped. Works regardless of whether the background daemon is enabled."""
+    if older_than_days is None:
+        # Default to the active GC window, or a safe 7-day fallback when GC is off
+        # (so the no-arg call never means "delete everything").
+        days = _retention_days if _retention_days > 0 else _CLEANUP_FALLBACK_DAYS
+    else:
+        days = float(older_than_days)
     max_age_s = max(0.0, days) * 86400.0
     recs, freed = _sweep_user_root(
         user_run_root(), user_key(), max_age_s, time.time(),

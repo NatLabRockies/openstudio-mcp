@@ -31,15 +31,16 @@ MAX_CONCURRENCY_PER_USER = _safe_int(_raw_per_user, 0)
 _raw_tail = os.environ.get("OPENSTUDIO_MCP_DEFAULT_LOG_TAIL", os.environ.get("OSMCP_LOG_TAIL_DEFAULT", "200"))
 LOG_TAIL_DEFAULT = _safe_int(_raw_tail, 200)
 
-# Run-dir retention (whole-container garbage collection). A background sweeper
-# deletes run directories older than RUN_RETENTION_DAYS. Age = run_record.json
-# `ended_at` (fallback: dir mtime). 0 disables auto-GC entirely (runs kept until
-# pruned by cleanup_runs/delete_run). Pinned and queued/running runs are never
-# swept. Only run dirs are targeted — saved models under examples/ are left alone.
+# Run-dir retention (whole-container garbage collection). OFF by default — the
+# background sweeper only runs when explicitly enabled, via the `--gc` / `--gc-days`
+# CLI flag or by setting RUN_RETENTION_DAYS > 0. When on, it deletes run dirs older
+# than RUN_RETENTION_DAYS. Age = run_record.json `ended_at` (fallback: dir mtime).
+# Pinned and queued/running runs are never swept. Only run dirs are targeted —
+# saved models under examples/ are left alone.
 _raw_retention = os.environ.get(
-    "OPENSTUDIO_MCP_RUN_RETENTION_DAYS", os.environ.get("OSMCP_RUN_RETENTION_DAYS", "7"),
+    "OPENSTUDIO_MCP_RUN_RETENTION_DAYS", os.environ.get("OSMCP_RUN_RETENTION_DAYS", "0"),
 )
-RUN_RETENTION_DAYS = _safe_float(_raw_retention, 7.0)
+RUN_RETENTION_DAYS = _safe_float(_raw_retention, 0.0)
 
 _raw_sweep = os.environ.get(
     "OPENSTUDIO_MCP_RETENTION_SWEEP_SECONDS", os.environ.get("OSMCP_RETENTION_SWEEP_SECONDS", "3600"),

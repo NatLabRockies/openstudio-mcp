@@ -10,7 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from mcp_server.skills.simulation.retention import _run_root_is_sane, _sweep_user_root
+from mcp_server.skills.simulation.retention import (
+    _run_root_is_sane,
+    _sweep_user_root,
+    resolve_gc_days,
+)
 
 NOW = 2_000_000_000.0
 OLD = NOW - 100 * 86400      # 100 days old
@@ -109,3 +113,19 @@ def test_run_root_sanity_guard(path, sane):
     # Validates: the daemon refuses to sweep a filesystem/system root, so a
     # misconfigured OSMCP_RUN_ROOT can never turn GC loose on real data.
     assert _run_root_is_sane(Path(path)) is sane
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("argv", "env_days", "expected"), [
+    ([], 0.0, 0.0),                       # off by default
+    ([], 7.0, 7.0),                       # env opt-in
+    (["--gc"], 0.0, 7.0),                 # CLI opt-in, no env -> default window
+    (["--gc"], 14.0, 14.0),               # CLI opt-in honours env window
+    (["--gc-days", "3"], 0.0, 3.0),       # CLI sets explicit window
+    (["--gc-days", "0"], 7.0, 0.0),       # CLI explicitly turns it off
+    (["--http"], 30.0, 30.0),             # unrelated args ignored
+])
+def test_resolve_gc_days_opt_in(argv, env_days, expected):
+    # Validates: GC is off unless explicitly enabled (--gc / --gc-days / env>0),
+    # with CLI taking precedence over the env default.
+    assert resolve_gc_days(argv, env_days) == expected

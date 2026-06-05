@@ -95,11 +95,15 @@ if ENABLE_CODE_MODE:
 
 
 def main():
+    import sys
+
     silence_openstudio_stdout_logger()
     redirect_c_stdout_to_stderr()
-    # Background daemon: reclaim run dirs older than the retention window.
-    from mcp_server.skills.simulation.retention import start_retention_gc
-    start_retention_gc()
+    # Run-dir garbage collection is OFF by default. Enable explicitly with the
+    # --gc / --gc-days CLI flag, or by setting OSMCP_RUN_RETENTION_DAYS>0.
+    from mcp_server.config import RUN_RETENTION_DAYS
+    from mcp_server.skills.simulation.retention import resolve_gc_days, start_retention_gc
+    start_retention_gc(days=resolve_gc_days(sys.argv[1:], RUN_RETENTION_DAYS))
     transport = os.environ.get("MCP_TRANSPORT", "stdio").lower()
     if transport in ("http", "streamable-http"):
         mcp.run(

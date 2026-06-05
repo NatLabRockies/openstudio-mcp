@@ -114,11 +114,13 @@ On a VPN with `MCP_AUTH=none`, drop the `headers` block. The local stdio config
 - **Simulation queue.** Runs are FIFO-queued; at most `OSMCP_MAX_CONCURRENCY`
   (default 1) EnergyPlus simulations execute at once. Excess runs report
   `status: "queued"` and start automatically as slots free.
-- **Run retention (disk).** Finished run dirs (~40 MB each) are reclaimed
-  automatically: a background sweeper deletes runs older than
-  `OSMCP_RUN_RETENTION_DAYS` (default 7, `0` = keep forever), skipping pinned and
-  queued/running runs. Only run dirs are swept — saved models under `examples/`
-  are never touched. On demand, agents can `cleanup_runs` (preview with
+- **Run retention (disk).** Finished run dirs (~40 MB each) can be reclaimed by a
+  background sweeper — but it is **off by default**. Enable it explicitly with the
+  `--gc` / `--gc-days N` CLI flag or by setting `OSMCP_RUN_RETENTION_DAYS>0`; it
+  then deletes runs older than that window, skipping pinned and queued/running
+  runs. Only run dirs are swept — saved models under `examples/` are never
+  touched, and it never follows symlinks or runs against a system root. On demand
+  (regardless of the daemon), agents can `cleanup_runs` (preview with
   `dry_run=True`, then delete), `delete_run`, and `pin_run` / `unpin_run` to
   exempt a reference run. Every reclaim is audit-logged as `run_evicted`.
 
@@ -169,8 +171,12 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
 | `OSMCP_SESSION_TTL` | `1800` | idle seconds before a session model is dropped (`0` disables) |
 | `OSMCP_RUN_ROOT` | `/runs` | base directory for per-user run dirs |
-| `OSMCP_RUN_RETENTION_DAYS` | `7` | auto-delete finished run dirs older than N days (`0` = keep forever) |
+| `OSMCP_RUN_RETENTION_DAYS` | `0` (off) | enable auto-GC: delete finished run dirs older than N days (`0` = off) |
 | `OSMCP_RETENTION_SWEEP_SECONDS` | `3600` | how often the retention daemon sweeps (60s floor) |
+
+Auto-GC is **off by default**. Enable it with a CLI flag on the server command —
+`openstudio-mcp --gc` (default 7-day window) or `openstudio-mcp --gc-days 14` — or
+via `OSMCP_RUN_RETENTION_DAYS=14`. The CLI flag wins over the env value.
 | `MCP_AUDIT` | `on` | structured audit logging (tool calls + sim lifecycle); `off` to disable |
 | `MCP_AUDIT_FILE` | — | also append audit JSON lines to this file (e.g. `/runs/audit.log`) |
 
