@@ -51,6 +51,14 @@ user's identity: it scopes their run directory and their run ownership. If you
 set `MCP_TRANSPORT=http` and forget `MCP_AUTH`, it defaults to `token` and — with
 no `MCP_TOKENS` — rejects everyone (fail-closed). Use `MCP_AUTH=none` to opt out.
 
+**You issue the tokens.** There is no self-service signup: the operator generates
+a strong random string per user (e.g. `openssl rand -hex 24`), adds it to
+`MCP_TOKENS`, and hands it to that user out-of-band — treat it like a password.
+The server verifies the `Authorization: Bearer …` header on **every** request
+before any tool runs; a missing or unknown token is rejected (401). Rotate or
+revoke by editing `MCP_TOKENS` and restarting. For `jwt` mode, tokens are minted
+and signed by your IdP instead, and the server only verifies them.
+
 > **Token storage is plaintext** (`StaticTokenVerifier`). Fine for a trusted team
 > behind a VPN. For SSO/public deployments use `MCP_AUTH=jwt` and point it at your
 > IdP's verifying key (`MCP_JWT_PUBLIC_KEY`, a PEM) or JWKS endpoint
@@ -136,6 +144,21 @@ lines — to stderr (`docker logs`) and, if `MCP_AUDIT_FILE` is set, to that fil
 ```
 
 So you can answer "who ran what, when, did it succeed". Disable with `MCP_AUDIT=off`.
+
+**Who can access logs.** Two audiences, two boundaries — enforced in code:
+
+- **End users (through the MCP API)** see only their *own* run logs:
+  `get_run_logs` / `get_run_artifacts` (and `read_file` on their run dir) are
+  run-ownership scoped, so another user's `run_id` returns "unknown". **No tool
+  exposes the audit log** or any other user's logs — there is no API path to them.
+- **Operators (host/container access)** see everything: the audit JSON and server
+  logs via `docker logs <container>`, and the `MCP_AUDIT_FILE` on the mounted
+  volume. This is the only way to read the cross-user audit trail — guard host
+  and `docker` access accordingly.
+- **Keep `MCP_AUDIT_FILE` off any user-reachable path.** Top-level
+  `/runs/audit.log` is already safe in HTTP mode — it sits outside every user's
+  `/runs/<user>/` scope, so `read_file` / `list_files` deny it — but never point
+  it *inside* a user's run area, or that user could read the whole audit trail.
 
 ---
 
