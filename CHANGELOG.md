@@ -1,9 +1,9 @@
 # Changelog
 
-## [1.0.0] - 2026-06-05
+## [1.0.0-beta] - 2026-06-05
 
-First major release: openstudio-mcp can now run as a shared, multi-user remote
-server while the original single-container stdio workflow is unchanged.
+First major release (beta): openstudio-mcp can now run as a shared, multi-user
+remote server while the original single-container stdio workflow is unchanged.
 
 ### Added
 - **Remote multi-user server** over Streamable HTTP (`MCP_TRANSPORT=http`),
