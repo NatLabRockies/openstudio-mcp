@@ -30,6 +30,21 @@ PYTHON_ARGS = [
      "required": False, "default_value": "exterior"},
 ]
 
+# A Python ModelMeasure using the documented patterns: iteration over
+# model.getThermalZones(), OptionalString handling via str(z.name()), and an
+# auto-extracted argument (`tag`). 8-space indent (Python measures).
+PY_TAG_BODY = (
+    "        tagged = 0\n"
+    "        for z in model.getThermalZones():\n"
+    "            z.setName(str(z.name()) + ' ' + tag)\n"
+    "            tagged += 1\n"
+    "        runner.registerFinalCondition('Tagged ' + str(tagged) + ' zones')"
+)
+PY_TAG_ARGS = [
+    {"name": "tag", "display_name": "Tag", "description": "Suffix appended to each zone name",
+     "type": "String", "required": False, "default_value": "RETROFIT"},
+]
+
 
 @pytest.mark.integration
 def test_list_custom_measures():
@@ -213,6 +228,55 @@ def test_test_measure_python_passes():
                 }))
                 assert res["ok"] is True, res.get("test_output", "")
                 assert res["passed"] > 0
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_python_model_measure_iterates_applies_and_mutates():
+    # Validates: a Python ModelMeasure built from the documented patterns
+    # (iteration over model.getThermalZones(), OptionalString via str(z.name()),
+    # argument extraction) creates, passes test_measure, applies, and actually
+    # mutates the loaded model — Python measures are first-class, not just scaffolded.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("py_apply"))
+
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("tag_zones"),
+                    "description": "Tag all thermal zones (Python)",
+                    "run_body": PY_TAG_BODY,
+                    "language": "Python",
+                    "arguments": PY_TAG_ARGS,
+                }))
+                assert create["ok"] is True, create
+                assert create["script_file"] == "measure.py"
+
+                # Python measure runs against a real model under pytest
+                tested = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"],
+                    "arguments": {"tag": "QA"},
+                }))
+                assert tested["ok"] is True, tested.get("test_output", "")
+                assert tested["passed"] > 0, tested
+
+                # Apply with an explicit argument override; model is reloaded after
+                applied = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": create["measure_dir"],
+                    "arguments": {"tag": "APPLIED"},
+                }))
+                assert applied["ok"] is True, applied
+
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 0}))
+                names = [z["name"] for z in zones["thermal_zones"]]
+                assert names, "example model should have thermal zones"
+                assert all(n.endswith("APPLIED") for n in names), \
+                    f"Python measure must rename every zone via its argument: {names}"
+
     asyncio.run(_run())
 
 

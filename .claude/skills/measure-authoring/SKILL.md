@@ -60,8 +60,12 @@ extract_summary_metrics(run_id=<retrofit_id>)   # compare to baseline
 
 ## Language Choice
 
-- **Ruby**: Preferred for most measures. Matches OpenStudio SDK documentation and existing measure libraries.
-- **Python**: Works but less common. Use when user prefers Python.
+Both are **fully supported** — `create_measure(language="Ruby"|"Python")` scaffolds, tests
+(minitest for Ruby, pytest for Python), and applies either. Pick per the user's request or
+project convention:
+
+- **Ruby** — matches most OpenStudio SDK docs and existing measure libraries; a fine default when the user has no preference.
+- **Python** — first-class. Same OpenStudio model API, Python syntax (`()` on method calls, 8-space indent, `openstudio.model.*` classes). One caveat the tools handle for you: `openstudio measure -u` can't regenerate `measure.xml` for Python (SDK limitation), so `create_measure`/`edit_measure` write the XML directly — arguments still work at runtime.
 
 ## Common run_body Patterns (Ruby)
 
@@ -106,6 +110,58 @@ extract_summary_metrics(run_id=<retrofit_id>)   # compare to baseline
 
 WARNING: Beams are AIR TERMINALS (connect via `air_loop.addBranchForZone`), NOT zone equipment (`addToThermalZone`).
 
+## Common run_body Patterns (Python)
+
+Same model API, Python syntax: method calls take `()`, classes are `openstudio.model.*`, indent **8 spaces**. Argument values are auto-extracted by the scaffolding — reference them by name.
+
+Python gotchas (different from Ruby):
+- `obj.name()` returns an OptionalString — use `str(obj.name())` or `obj.name().get()`, never bare `obj.name()`.
+- `runner.registerError("msg")` must be followed by `return False` (capital F; it does not halt).
+- Optionals: `opt = surface.construction()` then `if opt.is_initialized(): c = opt.get()`.
+- Unit conversion: `openstudio.convert(val, "W/m^2", "Btu/hr*ft^2").get()`.
+
+### Envelope
+```python
+        for ld in model.getLightsDefinitions():
+            ld.setWattsperSpaceFloorArea(8.0)
+        for inf in model.getSpaceInfiltrationDesignFlowRates():
+            inf.setFlowperExteriorSurfaceArea(0.0003)
+        for s in model.getSurfaces():
+            if s.outsideBoundaryCondition() != "Outdoors":
+                continue
+            # ...
+```
+
+### HVAC
+```python
+        for loop in model.getAirLoopHVACs():
+            for zone in loop.thermalZones():
+                loop.removeBranchForZone(zone)
+                # create new terminal...
+                loop.addBranchForZone(zone, terminal.to_StraightComponent().get())
+```
+
+### Zone Equipment
+```python
+        for zone in model.getThermalZones():
+            bb = openstudio.model.ZoneHVACBaseboardConvectiveElectric(model)
+            bb.setName(f"{str(zone.name())} Baseboard")
+            bb.addToThermalZone(zone)
+```
+
+### Air Terminals (beams)
+```python
+        # CooledBeam (2-pipe, cooling only)
+        coil = openstudio.model.CoilCoolingCooledBeam(model)
+        terminal = openstudio.model.AirTerminalSingleDuctConstantVolumeCooledBeam(model, sch, coil)
+
+        # FourPipeBeam (4-pipe, heating + cooling)
+        cc = openstudio.model.CoilCoolingFourPipeBeam(model)
+        hc = openstudio.model.CoilHeatingFourPipeBeam(model)
+        terminal = openstudio.model.AirTerminalSingleDuctConstantVolumeFourPipeBeam(model, cc, hc)
+```
+(Same beam warning applies: connect via `air_loop.addBranchForZone`, not `addToThermalZone`.)
+
 ## ReportingMeasures
 
 ReportingMeasures run **after simulation** and access SQL results. Use when the user wants to
@@ -139,6 +195,7 @@ apply_measure(measure_dir="/runs/custom_measures/custom_eui_report", run_id="<co
 - Model & SQL boilerplate is auto-generated: `model` and `sql` variables are available in run_body
 - `arguments()` takes no params (not `model`)
 - Includes empty `energyPlusOutputRequests()` stub (edit via `edit_measure` if needed)
+- Works in Python too — `language="Python"`. Query SQL with `val = sql.execAndReturnFirstDouble(query)` then `if val.is_initialized(): runner.registerValue("k", val.get())`.
 
 ## Notes
 
