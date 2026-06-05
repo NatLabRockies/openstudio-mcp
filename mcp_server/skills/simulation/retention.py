@@ -207,10 +207,16 @@ def _gc_sweep_all(now: float | None = None) -> dict[str, Any]:
     max_age_s = _retention_days * 86400.0
     deleted: list[dict] = []
     freed = 0
+    # Local single-user layout: run dirs live directly under RUN_ROOT.
+    recs, f = _sweep_user_root(RUN_ROOT, "local", max_age_s, now, dry_run=False, reason="gc")
+    deleted.extend(recs)
+    freed += f
+    # Multi-user layout: RUN_ROOT/<user>/<run>. Skip children that are themselves
+    # run dirs (already handled above) so we don't descend into a run's internals.
     for user_dir in sorted(RUN_ROOT.iterdir()):
         if user_dir.is_symlink() or not user_dir.is_dir():
             continue
-        if not _is_real_child(user_dir, RUN_ROOT):  # only genuine RUN_ROOT/<user> dirs
+        if not _is_real_child(user_dir, RUN_ROOT) or _is_run_dir(user_dir):
             continue
         recs, f = _sweep_user_root(
             user_dir, user_dir.name, max_age_s, now, dry_run=False, reason="gc")

@@ -70,13 +70,16 @@ _SHARED_READ_ROOTS = [
 
 
 def user_run_root() -> Path:
-    """The caller's private run root (RUN_ROOT/<user_key>), created if missing.
+    """The caller's private run root, created if missing.
 
-    Identity is resolved per-call, so one code path serves every user. In stdio
-    / off-request contexts user_key() is "local" — single-user behavior unchanged.
+    Identity is resolved per-call, so one code path serves every user. The local
+    single-user (stdio / off-request) owns the whole RUN_ROOT — preserving the
+    original /runs/<run_id> layout — while each HTTP user is scoped to
+    RUN_ROOT/<user_key>.
     """
-    from mcp_server.identity import user_key
-    root = (RUN_ROOT / user_key()).resolve()
+    from mcp_server.identity import LOCAL, user_key
+    key = user_key()
+    root = (RUN_ROOT if key == LOCAL else RUN_ROOT / key).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

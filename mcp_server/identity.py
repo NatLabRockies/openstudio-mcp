@@ -46,13 +46,28 @@ def _access_token():
         return None
 
 
+def _is_http_transport() -> bool:
+    """True only for the remote/multi-user HTTP server (else stdio = single user)."""
+    import os
+    return os.environ.get("MCP_TRANSPORT", "stdio").lower() in ("http", "streamable-http")
+
+
 def user_key() -> str:
-    """Filesystem-safe key identifying the user (auth principal, else session)."""
+    """Filesystem-safe key identifying the user (auth principal, else session).
+
+    stdio is inherently single-user (one local process per client), so it always
+    resolves to "local" — which owns the whole run root, preserving the original
+    single-container workflow. Only the HTTP server scopes per session/principal.
+    """
     # With auth, the verified token's client_id is the principal (StaticToken/JWT).
     tok = _access_token()
     cid = getattr(tok, "client_id", None) if tok is not None else None
     if cid:
         return _sanitize(cid)
+    # Non-HTTP transport = one local user; FastMCP still assigns stdio a session
+    # id, but that must not splinter the single user's run root per connection.
+    if not _is_http_transport():
+        return LOCAL
     ctx = _ctx()
     if ctx is None:
         return LOCAL
