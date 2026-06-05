@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -502,8 +503,8 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         return {
             "ok": False,
             "error": f"Unknown run_id: {run_id}",
-            "hint": "Use list_files(directory='/runs', pattern='sim_*') to find "
-                    "simulation run directories, or run_simulation() to create one.",
+            "hint": "Use list_files(directory='/runs') to find simulation run "
+                    "directories, or run_simulation() to create one.",
         }
 
     with _sim_lock:
@@ -555,8 +556,8 @@ def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "open
         return {
             "ok": False,
             "error": f"Unknown run_id: {run_id}",
-            "hint": "Use list_files(directory='/runs', pattern='sim_*') to find "
-                    "simulation run directories, or run_simulation() to create one.",
+            "hint": "Use list_files(directory='/runs') to find simulation run "
+                    "directories, or run_simulation() to create one.",
         }
 
     try:
@@ -741,23 +742,6 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
     if not osm.exists():
         return {"ok": False, "error": f"OSM file not found: {osm_path}"}
 
-    # Create a temporary OSW alongside the OSM
-    run_id = uuid.uuid4().hex[:12]
-    osw_dir = user_run_root() / f"sim_{run_id}"
-    osw_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy OSM into the run dir so OSW can reference it by relative path
-    staged_osm = osw_dir / osm.name
-    shutil.copy2(str(osm), str(staged_osm))
-
-    # Build minimal OSW
-    osw: dict[str, Any] = {
-        "seed_file": osm.name,
-        "file_paths": [],
-        "measure_paths": [],
-        "steps": [],
-    }
-
     # Validate EPW path upfront if provided
     epw_abs: str | None = None
     if epw_path:
@@ -766,8 +750,22 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
             return {"ok": False, "error": f"EPW file not found: {epw_path}"}
         epw_abs = str(epw.resolve())
 
-    osw_path_out = osw_dir / "workflow.osw"
-    osw_path_out.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+    # Stage the minimal OSW in a throwaway temp dir. run_osw() copies the staged
+    # files into the real per-user run dir before it returns, so nothing here
+    # needs to persist — this avoids leaving an orphan sim_* dir under /runs.
+    with tempfile.TemporaryDirectory(prefix="osw_stage_") as tmp:
+        stage = Path(tmp)
+        staged_osm = stage / osm.name
+        shutil.copy2(str(osm), str(staged_osm))
 
-    # Delegate to run_osw — pass epw_path so it handles staging into files/
-    return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name)
+        osw: dict[str, Any] = {
+            "seed_file": osm.name,
+            "file_paths": [],
+            "measure_paths": [],
+            "steps": [],
+        }
+        osw_path_out = stage / "workflow.osw"
+        osw_path_out.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+
+        # Delegate to run_osw — pass epw_path so it handles staging into files/
+        return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name)

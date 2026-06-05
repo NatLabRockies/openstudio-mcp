@@ -6,6 +6,7 @@ test stays fast (no full EnergyPlus completion needed).
 """
 import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import EPW_PATH, http_server, http_session, integration_enabled, unwrap
@@ -47,5 +48,39 @@ def test_queue_caps_concurrent_sims():
 
                 assert running <= 1, f"MAX_CONCURRENCY=1 must cap running at 1, got {statuses}"
                 assert queued >= 2, f"3 sims at cap=1 must queue >=2, got {statuses}"
+
+        asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_run_simulation_leaves_no_orphan_staging_dir():
+    # Regression: run_simulation staged its OSW into a persistent /runs/<user>/sim_<id>
+    # dir, then run_osw copied that into the real run dir — leaving the sim_* dir behind
+    # forever (unbounded disk). Staging must be ephemeral; only the real run dir persists.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                cr = unwrap(await s.call_tool(
+                    "create_example_osm", {"name": f"orphan_{uuid.uuid4().hex[:8]}"},
+                ))
+                assert cr["ok"] is True, cr
+
+                rs = unwrap(await s.call_tool(
+                    "run_simulation", {"osm_path": cr["osm_path"], "epw_path": EPW_PATH},
+                ))
+                assert rs["ok"] is True, rs
+                run_dir = Path(rs["run_dir"])
+                try:
+                    assert run_dir.exists(), f"real run dir missing: {run_dir}"
+                    assert not run_dir.name.startswith("sim_"), \
+                        f"run_dir must be the real run hex dir, not a staging dir: {run_dir}"
+                    # The user's run root must hold no sim_* staging leftovers.
+                    orphans = sorted(p.name for p in run_dir.parent.glob("sim_*"))
+                    assert orphans == [], f"orphan sim_* staging dir(s) left behind: {orphans}"
+                finally:
+                    await s.call_tool("cancel_run", {"run_id": rs["run_id"]})
 
         asyncio.run(_run())

@@ -17,9 +17,9 @@ should call exactly these tools, not discover alternatives.
 """
 from __future__ import annotations
 
-import pytest
-
 import re
+
+import pytest
 
 from .conftest import BASELINE_MODEL, save_retrofit_run_id, save_sim_run_id
 from .runner import run_claude
@@ -127,7 +127,7 @@ def test_run_baseline_simulation():
 
     # Also try to extract from the final text (agent usually reports it)
     if not run_id:
-        match = re.search(r"sim_[a-f0-9]{12}", result.final_text)
+        match = re.search(r"\b[a-f0-9]{32}\b", result.final_text)
         if match:
             run_id = match.group(0)
 
@@ -171,7 +171,7 @@ def test_run_retrofit_simulation():
 
     # Fallback: extract from final text
     if not run_id:
-        match = re.search(r"sim_[a-f0-9]{12}", result.final_text)
+        match = re.search(r"\b[a-f0-9]{32}\b", result.final_text)
         if match:
             run_id = match.group(0)
 
