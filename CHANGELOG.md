@@ -4,6 +4,7 @@
 
 First major release (beta): openstudio-mcp can now run as a shared, multi-user
 remote server while the original single-container stdio workflow is unchanged.
+This release also adds native arm64 (Apple Silicon) Docker support.
 
 ### Added
 - **Remote multi-user server** over Streamable HTTP (`MCP_TRANSPORT=http`),
@@ -25,15 +26,24 @@ remote server while the original single-container stdio workflow is unchanged.
 - Docs: `docs/remote-multi-user.md`, `docs/run-retention.md`; stress harness
   `scripts/stress_remote.py`; CI shards for HTTP transport, isolation, auth,
   eviction, sim queue, audit, and retention.
-
-### Fixed
+- **Native arm64 (Apple Silicon)** — `docker/Dockerfile.arm64` builds from NREL's
+  arm64 `.deb` with `/var/oscli` bundled gems; arm64 CI build + sanity checks +
+  a real-EnergyPlus shard-1 test job (#55, #56, #57).
 - **stdio single-user workflow restored**: stdio resolves to one "local" user
   owning all of `/runs` (FastMCP's per-connection session id had splintered it
   into `/runs/<uuid>/` and broken direct `/runs/*.osm` saves).
 - **`run_simulation`** no longer leaves orphan `sim_*` staging dirs — it stages
   in an ephemeral temp dir, so only the real run dir persists.
-- **`cancel_run`** now persists the `cancelled` status, so cancelled runs are
-  correctly terminal (and reclaimable) across restarts.
+- **`cancel_run`** now persists the `cancelled` status, and `_refresh_status` no
+  longer reclassifies a cancelled run as failed — cancelled runs stay terminal
+  (and reclaimable) across restarts and status polls.
+- **OpenStudio stdout Logger pollution** — silence the `[utilities.Polyhedron]` /
+  `[openstudio.model.Space]` warnings that could corrupt the JSON-RPC stdio
+  stream on imperfect geometry (#49).
+- **Measure authoring: Python at parity with Ruby** — the measure-authoring skill
+  now documents Python `run_body` patterns and gotchas (was Ruby-only, framed
+  Python as "less common"); `create_measure(language="Python")` was already
+  supported and tested (#60).
 
 ### Changed
 - Tool count 142 → 146 (4 run-retention tools).
