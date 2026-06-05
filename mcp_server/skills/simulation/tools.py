@@ -11,6 +11,12 @@ from mcp_server.skills.simulation.operations import (
     validate_model_op,
     validate_osw,
 )
+from mcp_server.skills.simulation.retention import (
+    cleanup_runs,
+    delete_run,
+    pin_run,
+    unpin_run,
+)
 
 
 def register(mcp):
@@ -102,3 +108,34 @@ def register(mcp):
         For post-simulation QA/QC with ASHRAE compliance checks, use run_qaqc_checks instead.
         """
         return validate_model_op()
+
+    @mcp.tool(tags={"simulation"}, name="cleanup_runs")
+    def cleanup_runs_tool(older_than_days: float | None = None, dry_run: bool = True):
+        """Reclaim disk by deleting old simulation run directories you own.
+
+        Defaults to a safe preview (dry_run=True) — call again with dry_run=False
+        to actually delete. older_than_days defaults to the server retention
+        window; 0 deletes ALL your terminal runs regardless of age. Pinned and
+        queued/running runs are never deleted. Old runs are also reclaimed
+        automatically; this tool is for on-demand cleanup.
+        """
+        return cleanup_runs(older_than_days=older_than_days, dry_run=dry_run)
+
+    @mcp.tool(tags={"simulation"}, name="delete_run")
+    def delete_run_tool(run_id: str):
+        """Delete one simulation run directory you own to free disk. Cancel the
+        run first if it is still queued or running.
+        """
+        return delete_run(run_id)
+
+    @mcp.tool(tags={"simulation"}, name="pin_run")
+    def pin_run_tool(run_id: str):
+        """Protect a run from automatic age-based cleanup (keep it indefinitely).
+        Use for reference baselines you want to revisit later.
+        """
+        return pin_run(run_id)
+
+    @mcp.tool(tags={"simulation"}, name="unpin_run")
+    def unpin_run_tool(run_id: str):
+        """Remove a run's pin so it becomes eligible for automatic cleanup again."""
+        return unpin_run(run_id)

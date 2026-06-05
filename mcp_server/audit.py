@@ -3,11 +3,13 @@
 One JSON line per event, to stderr (-> `docker logs`) and, when MCP_AUDIT_FILE is
 set, appended to that file too. Disable entirely with MCP_AUDIT=off.
 
-Two sources of events:
+Sources of events:
   - AuditMiddleware: one `tool_call` line per MCP tool invocation (user, session,
     tool, args preview, ok, duration). One chokepoint — the 142 tools are untouched.
   - simulation ops: `sim_queued` / `sim_launched` / `sim_finished` / `sim_cancelled`
     (these complete in a background thread that no request/middleware sees).
+  - retention: `run_evicted` (background GC daemon) / `run_deleted` / `run_pinned`
+    / `run_unpinned` (explicit cleanup tools).
 """
 from __future__ import annotations
 

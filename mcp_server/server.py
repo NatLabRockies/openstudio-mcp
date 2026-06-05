@@ -97,6 +97,9 @@ if ENABLE_CODE_MODE:
 def main():
     silence_openstudio_stdout_logger()
     redirect_c_stdout_to_stderr()
+    # Background daemon: reclaim run dirs older than the retention window.
+    from mcp_server.skills.simulation.retention import start_retention_gc
+    start_retention_gc()
     transport = os.environ.get("MCP_TRANSPORT", "stdio").lower()
     if transport in ("http", "streamable-http"):
         mcp.run(

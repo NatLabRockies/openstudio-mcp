@@ -639,6 +639,7 @@ def cancel_run(run_id: str) -> dict[str, Any]:
             rec.status = "cancelled"
             rec.ended_at = rec.ended_at or _now()
             _RUNS[run_id] = rec
+        _persist_run_record(rec)  # disk record must read 'cancelled' so GC can reclaim it
         audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
 
@@ -653,6 +654,7 @@ def cancel_run(run_id: str) -> dict[str, Any]:
             rec.status = "cancelled"
             rec.ended_at = rec.ended_at or _now()
             _RUNS[run_id] = rec
+        _persist_run_record(rec)  # disk record must read 'cancelled' so GC can reclaim it
         audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
     except psutil.NoSuchProcess:

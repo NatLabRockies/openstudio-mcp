@@ -153,6 +153,9 @@ def http_server(env_overrides: dict | None = None, port: int | None = None):
     env.update({
         "MCP_TRANSPORT": "http", "MCP_HOST": "127.0.0.1",
         "MCP_PORT": str(port), "MCP_PATH": "/mcp",
+        # Disable the auto-GC daemon by default so the suite never reclaims the
+        # shared /runs out from under other tests; retention tests opt in.
+        "OSMCP_RUN_RETENTION_DAYS": "0",
     })
     if env_overrides:
         env.update(env_overrides)

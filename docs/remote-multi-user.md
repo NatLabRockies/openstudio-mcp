@@ -114,6 +114,13 @@ On a VPN with `MCP_AUTH=none`, drop the `headers` block. The local stdio config
 - **Simulation queue.** Runs are FIFO-queued; at most `OSMCP_MAX_CONCURRENCY`
   (default 1) EnergyPlus simulations execute at once. Excess runs report
   `status: "queued"` and start automatically as slots free.
+- **Run retention (disk).** Finished run dirs (~40 MB each) are reclaimed
+  automatically: a background sweeper deletes runs older than
+  `OSMCP_RUN_RETENTION_DAYS` (default 7, `0` = keep forever), skipping pinned and
+  queued/running runs. Only run dirs are swept — saved models under `examples/`
+  are never touched. On demand, agents can `cleanup_runs` (preview with
+  `dry_run=True`, then delete), `delete_run`, and `pin_run` / `unpin_run` to
+  exempt a reference run. Every reclaim is audit-logged as `run_evicted`.
 
 **Audit log.** Every tool call and the full sim lifecycle are recorded as JSON
 lines — to stderr (`docker logs`) and, if `MCP_AUDIT_FILE` is set, to that file:
@@ -123,6 +130,7 @@ lines — to stderr (`docker logs`) and, if `MCP_AUDIT_FILE` is set, to that fil
 {"ts":1717532001.3, "event":"sim_queued",   "run_id":"…", "user":"alice"}
 {"ts":1717532001.4, "event":"sim_launched", "run_id":"…", "user":"alice", "pid":123}
 {"ts":1717532019.9, "event":"sim_finished", "run_id":"…", "user":"alice", "status":"success"}
+{"ts":1718136600.0, "event":"run_evicted",  "run_id":"…", "user":"alice", "reason":"gc", "age_days":8.2, "freed_mb":50.2}
 ```
 
 So you can answer "who ran what, when, did it succeed". Disable with `MCP_AUDIT=off`.
@@ -161,6 +169,8 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
 | `OSMCP_SESSION_TTL` | `1800` | idle seconds before a session model is dropped (`0` disables) |
 | `OSMCP_RUN_ROOT` | `/runs` | base directory for per-user run dirs |
+| `OSMCP_RUN_RETENTION_DAYS` | `7` | auto-delete finished run dirs older than N days (`0` = keep forever) |
+| `OSMCP_RETENTION_SWEEP_SECONDS` | `3600` | how often the retention daemon sweeps (60s floor) |
 | `MCP_AUDIT` | `on` | structured audit logging (tool calls + sim lifecycle); `off` to disable |
 | `MCP_AUDIT_FILE` | — | also append audit JSON lines to this file (e.g. `/runs/audit.log`) |
 
