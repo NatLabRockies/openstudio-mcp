@@ -6,10 +6,11 @@ without Docker, OpenStudio, or a real simulation.
 """
 import json
 import os
+from pathlib import Path
 
 import pytest
 
-from mcp_server.skills.simulation.retention import _sweep_user_root
+from mcp_server.skills.simulation.retention import _run_root_is_sane, _sweep_user_root
 
 NOW = 2_000_000_000.0
 OLD = NOW - 100 * 86400      # 100 days old
@@ -73,3 +74,38 @@ def test_sweep_dry_run_deletes_nothing(tmp_path):
     assert [r["run_id"] for r in recs] == ["succ_old"]
     assert freed > 0
     assert (tmp_path / "succ_old").exists(), "dry_run must not delete"
+
+
+@pytest.mark.unit
+def test_sweep_never_follows_symlink_out_of_tree(tmp_path):
+    # Regression: GC must never delete (or follow) a symlink — a run-shaped link
+    # pointing outside the swept tree, and its target, must be left untouched.
+    user_root = tmp_path / "user"
+    user_root.mkdir()
+    real = _mk(user_root, "real_old", {"status": "success", "ended_at": OLD})
+
+    outside = tmp_path / "outside_secret"   # stands in for "anything outside the MCP"
+    outside.mkdir()
+    (outside / "important.txt").write_text("do not delete")
+    (outside / "out.osw").write_text("{}")  # makes the link *look* like a run dir
+    link = user_root / "evil_link"
+    link.symlink_to(outside, target_is_directory=True)
+
+    recs, _freed = _sweep_user_root(user_root, "u", WEEK, NOW, dry_run=False, reason="gc")
+
+    assert {r["run_id"] for r in recs} == {"real_old"}, "only the real run is reclaimed"
+    assert not real.exists()
+    assert link.is_symlink(), "the symlink itself must be left in place"
+    assert outside.exists() and (outside / "important.txt").exists(), \
+        "external target must survive — GC cannot escape via symlink"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("path", "sane"), [
+    ("/runs", True), ("/runs/sub", True), ("/data/openstudio/runs", True),
+    ("/", False), ("/home", False), ("/tmp", False), ("/etc", False), ("/var", False),  # noqa: S108
+])
+def test_run_root_sanity_guard(path, sane):
+    # Validates: the daemon refuses to sweep a filesystem/system root, so a
+    # misconfigured OSMCP_RUN_ROOT can never turn GC loose on real data.
+    assert _run_root_is_sane(Path(path)) is sane

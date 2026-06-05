@@ -37,6 +37,37 @@ from mcp_server.util import resolve_run_dir
 PIN_MARKER = ".pinned"
 _NOT_A_RUN = {"examples", "exports"}  # user working dirs, never GC'd
 
+# GC refuses to operate if RUN_ROOT is (mis)configured to a system location —
+# a backstop against a catastrophic OSMCP_RUN_ROOT value wiping real data.
+_FORBIDDEN_ROOTS = {
+    "/", "/home", "/root", "/usr", "/etc", "/var", "/bin", "/lib", "/lib64",
+    "/opt", "/tmp", "/boot", "/dev", "/proc", "/sys", "/srv", "/mnt", "/media",  # noqa: S108 — denylist, not temp usage
+}
+
+
+def _run_root_is_sane(root: Path) -> bool:
+    """False if RUN_ROOT is a filesystem/system root we must never sweep."""
+    try:
+        r = root.resolve()
+    except OSError:
+        return False
+    if len(r.parts) < 2:  # "/" or a bare drive root
+        return False
+    return str(r) not in _FORBIDDEN_ROOTS
+
+
+def _is_real_child(d: Path, parent: Path) -> bool:
+    """True only if d is a genuine, non-symlink direct child of parent (resolved).
+
+    Defeats symlink escape: a symlinked entry — or anything whose resolved path
+    leaves `parent` — is rejected, so deletion can never follow a link out of the
+    swept tree.
+    """
+    try:
+        return (not d.is_symlink()) and d.resolve().parent == parent.resolve()
+    except OSError:
+        return False
+
 
 def _is_run_dir(d: Path) -> bool:
     """A dir is a run iff it holds a run record / OpenStudio output / run subdir."""
@@ -119,7 +150,9 @@ def _sweep_user_root(
     if not user_root.exists():
         return out, freed
     for d in sorted(user_root.iterdir()):
-        if not d.is_dir() or not _is_run_dir(d):
+        if d.is_symlink() or not d.is_dir() or not _is_run_dir(d):
+            continue
+        if not _is_real_child(d, user_root):  # never follow a link out of the tree
             continue
         if (d / PIN_MARKER).exists() or _is_active(d):
             continue
@@ -144,14 +177,16 @@ def _sweep_user_root(
 
 def _gc_sweep_all(now: float | None = None) -> dict[str, Any]:
     """One whole-container sweep across every user's runs (used by the daemon)."""
-    if RUN_RETENTION_DAYS <= 0 or not RUN_ROOT.exists():
+    if RUN_RETENTION_DAYS <= 0 or not RUN_ROOT.exists() or not _run_root_is_sane(RUN_ROOT):
         return {"deleted": [], "freed_mb": 0.0}
     now = time.time() if now is None else now
     max_age_s = RUN_RETENTION_DAYS * 86400.0
     deleted: list[dict] = []
     freed = 0
     for user_dir in sorted(RUN_ROOT.iterdir()):
-        if not user_dir.is_dir():
+        if user_dir.is_symlink() or not user_dir.is_dir():
+            continue
+        if not _is_real_child(user_dir, RUN_ROOT):  # only genuine RUN_ROOT/<user> dirs
             continue
         recs, f = _sweep_user_root(
             user_dir, user_dir.name, max_age_s, now, dry_run=False, reason="gc")
@@ -173,9 +208,13 @@ _start_lock = threading.Lock()
 
 
 def start_retention_gc() -> bool:
-    """Start the background retention daemon once. No-op if GC is disabled."""
+    """Start the background retention daemon once. No-op if GC is disabled or the
+    configured RUN_ROOT is unsafe to sweep."""
     global _started
     if RUN_RETENTION_DAYS <= 0:
+        return False
+    if not _run_root_is_sane(RUN_ROOT):
+        audit("retention_disabled", reason="unsafe_run_root", run_root=str(RUN_ROOT))
         return False
     with _start_lock:
         if _started:
@@ -211,6 +250,8 @@ def delete_run(run_id: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Unknown run_id: {run_id}"}
     if _is_active(run_dir):
         return {"ok": False, "error": f"Run {run_id} is queued/running — cancel_run first."}
+    if not _is_real_child(run_dir, user_run_root()):  # never delete via a symlink/escape
+        return {"ok": False, "error": f"Refusing to delete {run_id}: not a real run dir."}
     freed = round(_dir_size_bytes(run_dir) / 1e6, 1)
     shutil.rmtree(run_dir, ignore_errors=True)
     _forget(run_id)
