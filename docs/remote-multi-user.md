@@ -173,12 +173,14 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_RUN_ROOT` | `/runs` | base directory for per-user run dirs |
 | `OSMCP_RUN_RETENTION_DAYS` | `0` (off) | enable auto-GC: delete finished run dirs older than N days (`0` = off) |
 | `OSMCP_RETENTION_SWEEP_SECONDS` | `3600` | how often the retention daemon sweeps (60s floor) |
-
-Auto-GC is **off by default**. Enable it with a CLI flag on the server command —
-`openstudio-mcp --gc` (default 7-day window) or `openstudio-mcp --gc-days 14` — or
-via `OSMCP_RUN_RETENTION_DAYS=14`. The CLI flag wins over the env value.
 | `MCP_AUDIT` | `on` | structured audit logging (tool calls + sim lifecycle); `off` to disable |
 | `MCP_AUDIT_FILE` | — | also append audit JSON lines to this file (e.g. `/runs/audit.log`) |
+
+Auto-GC of old run dirs is **off by default**. Enable it with `openstudio-mcp --gc`
+(7-day window), `openstudio-mcp --gc-days 14`, or `OSMCP_RUN_RETENTION_DAYS=14`
+(CLI wins over env). See **[Run retention & garbage collection](run-retention.md)**
+for the full setup, safety model, and the `cleanup_runs` / `delete_run` /
+`pin_run` tools.
 
 ---
 
