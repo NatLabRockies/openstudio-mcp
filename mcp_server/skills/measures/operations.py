@@ -18,6 +18,7 @@ import openstudio
 
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
 from mcp_server.model_manager import get_model, load_model
+from mcp_server.skills.measures.osw_weather import resolve_osw_weather
 from mcp_server.util import resolve_run_dir
 
 
@@ -169,23 +170,19 @@ def apply_measure(
         if arguments:
             measure_args = {k: str(v) for k, v in arguments.items()}
 
-        # Collect file_paths for the OSW — include weather file directory
-        # so the runner can find EPW files referenced by the model
-        file_paths = []
-        epw_file = model.weatherFile()
-        if epw_file.is_initialized():
-            epw_path = epw_file.get().path()
-            if epw_path.is_initialized():
-                epw_str = str(epw_path.get())
-                epw_resolved = Path(epw_str)
-                if epw_resolved.is_file():
-                    file_paths.append(str(epw_resolved.parent))
+        # Resolve the model's weather reference so the OSW runner's
+        # Initialization state doesn't abort on a bare/stale EPW url —
+        # the runner validates weather even for --measures_only.
+        # Tiers: resolvable url -> file_paths; basename in known weather
+        # dirs -> staged into files/; unfindable -> stripped from seed
+        # (snapshot restored onto the reloaded model below)
+        weather = resolve_osw_weather(model, run_dir, temp_osm)
+        file_paths = weather["file_paths"]
+        osw_weather_file = weather["weather_file"]
 
         # Also add directories of any EPW paths passed as arguments
         # (e.g. ChangeBuildingLocation's weather_file_name argument).
-        # Set weather_file in OSW so the runner can resolve the model's
-        # weather reference even if the original EPW path is stale.
-        osw_weather_file = None
+        # An explicit argument EPW overrides model-based resolution.
         if arguments:
             for v in arguments.values():
                 v_str = str(v)
@@ -300,6 +297,23 @@ def apply_measure(
             "run_dir": str(run_dir),
             "arguments_applied": measure_args,
         }
+
+        # If weather was stripped from the seed, restore the original
+        # reference — unless the measure set a new one (e.g.
+        # ChangeBuildingLocation)
+        if weather["stripped_idf"] is not None:
+            reloaded = get_model()
+            if reloaded.weatherFile().is_initialized():
+                result["weather_note"] = (
+                    "model weather reference was unresolvable; measure set a new weather file"
+                )
+            else:
+                reloaded.addObject(weather["stripped_idf"])
+                result["weather_note"] = (
+                    "model weather reference was unresolvable; removed for the "
+                    "measures_only run and restored afterward"
+                )
+
         if runner_messages:
             result["runner_messages"] = runner_messages
         return result
