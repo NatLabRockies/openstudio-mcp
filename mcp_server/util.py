@@ -1,8 +1,35 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
+
+
+def reject_escaping_symlinks(root: Path) -> str | None:
+    """Return an error string if the directory tree `root` contains a symlink
+    whose target resolves OUTSIDE `root`; else None.
+
+    Used before staging untrusted measure/OSW trees: a link to a host file
+    (e.g. -> /etc/shadow) must not be copied or executed. Internal symlinks are
+    allowed. Does not follow symlinked directories (no traversal / loops).
+    """
+    try:
+        rroot = str(root.resolve())
+    except OSError:
+        return f"Cannot resolve path: {root}"
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in dirnames + filenames:
+            p = Path(dirpath) / name
+            if not p.is_symlink():
+                continue
+            try:
+                target = str(p.resolve())
+            except OSError:
+                return f"Broken symlink in staged tree: {name}"
+            if target != rroot and not target.startswith(rroot + os.sep):
+                return f"Symlink escapes the allowed directory (not allowed): {name}"
+    return None
 
 
 def safe_read_text(path: Path, max_bytes: int = 200_000) -> str:
