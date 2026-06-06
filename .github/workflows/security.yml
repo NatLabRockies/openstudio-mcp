@@ -3,9 +3,9 @@ name: security
 # Dedicated workflow for the security / sandbox-confinement suite
 # (tests/test_sandbox.py), kept separate from the main `ci` shards so the
 # security tests run and report on their own. Runs the full sandbox tier
-# (OSMCP_SANDBOX=auto); individual tests still pin their own mode per fixture
-# (off/posix/auto), so this exercises every tier and reports how the kernel
-# backends (Landlock + seccomp) behave on the GitHub runner.
+# (OSMCP_SANDBOX=auto) on BOTH amd64 and arm64 — the seccomp BPF and Landlock
+# use arch-specific syscall numbers, so arm64 must be exercised explicitly.
+# Individual tests still pin their own mode per fixture (off/posix/auto).
 
 on:
   push:
@@ -15,14 +15,25 @@ on:
 
 jobs:
   security-tests:
-    runs-on: ubuntu-latest
+    name: security-tests (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            dockerfile: docker/Dockerfile
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            dockerfile: docker/Dockerfile.arm64
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build image
-        run: docker build -f docker/Dockerfile -t openstudio-mcp:dev .
+      - name: Build image (${{ matrix.arch }})
+        run: docker build -f ${{ matrix.dockerfile }} -t openstudio-mcp:dev .
 
-      - name: Run security suite (if present)
+      - name: Run security suite (${{ matrix.arch }})
         env:
           RUN_OPENSTUDIO_INTEGRATION: "1"
           MCP_SERVER_CMD: "openstudio-mcp"
@@ -34,7 +45,7 @@ jobs:
             echo "No security tests present in this checkout — nothing to run."
             exit 0
           fi
-          echo "Running security tests under OSMCP_SANDBOX=$OSMCP_SANDBOX: $FILES"
+          echo "[${{ matrix.arch }}] security tests under OSMCP_SANDBOX=$OSMCP_SANDBOX: $FILES"
           docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
             -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD -e OSMCP_SANDBOX \
             openstudio-mcp:dev bash -lc "cd /repo && pytest -vv $FILES"
