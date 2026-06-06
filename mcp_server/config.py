@@ -80,8 +80,15 @@ SIM_TIMEOUT_SECONDS = _safe_float(
 
 # Unprivileged account confined subprocesses drop to (baked into the image as
 # `sandbox`). See mcp_server/_sandbox_exec.py.
-SANDBOX_UID = _safe_int(os.environ.get("OSMCP_SANDBOX_UID", "1001"), 1001)
-SANDBOX_GID = _safe_int(os.environ.get("OSMCP_SANDBOX_GID", "1001"), 1001)
+def _safe_sandbox_id(env_val: str, default: int) -> int:
+    """A positive uid/gid. Rejects <=0 (esp. 0=root) so a bad override can never
+    leave confined code running as root after the setuid 'drop'."""
+    v = _safe_int(env_val, default)
+    return v if v > 0 else default
+
+
+SANDBOX_UID = _safe_sandbox_id(os.environ.get("OSMCP_SANDBOX_UID", "1001"), 1001)
+SANDBOX_GID = _safe_sandbox_id(os.environ.get("OSMCP_SANDBOX_GID", "1001"), 1001)
 
 # rlimit backstops for confined subprocesses (0 = off). Generous by design — they
 # catch runaway bombs, not tune normal use. CPU/AS default off: a CPU-second cap
