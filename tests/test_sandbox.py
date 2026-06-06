@@ -1,0 +1,734 @@
+"""Confirm the measure-exec vulnerabilities that the sandbox (planned) will close.
+
+Context: docs/plans/measure-exec-sandbox.md. Today an applied measure runs as
+root, with the server's full environment, unconfined filesystem, and open
+network — see skills/measures/operations.py (`env=os.environ.copy()`, no UID
+drop, no FS policy). These tests PROVE each hole exists, safely, using canaries
+and decoys only (no real secret/file/host is touched, nothing leaves the box).
+
+Design — "prove the problem exists now" half of the dual-run plan:
+  - Server is spawned with OSMCP_SANDBOX=off, so these document the explicit
+    passthrough/escape-hatch behaviour and remain valid once the sandbox lands
+    (off = full passthrough, by design — the Codex `danger-full-access` model).
+  - Each probe attempts an attack and reports via runner.registerInfo("PROBE ...").
+    The AUTHORITATIVE check is external ground truth (escape file on disk, bytes
+    the listener received, the uid value), not just the measure's self-report.
+
+Fix increment 1 has landed (clean-env floor + unconditional measure_dir check):
+  - test_measure_exec_unconfined_today (OSMCP_SANDBOX=off) still proves all five
+    holes — off is a true passthrough by design.
+  - test_clean_env_blocks_secret_leak (OSMCP_SANDBOX=posix) proves the env-secret
+    leak is closed and a normal run still succeeds (allowlist complete enough).
+  - test_measure_dir_traversal_blocked proves arbitrary out-of-root measure paths
+    are rejected (check is unconditional, not gated by OSMCP_SANDBOX).
+Fix increment 2 (UID drop + rlimits) and increment 3 (Landlock FS + seccomp
+net-deny) have landed:
+  - test_posix_drops_root_and_applies_rlimits — uid 1001, NPROC rlimit, DAC blocks
+    a root-owned write (OSMCP_SANDBOX=posix).
+  - test_full_tier_blocks_read_escape_and_network — Landlock blocks reading a
+    world-readable file outside the run dir, blocks writing outside it, and
+    seccomp blocks outbound IP networking (OSMCP_SANDBOX=auto), while the run
+    still succeeds.
+With the full tier, all five holes are closed; off remains a true passthrough.
+
+Safety notes:
+  - Decoys live under RUN_ROOT / a tmpdir on the disposable runs volume and are
+    deleted in finally blocks.
+  - The network probe targets a localhost listener owned by this test process,
+    inside the same container — no traffic leaves the machine.
+"""
+import asyncio
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import textwrap
+import threading
+import uuid
+from pathlib import Path
+
+import pytest
+from conftest import (
+    EPW_PATH,
+    http_server,
+    http_session,
+    integration_enabled,
+    setup_example,
+    unwrap,
+)
+
+pytestmark = pytest.mark.integration
+
+RUN_ROOT = Path(
+    os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs")),
+)
+_FIXTURE_MEASURE = Path(__file__).parent / "assets" / "measures" / "set_building_name"
+
+# Each probe attempts one attack and registers a "PROBE <name>=<value>" line.
+# victim_path / escape_path / net_target are passed as measure arguments, so the
+# same measure body exercises all five holes in a single `openstudio run`.
+_RB_PROBE_BODY = """
+require 'socket'
+runner.registerInfo("PROBE uid=#{Process.uid}")
+runner.registerInfo("PROBE nproc=#{Process.getrlimit(:NPROC)[0]}")
+runner.registerInfo("PROBE env=#{ENV['OSMCP_CANARY_SECRET'] || '<absent>'}")
+begin
+  runner.registerInfo("PROBE read=#{File.read(victim_path).strip}")
+rescue => e
+  runner.registerInfo("PROBE read_err=#{e.class}")
+end
+begin
+  File.write(escape_path, "ESCAPED")
+  runner.registerInfo("PROBE wrote=#{escape_path}")
+rescue => e
+  runner.registerInfo("PROBE write_err=#{e.class}")
+end
+begin
+  host, port = net_target.split(":")
+  s = TCPSocket.new(host, port.to_i)
+  s.write("CANARY_EXFIL")
+  s.close
+  runner.registerInfo("PROBE net=sent")
+rescue => e
+  runner.registerInfo("PROBE net_err=#{e.class}")
+end
+"""
+
+_PY_PROBE_BODY = """
+import os
+import socket
+import resource
+runner.registerInfo("PROBE uid=%d" % os.getuid())
+runner.registerInfo("PROBE nproc=%d" % resource.getrlimit(resource.RLIMIT_NPROC)[0])
+runner.registerInfo("PROBE env=%s" % os.environ.get("OSMCP_CANARY_SECRET", "<absent>"))
+try:
+    with open(victim_path) as f:
+        runner.registerInfo("PROBE read=%s" % f.read().strip())
+except Exception as e:
+    runner.registerInfo("PROBE read_err=%s" % type(e).__name__)
+try:
+    with open(escape_path, "w") as f:
+        f.write("ESCAPED")
+    runner.registerInfo("PROBE wrote=%s" % escape_path)
+except Exception as e:
+    runner.registerInfo("PROBE write_err=%s" % type(e).__name__)
+try:
+    host, port = net_target.split(":")
+    s = socket.create_connection((host, int(port)), timeout=5)
+    s.sendall(b"CANARY_EXFIL")
+    s.close()
+    runner.registerInfo("PROBE net=sent")
+except Exception as e:
+    runner.registerInfo("PROBE net_err=%s" % type(e).__name__)
+"""
+
+_PROBE_ARGS = [
+    {"name": "victim_path", "type": "String", "required": True, "default_value": ""},
+    {"name": "escape_path", "type": "String", "required": True, "default_value": ""},
+    {"name": "net_target", "type": "String", "required": True, "default_value": ""},
+]
+
+
+def _unique(prefix: str = "pytest_sandbox") -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def _probe_body(language: str) -> str:
+    """Indent the probe body to the base indent create_measure injects at."""
+    if language == "Ruby":
+        return textwrap.indent(textwrap.dedent(_RB_PROBE_BODY).strip("\n"), "    ")
+    return textwrap.indent(textwrap.dedent(_PY_PROBE_BODY).strip("\n"), "        ")
+
+
+class _CanaryListener:
+    """Localhost TCP listener that records the first payload it receives.
+
+    Owned by the test process, bound to 127.0.0.1 inside the container — the
+    measure subprocess connects to it; nothing leaves the machine.
+    """
+
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(1)
+        self.sock.settimeout(30)
+        self.port = self.sock.getsockname()[1]
+        self.received = b""
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def _serve(self):
+        try:
+            conn, _ = self.sock.accept()
+            with conn:
+                conn.settimeout(5)
+                self.received = conn.recv(1024)
+        except OSError:
+            pass
+        finally:
+            self.sock.close()
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+@pytest.fixture(scope="module")
+def sandbox_server():
+    """One HTTP server for the module, with a fake canary secret in its env.
+
+    OSMCP_SANDBOX=off pins the current unconfined passthrough so these stay valid
+    once the sandbox exists. The canary is a fake value — never a real credential.
+    """
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    canary = f"do-not-leak-{uuid.uuid4().hex[:8]}"
+    with http_server({
+        "MCP_AUTH": "none",
+        "OSMCP_SANDBOX": "off",
+        "OSMCP_CANARY_SECRET": canary,
+    }) as (url, _proc):
+        yield url, canary
+
+
+@pytest.fixture(scope="module")
+def confined_server():
+    """An HTTP server with the POSIX floor on (OSMCP_SANDBOX=posix)."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    canary = f"do-not-leak-{uuid.uuid4().hex[:8]}"
+    with http_server({
+        "MCP_AUTH": "none",
+        "OSMCP_SANDBOX": "posix",
+        "OSMCP_CANARY_SECRET": canary,
+    }) as (url, _proc):
+        yield url, canary
+
+
+@pytest.fixture(scope="module")
+def full_server():
+    """An HTTP server with the full tier (OSMCP_SANDBOX=auto: posix + Landlock + seccomp)."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    canary = f"do-not-leak-{uuid.uuid4().hex[:8]}"
+    with http_server({
+        "MCP_AUTH": "none",
+        "OSMCP_SANDBOX": "auto",
+        "OSMCP_CANARY_SECRET": canary,
+    }) as (url, _proc):
+        yield url, canary
+
+
+@pytest.fixture(scope="module")
+def net_allow_server():
+    """Full tier but with the network deny opted out (OSMCP_SANDBOX_NET=allow)."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    with http_server({
+        "MCP_AUTH": "none",
+        "OSMCP_SANDBOX": "auto",
+        "OSMCP_SANDBOX_NET": "allow",
+    }) as (url, _proc):
+        yield url
+
+
+async def _create_probe_measure(session, language: str) -> str:
+    res = unwrap(await session.call_tool("create_measure", {
+        "name": _unique("sandbox_probe_" + ("rb" if language == "Ruby" else "py")),
+        "description": "Sandbox vulnerability probe (test fixture).",
+        "run_body": _probe_body(language),
+        "language": language,
+        "arguments": _PROBE_ARGS,
+    }))
+    assert res.get("ok") is True, f"create_measure failed: {res}"
+    return res["measure_dir"]
+
+
+@pytest.mark.parametrize("language", ["Ruby", "Python"])
+def test_measure_exec_unconfined_today(language, sandbox_server):
+    # Validates: an applied measure today runs as root, sees the server's secret
+    # env, reads outside its run dir, writes outside its run dir, and opens the
+    # network — the five holes the sandbox must close. Proven safely via canaries.
+    url, canary = sandbox_server
+    tag = uuid.uuid4().hex[:8]
+    victim_secret = f"VICTIM_SECRET_{tag}"
+    victim_dir = RUN_ROOT / f"_decoy_victim_{tag}"
+    victim_dir.mkdir(parents=True, exist_ok=True)
+    victim_file = victim_dir / "secret.txt"
+    victim_file.write_text(victim_secret, encoding="utf-8")
+    escape_file = RUN_ROOT / f"_decoy_escape_{tag}.txt"
+    listener = _CanaryListener()
+    listener.start()
+
+    try:
+        async def _run():
+            async with http_session(url) as s:
+                # --- Arrange ---
+                await setup_example(s, _unique())
+                measure_dir = await _create_probe_measure(s, language)
+
+                # --- Act ---
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": measure_dir,
+                    "arguments": {
+                        "victim_path": str(victim_file),
+                        "escape_path": str(escape_file),
+                        "net_target": f"127.0.0.1:{listener.port}",
+                    },
+                }))
+                assert res.get("ok") is True, f"apply_measure failed: {res}"
+                return "\n".join(res.get("runner_messages", {}).get("info", []))
+
+        info = asyncio.run(_run())
+
+        # --- Assert: each hole is real ---
+        # 1. Runs as root — no privilege drop.
+        assert "PROBE uid=0" in info, \
+            f"measure should run as root (uid 0) today; info=\n{info}"
+        # 2. Server's secret env leaks into the measure (os.environ.copy()).
+        assert f"PROBE env={canary}" in info, \
+            f"canary secret should leak into measure env today; info=\n{info}"
+        # 3. Reads a file outside its run dir (another run's area).
+        assert f"PROBE read={victim_secret}" in info, \
+            f"measure should read the decoy victim file today; info=\n{info}"
+        # 4. Writes a file outside its run dir — ground truth: file on disk.
+        assert "PROBE wrote=" in info, f"measure should report a write; info=\n{info}"
+        assert escape_file.is_file() and escape_file.read_text() == "ESCAPED", \
+            "measure should write outside its run dir today (escape file on disk)"
+        # 5. Opens the network — ground truth: listener received the payload.
+        assert "PROBE net=sent" in info, f"measure should report net send; info=\n{info}"
+        listener._thread.join(timeout=5)
+        assert listener.received == b"CANARY_EXFIL", \
+            f"localhost listener should receive exfil today; got {listener.received!r}"
+    finally:
+        listener.close()
+        shutil.rmtree(victim_dir, ignore_errors=True)
+        escape_file.unlink(missing_ok=True)
+
+
+def test_measure_dir_traversal_blocked(sandbox_server):
+    # Regression: apply_measure must reject a measure_dir outside all allowed
+    # roots (own run area / shared read roots), closing the traversal hole where
+    # any /tmp path holding a measure.rb was copied and executed. The check is
+    # unconditional (not gated by OSMCP_SANDBOX), so it holds even with sandbox off.
+    url, _canary = sandbox_server
+    outside_dir = Path(tempfile.mkdtemp(prefix="osmcp_decoy_measure_"))
+    decoy_measure = outside_dir / "set_building_name"
+    shutil.copytree(_FIXTURE_MEASURE, decoy_measure)
+
+    try:
+        async def _run():
+            async with http_session(url) as s:
+                # --- Arrange ---
+                await setup_example(s, _unique())
+                # --- Act ---
+                return unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": str(decoy_measure),
+                    "arguments": {"building_name": "Traversal Test"},
+                }))
+
+        res = asyncio.run(_run())
+
+        # --- Assert: out-of-root measure path is refused before any execution ---
+        assert res.get("ok") is False, \
+            f"apply_measure must reject a measure_dir outside allowed roots; got {res}"
+        assert "not allowed" in str(res.get("error", "")).lower(), \
+            f"error should explain the path is not allowed; got {res.get('error')}"
+    finally:
+        shutil.rmtree(outside_dir, ignore_errors=True)
+
+
+@pytest.mark.parametrize("language", ["Ruby", "Python"])
+def test_clean_env_blocks_secret_leak(language, confined_server):
+    # Validates: OSMCP_SANDBOX=posix strips the server's secret env via the
+    # allowlist, so an applied measure no longer sees host secrets — AND a normal
+    # measure run still succeeds, proving the allowlist is complete enough.
+    url, canary = confined_server
+
+    async def _run():
+        async with http_session(url) as s:
+            # --- Arrange ---
+            await setup_example(s, _unique())
+            measure_dir = await _create_probe_measure(s, language)
+            # --- Act ---
+            res = unwrap(await s.call_tool("apply_measure", {
+                "measure_dir": measure_dir,
+                "arguments": {"victim_path": "", "escape_path": "", "net_target": ""},
+            }))
+            assert res.get("ok") is True, f"apply_measure under posix failed: {res}"
+            return "\n".join(res.get("runner_messages", {}).get("info", []))
+
+    info = asyncio.run(_run())
+
+    # --- Assert: canary secret is gone, the run still produced output ---
+    assert "PROBE env=<absent>" in info, \
+        f"clean-env should hide the canary under posix; info=\n{info}"
+    assert canary not in info, \
+        f"canary secret must not appear anywhere under posix; info=\n{info}"
+
+
+@pytest.mark.parametrize("language", ["Ruby", "Python"])
+def test_posix_drops_root_and_applies_rlimits(language, confined_server):
+    # Validates: OSMCP_SANDBOX=posix runs the measure as the unprivileged sandbox
+    # uid (1001), applies the NPROC rlimit, and DAC then denies a write to a
+    # root-owned location outside the run dir (/opt — in-image, not a bind mount,
+    # so ownership is enforced regardless of host). Read/network are NOT yet closed
+    # at this tier (Landlock/seccomp follow) — not asserted here.
+    url, _canary = confined_server
+    tag = uuid.uuid4().hex[:8]
+    escape_file = Path(f"/opt/_sbx_escape_{tag}.txt")  # root-owned, in-image
+
+    async def _run():
+        async with http_session(url) as s:
+            # --- Arrange ---
+            await setup_example(s, _unique())
+            measure_dir = await _create_probe_measure(s, language)
+            # --- Act ---
+            res = unwrap(await s.call_tool("apply_measure", {
+                "measure_dir": measure_dir,
+                "arguments": {
+                    "victim_path": "", "escape_path": str(escape_file), "net_target": "",
+                },
+            }))
+            assert res.get("ok") is True, f"apply_measure under posix failed: {res}"
+            return "\n".join(res.get("runner_messages", {}).get("info", []))
+
+    info = asyncio.run(_run())
+
+    # --- Assert: privilege dropped, rlimit applied, DAC blocks the escape write ---
+    assert "PROBE uid=1001" in info, f"measure should drop to sandbox uid 1001; info=\n{info}"
+    assert "PROBE uid=0" not in info, "measure must not run as root under posix"
+    assert "PROBE nproc=1024" in info, f"NPROC rlimit (1024) should be applied; info=\n{info}"
+    assert "PROBE write_err=" in info, \
+        f"write to root-owned /opt should be denied under posix; info=\n{info}"
+    assert not escape_file.exists(), "DAC must block writing a root-owned out-of-run-dir path"
+
+
+@pytest.mark.parametrize("language", ["Ruby", "Python"])
+def test_full_tier_blocks_read_escape_and_network(language, full_server):
+    # Validates: OSMCP_SANDBOX=auto (Landlock FS + seccomp net-deny on top of the
+    # POSIX floor) blocks reading a world-readable file outside the run dir
+    # (root-owned /opt, not in the read-only allowlist — so DAC alone would NOT
+    # block it; Landlock does), blocks writing outside the run dir, and blocks
+    # outbound IP networking — while the measure run itself still succeeds.
+    url, _canary = full_server
+    tag = uuid.uuid4().hex[:8]
+    victim_secret = f"VICTIM_SECRET_{tag}"
+    victim_file = Path(f"/opt/_sbx_victim_{tag}.txt")   # root-owned, in-image, not allowlisted
+    victim_file.write_text(victim_secret, encoding="utf-8")
+    escape_file = Path(f"/opt/_sbx_escape_{tag}.txt")
+    listener = _CanaryListener()
+    listener.start()
+
+    try:
+        async def _run():
+            async with http_session(url) as s:
+                # --- Arrange ---
+                await setup_example(s, _unique())
+                measure_dir = await _create_probe_measure(s, language)
+                # --- Act ---
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": measure_dir,
+                    "arguments": {
+                        "victim_path": str(victim_file),
+                        "escape_path": str(escape_file),
+                        "net_target": f"127.0.0.1:{listener.port}",
+                    },
+                }))
+                assert res.get("ok") is True, f"apply_measure under full tier failed: {res}"
+                return "\n".join(res.get("runner_messages", {}).get("info", []))
+
+        info = asyncio.run(_run())
+
+        # --- Assert: read escape, write escape, and network all denied ---
+        assert "PROBE read_err=" in info, f"read outside run dir should be denied; info=\n{info}"
+        assert victim_secret not in info, "victim secret must not leak under the full tier"
+        assert "PROBE write_err=" in info, f"write outside run dir should be denied; info=\n{info}"
+        assert not escape_file.exists(), "Landlock must block the out-of-run-dir write"
+        assert "PROBE net_err=" in info, f"outbound network should be denied; info=\n{info}"
+        listener._thread.join(timeout=3)
+        assert listener.received == b"", f"seccomp must block exfil; got {listener.received!r}"
+    finally:
+        listener.close()
+        victim_file.unlink(missing_ok=True)
+        escape_file.unlink(missing_ok=True)
+
+
+def test_landlock_confines_without_root():
+    # Validates: the unprivileged confinement layer (Landlock) applies even when
+    # the shim runs as a NON-root uid — so a local non-root server still confines
+    # measure filesystem access; the uid-drop is simply skipped (no hard fail).
+    # This is what protects a local user, not just the root Docker server.
+    workdir = tempfile.mkdtemp()
+    cmd = [
+        sys.executable, "-m", "mcp_server._sandbox_exec",
+        "--uid", "1001", "--gid", "1001",
+        "--landlock-ro", "/usr", "--landlock-ro", "/lib", "--landlock-ro", "/lib64",
+        "--landlock-rw", workdir,
+        "--", "cat", "/etc/hostname",  # /etc not granted -> must be denied
+    ]
+    try:
+        # Run the shim AS uid 1001 (non-root) to exercise the no-root path.
+        proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            cmd, capture_output=True, text=True, cwd="/repo",
+            user=1001, group=1001, check=False,
+        )
+        out = (proc.stdout + proc.stderr).lower()
+        assert proc.returncode != 0, \
+            f"Landlock must block /etc read even without root; rc=0 out={out}"
+        assert "denied" in out, f"expected a permission-denied error; out={out}"
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def test_local_host_files_protected(sandbox_server, full_server):
+    # Validates THE LOCAL ISSUE (dual-run, vuln -> fixed): the server bind-mounts
+    # the user's real host directories (here /repo). Unconfined, a measure an LLM
+    # authored writes straight into the user's checked-out repo on their machine;
+    # the sandbox blocks it. Benign — one canary file at the repo root, asserted
+    # PRESENT under off (the vulnerability) and ABSENT under auto (the fix),
+    # cleaned up either way. /repo is read-only in the sandbox allowlist, so the
+    # write is denied without breaking measures that legitimately read the repo.
+    tag = uuid.uuid4().hex[:8]
+    host_file = Path(f"/repo/_sandbox_local_canary_{tag}.txt")  # /repo = bind-mounted host source
+
+    async def _attempt_write(url):
+        async with http_session(url) as s:
+            await setup_example(s, _unique())
+            measure_dir = await _create_probe_measure(s, "Ruby")
+            res = unwrap(await s.call_tool("apply_measure", {
+                "measure_dir": measure_dir,
+                "arguments": {"victim_path": "", "escape_path": str(host_file), "net_target": ""},
+            }))
+            assert res.get("ok") is True, f"apply_measure failed: {res}"
+            return "\n".join(res.get("runner_messages", {}).get("info", []))
+
+    try:
+        # --- Vulnerability: unconfined (off) writes into the user's host repo ---
+        off_info = asyncio.run(_attempt_write(sandbox_server[0]))
+        assert "PROBE wrote=" in off_info, f"off: expected a successful write; {off_info}"
+        assert host_file.is_file(), \
+            "VULN: an unconfined measure wrote into the user's bind-mounted host dir (/repo)"
+        host_file.unlink(missing_ok=True)
+
+        # --- Fixed: confined (auto) denies the write ---
+        auto_info = asyncio.run(_attempt_write(full_server[0]))
+        assert "PROBE write_err=" in auto_info, f"auto: expected the write to be denied; {auto_info}"
+        assert not host_file.is_file(), \
+            "FIXED: the sandbox (Landlock, /repo read-only) blocks writing to the user's host dir"
+    finally:
+        host_file.unlink(missing_ok=True)
+
+
+def test_sandbox_net_allow_permits_network(net_allow_server):
+    # Validates: OSMCP_SANDBOX_NET=allow leaves outbound networking open under the
+    # full tier (the knob is actually wired into wrap_cmd; default deny is tested
+    # by test_full_tier_blocks_read_escape_and_network).
+    listener = _CanaryListener()
+    listener.start()
+    try:
+        async def _run():
+            async with http_session(net_allow_server) as s:
+                await setup_example(s, _unique())
+                measure_dir = await _create_probe_measure(s, "Ruby")
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": measure_dir,
+                    "arguments": {
+                        "victim_path": "", "escape_path": "",
+                        "net_target": f"127.0.0.1:{listener.port}",
+                    },
+                }))
+                assert res.get("ok") is True, f"apply_measure failed: {res}"
+                return "\n".join(res.get("runner_messages", {}).get("info", []))
+
+        info = asyncio.run(_run())
+        assert "PROBE net=sent" in info, f"net should be allowed; info=\n{info}"
+        listener._thread.join(timeout=5)
+        assert listener.received == b"CANARY_EXFIL", \
+            f"OSMCP_SANDBOX_NET=allow should permit the connection; got {listener.received!r}"
+    finally:
+        listener.close()
+
+
+def _trivial_body(language: str) -> str:
+    indent = "    " if language == "Ruby" else "        "
+    return f'{indent}runner.registerInfo("measure ok")'
+
+
+async def _create_trivial_measure(session, language: str) -> str:
+    res = unwrap(await session.call_tool("create_measure", {
+        "name": _unique("tm_" + ("rb" if language == "Ruby" else "py")),
+        "description": "Trivial measure for test_measure confinement check.",
+        "run_body": _trivial_body(language),
+        "language": language,
+        "arguments": [],
+    }))
+    assert res.get("ok") is True, f"create_measure failed: {res}"
+    return res["measure_dir"]
+
+
+_EVIL_TEST = (
+    "import socket\n"
+    "def test_zzz_exfil():\n"
+    "    try:\n"
+    "        s = socket.create_connection(('127.0.0.1', {port}), timeout=5)\n"
+    "        s.sendall(b'CANARY_EXFIL')\n"
+    "        s.close()\n"
+    "    except Exception:\n"
+    "        pass\n"
+)
+
+
+def test_measure_test_code_confined(sandbox_server, full_server):
+    # Validates THE COPILOT FINDING fix (dual-run): test_measure now runs untrusted
+    # test code under the sandbox. Inject a test that exfils to a localhost
+    # listener; under off it connects (vuln — test code was unconfined), under auto
+    # seccomp blocks it (fixed). Asserts on the listener (ground truth). The off
+    # leg is the falsifiability control: it proves the evil test actually runs.
+    async def _run_test_measure(url, port):
+        async with http_session(url) as s:
+            measure_dir = await _create_trivial_measure(s, "Python")
+            evil = Path(measure_dir) / "tests" / "test_zzz_evil.py"
+            evil.write_text(_EVIL_TEST.format(port=port), encoding="utf-8")
+            await s.call_tool("test_measure", {"measure_dir": measure_dir})
+
+    # --- Vulnerability: off lets the (untrusted) test code reach the network ---
+    off_listener = _CanaryListener()
+    off_listener.start()
+    try:
+        asyncio.run(_run_test_measure(sandbox_server[0], off_listener.port))
+        off_listener._thread.join(timeout=5)
+        assert off_listener.received == b"CANARY_EXFIL", \
+            "VULN: test_measure ran test code that reached the network under off"
+    finally:
+        off_listener.close()
+
+    # --- Fixed: auto confines test_measure (seccomp blocks the exfil) ---
+    auto_listener = _CanaryListener()
+    auto_listener.start()
+    try:
+        asyncio.run(_run_test_measure(full_server[0], auto_listener.port))
+        auto_listener._thread.join(timeout=5)
+        assert auto_listener.received == b"", \
+            f"FIXED: test_measure code must be net-confined under auto; got {auto_listener.received!r}"
+    finally:
+        auto_listener.close()
+
+
+# ---------------------------------------------------------------------------
+# Codex review reproductions (confirm-now): each PASSES today by demonstrating
+# the open hole, run under the FULL tier (OSMCP_SANDBOX=auto) so it proves the
+# sandbox does NOT yet stop it. Tagged with the Codex finding id + how to INVERT
+# the assertion once the fix lands. All use canaries/decoys only.
+# Not yet reproduced here (need heavier setup): C1 reporting-measure test path
+# (needs a completed sim/SQL), C2 `openstudio measure -u` Ruby injection,
+# H1 seccomp arch fail-open (needs an i386/x32 binary), H2 fail-open on a kernel
+# without Landlock.
+# ---------------------------------------------------------------------------
+
+def test_c3_escaping_symlink_rejected(full_server):
+    # Codex C3 (FIXED): a measure dir containing a symlink that escapes the measure
+    # root is rejected before any copy — no host-file content is inlined into the
+    # readable run dir.
+    url, _ = full_server
+    tag = uuid.uuid4().hex[:8]
+    secret_file = Path(f"/opt/_sbx_c3_{tag}.txt")  # outside the measure dir
+    secret_file.write_text(f"C3_SECRET_{tag}", encoding="utf-8")
+    try:
+        async def _run():
+            async with http_session(url) as s:
+                await setup_example(s, _unique())
+                mdir = Path(await _create_trivial_measure(s, "Ruby"))
+                (mdir / "evil_link.txt").symlink_to(secret_file)  # escaping symlink
+                return unwrap(await s.call_tool("apply_measure", {"measure_dir": str(mdir)}))
+
+        res = asyncio.run(_run())
+        assert res.get("ok") is False and "symlink" in str(res.get("error", "")).lower(), \
+            f"C3: an escaping symlink in the measure dir must be rejected; got {res}"
+    finally:
+        secret_file.unlink(missing_ok=True)
+
+
+def test_c4_run_simulation_rejects_out_of_root_osm(full_server):
+    # Codex C4 (FIXED): run_simulation rejects an OSM outside all allowed roots
+    # (no staging arbitrary host files into the run dir).
+    url, _ = full_server
+    tag = uuid.uuid4().hex[:8]
+    outside_osm = Path(f"/opt/_sbx_c4_{tag}.osm")  # outside every allowed root
+    try:
+        async def _run():
+            async with http_session(url) as s:
+                cr = unwrap(await s.call_tool("create_example_osm", {"name": _unique()}))
+                assert cr["ok"] is True, cr
+                shutil.copy2(cr["osm_path"], outside_osm)  # a valid OSM at a host path
+                res = unwrap(await s.call_tool("run_simulation", {
+                    "osm_path": str(outside_osm), "epw_path": EPW_PATH}))
+                if res.get("ok") and res.get("run_id"):
+                    await s.call_tool("cancel_run", {"run_id": res["run_id"]})
+                return res
+
+        res = asyncio.run(_run())
+        assert res.get("ok") is False and "not allowed" in str(res.get("error", "")).lower(), \
+            f"C4: out-of-root OSM must be rejected; got {res}"
+    finally:
+        outside_osm.unlink(missing_ok=True)
+
+
+def test_c5_test_measure_rejects_out_of_root_dir(full_server):
+    # Codex C5 (FIXED): test_measure rejects a measure_dir outside all allowed
+    # roots (before it would chown / Landlock-grant an arbitrary path).
+    url, _ = full_server
+    outside = Path(tempfile.mkdtemp(prefix="osmcp_c5_"))
+    decoy = outside / "set_building_name"
+    shutil.copytree(_FIXTURE_MEASURE, decoy)
+    try:
+        async def _run():
+            async with http_session(url) as s:
+                await setup_example(s, _unique())
+                return unwrap(await s.call_tool("test_measure", {"measure_dir": str(decoy)}))
+
+        res = asyncio.run(_run())
+        assert res.get("ok") is False and "not allowed" in str(res.get("error", "")).lower(), \
+            f"C5: out-of-root measure_dir must be rejected; got {res}"
+    finally:
+        shutil.rmtree(outside, ignore_errors=True)
+
+
+@pytest.fixture(scope="module")
+def uid0_server():
+    """Full tier but with a misconfigured sandbox uid of 0 (OSMCP_SANDBOX_UID=0)."""
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    with http_server({
+        "MCP_AUTH": "none", "OSMCP_SANDBOX": "auto",
+        "OSMCP_SANDBOX_UID": "0", "OSMCP_SANDBOX_GID": "0",
+    }) as (url, _proc):
+        yield url
+
+
+def test_h5_sandbox_uid_zero_clamped(uid0_server):
+    # Codex H5 (FIXED): OSMCP_SANDBOX_UID=0 is rejected/clamped to the safe default,
+    # so confined code never runs as root even with the bad override.
+    async def _run():
+        async with http_session(uid0_server) as s:
+            await setup_example(s, _unique())
+            measure_dir = await _create_probe_measure(s, "Ruby")
+            res = unwrap(await s.call_tool("apply_measure", {
+                "measure_dir": measure_dir,
+                "arguments": {"victim_path": "", "escape_path": "", "net_target": ""},
+            }))
+            assert res.get("ok") is True, f"apply_measure failed: {res}"
+            return "\n".join(res.get("runner_messages", {}).get("info", []))
+
+    info = asyncio.run(_run())
+    assert "PROBE uid=0" not in info, \
+        f"H5: measure must NOT run as root with OSMCP_SANDBOX_UID=0; info=\n{info}"
+    assert "PROBE uid=1001" in info, \
+        f"H5: sandbox uid must clamp to the safe default 1001; info=\n{info}"
