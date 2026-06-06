@@ -149,27 +149,44 @@ primary control: tools stay on by default because their execution is confined.
    **Still pending in this bucket:** wire the sim-timeout *enforcement* into the
    dispatcher (config constant exists; `_launch`/dispatch loop must kill runs
    past the cap via the existing SIGTERM→SIGKILL path).
-2. POSIX floor: setuid `sandbox` user + rlimits via `setpriv` wrapper — small/med
-   (needs Docker rebuild: `useradd sandbox`). Closes runs-as-root + rlimits.
-3. Landlock ctypes module + seccomp net-deny + probe + tier reporting — medium.
-   Closes filesystem escape + network exfil.
-4. bwrap backend + userns probe + operator docs — medium
+2. POSIX floor: UID drop + rlimits — **DONE (increment 2):** `sandbox` user baked
+   into the image (`useradd -u 1001`); `mcp_server/_sandbox_exec.py` shim drops
+   root→1001, applies rlimits (FSIZE 10G / NPROC 1024 on; CPU/AS off), sets
+   no_new_privs, execs (pid preserved); `wrap_cmd`/`prepare_workdir` in
+   `sandbox.py`. Verified: measure runs as uid 1001, NPROC rlimit applied, DAC
+   blocks root-owned write; real EnergyPlus sim runs fine under `posix`.
+3. Landlock FS + seccomp net-deny — **DONE (increment 3):** own ctypes modules
+   `_landlock.py` (read-deny-by-default; ro system roots, rw only the run dir +
+   /dev) and `_seccomp.py` (raw single-arch cBPF: deny `socket(AF_INET/INET6)`,
+   EAFNOSUPPORT). Applied in the shim after no_new_privs, degrade-loudly. Pure
+   Python — no rebuild; chose raw BPF over pyseccomp (its wheel imports broken
+   here). `OSMCP_SANDBOX=auto` = full tier; `active_tier()` reports `landlock`.
+   Verified: read-escape (world-readable /opt file), write-escape, and network
+   exfil all blocked while apply + real sim still succeed; comstock/common
+   measures + weather (39 tests) green under `auto`.
+4. bwrap backend + userns probe + operator docs — medium (optional upgrade)
 5. Elicitation gate — defer
-6. Flip default `OSMCP_SANDBOX` off → `auto` once the full suite passes confined.
+6. Flip default `OSMCP_SANDBOX` off → `auto` — **next.** Gate: run the FULL
+   integration suite (all shards) under `auto` first to surface any remaining
+   Landlock allowlist gaps; add missing ro paths (no rebuild); then flip the
+   default (or set `OSMCP_SANDBOX=auto` in the deployment/Dockerfile ENV).
+   Still pending from bucket 1: wire sim-timeout *enforcement* into the dispatcher.
 
 ## Testing strategy
 
 Goal: tests that (a) **prove the holes exist today** without touching anything
 real, and (b) **prove each is closed** after the fix. Both halves run in CI.
 
-**Status (confirm-now half landed):** `tests/test_sandbox.py` — 3 integration
-tests, CI shard 2, all passing in ~11s. Confirms today (OSMCP_SANDBOX=off):
-measures run as root (uid 0), the server's env secret leaks in, reads/writes
-escape the run dir, network exfil to a localhost canary succeeds, and
-`apply_measure` accepts a `measure_dir` outside all allowed roots. Probes are
-generated at runtime via `create_measure` (Ruby + Python) so the real
-create→apply path is exercised. The `OSMCP_SANDBOX=auto` "blocked" counterparts
-are added with the fix.
+**Status:** `tests/test_sandbox.py` — 9 integration tests, all passing (~34s).
+Kept LOCAL / git-excluded (working exploit PoC), run via the standalone
+`.github/workflows/security.yml`, NOT the main `ci` shards. Probes are generated
+at runtime via `create_measure` (Ruby + Python) so the real create→apply path is
+exercised. Coverage:
+- off: all five holes confirmed (root, env leak, read/write escape, net exfil)
+- posix: uid 1001, NPROC rlimit, DAC blocks root-owned write, env stripped
+- auto (Landlock + seccomp): read-escape + write-escape + net exfil blocked,
+  run still succeeds
+- unconditional: `measure_dir` traversal rejected
 
 ### Core principle — dual-run falsifiability
 

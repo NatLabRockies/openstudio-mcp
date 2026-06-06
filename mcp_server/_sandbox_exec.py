@@ -58,6 +58,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--gid", type=int, required=True)
     for name in _RLIMITS:
         ap.add_argument(f"--rlimit-{name}", type=int, default=0)
+    ap.add_argument("--landlock-ro", action="append", default=[])
+    ap.add_argument("--landlock-rw", action="append", default=[])
+    ap.add_argument("--seccomp-net", action="store_true")
     ns = ap.parse_args(argv[:sep])
 
     # rlimits first, while still privileged (lowering hard limits is always ok).
@@ -70,6 +73,20 @@ def main(argv: list[str]) -> int:
                 print(f"sandbox-exec: rlimit {name}={val} failed: {e}", file=sys.stderr)
 
     _set_no_new_privs()
+
+    # Filesystem + network confinement (after no_new_privs, before the uid drop;
+    # both persist across setuid + exec and are inherited by children). Degrade
+    # loudly — a backend that cannot engage prints a notice and the run proceeds
+    # with whatever confinement did apply (the POSIX floor always holds).
+    if ns.landlock_ro or ns.landlock_rw:
+        from mcp_server import _landlock
+        abi = _landlock.restrict(ns.landlock_ro, ns.landlock_rw)
+        if not abi:
+            print("sandbox-exec: WARNING Landlock unavailable — FS not confined", file=sys.stderr)
+    if ns.seccomp_net:
+        from mcp_server import _seccomp
+        if not _seccomp.install_net_deny():
+            print("sandbox-exec: WARNING seccomp net-deny unavailable — network not confined", file=sys.stderr)
 
     # Drop privileges: supplementary groups, then gid, then uid (order matters —
     # setgroups/setgid require privilege we lose after setuid).

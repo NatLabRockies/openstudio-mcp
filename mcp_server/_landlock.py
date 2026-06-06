@@ -1,0 +1,103 @@
+"""Minimal Landlock (LSM) filesystem confinement via raw syscalls (ctypes).
+
+Three syscalls, no external dependency (house style: grepable, owned). Applies a
+read-deny-by-default policy to the current process and all its children: only the
+enumerated read-only paths are readable/executable, and only the run dir is
+writable. Requires no_new_privs (set by the caller) for unprivileged use; works
+inside default-seccomp Docker >= 23.0 (the landlock_* syscalls are allowlisted
+there). Returns the applied ABI, or 0 when Landlock is unavailable — the caller
+degrades loudly rather than failing the run.
+"""
+from __future__ import annotations
+
+import ctypes
+import os
+
+# Generic syscall table numbers (identical on x86_64 and aarch64).
+_NR_CREATE_RULESET = 444
+_NR_ADD_RULE = 445
+_NR_RESTRICT_SELF = 446
+
+_CREATE_RULESET_VERSION = 1  # query the ABI instead of creating a ruleset
+_RULE_PATH_BENEATH = 1
+
+# access_fs rights (bit positions). 0..12 = ABI 1, REFER = ABI 2, TRUNCATE = ABI 3.
+_A_EXECUTE = 1 << 0
+_A_WRITE_FILE = 1 << 1
+_A_READ_FILE = 1 << 2
+_A_READ_DIR = 1 << 3
+_A_REMOVE_DIR = 1 << 4
+_A_REMOVE_FILE = 1 << 5
+_A_MAKE_CHAR = 1 << 6
+_A_MAKE_DIR = 1 << 7
+_A_MAKE_REG = 1 << 8
+_A_MAKE_SOCK = 1 << 9
+_A_MAKE_FIFO = 1 << 10
+_A_MAKE_BLOCK = 1 << 11
+_A_MAKE_SYM = 1 << 12
+_A_REFER = 1 << 13      # ABI >= 2
+_A_TRUNCATE = 1 << 14   # ABI >= 3
+
+_RO = _A_EXECUTE | _A_READ_FILE | _A_READ_DIR
+_RW_BASE = (
+    _A_EXECUTE | _A_WRITE_FILE | _A_READ_FILE | _A_READ_DIR
+    | _A_REMOVE_DIR | _A_REMOVE_FILE | _A_MAKE_CHAR | _A_MAKE_DIR | _A_MAKE_REG
+    | _A_MAKE_SOCK | _A_MAKE_FIFO | _A_MAKE_BLOCK | _A_MAKE_SYM
+)
+
+
+class _RulesetAttr(ctypes.Structure):
+    # Only handled_access_fs — 8 bytes, valid on every ABID (kernel reads the
+    # field set implied by `size`); avoids the ABI>=4 net field tripping abi3.
+    _fields_ = [("handled_access_fs", ctypes.c_uint64)]
+
+
+class _PathBeneathAttr(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
+
+
+def restrict(ro_paths: list[str], rw_paths: list[str]) -> int:
+    """Confine the filesystem to ro_paths (read+exec) and rw_paths (read+write).
+
+    Returns the applied Landlock ABI (>=1), or 0 if Landlock is unavailable or
+    the ruleset could not be enforced. Missing paths are skipped silently.
+    """
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+
+    abi = libc.syscall(_NR_CREATE_RULESET, None, 0, _CREATE_RULESET_VERSION)
+    if abi <= 0:
+        return 0
+
+    handled = _RW_BASE
+    if abi >= 2:
+        handled |= _A_REFER
+    if abi >= 3:
+        handled |= _A_TRUNCATE
+
+    attr = _RulesetAttr(handled_access_fs=handled)
+    rs_fd = libc.syscall(_NR_CREATE_RULESET, ctypes.byref(attr), ctypes.sizeof(attr), 0)
+    if rs_fd < 0:
+        return 0
+
+    def _add(path: str, access: int) -> None:
+        try:
+            fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
+        except OSError:
+            return  # path absent — skip
+        try:
+            pba = _PathBeneathAttr(allowed_access=access & handled, parent_fd=fd)
+            libc.syscall(_NR_ADD_RULE, rs_fd, _RULE_PATH_BENEATH, ctypes.byref(pba), 0)
+        finally:
+            os.close(fd)
+
+    for p in ro_paths:
+        _add(p, _RO)
+    for p in rw_paths:
+        _add(p, handled)  # full set for the writable run dir
+
+    # no_new_privs is set by the caller; restrict_self enforces the ruleset on
+    # this process and everything it execs/forks.
+    rc = libc.syscall(_NR_RESTRICT_SELF, rs_fd, 0)
+    os.close(rs_fd)
+    return abi if rc == 0 else 0

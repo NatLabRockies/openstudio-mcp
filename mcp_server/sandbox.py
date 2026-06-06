@@ -28,6 +28,9 @@ import sys
 from pathlib import Path
 
 from mcp_server.config import (
+    COMMON_MEASURES_DIR,
+    COMSTOCK_MEASURES_DIR,
+    INPUT_ROOT,
     SANDBOX_GID,
     SANDBOX_MODE,
     SANDBOX_RLIMIT_AS,
@@ -36,7 +39,16 @@ from mcp_server.config import (
     SANDBOX_RLIMIT_NOFILE,
     SANDBOX_RLIMIT_NPROC,
     SANDBOX_UID,
+    SKILLS_DIR,
 )
+
+# Read-only roots the confined subprocess legitimately needs (Landlock grants
+# read+exec here, nothing else; the run dir is the only writable path). Read-deny
+# by default: anything not listed — another user's run, /tmp, arbitrary host
+# files — is unreadable. Missing paths are skipped by the Landlock layer.
+_FULL_MODES = ("auto", "full", "landlock")
+_RO_SYSTEM = ("/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc",
+              "/opt/venv", "/usr/local", "/var/oscli", "/proc", "/sys")
 
 # Environment the OpenStudio CLI / bundler / EnergyPlus / measure code legitimately
 # needs. Everything else — notably any host secret — is dropped in confined modes.
@@ -57,11 +69,25 @@ def enabled() -> bool:
     return SANDBOX_MODE not in ("", "off", "0", "false", "no")
 
 
+def _full() -> bool:
+    """True when the full tier (Landlock FS + seccomp net-deny) is requested."""
+    return SANDBOX_MODE in _FULL_MODES
+
+
 def active_tier() -> str:
     """The confinement tier actually in effect — surfaced in tool output."""
     if not enabled():
         return "off"
-    return "posix"  # later increments: "landlock" / "bwrap"
+    return "landlock" if _full() else "posix"
+
+
+def _ro_paths() -> list[str]:
+    """Read-only roots the confined subprocess may read/execute."""
+    return [
+        *_RO_SYSTEM,
+        str(COMSTOCK_MEASURES_DIR), str(COMMON_MEASURES_DIR),
+        str(INPUT_ROOT), str(SKILLS_DIR), "/repo",
+    ]
 
 
 def build_env(work_dir: Path | str) -> dict[str, str]:
@@ -89,13 +115,15 @@ def build_env(work_dir: Path | str) -> dict[str, str]:
     return env
 
 
-def wrap_cmd(cmd: list[str]) -> list[str]:
+def wrap_cmd(cmd: list[str], work_dir: Path | str) -> list[str]:
     """Wrap a subprocess argv to run under the privilege-dropping exec shim.
 
     Disabled → returns the command unchanged (today's behaviour). Enabled → runs
     it via `python3 -m mcp_server._sandbox_exec`, which drops to the unprivileged
     sandbox uid, applies rlimits, sets no_new_privs, then execs the command (so
     the pid is preserved and the dispatcher's kill-by-pid path still works).
+    Full tier additionally confines the filesystem (Landlock: read-only system
+    roots, writable only `work_dir`) and denies outbound IP networking (seccomp).
     """
     if not enabled():
         return list(cmd)
@@ -112,6 +140,14 @@ def wrap_cmd(cmd: list[str]) -> list[str]:
     ):
         if value and value > 0:
             wrapped += [flag, str(value)]
+    if _full():
+        for path in _ro_paths():
+            wrapped += ["--landlock-ro", path]
+        # rw: the run dir, plus /dev for /dev/null & /dev/urandom (node creation
+        # there is still barred by DAC for the unprivileged uid).
+        for path in (str(work_dir), "/dev"):
+            wrapped += ["--landlock-rw", path]
+        wrapped += ["--seccomp-net"]
     return [*wrapped, "--", *cmd]
 
 

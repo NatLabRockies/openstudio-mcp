@@ -270,7 +270,7 @@ def _launch(rec: RunRecord) -> None:
     run_env = sandbox.build_env(rec.run_dir)
     sandbox.prepare_workdir(rec.run_dir)
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
-        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path)),
+        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path), rec.run_dir),
         cwd=str(rec.run_dir),
         stdout=log.open("w", encoding="utf-8"),
         stderr=subprocess.STDOUT,

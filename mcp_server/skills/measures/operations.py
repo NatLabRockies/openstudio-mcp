@@ -265,7 +265,7 @@ def apply_measure(
         sandbox.prepare_workdir(run_dir)
         with open(log_path, "w", encoding="utf-8") as log_f:
             proc = subprocess.run(
-                sandbox.wrap_cmd(cmd),
+                sandbox.wrap_cmd(cmd, run_dir),
                 cwd=str(run_dir),
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
