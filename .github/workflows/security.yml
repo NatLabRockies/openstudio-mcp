@@ -1,0 +1,38 @@
+name: security
+
+# Dedicated workflow for the security / sandbox-confinement suite, kept separate
+# from the main `ci` shards so security tests live on their own.
+#
+# Manual-trigger only. The working exploit PoC (tests/test_sandbox.py) is
+# deliberately kept OUT of the public repo (see .git/info/exclude) until the
+# sandbox fix ships, so on a clean GitHub checkout this suite is a safe no-op —
+# it runs only where the security tests are actually present (local / self-hosted
+# checkout, or once the blocked-assertion suite is published).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  security-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t openstudio-mcp:dev .
+
+      - name: Run security suite (if present)
+        env:
+          RUN_OPENSTUDIO_INTEGRATION: "1"
+          MCP_SERVER_CMD: "openstudio-mcp"
+        run: |
+          mkdir -p runs
+          FILES=$(ls tests/test_sandbox.py tests/test_security_*.py 2>/dev/null || true)
+          if [ -z "$FILES" ]; then
+            echo "No security tests present in this checkout (PoC kept local) — nothing to run."
+            exit 0
+          fi
+          echo "Running security tests: $FILES"
+          docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
+            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD \
+            openstudio-mcp:dev bash -lc "cd /repo && pytest -vv $FILES"

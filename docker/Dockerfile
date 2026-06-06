@@ -7,6 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Unprivileged account that confined measure/simulation subprocesses drop to
+# (see mcp_server/_sandbox_exec.py). The server stays root; only the exec'd
+# measure/EnergyPlus child runs as this uid when OSMCP_SANDBOX is enabled.
+RUN useradd -r -u 1001 -s /usr/sbin/nologin sandbox
+
 # ComStock measures (openstudio-standards-based templates for space types,
 # constructions, HVAC, schedules). Only the measures/ directory is kept (~50 MB).
 ARG COMSTOCK_TAG=2025-3

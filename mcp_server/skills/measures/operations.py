@@ -16,7 +16,13 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
+from mcp_server import sandbox
+from mcp_server.config import (
+    OSCLI_GEM_PATH,
+    OSCLI_GEMFILE,
+    is_path_allowed,
+    user_run_root,
+)
 from mcp_server.model_manager import get_model, load_model
 from mcp_server.util import resolve_run_dir
 
@@ -141,6 +147,11 @@ def apply_measure(
         measure_path = Path(measure_dir)
         if not measure_path.is_dir():
             return {"ok": False, "error": f"Measure directory not found: {measure_dir}"}
+        # Access control: only run measures from allowed roots (own run area or a
+        # shared read root — repo, inputs, bundled measures). Refuses arbitrary
+        # filesystem paths / another user's area before any copy or execution.
+        if not is_path_allowed(measure_path):
+            return {"ok": False, "error": f"Measure directory not allowed: {measure_dir}"}
 
         # Check measure script exists (Ruby or Python)
         has_rb = (measure_path / "measure.rb").is_file()
@@ -247,13 +258,18 @@ def apply_measure(
                     "--bundle_without", "native_ext"]
         cmd += ["run", run_flag, "-w", str(osw_path)]
         log_path = run_dir / "openstudio.log"
+        # Build env first (it creates run_dir/tmp for TMPDIR as root), THEN hand
+        # the whole run dir — tmp included — to the sandbox uid, so the dropped
+        # process can write its temp/output. Order matters.
+        run_env = sandbox.build_env(run_dir)
+        sandbox.prepare_workdir(run_dir)
         with open(log_path, "w", encoding="utf-8") as log_f:
             proc = subprocess.run(
-                cmd,
+                sandbox.wrap_cmd(cmd),
                 cwd=str(run_dir),
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
-                env=os.environ.copy(),
+                env=run_env,
                 timeout=300,  # 5 minute timeout
                 check=False,
             )

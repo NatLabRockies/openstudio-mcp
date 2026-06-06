@@ -58,6 +58,39 @@ INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolv
 
 ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
 
+# Subprocess confinement for measure/simulation execution (see mcp_server/sandbox.py).
+#   off    — full passthrough (current behaviour / explicit escape hatch)
+#   posix  — clean-env allowlist (+ UID drop & rlimits in later increments)
+#   auto   — best confinement available (currently == posix)
+# Default off during rollout; flips to auto once the full suite passes confined.
+SANDBOX_MODE = os.environ.get("OSMCP_SANDBOX", "off").strip().lower()
+# Network policy for confined subprocesses: deny (default) blocks outbound TCP
+# once the seccomp backend lands; allow leaves it open (trusted/BCL deployments).
+SANDBOX_NET = os.environ.get("OSMCP_SANDBOX_NET", "deny").strip().lower()
+
+# Wall-clock cap for a single simulation (run_osw/run_simulation). 0 = no cap.
+SIM_TIMEOUT_SECONDS = _safe_float(
+    os.environ.get("OPENSTUDIO_MCP_SIM_TIMEOUT_SECONDS",
+                   os.environ.get("OSMCP_SIM_TIMEOUT_SECONDS", "7200")),
+    7200.0,
+)
+
+# Unprivileged account confined subprocesses drop to (baked into the image as
+# `sandbox`). See mcp_server/_sandbox_exec.py.
+SANDBOX_UID = _safe_int(os.environ.get("OSMCP_SANDBOX_UID", "1001"), 1001)
+SANDBOX_GID = _safe_int(os.environ.get("OSMCP_SANDBOX_GID", "1001"), 1001)
+
+# rlimit backstops for confined subprocesses (0 = off). Generous by design — they
+# catch runaway bombs, not tune normal use. CPU/AS default off: a CPU-second cap
+# would kill long annual sims, and RLIMIT_AS (virtual address space) breaks
+# EnergyPlus/allocators — real memory control belongs to the container cgroup.
+_GB = 1024 ** 3
+SANDBOX_RLIMIT_FSIZE = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_FSIZE", str(10 * _GB)), 10 * _GB)
+SANDBOX_RLIMIT_NPROC = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_NPROC", "1024"), 1024)
+SANDBOX_RLIMIT_NOFILE = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_NOFILE", "0"), 0)
+SANDBOX_RLIMIT_CPU = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_CPU", "0"), 0)
+SANDBOX_RLIMIT_AS = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_AS", "0"), 0)
+
 # Shared roots are read-only for everyone; the only per-user writable area is
 # RUN_ROOT/<user_key> (see user_run_root). Writes elsewhere are denied.
 _SHARED_READ_ROOTS = [

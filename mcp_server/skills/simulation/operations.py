@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import shutil
 import subprocess
 import tempfile
@@ -17,6 +16,7 @@ from typing import Any, Literal
 
 import psutil
 
+from mcp_server import sandbox
 from mcp_server.audit import audit
 from mcp_server.config import (
     LOG_TAIL_DEFAULT,
@@ -265,12 +265,16 @@ def _build_run_cmd(osw_path: Path) -> list[str]:
 def _launch(rec: RunRecord) -> None:
     """Start the EnergyPlus subprocess for a queued run. Caller holds _sim_lock."""
     log = rec.run_dir / "openstudio.log"
+    # build_env creates run_dir/tmp (TMPDIR) as root; chown after so the dropped
+    # process owns it (order matters — see apply_measure).
+    run_env = sandbox.build_env(rec.run_dir)
+    sandbox.prepare_workdir(rec.run_dir)
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
-        _build_run_cmd(rec.osw_path),
+        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path)),
         cwd=str(rec.run_dir),
         stdout=log.open("w", encoding="utf-8"),
         stderr=subprocess.STDOUT,
-        env=os.environ.copy(),
+        env=run_env,
     )
     rec.pid = proc.pid
     rec.status = "running"
