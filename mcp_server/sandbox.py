@@ -5,20 +5,21 @@ sites — `apply_measure`, `test_measure`, and the sim dispatcher's `_launch`.
 They used to inherit the server's full environment via ``os.environ.copy()``.
 This module is the single chokepoint that confines them.
 
-`OSMCP_SANDBOX` (config.SANDBOX_MODE) selects the mode:
-  off    — full passthrough (current behaviour / explicit escape hatch)
-  posix  — clean-env allowlist (this increment); UID drop + rlimits + Landlock
-           FS policy + seccomp net-deny arrive in later increments, same knob
-  auto   — best confinement available (currently == posix)
+`OSMCP_SANDBOX` (config.SANDBOX_MODE) selects the mode (default `auto`):
+  off    — full passthrough (explicit escape hatch for trusted/local-tooling use)
+  posix  — clean-env allowlist + UID drop (when root) + rlimits
+  auto   — best available: posix + Landlock FS policy + seccomp net-deny (Linux)
 
 `off` is a true passthrough so an operator can deliberately disable confinement
 (the Codex ``danger-full-access`` model); the security PoC suite pins it to prove
 the holes still exist when off.
 
-Increment status: clean-env floor (build_env) + UID drop & rlimits (wrap_cmd /
-prepare_workdir, via _sandbox_exec). Landlock FS rules + seccomp net-deny land in
-_sandbox_exec next. `active_tier()` reports what is in effect so degradation is
-visible (never silent).
+The unprivileged layers (clean-env, Landlock, seccomp, rlimits) apply even when
+the server runs non-root; only the UID drop is root-gated and skipped otherwise.
+`OSMCP_SANDBOX_NET=allow` opts out of the network deny. On a platform with no
+kernel backend (macOS/Windows bare installs) `wrap_cmd` degrades to clean-env
+only and warns once. `active_tier()` reports what is actually in effect so
+degradation is visible (never silent).
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ from mcp_server.config import (
     INPUT_ROOT,
     SANDBOX_GID,
     SANDBOX_MODE,
+    SANDBOX_NET,
     SANDBOX_RLIMIT_AS,
     SANDBOX_RLIMIT_CPU,
     SANDBOX_RLIMIT_FSIZE,
@@ -62,8 +64,13 @@ _ENV_ALLOW_EXACT = frozenset({
     "COMSTOCK_MEASURES_DIR", "COMMON_MEASURES_DIR", "SKILLS_DIR",
     "OSCLI_GEMFILE", "OSCLI_GEM_PATH",
     "OSMCP_RUN_ROOT", "OPENSTUDIO_MCP_RUN_ROOT",
+    # Bundler / RubyGems config — EXPLICIT safe names only. A broad BUNDLE_/GEM_
+    # prefix would leak credential vars (e.g. GEM_HOST_API_KEY, or per-host
+    # BUNDLE_<HOST>__<COM> auth tokens) into untrusted measure code.
+    "BUNDLE_WITHOUT", "BUNDLE_PATH", "BUNDLE_GEMFILE", "BUNDLE_FROZEN",
+    "BUNDLE_DEPLOYMENT", "GEM_HOME", "GEM_PATH",
 })
-_ENV_ALLOW_PREFIXES = ("BUNDLE_", "GEM_", "LC_")
+_ENV_ALLOW_PREFIXES = ("LC_",)  # locale only (e.g. LC_CTYPE); never a secret prefix
 
 
 def enabled() -> bool:
@@ -91,11 +98,16 @@ def active_tier() -> str:
 
 
 def _ro_paths() -> list[str]:
-    """Read-only roots the confined subprocess may read/execute."""
+    """Read-only roots the confined subprocess may read/execute.
+
+    /repo is deliberately NOT granted: the measure runs from the copied run dir,
+    and the shim imports mcp_server before applying Landlock — so the run never
+    needs to read the source tree (which could hold a host .env).
+    """
     return [
         *_RO_SYSTEM,
         str(COMSTOCK_MEASURES_DIR), str(COMMON_MEASURES_DIR),
-        str(INPUT_ROOT), str(SKILLS_DIR), "/repo",
+        str(INPUT_ROOT), str(SKILLS_DIR),
     ]
 
 
@@ -130,15 +142,20 @@ def build_env(work_dir: Path | str, *, redirect_tmp: bool = True) -> dict[str, s
     return env
 
 
-def wrap_cmd(cmd: list[str], work_dir: Path | str) -> list[str]:
+def wrap_cmd(cmd: list[str], work_dir: Path | str,
+             extra_rw: tuple[str, ...] = ()) -> list[str]:
     """Wrap a subprocess argv to run under the privilege-dropping exec shim.
 
     Disabled → returns the command unchanged (today's behaviour). Enabled → runs
     it via `python3 -m mcp_server._sandbox_exec`, which drops to the unprivileged
-    sandbox uid, applies rlimits, sets no_new_privs, then execs the command (so
-    the pid is preserved and the dispatcher's kill-by-pid path still works).
-    Full tier additionally confines the filesystem (Landlock: read-only system
-    roots, writable only `work_dir`) and denies outbound IP networking (seccomp).
+    sandbox uid (when root), applies rlimits, sets no_new_privs, then execs the
+    command (the pid is preserved so the dispatcher's kill-by-pid path still
+    works). Full tier additionally confines the filesystem (Landlock: read-only
+    system roots, writable only `work_dir` + `extra_rw`) and — unless
+    OSMCP_SANDBOX_NET=allow — denies outbound IP networking (seccomp).
+
+    extra_rw: additional writable Landlock roots (e.g. a private TMPDIR off the
+    bind mount for tools that need unlinked tempfiles).
     """
     if not enabled():
         return list(cmd)
@@ -168,11 +185,14 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str) -> list[str]:
     if _full():
         for path in _ro_paths():
             wrapped += ["--landlock-ro", path]
-        # rw: the run dir, plus /dev for /dev/null & /dev/urandom (node creation
-        # there is still barred by DAC for the unprivileged uid).
-        for path in (str(work_dir), "/dev"):
+        # rw: the run dir (+ caller extras), plus /dev for /dev/null & /dev/urandom
+        # (node creation there is still barred by DAC for the unprivileged uid).
+        for path in (str(work_dir), "/dev", *extra_rw):
             wrapped += ["--landlock-rw", path]
-        wrapped += ["--seccomp-net"]
+        # Network deny is the default; OSMCP_SANDBOX_NET=allow opts out (trusted
+        # deployments that legitimately fetch e.g. BCL components).
+        if SANDBOX_NET != "allow":
+            wrapped += ["--seccomp-net"]
     return [*wrapped, "--", *cmd]
 
 
@@ -189,8 +209,10 @@ def prepare_workdir(work_dir: Path | str) -> None:
     if not enabled() or not (hasattr(os, "geteuid") and os.geteuid() == 0):
         return
     work = Path(work_dir)
+    # follow_symlinks=False (lchown): never let a symlink inside the dir redirect
+    # the chown to a target outside it (symlink-traversal privilege issue).
     with contextlib.suppress(OSError):
-        os.chown(work, SANDBOX_UID, SANDBOX_GID)
+        os.chown(work, SANDBOX_UID, SANDBOX_GID, follow_symlinks=False)
     for path in work.rglob("*"):
         with contextlib.suppress(OSError):
-            os.chown(path, SANDBOX_UID, SANDBOX_GID)
+            os.chown(path, SANDBOX_UID, SANDBOX_GID, follow_symlinks=False)
