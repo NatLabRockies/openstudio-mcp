@@ -166,18 +166,25 @@ primary control: tools stay on by default because their execution is confined.
    measures + weather (39 tests) green under `auto`.
 4. bwrap backend + userns probe + operator docs — medium (optional upgrade)
 5. Elicitation gate — defer
-6. Flip default `OSMCP_SANDBOX` off → `auto` — **next.** Gate: run the FULL
-   integration suite (all shards) under `auto` first to surface any remaining
-   Landlock allowlist gaps; add missing ro paths (no rebuild); then flip the
-   default (or set `OSMCP_SANDBOX=auto` in the deployment/Dockerfile ENV).
-   Still pending from bucket 1: wire sim-timeout *enforcement* into the dispatcher.
+6. Secure-by-default + local protection — **DONE (increment 4):** decoupled the
+   layers so the unprivileged ones (Landlock + seccomp + rlimits) apply even when
+   the server runs **non-root** (the uid-drop is the only root-gated layer, now
+   skipped gracefully); `wrap_cmd` degrades loudly on platforms with no kernel
+   backend (macOS/Windows → clean-env only + one-shot warning); flipped the code
+   default `off → auto`. This protects LOCAL users too: the server bind-mounts the
+   user's host dirs (`/repo`, `/inputs`), and the sandbox makes them read-only so
+   an LLM-authored measure can't write into the user's real files. Gate met: full
+   suite **721 passed under auto**; only fix needed was the test_measure TMPDIR
+   one (Docker-bind unlinked-tempfile). `off` remains the explicit escape hatch.
+   Still pending: wire sim-timeout *enforcement* into the dispatcher; optional
+   macOS Seatbelt backend.
 
 ## Testing strategy
 
 Goal: tests that (a) **prove the holes exist today** without touching anything
 real, and (b) **prove each is closed** after the fix. Both halves run in CI.
 
-**Status:** `tests/test_sandbox.py` — 9 integration tests, all passing (~34s).
+**Status:** `tests/test_sandbox.py` — 11 integration tests, all passing.
 Kept LOCAL / git-excluded (working exploit PoC), run via the standalone
 `.github/workflows/security.yml`, NOT the main `ci` shards. Probes are generated
 at runtime via `create_measure` (Ruby + Python) so the real create→apply path is
@@ -187,6 +194,10 @@ exercised. Coverage:
 - auto (Landlock + seccomp): read-escape + write-escape + net exfil blocked,
   run still succeeds
 - unconditional: `measure_dir` traversal rejected
+- local issue (dual-run): an unconfined measure writes into the user's
+  bind-mounted host dir (`/repo`); the sandbox blocks it
+- non-root: Landlock confines even when the shim runs as a non-root uid (the
+  uid-drop is skipped, FS confinement still applies)
 
 ### Core principle — dual-run falsifiability
 

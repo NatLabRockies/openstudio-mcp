@@ -50,6 +50,8 @@ _FULL_MODES = ("auto", "full", "landlock")
 _RO_SYSTEM = ("/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc",
               "/opt/venv", "/usr/local", "/var/oscli", "/proc", "/sys")
 
+_warned_no_backend = False  # one-shot log when no kernel backend (non-Linux)
+
 # Environment the OpenStudio CLI / bundler / EnergyPlus / measure code legitimately
 # needs. Everything else — notably any host secret — is dropped in confined modes.
 _ENV_ALLOW_EXACT = frozenset({
@@ -74,10 +76,17 @@ def _full() -> bool:
     return SANDBOX_MODE in _FULL_MODES
 
 
+def _has_backend() -> bool:
+    """True where the kernel confinement shim can run (Landlock/seccomp = Linux)."""
+    return sys.platform.startswith("linux")
+
+
 def active_tier() -> str:
     """The confinement tier actually in effect — surfaced in tool output."""
     if not enabled():
         return "off"
+    if not _has_backend():
+        return "clean-env"  # env stripping only; no kernel backend on this platform
     return "landlock" if _full() else "posix"
 
 
@@ -133,6 +142,16 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str) -> list[str]:
     """
     if not enabled():
         return list(cmd)
+    if not _has_backend():
+        # macOS/Windows bare installs: no kernel sandbox shim. Run unwrapped
+        # (clean-env from build_env still strips secrets); warn once.
+        global _warned_no_backend
+        if not _warned_no_backend:
+            print(f"[sandbox] no kernel confinement backend on {sys.platform}; "
+                  "running unwrapped (clean-env only) — use the Docker image for "
+                  "full FS/network confinement", file=sys.stderr)
+            _warned_no_backend = True
+        return list(cmd)
     wrapped = [
         sys.executable, "-m", "mcp_server._sandbox_exec",
         "--uid", str(SANDBOX_UID), "--gid", str(SANDBOX_GID),
@@ -165,7 +184,9 @@ def prepare_workdir(work_dir: Path | str) -> None:
     outputs afterwards. Bind mounts that ignore ownership (e.g. Docker Desktop)
     make this a harmless no-op there — confinement still holds for in-image paths.
     """
-    if not enabled():
+    # Only the root server needs to hand the dir to the sandbox uid; when not root
+    # the shim keeps the current uid, which already owns the dir it created.
+    if not enabled() or not (hasattr(os, "geteuid") and os.geteuid() == 0):
         return
     work = Path(work_dir)
     with contextlib.suppress(OSError):

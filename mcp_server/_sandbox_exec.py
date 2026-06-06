@@ -88,14 +88,20 @@ def main(argv: list[str]) -> int:
         if not _seccomp.install_net_deny():
             print("sandbox-exec: WARNING seccomp net-deny unavailable — network not confined", file=sys.stderr)
 
-    # Drop privileges: supplementary groups, then gid, then uid (order matters —
-    # setgroups/setgid require privilege we lose after setuid).
-    os.setgroups([ns.gid])
-    os.setgid(ns.gid)
-    os.setuid(ns.uid)
-    if os.getuid() != ns.uid or os.geteuid() != ns.uid:
-        print("sandbox-exec: uid drop did not stick", file=sys.stderr)
-        return 2
+    # Drop privileges only when we have them (root). The FS/network confinement
+    # above is unprivileged and already applied — so a non-root local server still
+    # gets Landlock + seccomp + rlimits; only the uid-drop (a defence-in-depth /
+    # multi-tenant layer) is skipped. Order matters: groups, gid, then uid.
+    if os.geteuid() == 0:
+        os.setgroups([ns.gid])
+        os.setgid(ns.gid)
+        os.setuid(ns.uid)
+        if os.getuid() != ns.uid or os.geteuid() != ns.uid:
+            print("sandbox-exec: uid drop did not stick", file=sys.stderr)
+            return 2
+    elif os.getuid() != ns.uid:
+        print(f"sandbox-exec: not root (uid {os.getuid()}) — keeping uid; "
+              "FS/network confinement still applied", file=sys.stderr)
 
     try:
         os.execvp(cmd[0], cmd)  # noqa: S606 - intentional shell-less exec of the confined command

@@ -59,11 +59,14 @@ INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolv
 ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
 
 # Subprocess confinement for measure/simulation execution (see mcp_server/sandbox.py).
-#   off    — full passthrough (current behaviour / explicit escape hatch)
-#   posix  — clean-env allowlist (+ UID drop & rlimits in later increments)
-#   auto   — best confinement available (currently == posix)
-# Default off during rollout; flips to auto once the full suite passes confined.
-SANDBOX_MODE = os.environ.get("OSMCP_SANDBOX", "off").strip().lower()
+#   off    — full passthrough (explicit escape hatch for trusted/local-tooling use)
+#   posix  — clean-env allowlist + UID drop (if root) + rlimits
+#   auto   — best confinement available (default): clean-env + Landlock FS +
+#            seccomp net-deny + rlimits, plus UID drop when running as root.
+# Secure by default. Degrades loudly: the unprivileged layers (Landlock/seccomp)
+# apply even for a non-root local server; on a platform without a kernel backend
+# (macOS/Windows bare installs) it falls back to clean-env only and logs a notice.
+SANDBOX_MODE = os.environ.get("OSMCP_SANDBOX", "auto").strip().lower()
 # Network policy for confined subprocesses: deny (default) blocks outbound TCP
 # once the seccomp backend lands; allow leaves it open (trusted/BCL deployments).
 SANDBOX_NET = os.environ.get("OSMCP_SANDBOX_NET", "deny").strip().lower()
