@@ -90,28 +90,34 @@ def _ro_paths() -> list[str]:
     ]
 
 
-def build_env(work_dir: Path | str) -> dict[str, str]:
+def build_env(work_dir: Path | str, *, redirect_tmp: bool = True) -> dict[str, str]:
     """Environment for a confined subprocess.
 
     Disabled → full passthrough (``os.environ.copy()``), preserving today's
-    behaviour. Enabled → only allowlisted variables survive and HOME/TMPDIR are
-    pinned into the work dir, so no host secret reaches measure code and caches
-    stay inside the run directory (which the FS backend will later confine).
+    behaviour. Enabled → only allowlisted variables survive, so no host secret
+    reaches measure code.
+
+    redirect_tmp (default) pins HOME/TMPDIR into work_dir/tmp, keeping temp +
+    caches inside the run dir so the Landlock backend (which makes only that dir
+    writable) permits them. Pass redirect_tmp=False for the non-Landlocked
+    test_measure path: pytest's capture uses an unlinked tempfile, which the
+    Docker-Desktop bind mount can't keep open — so it must stay on /tmp.
     """
     if not enabled():
         return os.environ.copy()
-    work = Path(work_dir)
     env = {
         k: v for k, v in os.environ.items()
         if k in _ENV_ALLOW_EXACT or k.startswith(_ENV_ALLOW_PREFIXES)
     }
-    env["HOME"] = str(work)
-    tmp = work / "tmp"
-    try:
-        tmp.mkdir(parents=True, exist_ok=True)
-        env["TMPDIR"] = str(tmp)
-    except OSError:
-        pass
+    if redirect_tmp:
+        work = Path(work_dir)
+        env["HOME"] = str(work)
+        tmp = work / "tmp"
+        try:
+            tmp.mkdir(parents=True, exist_ok=True)
+            env["TMPDIR"] = str(tmp)
+        except OSError:
+            pass
     return env
 
 

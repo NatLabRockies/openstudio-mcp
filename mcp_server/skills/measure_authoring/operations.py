@@ -1017,7 +1017,7 @@ def test_measure_op(
             proc = subprocess.run(
                 ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"],
                 cwd=str(mdir),
-                env=sandbox.build_env(mdir),
+                env=sandbox.build_env(mdir, redirect_tmp=False),
                 capture_output=True, text=True, timeout=60, check=False,
             )
         else:
@@ -1028,7 +1028,7 @@ def test_measure_op(
             proc = subprocess.run(
                 ["ruby", "-I", ".", str(test_files[0])],
                 cwd=str(mdir),
-                env=sandbox.build_env(mdir),
+                env=sandbox.build_env(mdir, redirect_tmp=False),
                 capture_output=True, text=True, timeout=60, check=False,
             )
 
