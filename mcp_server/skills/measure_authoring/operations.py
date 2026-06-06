@@ -8,13 +8,15 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import openstudio
 
 from mcp_server import sandbox
-from mcp_server.config import INPUT_ROOT, user_run_root
+from mcp_server.config import INPUT_ROOT, is_path_allowed, user_run_root
+from mcp_server.util import reject_escaping_symlinks
 
 
 def custom_measures_dir() -> Path:
@@ -29,6 +31,9 @@ _TEST_MODEL_CANDIDATES = [
 ]
 
 _MEASURE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,99}$")
+# Argument names become bare Ruby/Python identifiers in generated code — they must
+# be plain identifiers, never arbitrary text (else code injection at generation).
+_ARG_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
 
 # Argument type -> SDK factory method name suffix
 _ARG_MAKERS = {
@@ -91,6 +96,15 @@ def _escape_python_str(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _checked_arg_name(name: str) -> str:
+    """Validate an argument name as a plain identifier — it is emitted as a bare
+    Ruby/Python variable in generated code, so arbitrary text would be code
+    injection. Raises ValueError otherwise (callers wrap in ok:false)."""
+    if not isinstance(name, str) or not _ARG_NAME_RE.match(name):
+        raise ValueError(f"invalid argument name (must be an identifier): {name!r}")
+    return name
+
+
 def _generate_ruby_arguments(args: list[dict]) -> str:
     """Generate Ruby arguments() method body."""
     lines = [
@@ -98,28 +112,26 @@ def _generate_ruby_arguments(args: list[dict]) -> str:
         "    args = OpenStudio::Measure::OSArgumentVector.new",
     ]
     for a in args:
-        name = a["name"]
+        name = _checked_arg_name(a["name"])  # bare Ruby identifier — validated, never raw text
         atype = a.get("type", "String")
         required = a.get("required", True)
         req_str = "true" if required else "false"
         maker = _ARG_MAKERS.get(atype, "String")
         if atype == "Choice" and "values" in a:
-            # Choice args require values at construction time
-            vals = a["values"]
-            choices_arr = ", ".join(f'"{v}"' for v in vals)
+            # Choice args require values at construction time (escape each value)
             lines.append(f"    {name}_choices = OpenStudio::StringVector.new")
-            for v in vals:
-                lines.append(f'    {name}_choices << "{v}"')
+            for v in a["values"]:
+                lines.append(f'    {name}_choices << "{_escape_ruby_str(str(v))}"')
             lines.append(f'    {name} = OpenStudio::Measure::OSArgument.makeChoiceArgument("{name}", {name}_choices, {name}_choices, {req_str})')
         else:
             lines.append(f'    {name} = OpenStudio::Measure::OSArgument.make{maker}Argument("{name}", {req_str})')
         if "display_name" in a:
-            lines.append(f'    {name}.setDisplayName("{a["display_name"]}")')
+            lines.append(f'    {name}.setDisplayName("{_escape_ruby_str(str(a["display_name"]))}")')
         else:
             display = name.replace("_", " ").title()
             lines.append(f'    {name}.setDisplayName("{display}")')
         if "description" in a:
-            lines.append(f'    {name}.setDescription("{a["description"]}")')
+            lines.append(f'    {name}.setDescription("{_escape_ruby_str(str(a["description"]))}")')
         if "default_value" in a:
             dv = a["default_value"]
             if atype == "Double":
@@ -129,7 +141,7 @@ def _generate_ruby_arguments(args: list[dict]) -> str:
             elif atype == "Boolean":
                 lines.append(f"    {name}.setDefaultValue({str(dv).lower()})")
             else:
-                lines.append(f'    {name}.setDefaultValue("{dv}")')
+                lines.append(f'    {name}.setDefaultValue("{_escape_ruby_str(str(dv))}")')
         lines.append(f"    args << {name}")
     lines += ["    return args", "  end"]
     return "\n".join(lines)
@@ -142,27 +154,26 @@ def _generate_python_arguments(args: list[dict]) -> str:
         "        args = openstudio.measure.OSArgumentVector()",
     ]
     for a in args:
-        name = a["name"]
+        name = _checked_arg_name(a["name"])  # bare Python identifier — validated, never raw text
         atype = a.get("type", "String")
         required = a.get("required", True)
         req_str = "True" if required else "False"
         maker = _ARG_MAKERS.get(atype, "String")
         if atype == "Choice" and "values" in a:
-            # Choice args require values at construction time
-            vals = a["values"]
+            # Choice args require values at construction time (escape each value)
             lines.append(f"        {name}_choices = openstudio.StringVector()")
-            for v in vals:
-                lines.append(f'        {name}_choices.append("{v}")')
+            for v in a["values"]:
+                lines.append(f'        {name}_choices.append("{_escape_python_str(str(v))}")')
             lines.append(f'        {name} = openstudio.measure.OSArgument.makeChoiceArgument("{name}", {name}_choices, {name}_choices, {req_str})')
         else:
             lines.append(f'        {name} = openstudio.measure.OSArgument.make{maker}Argument("{name}", {req_str})')
         if "display_name" in a:
-            lines.append(f'        {name}.setDisplayName("{a["display_name"]}")')
+            lines.append(f'        {name}.setDisplayName("{_escape_python_str(str(a["display_name"]))}")')
         else:
             display = name.replace("_", " ").title()
             lines.append(f'        {name}.setDisplayName("{display}")')
         if "description" in a:
-            lines.append(f'        {name}.setDescription("{a["description"]}")')
+            lines.append(f'        {name}.setDescription("{_escape_python_str(str(a["description"]))}")')
         if "default_value" in a:
             dv = a["default_value"]
             if atype == "Double":
@@ -172,7 +183,7 @@ def _generate_python_arguments(args: list[dict]) -> str:
             elif atype == "Boolean":
                 lines.append(f"        {name}.setDefaultValue({dv!s})")
             else:
-                lines.append(f'        {name}.setDefaultValue("{dv}")')
+                lines.append(f'        {name}.setDefaultValue("{_escape_python_str(str(dv))}")')
         lines.append(f"        args.append({name})")
     lines += ["        return args"]
     return "\n".join(lines)
@@ -182,7 +193,7 @@ def _generate_ruby_extraction(args: list[dict]) -> str:
     """Generate Ruby argument extraction lines for run() method."""
     lines = []
     for a in args:
-        name = a["name"]
+        name = _checked_arg_name(a["name"])
         atype = a.get("type", "String")
         # Choice args are extracted as strings at runtime
         getter = "String" if atype == "Choice" else _ARG_MAKERS.get(atype, "String")
@@ -194,7 +205,7 @@ def _generate_python_extraction(args: list[dict]) -> str:
     """Generate Python argument extraction lines for run() method."""
     lines = []
     for a in args:
-        name = a["name"]
+        name = _checked_arg_name(a["name"])
         atype = a.get("type", "String")
         # Choice args are extracted as strings at runtime
         getter = "String" if atype == "Choice" else _ARG_MAKERS.get(atype, "String")
@@ -477,6 +488,10 @@ def _update_measure_xml(measure_dir: Path, language: str):
     """
     if language != "Ruby":
         return
+    # NOTE: `measure -u` only executes the GENERATED arguments() method (built from
+    # validated/escaped arg specs — see _checked_arg_name / _escape_*), NOT the
+    # LLM's run_body. So it is not untrusted code and is not sandbox-wrapped here
+    # (wrapping it as the sandbox uid breaks the in-place measure.xml rewrite).
     try:
         subprocess.run(
             ["openstudio", "measure", "-u", str(measure_dir)],
@@ -926,11 +941,13 @@ def _test_reporting_measure_with_run(
         "run", "--postprocess_only", "-w", str(osw_path),
     ]
     log_path = run_dir / "openstudio.log"
+    run_env = sandbox.build_env(run_dir)
+    sandbox.prepare_workdir(run_dir)
     with log_path.open("w", encoding="utf-8") as log_f:
         proc = subprocess.run(
-            cmd, cwd=str(run_dir),
+            sandbox.wrap_cmd(cmd, run_dir), cwd=str(run_dir),
             stdout=log_f, stderr=subprocess.STDOUT,
-            env=os.environ.copy(), timeout=120, check=False,
+            env=run_env, timeout=120, check=False,
         )
 
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
@@ -982,6 +999,14 @@ def test_measure_op(
         mdir = Path(measure_dir)
         if not mdir.is_dir():
             return {"ok": False, "error": f"Measure directory not found: {measure_dir}"}
+        # Access control: only test measures from allowed roots, and never stage a
+        # tree with an escaping symlink (test_measure chowns + Landlock-grants this
+        # dir, so an arbitrary path here is a privilege/secret-disclosure vector).
+        if not is_path_allowed(mdir):
+            return {"ok": False, "error": f"Measure directory not allowed: {measure_dir}"}
+        err = reject_escaping_symlinks(mdir)
+        if err:
+            return {"ok": False, "error": err}
 
         # Detect language
         if (mdir / "measure.py").is_file():
@@ -1006,6 +1031,8 @@ def test_measure_op(
         src_model = None
         if model_path:
             src = Path(model_path)
+            if not is_path_allowed(src):
+                return {"ok": False, "error": f"model_path not allowed: {model_path}"}
             if src.is_file():
                 src_model = src
         if not src_model:
@@ -1014,23 +1041,33 @@ def test_measure_op(
             shutil.copy2(str(src_model), str(test_model_dst))
 
         if language == "Python":
-            proc = subprocess.run(
-                ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"],
-                cwd=str(mdir),
-                env=sandbox.build_env(mdir, redirect_tmp=False),
-                capture_output=True, text=True, timeout=60, check=False,
-            )
+            test_cmd = ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"]
         else:
             # Run minitest directly (openstudio measure -r doesn't run minitest)
             test_files = list(test_dir.glob("*_test.rb"))
             if not test_files:
                 return {"ok": False, "error": "No Ruby test files found"}
+            test_cmd = ["ruby", "-I", ".", str(test_files[0])]
+
+        # Run the (untrusted) test code under the SAME confinement as apply_measure
+        # — UID drop, rlimits, Landlock, seccomp net-deny. TMPDIR is a private dir
+        # under the in-container /tmp (NOT mdir, which is on the Docker bind mount):
+        # pytest's capture uses an unlinked tempfile the bind mount can't keep open.
+        # It's granted to Landlock as an extra writable root and HOME stays in mdir.
+        tmp_dir = Path(tempfile.mkdtemp(prefix="osmcp_mtest_"))
+        try:
+            env = sandbox.build_env(mdir)          # HOME=mdir (granted rw)
+            env["TMPDIR"] = str(tmp_dir)           # off the bind mount, Landlock-granted below
+            sandbox.prepare_workdir(mdir)
+            sandbox.prepare_workdir(tmp_dir)
             proc = subprocess.run(
-                ["ruby", "-I", ".", str(test_files[0])],
+                sandbox.wrap_cmd(test_cmd, mdir, extra_rw=(str(tmp_dir),)),
                 cwd=str(mdir),
-                env=sandbox.build_env(mdir, redirect_tmp=False),
+                env=env,
                 capture_output=True, text=True, timeout=60, check=False,
             )
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
         output = proc.stdout + proc.stderr
         passed = failed = errors = 0
