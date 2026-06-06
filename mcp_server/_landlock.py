@@ -37,6 +37,7 @@ _A_MAKE_BLOCK = 1 << 11
 _A_MAKE_SYM = 1 << 12
 _A_REFER = 1 << 13      # ABI >= 2
 _A_TRUNCATE = 1 << 14   # ABI >= 3
+_A_IOCTL_DEV = 1 << 15  # ABI >= 5 — governs ioctl() on device files
 
 _RO = _A_EXECUTE | _A_READ_FILE | _A_READ_DIR
 _RW_BASE = (
@@ -53,6 +54,12 @@ class _RulesetAttr(ctypes.Structure):
 
 
 class _PathBeneathAttr(ctypes.Structure):
+    # MUST be packed (12 bytes). The kernel UAPI declares
+    #   struct landlock_path_beneath_attr { __u64 allowed_access; __s32 parent_fd; }
+    #   __attribute__((packed));
+    # so _pack_=1 matches the kernel exactly. Do NOT "fix" this to natural
+    # alignment (16 bytes) — that would mismatch the kernel struct. Verified by
+    # the integration tests, which only pass if add_rule parsed this correctly.
     _pack_ = 1
     _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
 
@@ -74,27 +81,37 @@ def restrict(ro_paths: list[str], rw_paths: list[str]) -> int:
         handled |= _A_REFER
     if abi >= 3:
         handled |= _A_TRUNCATE
+    if abi >= 5:
+        handled |= _A_IOCTL_DEV  # govern device ioctls (esp. with /dev writable)
 
     attr = _RulesetAttr(handled_access_fs=handled)
     rs_fd = libc.syscall(_NR_CREATE_RULESET, ctypes.byref(attr), ctypes.sizeof(attr), 0)
     if rs_fd < 0:
         return 0
 
-    def _add(path: str, access: int) -> None:
+    def _add(path: str, access: int) -> bool:
+        """True if the path is absent (optional, skip) or its rule was added;
+        False only if a PRESENT path's rule failed (a broken ruleset)."""
         try:
             fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
         except OSError:
-            return  # path absent — skip
+            return True  # absent path — optional, not a failure
         try:
             pba = _PathBeneathAttr(allowed_access=access & handled, parent_fd=fd)
-            libc.syscall(_NR_ADD_RULE, rs_fd, _RULE_PATH_BENEATH, ctypes.byref(pba), 0)
+            return libc.syscall(_NR_ADD_RULE, rs_fd, _RULE_PATH_BENEATH, ctypes.byref(pba), 0) == 0
         finally:
             os.close(fd)
 
+    ok = True
     for p in ro_paths:
-        _add(p, _RO)
+        ok = _add(p, _RO) and ok
     for p in rw_paths:
-        _add(p, handled)  # full set for the writable run dir
+        ok = _add(p, handled) and ok  # full set for the writable run dir
+    if not ok:
+        # A present path's rule was rejected → enforce nothing rather than a
+        # half-applied policy; the caller (auto tier) fails closed on a 0 return.
+        os.close(rs_fd)
+        return 0
 
     # no_new_privs is set by the caller; restrict_self enforces the ruleset on
     # this process and everything it execs/forks.
