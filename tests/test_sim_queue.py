@@ -87,6 +87,40 @@ def test_run_simulation_leaves_no_orphan_staging_dir():
 
 
 @pytest.mark.integration
+def test_sim_timeout_kills_long_run():
+    # Validates: OSMCP_SIM_TIMEOUT_SECONDS caps wall-clock — a sim that exceeds it
+    # is terminated and marked failed with a timeout error (runaway/DoS guard). A
+    # 2s cap fires long before the example-model sim could ever finish.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    with http_server({"MCP_AUTH": "none", "OSMCP_SIM_TIMEOUT_SECONDS": "2"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                cr = unwrap(await s.call_tool(
+                    "create_example_osm", {"name": f"to_{uuid.uuid4().hex[:8]}"}))
+                assert cr["ok"] is True, cr
+                rs = unwrap(await s.call_tool(
+                    "run_simulation", {"osm_path": cr["osm_path"], "epw_path": EPW_PATH}))
+                assert rs["ok"] is True, rs
+                run_id = rs["run_id"]
+
+                status, err = rs["status"], ""
+                for _ in range(120):  # up to 60s; the 2s cap fires far sooner
+                    run = unwrap(await s.call_tool("get_run_status", {"run_id": run_id}))["run"]
+                    status, err = run["status"], (run.get("error") or "")
+                    if status in ("success", "failed", "cancelled", "error"):
+                        break
+                    await asyncio.sleep(0.5)
+
+                assert status == "failed", f"timed-out sim must be 'failed', got {status!r}"
+                assert "cap" in err.lower() or "exceeded" in err.lower(), \
+                    f"error should indicate the wall-clock timeout; got {err!r}"
+
+        asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_cancelled_running_sim_stays_cancelled():
     # Regression: _refresh_status reclassified a cancelled (running) run as "failed"
     # on the next get_run_status — a killed pid reads as failure — breaking the

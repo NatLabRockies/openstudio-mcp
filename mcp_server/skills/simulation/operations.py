@@ -24,10 +24,12 @@ from mcp_server.config import (
     MAX_CONCURRENCY_PER_USER,
     OSCLI_GEM_PATH,
     OSCLI_GEMFILE,
+    SIM_TIMEOUT_SECONDS,
+    is_path_allowed,
     user_run_root,
 )
 from mcp_server.identity import user_key
-from mcp_server.util import resolve_run_dir
+from mcp_server.util import reject_escaping_symlinks, resolve_run_dir
 
 # Where the MCP server stores runs inside the container
 DEFAULT_LOG_TAIL = LOG_TAIL_DEFAULT
@@ -322,8 +324,46 @@ def _dispatch_once() -> None:
                 _queue.remove(run_id)
 
 
+def _enforce_timeouts() -> None:
+    """Terminate running sims past the wall-clock cap and mark them failed.
+
+    OSMCP_SIM_TIMEOUT_SECONDS=0 disables. The kill (terminate -> wait -> kill)
+    runs outside _sim_lock so a slow exit can't stall the dispatcher.
+    """
+    if SIM_TIMEOUT_SECONDS <= 0:
+        return
+    now = _now()
+    with _sim_lock:
+        expired = [
+            rec for rec in _RUNS.values()
+            if rec.status == "running" and rec.pid is not None
+            and rec.started_at is not None
+            and now - rec.started_at > SIM_TIMEOUT_SECONDS
+        ]
+    for rec in expired:
+        with contextlib.suppress(psutil.NoSuchProcess, Exception):
+            p = psutil.Process(rec.pid)
+            p.terminate()
+            try:
+                p.wait(timeout=5)
+            except psutil.TimeoutExpired:
+                p.kill()
+        with _sim_lock:
+            rec.status = "failed"
+            rec.ended_at = _now()
+            rec.exit_code = -1 if rec.exit_code is None else rec.exit_code
+            rec.error = (f"Simulation exceeded the {SIM_TIMEOUT_SECONDS:.0f}s wall-clock "
+                         "cap (OSMCP_SIM_TIMEOUT_SECONDS)")
+            _RUNS[rec.run_id] = rec
+        _persist_run_record(rec)
+        audit("sim_timeout", run_id=rec.run_id, user=rec.user_key,
+              ran_seconds=round(now - (rec.started_at or now), 1))
+
+
 def _dispatch_loop() -> None:
     while True:
+        with contextlib.suppress(Exception):
+            _enforce_timeouts()
         with contextlib.suppress(Exception):
             _dispatch_once()
         time.sleep(0.5)
@@ -357,6 +397,13 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
     src_osw = Path(osw_path).resolve()
     if not src_osw.exists():
         return {"ok": False, "error": f"OSW not found: {osw_path}"}
+    # An OSW bundle may legitimately live anywhere (e.g. a temp staging dir), so we
+    # don't is_path_allowed the OSW path itself — but we must never FOLLOW a symlink
+    # in its tree that escapes the bundle (would copy a host file into the run dir).
+    # User-facing entry points (run_simulation) validate their inputs separately.
+    sym_err = reject_escaping_symlinks(src_osw.parent)
+    if sym_err:
+        return {"ok": False, "error": sym_err}
 
     # Fail fast on invalid OSW (before staging any run dir)
     v = validate_osw(str(src_osw), epw_path=epw_path)
@@ -748,6 +795,8 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
     osm = Path(osm_path)
     if not osm.exists():
         return {"ok": False, "error": f"OSM file not found: {osm_path}"}
+    if not is_path_allowed(osm):
+        return {"ok": False, "error": f"OSM path not allowed: {osm_path}"}
 
     # Validate EPW path upfront if provided
     epw_abs: str | None = None
@@ -755,6 +804,8 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         epw = Path(epw_path)
         if not epw.exists():
             return {"ok": False, "error": f"EPW file not found: {epw_path}"}
+        if not is_path_allowed(epw):
+            return {"ok": False, "error": f"EPW path not allowed: {epw_path}"}
         epw_abs = str(epw.resolve())
 
     # Stage the minimal OSW in a throwaway temp dir. run_osw() copies the staged
