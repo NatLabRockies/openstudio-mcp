@@ -115,6 +115,9 @@ jobs:
         env:
           RUN_OPENSTUDIO_INTEGRATION: "1"
           MCP_SERVER_CMD: "openstudio-mcp"
+          # Run the integration suite confined (explicit, not via the code default).
+          # Measures/sims drop to the unprivileged sandbox uid + Landlock + seccomp.
+          OSMCP_SANDBOX: "auto"
         run: |
           mkdir -p runs
           case ${{ matrix.shard }} in
@@ -126,7 +129,7 @@ jobs:
           esac
           docker run --rm \
             -v "$PWD:/repo" -v "$PWD/runs:/runs" \
-            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD \
+            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD -e OSMCP_SANDBOX \
             $EXTRA_ENV \
             openstudio-mcp:arm64 bash -lc "cd /repo && pytest -vv -s $FILES"
 
@@ -182,6 +185,9 @@ jobs:
         env:
           RUN_OPENSTUDIO_INTEGRATION: "1"
           MCP_SERVER_CMD: "openstudio-mcp"
+          # Run the integration suite confined (explicit, not via the code default).
+          # Measures/sims drop to the unprivileged sandbox uid + Landlock + seccomp.
+          OSMCP_SANDBOX: "auto"
         run: |
           mkdir -p runs
           case ${{ matrix.shard }} in
@@ -215,6 +221,6 @@ jobs:
           esac
           docker run --rm \
             -v "$PWD:/repo" -v "$PWD/runs:/runs" \
-            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD \
+            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD -e OSMCP_SANDBOX \
             $EXTRA_ENV \
             openstudio-mcp:dev bash -lc "cd /repo && pytest -vv -s $FILES"

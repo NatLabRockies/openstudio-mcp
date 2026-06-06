@@ -26,6 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ruby-full \
     && rm -rf /var/lib/apt/lists/*
 
+# Unprivileged account that confined measure/simulation subprocesses drop to
+# (parity with docker/Dockerfile; see mcp_server/_sandbox_exec.py).
+RUN useradd -r -u 1001 -s /usr/sbin/nologin sandbox
+
 # OpenStudio arm64 — official NREL .deb. Pulls in libstdc++ etc. as deps.
 RUN curl -fSL \
       "https://github.com/NREL/OpenStudio/releases/download/v${OPENSTUDIO_VERSION}/OpenStudio-${OPENSTUDIO_VERSION}+${OPENSTUDIO_SHA}-Ubuntu-24.04-arm64.deb" \
