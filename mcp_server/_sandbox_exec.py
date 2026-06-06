@@ -4,14 +4,17 @@ Invoked by mcp_server.sandbox.wrap_cmd as::
 
     python3 -m mcp_server._sandbox_exec --uid N --gid N \
         [--rlimit-fsize BYTES] [--rlimit-nproc N] [--rlimit-nofile N] \
-        [--rlimit-cpu SECONDS] [--rlimit-as BYTES] -- CMD [ARG...]
+        [--rlimit-cpu SECONDS] [--rlimit-as BYTES] \
+        [--landlock-ro PATH ...] [--landlock-rw PATH ...] [--seccomp-net] \
+        -- CMD [ARG...]
 
-Runs as root, applies rlimits, drops to the unprivileged uid/gid, sets
-``no_new_privs``, then ``execvp``s CMD. A standalone exec — NOT a Popen
-``preexec_fn`` — so there is no fork-safety hazard in the threaded server, and
-the dropped image keeps the same pid (so the dispatcher's existing
-terminate/kill-by-pid path still works). Landlock FS rules + a seccomp net-deny
-filter will be added here in the next increment, behind the same wrapper.
+Applies, in order: rlimits, ``prctl(no_new_privs)``, Landlock FS policy and a
+seccomp network-deny filter (when their flags are given), then drops to the
+unprivileged uid/gid **only when running as root** (a non-root local server keeps
+its uid — the FS/network confinement is unprivileged and still applies), and
+finally ``execvp``s CMD. A standalone exec — NOT a Popen ``preexec_fn`` — so
+there is no fork-safety hazard in the threaded server, and the exec'd image keeps
+the same pid (so the dispatcher's terminate/kill-by-pid path still works).
 """
 from __future__ import annotations
 
@@ -20,6 +23,10 @@ import ctypes
 import os
 import resource
 import sys
+
+# Imported up-front (before any Landlock restriction is applied below) so the
+# module files are read while the filesystem is still unconfined.
+from mcp_server import _landlock, _seccomp
 
 _RLIMITS = {
     "cpu": resource.RLIMIT_CPU,        # CPU-seconds
@@ -78,15 +85,19 @@ def main(argv: list[str]) -> int:
     # both persist across setuid + exec and are inherited by children). Degrade
     # loudly — a backend that cannot engage prints a notice and the run proceeds
     # with whatever confinement did apply (the POSIX floor always holds).
-    if ns.landlock_ro or ns.landlock_rw:
-        from mcp_server import _landlock
-        abi = _landlock.restrict(ns.landlock_ro, ns.landlock_rw)
-        if not abi:
-            print("sandbox-exec: WARNING Landlock unavailable — FS not confined", file=sys.stderr)
-    if ns.seccomp_net:
-        from mcp_server import _seccomp
-        if not _seccomp.install_net_deny():
-            print("sandbox-exec: WARNING seccomp net-deny unavailable — network not confined", file=sys.stderr)
+    # Fail CLOSED: if a kernel backend was requested (auto/full tier) but cannot
+    # engage, refuse to run rather than execute untrusted code unconfined. An
+    # operator who knowingly wants weaker confinement selects OSMCP_SANDBOX=posix
+    # (UID drop + rlimits, no kernel FS/net) or off — neither requests these flags.
+    if (ns.landlock_ro or ns.landlock_rw) and not _landlock.restrict(ns.landlock_ro, ns.landlock_rw):
+        print("sandbox-exec: FATAL Landlock requested but unavailable — refusing to run "
+              "unconfined (use OSMCP_SANDBOX=posix or off to accept weaker confinement)",
+              file=sys.stderr)
+        return 3
+    if ns.seccomp_net and not _seccomp.install_net_deny():
+        print("sandbox-exec: FATAL seccomp net-deny requested but unavailable — refusing to "
+              "run unconfined (use OSMCP_SANDBOX=posix or off)", file=sys.stderr)
+        return 3
 
     # Drop privileges only when we have them (root). The FS/network confinement
     # above is unprivileged and already applied — so a non-root local server still
