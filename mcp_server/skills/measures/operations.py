@@ -24,7 +24,7 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.model_manager import get_model, load_model
-from mcp_server.util import resolve_run_dir
+from mcp_server.util import reject_escaping_symlinks, resolve_run_dir
 
 
 def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
@@ -153,6 +153,14 @@ def apply_measure(
         if not is_path_allowed(measure_path):
             return {"ok": False, "error": f"Measure directory not allowed: {measure_dir}"}
 
+        # Reject symlinks that escape the measure dir: copytree(symlinks=True)
+        # below preserves links instead of inlining target content, but a link
+        # pointing outside the measure root (e.g. -> /etc/shadow) must not be
+        # staged at all (it would leak host files into the readable run dir).
+        err = reject_escaping_symlinks(measure_path)
+        if err:
+            return {"ok": False, "error": err}
+
         # Check measure script exists (Ruby or Python)
         has_rb = (measure_path / "measure.rb").is_file()
         has_py = (measure_path / "measure.py").is_file()
@@ -173,7 +181,9 @@ def apply_measure(
         measures_dir = run_dir / "measures"
         measures_dir.mkdir(exist_ok=True)
         local_measure = measures_dir / measure_path.name
-        shutil.copytree(str(measure_path), str(local_measure), dirs_exist_ok=True)
+        # symlinks=True: copy links AS links (don't follow → no host-file content
+        # inlined into the run dir); escaping links already rejected above.
+        shutil.copytree(str(measure_path), str(local_measure), dirs_exist_ok=True, symlinks=True)
 
         # Build measure step arguments
         measure_args = {}
