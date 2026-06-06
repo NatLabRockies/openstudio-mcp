@@ -60,6 +60,39 @@ def test_list_weather_files_known_city():
 
 
 @pytest.mark.integration
+def test_dotted_epw_names_report_companions():
+    """Dotted EPW filenames must report their .ddy/.stat companions."""
+    # Regression: companion detection used epw.with_suffix("").with_suffix(".ddy"),
+    # which mangles dotted names (USA_MA_Boston-Logan.Intl.AP.725090_TMY3 -> ...AP.ddy)
+    # and reported has_ddy/has_stat False for EPWs whose companions exist on disk
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                result = unwrap(await session.call_tool("list_weather_files", {}))
+                assert result["ok"] is True
+
+                boston = [
+                    f for f in result["weather_files"]
+                    if f["name"] == "USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+                    and "/opt/comstock-measures/" in f["path"]
+                ]
+                assert boston, "Boston CBL EPW missing from list_weather_files"
+                assert boston[0]["has_ddy"] is True, (
+                    f"Boston .ddy exists on disk but reported absent: {boston[0]}"
+                )
+                assert boston[0]["has_stat"] is True, (
+                    f"Boston .stat exists on disk but reported absent: {boston[0]}"
+                )
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_weather_file_paths_absolute():
     """All returned paths should be absolute and end with .epw."""
     # Validates: list_weather_files returns absolute paths ending with .epw

@@ -5,6 +5,7 @@ Uses a minimal test measure at tests/assets/measures/set_building_name/.
 """
 import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import integration_enabled, server_params, setup_example, unwrap
@@ -18,6 +19,18 @@ def _unique(prefix: str = "pytest_measures") -> str:
 
 # Measure path inside container (repo mounted at /repo)
 MEASURE_DIR = "/repo/tests/assets/measures/set_building_name"
+
+BOGUS_EPW_NAME = "ZZZ_Nowhere.Fake.999999_TMY3.epw"
+
+
+def _bogus_weather_fixture() -> str:
+    """Copy of SystemD_baseline.osm with its weather url renamed to an EPW
+    that exists nowhere on disk. Returns the fixture's container path."""
+    src = Path("/repo/tests/assets/SystemD_baseline.osm").read_text()
+    fixture = Path("/runs") / f"{_unique('pytest_bogus_weather')}.osm"
+    fixture.write_text(src.replace(
+        "USA_MD_Baltimore-Washington.Intl.AP.724060_TMY3.epw", BOGUS_EPW_NAME))
+    return str(fixture)
 
 
 @pytest.mark.integration
@@ -119,6 +132,104 @@ def test_apply_measure_invalid_dir():
                 }))
                 assert res["ok"] is False
                 assert "error" in res, "Missing error message for invalid measure dir"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_apply_measure_bare_weather_filename():
+    """Model whose OS:WeatherFile Url is a bare filename (the OSM convention)."""
+    # Regression: apply_measure failed with "Weather file ... cannot be found" on models
+    # with a bare-filename weather url (e.g. SystemD_baseline.osm) — operations.py only
+    # added the EPW dir to OSW file_paths when the url resolved from server cwd, so the
+    # OSW runner's Initialization state errored before the measure ran
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                # SystemD_baseline.osm has OS:WeatherFile Url =
+                # "USA_MD_Baltimore-Washington.Intl.AP.724060_TMY3.epw" (no path)
+                load = unwrap(await s.call_tool("load_osm_model", {
+                    "osm_path": "/repo/tests/assets/SystemD_baseline.osm",
+                }))
+                assert load["ok"] is True, f"load failed: {load.get('error')}"
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": MEASURE_DIR,
+                    "arguments": {"building_name": "Beam Retrofit Candidate"},
+                }))
+                assert res["ok"] is True, (
+                    f"apply_measure must not require a resolvable weather file for "
+                    f"--measures_only runs: {res.get('error')}"
+                )
+                bldg = unwrap(await s.call_tool("get_building_info", {}))
+                assert bldg["building"]["name"] == "Beam Retrofit Candidate"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_apply_measure_unfindable_weather_stripped_and_restored():
+    """Model EPW exists nowhere — weather stripped from seed, restored after."""
+    # Validates: apply_measure succeeds when the model's EPW url resolves nowhere
+    # (OS:WeatherFile stripped from the OSW seed for --measures_only) and the
+    # reloaded model keeps its original weather reference afterward
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                load = unwrap(await s.call_tool("load_osm_model", {
+                    "osm_path": _bogus_weather_fixture(),
+                }))
+                assert load["ok"] is True, f"load failed: {load.get('error')}"
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": MEASURE_DIR,
+                    "arguments": {"building_name": "Stripped Weather Building"},
+                }))
+                assert res["ok"] is True, f"apply failed: {res.get('error')}"
+                assert "restored" in res["weather_note"], (
+                    f"Expected stripped+restored note, got: {res.get('weather_note')}"
+                )
+                bldg = unwrap(await s.call_tool("get_building_info", {}))
+                assert bldg["building"]["name"] == "Stripped Weather Building"
+                # Original (unresolvable) weather reference must survive the round-trip
+                weather = unwrap(await s.call_tool("get_weather_info", {}))
+                assert weather["ok"] is True, f"weather lost: {weather.get('error')}"
+                assert weather["weather_file"]["url"] == BOGUS_EPW_NAME
+                assert weather["weather_file"]["city"] == "Baltimore Blt Washngtn IntL"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_apply_measure_weather_setting_measure_not_clobbered():
+    """Measure that sets weather (ChangeBuildingLocation) wins over restore."""
+    # Validates: when weather was stripped (unresolvable url) and the measure itself
+    # sets a new weather file, the measure's weather is kept — restore must not
+    # overwrite ChangeBuildingLocation's result with the stale reference
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                load = unwrap(await s.call_tool("load_osm_model", {
+                    "osm_path": _bogus_weather_fixture(),
+                }))
+                assert load["ok"] is True, f"load failed: {load.get('error')}"
+                res = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": "/opt/comstock-measures/ChangeBuildingLocation"
+                                    "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw",
+                }))
+                assert res["ok"] is True, f"change_building_location failed: {res.get('error')}"
+                weather = unwrap(await s.call_tool("get_weather_info", {}))
+                assert weather["ok"] is True
+                assert "Boston" in weather["weather_file"]["url"], (
+                    f"Measure's weather clobbered by restore: {weather['weather_file']}"
+                )
     asyncio.run(_run())
 
 
