@@ -69,8 +69,13 @@ _ENV_ALLOW_EXACT = frozenset({
     # BUNDLE_<HOST>__<COM> auth tokens) into untrusted measure code.
     "BUNDLE_WITHOUT", "BUNDLE_PATH", "BUNDLE_GEMFILE", "BUNDLE_FROZEN",
     "BUNDLE_DEPLOYMENT", "GEM_HOME", "GEM_PATH",
+    # Standard POSIX locale categories ONLY — enumerated, never prefix-matched: a
+    # bare LC_ prefix would also copy a host secret named e.g. LC_API_TOKEN.
+    "LC_CTYPE", "LC_NUMERIC", "LC_TIME", "LC_COLLATE", "LC_MONETARY",
+    "LC_MESSAGES", "LC_PAPER", "LC_NAME", "LC_ADDRESS", "LC_TELEPHONE",
+    "LC_MEASUREMENT", "LC_IDENTIFICATION",
 })
-_ENV_ALLOW_PREFIXES = ("LC_",)  # locale only (e.g. LC_CTYPE); never a secret prefix
+_ENV_ALLOW_PREFIXES: tuple[str, ...] = ()  # no prefix matching — exact names only
 
 
 def enabled() -> bool:

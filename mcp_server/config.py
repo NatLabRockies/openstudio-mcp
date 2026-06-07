@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import os
+import sys
 from pathlib import Path
 
 RUN_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs"))).resolve()
@@ -14,9 +16,14 @@ def _safe_int(env_val: str, default: int) -> int:
 
 def _safe_float(env_val: str, default: float) -> float:
     try:
-        return float(env_val)
+        v = float(env_val)
     except (ValueError, TypeError):
         return default
+    # Reject NaN/inf: a non-finite SIM_TIMEOUT would make both `<= 0` and the
+    # elapsed-time comparison false, silently disabling timeout enforcement.
+    if not math.isfinite(v):
+        return default
+    return v
 
 _raw_concurrency = os.environ.get("OPENSTUDIO_MCP_MAX_CONCURRENCY", os.environ.get("OSMCP_MAX_CONCURRENCY", "1"))
 MAX_CONCURRENCY = _safe_int(_raw_concurrency, 1)
@@ -66,7 +73,28 @@ ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true"
 # Secure by default. Degrades loudly: the unprivileged layers (Landlock/seccomp)
 # apply even for a non-root local server; on a platform without a kernel backend
 # (macOS/Windows bare installs) it falls back to clean-env only and logs a notice.
-SANDBOX_MODE = os.environ.get("OSMCP_SANDBOX", "auto").strip().lower()
+_SANDBOX_OFF_ALIASES = frozenset({"", "off", "0", "false", "no"})
+_SANDBOX_ON_MODES = frozenset({"posix", "auto", "full", "landlock"})
+
+
+def _normalize_sandbox_mode(raw: str) -> str:
+    """Map OSMCP_SANDBOX to a known mode, FAIL-CLOSED on an unrecognized value.
+
+    A typo like ``atuo`` would otherwise leave ``enabled()`` True but ``_full()``
+    False — silently downgrading from the default Landlock+seccomp tier to
+    posix-only. To never weaken confinement on a typo, force the most-restrictive
+    ``auto`` and warn loudly. Off-aliases are honored as-is (disabling is explicit).
+    """
+    v = (raw or "").strip().lower()
+    if v in _SANDBOX_OFF_ALIASES or v in _SANDBOX_ON_MODES:
+        return v
+    print(f"[sandbox] unknown OSMCP_SANDBOX={raw!r}; falling back to 'auto' "
+          "(fail-closed). Valid values: off, posix, auto, full, landlock.",
+          file=sys.stderr)
+    return "auto"
+
+
+SANDBOX_MODE = _normalize_sandbox_mode(os.environ.get("OSMCP_SANDBOX", "auto"))
 # Network policy for confined subprocesses: deny (default) blocks outbound TCP
 # once the seccomp backend lands; allow leaves it open (trusted/BCL deployments).
 SANDBOX_NET = os.environ.get("OSMCP_SANDBOX_NET", "deny").strip().lower()

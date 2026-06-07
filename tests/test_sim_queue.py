@@ -161,3 +161,28 @@ def test_cancelled_running_sim_stays_cancelled():
                     await asyncio.sleep(0.3)
 
         asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_enforce_timeouts_skips_dead_pid(monkeypatch):
+    # Regression: _enforce_timeouts marked a finished-but-unreaped run as 'failed'
+    # without checking _pid_alive, clobbering a possibly-successful result. A run
+    # whose process already exited must be left for the reaper to classify by exit
+    # code, not force-failed by the timeout enforcer.
+    import time
+
+    from mcp_server.skills.simulation import operations as ops
+
+    monkeypatch.setattr(ops, "SIM_TIMEOUT_SECONDS", 1.0)
+    started = time.time() - 10_000  # well past the 1s cap
+    rec = ops.RunRecord(
+        run_id="t_dead_pid", user_key="u", name="n", status="running",
+        created_at=started, started_at=started, ended_at=None,
+        pid=2_000_000_000,  # bogus pid -> _pid_alive() is False (no such process)
+        run_dir=Path("/runs/none"), osw_path=Path("/runs/none/in.osw"),
+        epw_path=None, exit_code=None, error=None,
+    )
+    monkeypatch.setitem(ops._RUNS, rec.run_id, rec)
+    ops._enforce_timeouts()
+    assert ops._RUNS[rec.run_id].status == "running", \
+        "dead-but-unreaped run was force-failed instead of left for the reaper"

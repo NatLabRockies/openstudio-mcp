@@ -732,3 +732,44 @@ def test_h5_sandbox_uid_zero_clamped(uid0_server):
         f"H5: measure must NOT run as root with OSMCP_SANDBOX_UID=0; info=\n{info}"
     assert "PROBE uid=1001" in info, \
         f"H5: sandbox uid must clamp to the safe default 1001; info=\n{info}"
+
+
+def test_unknown_sandbox_mode_fails_closed():
+    # Regression: a typo'd OSMCP_SANDBOX (e.g. 'atuo') left enabled()=True but
+    # _full()=False, silently downgrading the default Landlock+seccomp tier to
+    # posix-only. An unknown value must normalize to 'auto' (fail-closed).
+    from mcp_server import config
+    assert config._normalize_sandbox_mode("atuo") == "auto"
+    assert config._normalize_sandbox_mode("landlok") == "auto"
+    assert config._normalize_sandbox_mode("AUTO") == "auto"
+    assert config._normalize_sandbox_mode(" posix ") == "posix"
+    assert config._normalize_sandbox_mode("off") == "off"
+    assert config._normalize_sandbox_mode("") == ""  # explicit off-alias, honored
+
+
+def test_safe_float_rejects_non_finite():
+    # Regression: a NaN/inf SIM_TIMEOUT made both `<= 0` and the elapsed-time
+    # comparison false, silently disabling wall-clock timeout enforcement.
+    from mcp_server import config
+    assert config._safe_float("nan", 7200.0) == 7200.0
+    assert config._safe_float("inf", 7200.0) == 7200.0
+    assert config._safe_float("-inf", 7200.0) == 7200.0
+    assert config._safe_float("bad", 7200.0) == 7200.0
+    assert config._safe_float("3.5", 7200.0) == pytest.approx(3.5)
+
+
+def test_build_env_drops_lc_prefixed_secret(monkeypatch, tmp_path):
+    # Regression: a bare 'LC_' allowlist prefix copied any LC_*-named host var
+    # (e.g. LC_API_TOKEN) into untrusted measure code. Only standard locale
+    # categories may pass; arbitrary names — even LC_-prefixed — are dropped.
+    from mcp_server import sandbox
+    monkeypatch.setattr(sandbox, "SANDBOX_MODE", "posix")  # force enabled() + filtering
+    monkeypatch.setenv("LC_CTYPE", "en_US.UTF-8")
+    monkeypatch.setenv("LC_API_TOKEN", "supersecret")
+    monkeypatch.setenv("MY_SECRET", "nope")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    env = sandbox.build_env(tmp_path, redirect_tmp=False)
+    assert env.get("LC_CTYPE") == "en_US.UTF-8", "standard locale var must pass"
+    assert "LC_API_TOKEN" not in env, "LC_-prefixed secret must be dropped"
+    assert "MY_SECRET" not in env, "non-allowlisted secret must be dropped"
+    assert env.get("PATH") == "/usr/bin", "PATH is required and allowlisted"

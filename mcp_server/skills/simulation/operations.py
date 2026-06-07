@@ -339,6 +339,10 @@ def _enforce_timeouts() -> None:
             if rec.status == "running" and rec.pid is not None
             and rec.started_at is not None
             and now - rec.started_at > SIM_TIMEOUT_SECONDS
+            # Skip a process that already exited but hasn't been reaped yet: let
+            # _dispatch_once()/_refresh_status() classify it by its real exit code
+            # instead of force-failing a run that may have completed successfully.
+            and _pid_alive(rec.pid)
         ]
     for rec in expired:
         with contextlib.suppress(psutil.NoSuchProcess, Exception):

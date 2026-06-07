@@ -33,7 +33,10 @@ _TEST_MODEL_CANDIDATES = [
 _MEASURE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,99}$")
 # Argument names become bare Ruby/Python identifiers in generated code — they must
 # be plain identifiers, never arbitrary text (else code injection at generation).
-_ARG_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
+# Must start lowercase/underscore: an uppercase-leading name (e.g. "Foo") is a Ruby
+# *constant*, so `Foo = ...` inside a method is a "dynamic constant assignment"
+# SyntaxError that breaks the generated Ruby measure.
+_ARG_NAME_RE = re.compile(r"^[a-z_][a-zA-Z0-9_]{0,63}$")
 
 # Argument type -> SDK factory method name suffix
 _ARG_MAKERS = {
@@ -87,8 +90,15 @@ def _to_class_name(snake: str) -> str:
 
 
 def _escape_ruby_str(s: str) -> str:
-    """Escape a string for safe embedding in a Ruby double-quoted string."""
-    return s.replace("\\", "\\\\").replace('"', '\\"')
+    """Escape a string for safe embedding in a Ruby double-quoted string.
+
+    Besides backslash and the closing quote, `#` MUST be escaped: in a Ruby
+    double-quoted literal `#{...}` (and `#@`, `#$`) is interpolation, so an
+    un-escaped `#` in user-controlled text (description / default / choice value)
+    is arbitrary Ruby execution when the generated measure runs `openstudio
+    measure -u`. `\\#` yields a literal `#`.
+    """
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("#", "\\#")
 
 
 def _escape_python_str(s: str) -> str:
@@ -101,7 +111,9 @@ def _checked_arg_name(name: str) -> str:
     Ruby/Python variable in generated code, so arbitrary text would be code
     injection. Raises ValueError otherwise (callers wrap in ok:false)."""
     if not isinstance(name, str) or not _ARG_NAME_RE.match(name):
-        raise ValueError(f"invalid argument name (must be an identifier): {name!r}")
+        raise ValueError(
+            "invalid argument name (must be a lowercase-leading identifier, "
+            f"matching [a-z_][a-zA-Z0-9_]*): {name!r}")
     return name
 
 
