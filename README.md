@@ -52,7 +52,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "./tests/assets:/inputs",
+        "-v", "./tests/assets:/inputs:ro",
         "-v", "./runs:/runs",
         "-v", "./.claude/skills:/skills:ro",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
@@ -92,6 +92,76 @@ Look for the **hammer icon** in Claude Desktop's input — click it to see the o
 The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, Cursor, and VS Code.
 
 See **[docs/remote-multi-user.md](docs/remote-multi-user.md)** for setup, auth, the isolation model, and log access — and **[docs/run-retention.md](docs/run-retention.md)** for optional disk garbage-collection.
+
+---
+
+## Security and simulation sandbox
+
+OpenStudio measures are Ruby or Python programs and must be treated as untrusted
+code. EnergyPlus workflows can also invoke measure code. Docker isolates the
+container from the host, while openstudio-mcp adds a second sandbox around the
+child processes used by `apply_measure`, `test_measure`, measure metadata
+refresh, and simulations.
+
+The default `OSMCP_SANDBOX=auto` mode provides the following controls on Linux,
+including Docker Desktop's Linux VM:
+
+- **Privilege drop:** child processes run as the image's unprivileged
+  `sandbox` user (UID/GID 1001), while the MCP server retains only the
+  privileges needed to prepare run directories.
+- **Filesystem policy:** Landlock denies filesystem access by default. The
+  current run or staged measure directory is writable; required system and
+  OpenStudio directories are read-only. `/repo`, `/inputs`, and other users'
+  run directories are not exposed to measure code.
+- **Network policy:** seccomp denies outbound IP networking by default.
+- **Secret isolation:** child processes receive an allowlisted environment
+  instead of inheriting API keys, tokens, and other server environment
+  variables.
+- **Process hardening:** `no_new_privs` prevents privilege recovery through
+  setuid executables. Resource limits constrain generated file size and process
+  count, and simulations have a wall-clock timeout.
+- **Staging:** input models, weather files, measures, and OSWs are copied into a
+  private run directory before execution. Escaping symlinks are rejected.
+
+On Linux, `auto` fails closed if Landlock or the seccomp network filter cannot
+be installed: the untrusted child process does not run. On native macOS or
+Windows without Docker, kernel confinement is unavailable and the server warns
+that only environment filtering is active. Use the Docker image when running
+untrusted measures.
+
+### Sandbox options
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `OSMCP_SANDBOX` | `auto` | `auto`, `full`, and `landlock` request environment filtering, UID/GID drop, resource limits, Landlock filesystem confinement, and seccomp network denial. `posix` omits Landlock and seccomp. `off` disables child-process confinement and is only appropriate for trusted local code. Unknown values fall back to `auto`. |
+| `OSMCP_SANDBOX_NET` | `deny` | `deny` blocks outbound IP networking. `allow` permits it for trusted measures that must fetch external resources. |
+| `OSMCP_SANDBOX_UID` / `OSMCP_SANDBOX_GID` | `1001` | Account used for confined child processes. Values less than 1 are rejected. The default matches the `sandbox` user built into the image. |
+| `OSMCP_SANDBOX_RLIMIT_FSIZE` | `10737418240` | Maximum size in bytes of one file created by a child process. `0` disables this limit. |
+| `OSMCP_SANDBOX_RLIMIT_NPROC` | `1024` | Maximum processes/threads for the sandbox UID. `0` disables this limit. |
+| `OSMCP_SANDBOX_RLIMIT_NOFILE` | `0` | Optional open-file descriptor limit. |
+| `OSMCP_SANDBOX_RLIMIT_CPU` | `0` | Optional CPU-seconds limit. Disabled by default because annual simulations can be long-running. |
+| `OSMCP_SANDBOX_RLIMIT_AS` | `0` | Optional virtual-memory limit. Prefer Docker memory limits because restrictive address-space limits can break EnergyPlus. |
+| `OSMCP_SIM_TIMEOUT_SECONDS` | `7200` | Wall-clock timeout for a simulation. `0` disables the timeout. |
+
+### Secure deployment guidance
+
+- Mount `/inputs` read-only: `-v /host/inputs:/inputs:ro`.
+- Mount only the output directory at `/runs`; any process allowed to write
+  `/runs` can modify that host directory by design.
+- Mount workflow guides read-only at `/skills`, or use the copy already baked
+  into the image: `-v /host/.claude/skills:/skills:ro`.
+- Do not mount the repository, home directory, Docker socket, credentials, or
+  broad host paths into production containers. The `/repo` source mount in the
+  testing commands is for development only.
+- Keep `OSMCP_SANDBOX=auto` and `OSMCP_SANDBOX_NET=deny` for untrusted measure
+  authoring. Docker's `--network none` can provide an additional
+  container-wide network boundary when remote access is not required.
+- Use Docker CPU, memory, PID, and disk quotas as outer limits. The in-process
+  resource limits are defense in depth, not replacements for container limits.
+
+The sandbox protects the host and other run directories, but it intentionally
+allows measure code to modify its own staged run directory. Treat resulting
+OSM, SQL, report, and log files as untrusted outputs.
 
 ---
 
