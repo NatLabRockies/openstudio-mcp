@@ -622,6 +622,66 @@ def test_measure_test_code_confined(sandbox_server, full_server):
         auto_listener.close()
 
 
+def test_measure_xml_refresh_does_not_execute_rewritten_measure_unconfined(full_server):
+    # Regression: sandboxed test code could rewrite measure.rb, then test_measure
+    # ran `openstudio measure -u` unsandboxed as root and evaluated the rewritten
+    # file. A disposable /repo canary proves no post-test evaluation escapes.
+    url, _ = full_server
+    canary = Path(f"/repo/_sandbox_xml_refresh_{uuid.uuid4().hex[:10]}.txt")
+
+    async def _run():
+        async with http_session(url) as s:
+            await setup_example(s, _unique())
+            created = unwrap(await s.call_tool("create_measure", {
+                "name": _unique("xml_refresh_probe"),
+                "description": "Benign post-test XML refresh confinement probe.",
+                "run_body": "    runner.registerInfo('normal measure body')",
+                "language": "Ruby",
+                "arguments": [],
+            }))
+            assert created["ok"] is True, f"create_measure failed: {created}"
+
+            measure_dir = Path(created["measure_dir"])
+            test_files = sorted((measure_dir / "tests").glob("*_test.rb"))
+            assert len(test_files) == 1, (
+                f"generated Ruby measure should have exactly one test file, got {test_files}"
+            )
+            test_files[0].write_text(
+                textwrap.dedent(
+                    f"""
+                    require 'openstudio'
+                    require 'minitest/autorun'
+                    require_relative '../measure'
+
+                    class XmlRefreshRewriteTest < Minitest::Test
+                      def test_rewrite_measure_after_load
+                        measure_path = File.expand_path('../measure.rb', __dir__)
+                        original = File.read(measure_path)
+                        payload = "File.write('{canary}', 'UNSANDBOXED_XML_REFRESH')\\n"
+                        File.write(measure_path, payload + original)
+                        assert_equal(false, File.exist?('{canary}'))
+                      end
+                    end
+                    """,
+                ).lstrip(),
+                encoding="utf-8",
+            )
+
+            return unwrap(await s.call_tool("test_measure", {
+                "measure_dir": str(measure_dir),
+            }))
+
+    try:
+        result = asyncio.run(_run())
+        assert result["ok"] is True, f"sandboxed measure test should pass: {result}"
+        assert not canary.exists(), (
+            "post-test `openstudio measure -u` evaluated rewritten measure.rb "
+            "outside the sandbox and created the host-mounted canary"
+        )
+    finally:
+        canary.unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------------------
 # Codex review reproductions (confirm-now): each PASSES today by demonstrating
 # the open hole, run under the FULL tier (OSMCP_SANDBOX=auto) so it proves the

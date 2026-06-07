@@ -500,17 +500,68 @@ def _update_measure_xml(measure_dir: Path, language: str):
     """
     if language != "Ruby":
         return
-    # NOTE: `measure -u` only executes the GENERATED arguments() method (built from
-    # validated/escaped arg specs — see _checked_arg_name / _escape_*), NOT the
-    # LLM's run_body. So it is not untrusted code and is not sandbox-wrapped here
-    # (wrapping it as the sandbox uid breaks the in-place measure.xml rewrite).
-    try:
-        subprocess.run(
-            ["openstudio", "measure", "-u", str(measure_dir)],
-            capture_output=True, text=True, timeout=30, check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    # The directory may have been writable by untrusted test code. Never load a
+    # post-test measure script with the long-lived server's privileges.
+    symlink_error = reject_escaping_symlinks(measure_dir)
+    if symlink_error:
+        raise RuntimeError(symlink_error)
+
+    with tempfile.TemporaryDirectory(prefix="osmcp_measure_xml_") as tmp:
+        staged_measure = Path(tmp) / measure_dir.name
+        shutil.copytree(measure_dir, staged_measure, symlinks=True)
+        run_env = sandbox.build_env(staged_measure)
+        sandbox.prepare_workdir(Path(tmp))
+        try:
+            proc = subprocess.run(  # noqa: S603 - argv is fixed and sandbox-wrapped
+                sandbox.wrap_cmd(
+                    ["openstudio", "measure", "-u", str(staged_measure)],
+                    staged_measure,
+                ),
+                cwd=str(staged_measure),
+                env=run_env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return
+
+        detail = "\n".join(part.strip() for part in (proc.stdout, proc.stderr) if part.strip())
+        staged_xml = staged_measure / "measure.xml"
+        if proc.returncode != 0 or not staged_xml.is_file() or staged_xml.is_symlink():
+            raise RuntimeError(
+                f"Failed to update measure.xml (exit {proc.returncode}): {detail[-1000:]}",
+            )
+
+        def _copy_generated(name: str, max_bytes: int) -> None:
+            source = staged_measure / name
+            if not source.exists():
+                return
+            if not source.is_file() or source.is_symlink():
+                raise RuntimeError(f"Failed to update measure metadata: invalid generated {name}")
+            data = source.read_bytes()
+            if len(data) > max_bytes:
+                raise RuntimeError(
+                    f"Failed to update measure metadata: generated {name} exceeds "
+                    f"{max_bytes} bytes",
+                )
+            temp_path: Path | None = None
+            with tempfile.NamedTemporaryFile(
+                dir=measure_dir,
+                prefix=f".{name}_",
+                delete=False,
+            ) as fh:
+                fh.write(data)
+                temp_path = Path(fh.name)
+            try:
+                temp_path.chmod(0o644)
+                temp_path.replace(measure_dir / name)
+            finally:
+                temp_path.unlink(missing_ok=True)
+
+        _copy_generated("measure.xml", 5_000_000)
+        _copy_generated("README.md", 5_000_000)
 
 
 def _add_intended_software_tools(measure_dir: Path):
