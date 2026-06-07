@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 from pathlib import Path
 
 
@@ -30,6 +31,50 @@ def reject_escaping_symlinks(root: Path) -> str | None:
             if target != rroot and not target.startswith(rroot + os.sep):
                 return f"Symlink escapes the allowed directory (not allowed): {name}"
     return None
+
+
+def read_file_bounded(path: Path, max_bytes: int) -> bytes:
+    """Read a regular file WITHOUT following a final-component symlink, capping
+    the read at ``max_bytes``.
+
+    Hardening for copying back files produced by confined-but-untrusted code
+    (e.g. ``openstudio measure -u`` regenerating ``measure.xml`` in a staged
+    dir):
+      * O_NOFOLLOW (where available) closes the symlink-swap TOCTOU — a measure
+        that replaces the output with a link to e.g. /etc/shadow cannot redirect
+        the read to the link target.
+      * the read stops at ``max_bytes + 1``, so an oversized output cannot be
+        slurped wholesale into memory before being rejected.
+
+    Raises ``ValueError`` on a symlink, a non-regular file (dir/fifo/device), an
+    oversize file, or an unreadable path. On platforms without O_NOFOLLOW the
+    symlink guard degrades to the caller's own is_symlink() check (the sandbox
+    targets Linux).
+    """
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        fd = os.open(path, flags)
+    except OSError as e:
+        # ELOOP => final component is a symlink (O_NOFOLLOW); surface clearly.
+        raise ValueError(f"cannot read {path} (symlink or unreadable): {e}") from e
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError(f"not a regular file: {path}")
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining > 0:
+            chunk = os.read(fd, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        if len(data) > max_bytes:
+            raise ValueError(f"file exceeds {max_bytes} bytes: {path}")
+        return data
+    finally:
+        os.close(fd)
 
 
 def safe_read_text(path: Path, max_bytes: int = 200_000) -> str:

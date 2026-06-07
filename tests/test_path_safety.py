@@ -5,11 +5,55 @@ No Docker/OpenStudio needed — these test pure Python logic.
 from __future__ import annotations
 
 import json
+import os
 import subprocess as _subprocess
 
 import pytest
 
+from mcp_server.util import read_file_bounded
+
 pytestmark = pytest.mark.unit
+
+
+class TestReadFileBounded:
+    """read_file_bounded — bounded, symlink-refusing copy-back read used after
+    confined `openstudio measure -u` regenerates measure.xml/README.md."""
+
+    def test_reads_within_bound(self, tmp_path):
+        # Validates: a normal generated file is returned verbatim.
+        f = tmp_path / "measure.xml"
+        f.write_bytes(b"<measure/>" * 5)
+        assert read_file_bounded(f, 1000) == b"<measure/>" * 5
+
+    def test_rejects_oversize(self, tmp_path):
+        # Regression: untrusted measure -u could write a giant measure.xml; the
+        # read is bounded (max_bytes+1) so it can't be slurped wholesale into
+        # the unconfined server's memory (Copilot C1).
+        f = tmp_path / "big.xml"
+        f.write_bytes(b"A" * 200)
+        with pytest.raises(ValueError, match="exceeds"):
+            read_file_bounded(f, 100)
+
+    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW is POSIX-only")
+    def test_refuses_to_follow_symlink(self, tmp_path):
+        # Regression: measure -u (untrusted) could swap the output for a symlink
+        # to a host secret; O_NOFOLLOW means copy-back never reads the link
+        # target (TOCTOU). A naive read_bytes() would return the secret here.
+        secret = tmp_path / "secret"
+        secret.write_bytes(b"TOPSECRET")
+        link = tmp_path / "measure.xml"
+        link.symlink_to(secret)
+        with pytest.raises(ValueError, match="symlink"):
+            read_file_bounded(link, 1000)
+
+    @pytest.mark.skipif(not hasattr(os, "O_NONBLOCK"), reason="POSIX fifo test")
+    def test_refuses_non_regular_file(self, tmp_path):
+        # Validates: a fifo/dir masquerading as a generated file is rejected
+        # (not a regular file) instead of blocking or reading junk.
+        d = tmp_path / "README.md"
+        d.mkdir()
+        with pytest.raises(ValueError, match="not a regular file"):
+            read_file_bounded(d, 1000)
 
 # ---------------------------------------------------------------------------
 # C-1: seed_file path traversal guard in run_osw
