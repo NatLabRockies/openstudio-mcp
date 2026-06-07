@@ -55,6 +55,49 @@ class TestReadFileBounded:
         with pytest.raises(ValueError, match="not a regular file"):
             read_file_bounded(d, 1000)
 
+
+class TestPerTenantSandboxUid:
+    """Per-tenant sandbox uid derivation (M1/M2). Each remote tenant gets its own
+    uid so RLIMIT_NPROC (per-uid) is a private budget and DAC isolates run dirs
+    even without Landlock; the local single user keeps the baked-in base uid."""
+
+    def test_local_keeps_base_uid(self, monkeypatch):
+        # Validates: stdio/off-request single user keeps the baked sandbox uid —
+        # preserves today's behavior, no per-tenant derivation.
+        import mcp_server.config as cfg
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "local")
+        assert cfg.sandbox_ids() == (cfg.SANDBOX_UID, cfg.SANDBOX_GID)
+
+    def test_distinct_uid_per_tenant(self, monkeypatch):
+        # Regression (M1/M2): all tenants shared uid 1001 -> one shared NPROC
+        # budget (cross-tenant fork-bomb DoS) and zero DAC isolation in the posix
+        # tier. Each tenant key must map to its OWN non-root uid.
+        import mcp_server.config as cfg
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "alice")
+        a = cfg.sandbox_ids()
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "bob")
+        b = cfg.sandbox_ids()
+        assert a != b, "distinct tenants must get distinct sandbox uids"
+        assert a[0] >= 2000 and b[0] >= 2000, "derived uids must be above the system/sandbox range"
+        assert a[0] != cfg.SANDBOX_UID, "a tenant uid must differ from the local base uid"
+        assert a[1] == a[0] and b[1] == b[0], "gid tracks uid"
+
+    def test_uid_stable_for_same_key(self, monkeypatch):
+        # Validates: derivation is stable across calls (hashlib, not randomized
+        # hash()) so a request's chown and setuid agree on the same uid.
+        import mcp_server.config as cfg
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "carol")
+        assert cfg.sandbox_ids() == cfg.sandbox_ids()
+
+    def test_sandbox_uid_zero_clamped(self):
+        # Regression (Codex H5): OSMCP_SANDBOX_UID<=0 must clamp to a non-root uid
+        # so the local base uid can never be root (kept as a unit test now that the
+        # HTTP h5 path exercises per-tenant derivation instead of the base uid).
+        import mcp_server.config as cfg
+        assert cfg._safe_sandbox_id("0", 1001) == 1001
+        assert cfg._safe_sandbox_id("-5", 1001) == 1001
+        assert cfg._safe_sandbox_id("4242", 1001) == 4242
+
 # ---------------------------------------------------------------------------
 # C-1: seed_file path traversal guard in run_osw
 # ---------------------------------------------------------------------------

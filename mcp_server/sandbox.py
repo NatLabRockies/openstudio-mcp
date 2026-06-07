@@ -31,7 +31,6 @@ from pathlib import Path
 from mcp_server.config import (
     COMMON_MEASURES_DIR,
     COMSTOCK_MEASURES_DIR,
-    SANDBOX_GID,
     SANDBOX_MODE,
     SANDBOX_NET,
     SANDBOX_RLIMIT_AS,
@@ -39,8 +38,8 @@ from mcp_server.config import (
     SANDBOX_RLIMIT_FSIZE,
     SANDBOX_RLIMIT_NOFILE,
     SANDBOX_RLIMIT_NPROC,
-    SANDBOX_UID,
     SKILLS_DIR,
+    sandbox_ids,
 )
 
 # Read-only roots the confined subprocess legitimately needs (Landlock grants
@@ -48,8 +47,13 @@ from mcp_server.config import (
 # by default: anything not listed — another user's run, /tmp, arbitrary host
 # files — is unreadable. Missing paths are skipped by the Landlock layer.
 _FULL_MODES = ("auto", "full", "landlock")
+# /proc is deliberately NOT granted (H1): with /proc readable a confined measure
+# could read /proc/<pid>/environ and, on a non-root server (measure uid == server
+# uid), recover the server's secrets that clean-env stripped — including HTTP auth
+# tokens — and inspect peer tenants' processes. OpenStudio/EnergyPlus run without
+# it. /sys/<...> hardware info stays (no secrets; some libs read CPU topology).
 _RO_SYSTEM = ("/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc",
-              "/opt/venv", "/usr/local", "/var/oscli", "/proc", "/sys")
+              "/opt/venv", "/usr/local", "/var/oscli", "/sys")
 
 # Specific device files the confined process needs — granted individually instead
 # of the whole /dev directory. A `/dev` rw grant also exposes writable /dev/shm and
@@ -192,9 +196,13 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str,
                   "full FS/network confinement", file=sys.stderr)
             _warned_no_backend = True
         return list(cmd)
+    # Per-tenant uid/gid: each remote caller drops to its own uid (private NPROC
+    # budget + DAC isolation); the local single user keeps the base uid. Resolved
+    # here so it matches the chown prepare_workdir does for the same request.
+    uid, gid = sandbox_ids()
     wrapped = [
         sys.executable, "-m", "mcp_server._sandbox_exec",
-        "--uid", str(SANDBOX_UID), "--gid", str(SANDBOX_GID),
+        "--uid", str(uid), "--gid", str(gid),
     ]
     for flag, value in (
         ("--rlimit-fsize", SANDBOX_RLIMIT_FSIZE),
@@ -233,10 +241,13 @@ def prepare_workdir(work_dir: Path | str) -> None:
     if not enabled() or not (hasattr(os, "geteuid") and os.geteuid() == 0):
         return
     work = Path(work_dir)
+    # Per-tenant uid/gid (matches the shim's setuid for this same request) so the
+    # dropped process owns its run dir and tenants are DAC-isolated from each other.
+    uid, gid = sandbox_ids()
     # follow_symlinks=False (lchown): never let a symlink inside the dir redirect
     # the chown to a target outside it (symlink-traversal privilege issue).
     with contextlib.suppress(OSError):
-        os.chown(work, SANDBOX_UID, SANDBOX_GID, follow_symlinks=False)
+        os.chown(work, uid, gid, follow_symlinks=False)
     for path in work.rglob("*"):
         with contextlib.suppress(OSError):
-            os.chown(path, SANDBOX_UID, SANDBOX_GID, follow_symlinks=False)
+            os.chown(path, uid, gid, follow_symlinks=False)

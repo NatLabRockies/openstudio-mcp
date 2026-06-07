@@ -23,8 +23,8 @@ Fix increment 1 has landed (clean-env floor + unconditional measure_dir check):
     are rejected (check is unconditional, not gated by OSMCP_SANDBOX).
 Fix increment 2 (UID drop + rlimits) and increment 3 (Landlock FS + seccomp
 net-deny) have landed:
-  - test_posix_drops_root_and_applies_rlimits — uid 1001, NPROC rlimit, DAC blocks
-    a root-owned write (OSMCP_SANDBOX=posix).
+  - test_posix_drops_root_and_applies_rlimits — per-tenant non-root uid, NPROC
+    rlimit, DAC blocks a root-owned write (OSMCP_SANDBOX=posix).
   - test_full_tier_blocks_read_escape_and_network — Landlock blocks reading a
     world-readable file outside the run dir, blocks writing outside it, and
     seccomp blocks outbound IP networking (OSMCP_SANDBOX=auto), while the run
@@ -39,6 +39,7 @@ Safety notes:
 """
 import asyncio
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -402,9 +403,15 @@ def test_posix_drops_root_and_applies_rlimits(language, confined_server):
 
     info = asyncio.run(_run())
 
-    # --- Assert: privilege dropped, rlimit applied, DAC blocks the escape write ---
-    assert "PROBE uid=1001" in info, f"measure should drop to sandbox uid 1001; info=\n{info}"
-    assert "PROBE uid=0" not in info, "measure must not run as root under posix"
+    # --- Assert: privilege dropped to a per-tenant uid, rlimit applied, DAC blocks
+    # the escape write. The HTTP fixture is session-keyed, so the measure drops to a
+    # derived per-tenant uid (M1/M2), not the shared base 1001. ---
+    m = re.search(r"PROBE uid=(\d+)", info)
+    assert m, f"probe must report uid; info=\n{info}"
+    uid = int(m.group(1))
+    assert uid != 0, "measure must not run as root under posix"
+    assert 2000 <= uid < 62000, \
+        f"HTTP tenant must drop to a per-tenant sandbox uid (2000..61999), got {uid}; info=\n{info}"
     assert "PROBE nproc=1024" in info, f"NPROC rlimit (1024) should be applied; info=\n{info}"
     assert "PROBE write_err=" in info, \
         f"write to root-owned /opt should be denied under posix; info=\n{info}"
@@ -788,10 +795,16 @@ def test_h5_sandbox_uid_zero_clamped(uid0_server):
             return "\n".join(res.get("runner_messages", {}).get("info", []))
 
     info = asyncio.run(_run())
-    assert "PROBE uid=0" not in info, \
-        f"H5: measure must NOT run as root with OSMCP_SANDBOX_UID=0; info=\n{info}"
-    assert "PROBE uid=1001" in info, \
-        f"H5: sandbox uid must clamp to the safe default 1001; info=\n{info}"
+    # OSMCP_SANDBOX_UID=0 must never yield a root-running measure. The base-uid
+    # clamp is unit-tested (test_sandbox_uid_zero_clamped); this HTTP fixture is
+    # session-keyed, so the measure drops to a per-tenant derived uid (also never
+    # root) regardless of the bad base override.
+    m = re.search(r"PROBE uid=(\d+)", info)
+    assert m, f"H5: probe must report uid; info=\n{info}"
+    uid = int(m.group(1))
+    assert uid != 0, f"H5: measure must NOT run as root with OSMCP_SANDBOX_UID=0; info=\n{info}"
+    assert 2000 <= uid < 62000, \
+        f"H5: confined code must run as a non-root per-tenant uid, got {uid}; info=\n{info}"
 
 
 def test_unknown_sandbox_mode_fails_closed():
@@ -883,6 +896,69 @@ def test_test_measure_does_not_mutate_shared_source(tmp_path, monkeypatch):
         "test_model.osm was written into the SHARED measure source — must use a private copy"
     assert sorted(p.name for p in (measure / "tests").iterdir()) == ["mymeasure_test.rb"], \
         "shared measure source/tests was mutated"
+
+
+def test_proc_not_in_landlock_ro_allowlist():
+    # Regression (H1): /proc was a Landlock RO root, so a confined measure could
+    # read /proc/<pid>/environ. On a non-root server (measure uid == server uid)
+    # that recovers the server secrets clean-env stripped — incl. HTTP auth
+    # tokens. /proc must NOT be granted; Landlock then denies it for everyone.
+    from mcp_server import sandbox
+    ro = sandbox._ro_paths()
+    assert "/proc" not in ro, f"/proc must not be a Landlock RO root (H1): {ro}"
+
+
+def test_full_tier_denies_proc_environ_read():
+    # Regression (H1, dual-proof): with /proc granted, a confined process could
+    # read /proc/self/environ (DAC always allows self) — the same surface that
+    # leaks /proc/<server>/environ on a non-root server. Built via the REAL
+    # wrap_cmd so it tracks the actual allowlist; the read must now be DENIED.
+    from mcp_server import sandbox
+    if sandbox.active_tier() != "landlock":
+        pytest.skip("needs full tier (OSMCP_SANDBOX=auto)")
+    workdir = tempfile.mkdtemp()
+    cmd = sandbox.wrap_cmd(["cat", "/proc/self/environ"], workdir)
+    try:
+        proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            cmd, capture_output=True, text=True, cwd="/repo",
+            user=1001, group=1001, check=False,
+        )
+        out = (proc.stdout + proc.stderr).lower()
+        assert proc.returncode != 0, f"/proc read must be denied (H1); rc=0 out={out[:200]}"
+        assert ("denied" in out or "no such" in out
+                or "operation not permitted" in out), f"expected denial; out={out[:300]}"
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def test_per_tenant_uid_gives_dac_isolation():
+    # Regression (M2): every tenant shared uid 1001, so in the posix tier (no
+    # Landlock) tenant B could read tenant A's run files by plain DAC. Per-tenant
+    # uids restore DAC isolation — a 0600 file owned by tenant A's uid is
+    # unreadable by tenant B's uid, with no Landlock involved.
+    from mcp_server import config
+    uid_a = config._derive_tenant_uid("tenantA")
+    uid_b = config._derive_tenant_uid("tenantB")
+    assert uid_a != uid_b, "distinct tenants must derive distinct uids"
+    d = Path(tempfile.mkdtemp())
+    try:
+        secret = d / "modelA.osm"
+        secret.write_text("TENANT_A_PRIVATE")
+        os.chown(secret, uid_a, uid_a)
+        secret.chmod(0o600)
+        # dir must be traversable so the denial proven is the file's, not the dir's
+        d.chmod(0o755)
+        # absolute path (no PATH lookup), fixed argv, no shell
+        proc = subprocess.run(  # noqa: S603
+            ["/bin/cat", str(secret)],
+            capture_output=True, text=True,
+            user=uid_b, group=uid_b, check=False,
+        )
+        out = (proc.stdout + proc.stderr).lower()
+        assert proc.returncode != 0, f"tenant B must not read tenant A's 0600 file; rc=0 out={out}"
+        assert "permission denied" in out, f"expected DAC denial; out={out}"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def test_input_root_not_in_landlock_ro_allowlist():

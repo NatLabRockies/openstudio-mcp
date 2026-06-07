@@ -118,6 +118,45 @@ def _safe_sandbox_id(env_val: str, default: int) -> int:
 SANDBOX_UID = _safe_sandbox_id(os.environ.get("OSMCP_SANDBOX_UID", "1001"), 1001)
 SANDBOX_GID = _safe_sandbox_id(os.environ.get("OSMCP_SANDBOX_GID", "1001"), 1001)
 
+# Per-tenant uid derivation (multi-user hardening). Every distinct remote caller
+# (HTTP session / auth principal) gets its OWN sandbox uid so that:
+#   - RLIMIT_NPROC — which the kernel counts PER REAL UID — is a private budget,
+#     so one tenant's fork bomb can't starve every other tenant's runs; and
+#   - DAC isolates tenants' run dirs from each other even in the posix tier
+#     (no Landlock), since the dirs are chowned to, and processes run as,
+#     different uids.
+# The local single user (stdio / off-request) keeps the baked-in SANDBOX_UID,
+# preserving today's behavior. Derived uids sit above the system/sandbox range
+# and below `nobody`, and are never root.
+_PER_TENANT_UID_BASE = 2000
+_PER_TENANT_UID_SPAN = 60000  # uids 2000..61999
+
+
+def _derive_tenant_uid(key: str) -> int:
+    """Stable, process-independent uid for a tenant key.
+
+    Uses hashlib (NOT the salted builtin hash()) so chown (server) and setuid
+    (shim, a separate process) derive the SAME uid for a request across restarts.
+    """
+    import hashlib
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    return _PER_TENANT_UID_BASE + (int.from_bytes(digest[:4], "big") % _PER_TENANT_UID_SPAN)
+
+
+def sandbox_ids() -> tuple[int, int]:
+    """(uid, gid) the CURRENT caller's confined subprocess drops to.
+
+    Resolved per-call from caller identity (same key in → same uid out, so a
+    request's prepare_workdir chown and the shim's setuid agree). LOCAL → the
+    baked SANDBOX_UID/GID; each remote tenant → its own derived uid (gid==uid).
+    """
+    from mcp_server.identity import LOCAL, user_key
+    key = user_key()
+    if key == LOCAL:
+        return (SANDBOX_UID, SANDBOX_GID)
+    uid = _derive_tenant_uid(key)
+    return (uid, uid)
+
 # rlimit backstops for confined subprocesses (0 = off). Generous by design — they
 # catch runaway bombs, not tune normal use. CPU/AS default off: a CPU-second cap
 # would kill long annual sims, and RLIMIT_AS (virtual address space) breaks
