@@ -5,6 +5,7 @@ script with user-provided arguments and run() body.
 """
 from __future__ import annotations
 
+import contextlib
 import re
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ import openstudio
 
 from mcp_server import sandbox
 from mcp_server.config import INPUT_ROOT, is_path_allowed, user_run_root
-from mcp_server.util import reject_escaping_symlinks
+from mcp_server.util import read_file_bounded, reject_escaping_symlinks
 
 
 def custom_measures_dir() -> Path:
@@ -500,17 +501,74 @@ def _update_measure_xml(measure_dir: Path, language: str):
     """
     if language != "Ruby":
         return
-    # NOTE: `measure -u` only executes the GENERATED arguments() method (built from
-    # validated/escaped arg specs — see _checked_arg_name / _escape_*), NOT the
-    # LLM's run_body. So it is not untrusted code and is not sandbox-wrapped here
-    # (wrapping it as the sandbox uid breaks the in-place measure.xml rewrite).
-    try:
-        subprocess.run(
-            ["openstudio", "measure", "-u", str(measure_dir)],
-            capture_output=True, text=True, timeout=30, check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    # The directory may have been writable by untrusted test code. Never load a
+    # post-test measure script with the long-lived server's privileges.
+    symlink_error = reject_escaping_symlinks(measure_dir)
+    if symlink_error:
+        raise RuntimeError(symlink_error)
+
+    with tempfile.TemporaryDirectory(prefix="osmcp_measure_xml_") as tmp:
+        staged_measure = Path(tmp) / measure_dir.name
+        shutil.copytree(measure_dir, staged_measure, symlinks=True)
+        run_env = sandbox.build_env(staged_measure)
+        sandbox.prepare_workdir(Path(tmp))
+        try:
+            proc = subprocess.run(  # noqa: S603 - argv is fixed and sandbox-wrapped
+                sandbox.wrap_cmd(
+                    ["openstudio", "measure", "-u", str(staged_measure)],
+                    staged_measure,
+                ),
+                cwd=str(staged_measure),
+                env=run_env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return
+
+        detail = "\n".join(part.strip() for part in (proc.stdout, proc.stderr) if part.strip())
+        staged_xml = staged_measure / "measure.xml"
+        if proc.returncode != 0 or not staged_xml.is_file() or staged_xml.is_symlink():
+            raise RuntimeError(
+                f"Failed to update measure.xml (exit {proc.returncode}): {detail[-1000:]}",
+            )
+
+        def _copy_generated(name: str, max_bytes: int) -> None:
+            source = staged_measure / name
+            if not source.exists():
+                return
+            # Bounded, no-follow read: `measure -u` ran UNTRUSTED code (confined)
+            # that could have swapped the output for a symlink (-> a host secret)
+            # or a giant file. read_file_bounded uses O_NOFOLLOW and caps the read
+            # at max_bytes+1, so neither a TOCTOU symlink swap nor an oversized
+            # file reaches the unconfined server.
+            try:
+                data = read_file_bounded(source, max_bytes)
+            except ValueError as e:
+                raise RuntimeError(
+                    f"Failed to update measure metadata: invalid generated {name}: {e}",
+                ) from e
+            temp_path: Path | None = None
+            with tempfile.NamedTemporaryFile(
+                dir=measure_dir,
+                prefix=f".{name}_",
+                delete=False,
+            ) as fh:
+                fh.write(data)
+                temp_path = Path(fh.name)
+            try:
+                # chmod is best-effort: replace() is the critical step, and some
+                # filesystems/mounts (or non-POSIX hosts) reject chmod.
+                with contextlib.suppress(OSError):
+                    temp_path.chmod(0o644)
+                temp_path.replace(measure_dir / name)
+            finally:
+                temp_path.unlink(missing_ok=True)
+
+        _copy_generated("measure.xml", 5_000_000)
+        _copy_generated("README.md", 5_000_000)
 
 
 def _add_intended_software_tools(measure_dir: Path):
@@ -1127,15 +1185,24 @@ def test_measure_op(
 
         # Update measure.xml checksums — test_model.osm was added to tests/,
         # and any new files must be registered for OS App Measure Manager.
-        _update_measure_xml(mdir, language)
-
-        return {
+        # Best-effort here: the (confined) test already ran and its pass/fail is
+        # the contract. A metadata-refresh failure (measure -u nonzero, or a
+        # rejected oversize/symlink output) is surfaced as a warning, NOT a test
+        # failure — confinement, not this call's exit code, is the security
+        # boundary, so a passing test must not be masked. (create/edit keep the
+        # raise: there the regenerated measure.xml IS the product.)
+        result = {
             "ok": proc.returncode == 0,
             "passed": passed,
             "failed": failed,
             "errors": errors,
             "test_output": display,
         }
+        try:
+            _update_measure_xml(mdir, language)
+        except RuntimeError as e:
+            result["metadata_warning"] = str(e)
+        return result
 
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Test run timed out (60s)"}
