@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import stat
 
 # Generic syscall table numbers (identical on x86_64 and aarch64).
 _NR_CREATE_RULESET = 444
@@ -45,6 +46,10 @@ _RW_BASE = (
     | _A_REMOVE_DIR | _A_REMOVE_FILE | _A_MAKE_CHAR | _A_MAKE_DIR | _A_MAKE_REG
     | _A_MAKE_SOCK | _A_MAKE_FIFO | _A_MAKE_BLOCK | _A_MAKE_SYM
 )
+# Rights that are meaningful on a non-directory. Landlock's add_rule returns
+# EINVAL if a rule on a FILE carries directory-only rights (READ_DIR, MAKE_*,
+# REMOVE_*), so a per-file rule (e.g. /dev/null) MUST be masked to these.
+_FILE_ONLY = _A_EXECUTE | _A_WRITE_FILE | _A_READ_FILE | _A_TRUNCATE | _A_IOCTL_DEV
 
 
 class _RulesetAttr(ctypes.Structure):
@@ -97,7 +102,12 @@ def restrict(ro_paths: list[str], rw_paths: list[str]) -> int:
         except OSError:
             return True  # absent path — optional, not a failure
         try:
-            pba = _PathBeneathAttr(allowed_access=access & handled, parent_fd=fd)
+            acc = access & handled
+            # A rule on a non-directory (e.g. /dev/null) must carry only file
+            # rights — dir-only bits make add_rule fail with EINVAL.
+            if not stat.S_ISDIR(os.fstat(fd).st_mode):
+                acc &= _FILE_ONLY
+            pba = _PathBeneathAttr(allowed_access=acc, parent_fd=fd)
             return libc.syscall(_NR_ADD_RULE, rs_fd, _RULE_PATH_BENEATH, ctypes.byref(pba), 0) == 0
         finally:
             os.close(fd)

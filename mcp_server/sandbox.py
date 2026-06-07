@@ -52,6 +52,14 @@ _FULL_MODES = ("auto", "full", "landlock")
 _RO_SYSTEM = ("/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc",
               "/opt/venv", "/usr/local", "/var/oscli", "/proc", "/sys")
 
+# Specific device files the confined process needs — granted individually instead
+# of the whole /dev directory. A `/dev` rw grant also exposes writable /dev/shm and
+# /dev/mqueue (shared storage / IPC outside the run dir) and permits mknod. These
+# are file-level Landlock rules, so only the file-access bits apply — no directory
+# powers. Read-write: the bit-bucket + zero source; read-only: the entropy sources.
+_DEV_RW = ("/dev/null", "/dev/zero")
+_DEV_RO = ("/dev/urandom", "/dev/random")
+
 _warned_no_backend = False  # one-shot log when no kernel backend (non-Linux)
 
 # Environment the OpenStudio CLI / bundler / EnergyPlus / measure code legitimately
@@ -188,11 +196,12 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str,
         if value and value > 0:
             wrapped += [flag, str(value)]
     if _full():
-        for path in _ro_paths():
+        for path in (*_ro_paths(), *_DEV_RO):
             wrapped += ["--landlock-ro", path]
-        # rw: the run dir (+ caller extras), plus /dev for /dev/null & /dev/urandom
-        # (node creation there is still barred by DAC for the unprivileged uid).
-        for path in (str(work_dir), "/dev", *extra_rw):
+        # rw: the run dir (+ caller extras) + the writable device FILES only — NOT
+        # the whole /dev dir (which would also expose writable /dev/shm, /dev/mqueue
+        # and permit mknod). See _DEV_RW / _DEV_RO above.
+        for path in (str(work_dir), *_DEV_RW, *extra_rw):
             wrapped += ["--landlock-rw", path]
         # Network deny is the default; OSMCP_SANDBOX_NET=allow opts out (trusted
         # deployments that legitimately fetch e.g. BCL components).

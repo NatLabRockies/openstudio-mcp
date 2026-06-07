@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -253,6 +255,37 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _kill_process_group(pid: int, *, grace: float = 5.0) -> None:
+    """Terminate the run's whole process group (SIGTERM, then SIGKILL after grace).
+
+    Sims launch with start_new_session=True, so the child is its own group leader
+    (pgid == pid); killing the group reaps forked children (EnergyPlus, ruby
+    helpers) that a single-pid kill would orphan. We only signal a group we created
+    (pgid == pid) — never the server's own group. Falls back to a single-pid kill
+    when the group can't be resolved or on non-POSIX (no os.killpg).
+    """
+    pgid = None
+    if hasattr(os, "getpgid") and hasattr(os, "killpg"):
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            pgid = os.getpgid(pid)
+    if pgid is not None and pgid == pid:
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(pgid, signal.SIGTERM)
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.TimeoutExpired):
+            psutil.Process(pid).wait(timeout=grace)
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(pgid, signal.SIGKILL)  # ESRCH if the group already exited
+        return
+    # Fallback: pgid unavailable / not a leader / non-POSIX — single-pid kill.
+    with contextlib.suppress(psutil.NoSuchProcess, Exception):
+        p = psutil.Process(pid)
+        p.terminate()
+        try:
+            p.wait(timeout=grace)
+        except psutil.TimeoutExpired:
+            p.kill()
+
+
 def _build_run_cmd(osw_path: Path) -> list[str]:
     """openstudio CLI command to run a staged OSW (with bundle flags)."""
     return [
@@ -277,6 +310,11 @@ def _launch(rec: RunRecord) -> None:
         stdout=log.open("w", encoding="utf-8"),
         stderr=subprocess.STDOUT,
         env=run_env,
+        # New session => the child is its own process-group leader (pgid == pid),
+        # so a timeout/cancel can kill the WHOLE group (EnergyPlus + any forked
+        # helpers) without ever signalling the server's own group. See
+        # _kill_process_group(). No-op on non-POSIX.
+        start_new_session=True,
     )
     rec.pid = proc.pid
     rec.status = "running"
@@ -345,13 +383,7 @@ def _enforce_timeouts() -> None:
             and _pid_alive(rec.pid)
         ]
     for rec in expired:
-        with contextlib.suppress(psutil.NoSuchProcess, Exception):
-            p = psutil.Process(rec.pid)
-            p.terminate()
-            try:
-                p.wait(timeout=5)
-            except psutil.TimeoutExpired:
-                p.kill()
+        _kill_process_group(rec.pid)  # whole group: EnergyPlus + any forked helpers
         with _sim_lock:
             rec.status = "failed"
             rec.ended_at = _now()
@@ -699,13 +731,15 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
 
+    if not _pid_alive(pid):
+        # Finished before the cancel landed — classify by exit code, don't mislabel
+        # a completed run as cancelled.
+        with _sim_lock:
+            rec = _refresh_status(rec)
+            _RUNS[run_id] = rec
+        return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     try:
-        p = psutil.Process(pid)
-        p.terminate()
-        try:
-            p.wait(timeout=5)
-        except psutil.TimeoutExpired:
-            p.kill()
+        _kill_process_group(pid)  # whole group (EnergyPlus + helpers), not just the leader
         with _sim_lock:
             rec.status = "cancelled"
             rec.ended_at = rec.ended_at or _now()
@@ -713,11 +747,6 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         _persist_run_record(rec)  # disk record must read 'cancelled' so GC can reclaim it
         audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
-    except psutil.NoSuchProcess:
-        with _sim_lock:
-            rec = _refresh_status(rec)
-            _RUNS[run_id] = rec
-        return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     except Exception as e:
         return {"ok": False, "run_id": run_id, "error": str(e)}
 

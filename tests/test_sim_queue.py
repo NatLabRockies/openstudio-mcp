@@ -186,3 +186,36 @@ def test_enforce_timeouts_skips_dead_pid(monkeypatch):
     ops._enforce_timeouts()
     assert ops._RUNS[rec.run_id].status == "running", \
         "dead-but-unreaped run was force-failed instead of left for the reaper"
+
+
+@pytest.mark.integration
+def test_kill_process_group_terminates_session_leader():
+    # Regression: timeout/cancel killed only the leader pid, orphaning forked
+    # children (EnergyPlus). Runs now launch in their own session (start_new_session)
+    # and _kill_process_group signals the whole group; the kernel delivers killpg to
+    # every group member, so verifying the new-session leader dies via the group path
+    # is sufficient (and never touches the server's own group).
+    import contextlib as _ctx
+    import os
+    import subprocess
+    import time
+
+    import psutil
+
+    from mcp_server.skills.simulation import operations as ops
+
+    if not hasattr(os, "getpgid"):
+        pytest.skip("POSIX process groups not available")
+    p = subprocess.Popen(["sleep", "60"], start_new_session=True)  # noqa: S607
+    try:
+        assert os.getpgid(p.pid) == p.pid, "start_new_session should make pid the group leader"
+        ops._kill_process_group(p.pid)  # SIGTERMs the group and reaps the leader
+        deadline = time.time() + 5
+        while psutil.pid_exists(p.pid) and time.time() < deadline:
+            time.sleep(0.1)
+        assert not psutil.pid_exists(p.pid), "session-leader survived group kill"
+    finally:
+        with _ctx.suppress(Exception):
+            p.kill()
+        with _ctx.suppress(Exception):
+            p.wait(timeout=2)

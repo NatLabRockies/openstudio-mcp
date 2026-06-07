@@ -773,3 +773,20 @@ def test_build_env_drops_lc_prefixed_secret(monkeypatch, tmp_path):
     assert "LC_API_TOKEN" not in env, "LC_-prefixed secret must be dropped"
     assert "MY_SECRET" not in env, "non-allowlisted secret must be dropped"
     assert env.get("PATH") == "/usr/bin", "PATH is required and allowlisted"
+
+
+def test_wrap_cmd_grants_device_files_not_whole_dev(monkeypatch, tmp_path):
+    # Regression: granting /dev rw also exposed writable /dev/shm + /dev/mqueue
+    # (shared storage/IPC outside the run dir) and permitted mknod. Confine to the
+    # specific device FILES instead (file-level Landlock rules).
+    from mcp_server import sandbox
+    monkeypatch.setattr(sandbox, "SANDBOX_MODE", "auto")   # full tier
+    monkeypatch.setattr(sandbox, "SANDBOX_NET", "deny")
+    monkeypatch.setattr(sandbox, "_has_backend", lambda: True)
+    wrapped = sandbox.wrap_cmd(["echo", "hi"], tmp_path)
+    rw = [wrapped[i + 1] for i, a in enumerate(wrapped) if a == "--landlock-rw"]
+    ro = [wrapped[i + 1] for i, a in enumerate(wrapped) if a == "--landlock-ro"]
+    assert "/dev" not in rw, f"must not grant the whole /dev dir rw: {rw}"
+    assert "/dev/null" in rw and "/dev/zero" in rw, f"missing rw device files: {rw}"
+    assert "/dev/urandom" in ro and "/dev/random" in ro, f"missing ro device files: {ro}"
+    assert "/dev/shm" not in rw and "/dev/shm" not in ro, "/dev/shm must never be granted"  # noqa: S108
