@@ -1007,6 +1007,7 @@ def test_measure_op(
     3. SystemD_baseline.osm from tests/assets or /inputs
     4. No test_model.osm → test template falls back to empty Model.new()
     """
+    _private_copy: Path | None = None
     try:
         mdir = Path(measure_dir)
         if not mdir.is_dir():
@@ -1019,6 +1020,16 @@ def test_measure_op(
         err = reject_escaping_symlinks(mdir)
         if err:
             return {"ok": False, "error": err}
+
+        # If the measure isn't in the caller's OWN writable area (e.g. a bundled or
+        # otherwise shared read-only measure), copy it into a private run dir and test
+        # the copy. test_measure writes test_model.osm + chowns + Landlock-grants the
+        # dir, so it must never mutate shared/host content. Own-run-root measures are
+        # tested in place (the caller's to mutate; the measure.xml update persists).
+        if not is_path_allowed(mdir, write=True):
+            _private_copy = Path(tempfile.mkdtemp(prefix="measure_test_", dir=user_run_root()))
+            shutil.copytree(mdir, _private_copy, symlinks=True, dirs_exist_ok=True)
+            mdir = _private_copy
 
         # Detect language
         if (mdir / "measure.py").is_file():
@@ -1130,6 +1141,9 @@ def test_measure_op(
         return {"ok": False, "error": "Test run timed out (60s)"}
     except Exception as e:
         return {"ok": False, "error": f"Failed to test measure: {e}"}
+    finally:
+        if _private_copy is not None:
+            shutil.rmtree(_private_copy, ignore_errors=True)
 
 
 def edit_measure_op(

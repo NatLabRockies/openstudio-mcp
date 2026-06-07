@@ -72,7 +72,7 @@ class TestSeedFilePathTraversal:
 
         monkeypatch.setattr(_subprocess, "Popen", _FakePopen)
 
-        result = run_osw(str(osw_path))
+        result = run_osw(str(osw_path), _internal=True)  # exercise staging/flatten, not the access gate
         # Staging happens before subprocess — verify unconditionally
         assert "escapes" not in result.get("error", ""), f"Path traversal error: {result}"
         run_dirs = list(run_root.iterdir())
@@ -122,7 +122,7 @@ class TestSeedFilePathTraversal:
 
         monkeypatch.setattr(_subprocess, "Popen", _FakePopen)
 
-        result = run_osw(str(osw_path))
+        result = run_osw(str(osw_path), _internal=True)  # exercise staging/flatten, not the access gate
         # Staging happens before subprocess — verify unconditionally
         assert "escapes" not in result.get("error", ""), "Normal seed incorrectly rejected"
         run_dirs = list(run_root.iterdir())
@@ -461,3 +461,60 @@ class TestRunPeriodValidation:
         result = set_run_period(begin_month=1, begin_day=1, end_month=13, end_day=31)
         assert result["ok"] is False
         assert "end_month" in result["error"]
+
+
+class TestRunOswAccessControl:
+    """#2 (Codex): the PUBLIC run_osw must reject an OSW outside the caller's
+    allowed roots — it copies the OSW's whole parent dir into the run dir, so an
+    un-gated path is a cross-tenant / host file-disclosure vector."""
+
+    def _stub(self, monkeypatch, run_root):
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations.user_run_root", lambda: run_root)
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations._ensure_dispatcher", lambda: None)
+
+    def test_out_of_policy_osw_rejected(self, tmp_path, monkeypatch):
+        # Regression: run_osw skipped is_path_allowed and _copy_tree'd the OSW's whole
+        # parent dir into the run dir, disclosing arbitrary host / other-tenant files.
+        outside = tmp_path / "other_tenant"
+        outside.mkdir()
+        (outside / "secret.osm").write_text("another tenant's model")
+        (outside / "workflow.osw").write_text(json.dumps({"seed_file": "secret.osm"}))
+        run_root = tmp_path / "runs"
+        run_root.mkdir()
+        self._stub(monkeypatch, run_root)
+
+        from mcp_server.skills.simulation.operations import run_osw
+        result = run_osw(str(outside / "workflow.osw"))  # public call (no _internal)
+        assert result["ok"] is False, f"out-of-policy OSW must be rejected: {result}"
+        assert "not allowed" in result.get("error", "").lower(), result
+        assert list(run_root.iterdir()) == [], "nothing may be staged from a rejected path"
+
+    def test_internal_trusted_path_still_stages(self, tmp_path, monkeypatch):
+        # Validates: the internal staging path (run_simulation's server-built temp OSW)
+        # still works via _internal=True, even from a dir outside the allowed roots.
+        stage = tmp_path / "stage"
+        stage.mkdir()
+        (stage / "model.osm").write_text("seed")
+        (stage / "workflow.osw").write_text(json.dumps({"seed_file": "model.osm"}))
+        run_root = tmp_path / "runs"
+        run_root.mkdir()
+        self._stub(monkeypatch, run_root)
+
+        class _FakePopen:
+            def __init__(self, *a, **kw):
+                self.returncode = 1
+                self.pid = 999
+            def poll(self):
+                return self.returncode
+            def wait(self, timeout=None):
+                return self.returncode
+            def kill(self):
+                pass
+
+        monkeypatch.setattr(_subprocess, "Popen", _FakePopen)
+        from mcp_server.skills.simulation.operations import run_osw
+        result = run_osw(str(stage / "workflow.osw"), _internal=True)
+        assert "not allowed" not in result.get("error", "").lower(), result
+        assert len(list(run_root.iterdir())) == 1, f"internal staging should create a run dir: {result}"

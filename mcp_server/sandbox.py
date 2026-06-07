@@ -31,7 +31,6 @@ from pathlib import Path
 from mcp_server.config import (
     COMMON_MEASURES_DIR,
     COMSTOCK_MEASURES_DIR,
-    INPUT_ROOT,
     SANDBOX_GID,
     SANDBOX_MODE,
     SANDBOX_NET,
@@ -116,11 +115,22 @@ def _ro_paths() -> list[str]:
     /repo is deliberately NOT granted: the measure runs from the copied run dir,
     and the shim imports mcp_server before applying Landlock — so the run never
     needs to read the source tree (which could hold a host .env).
+
+    INPUT_ROOT (/inputs) is deliberately NOT granted either: it is a SHARED,
+    multi-tenant dir, so granting it would let one tenant's confined measure read
+    another's inputs. Inputs are staged into the run dir before execution, so the
+    confined process reads the staged copy, never /inputs directly.
+
+    The broad system roots (/etc, /proc, /sys) are intentional and DAC-mitigated:
+    OpenStudio/Ruby/EnergyPlus need bits of each (certs, nsswitch, /proc/self,
+    cpuinfo), and the uid-1001 drop means the kernel already blocks reads of
+    non-world-readable secrets (/etc/shadow) and other users' /proc/<pid>/environ.
+    Landlock here is defense-in-depth on top of DAC, not the only barrier.
     """
     return [
         *_RO_SYSTEM,
         str(COMSTOCK_MEASURES_DIR), str(COMMON_MEASURES_DIR),
-        str(INPUT_ROOT), str(SKILLS_DIR),
+        str(SKILLS_DIR),
     ]
 
 

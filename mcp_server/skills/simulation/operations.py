@@ -420,7 +420,8 @@ def _enqueue(run_id: str) -> None:
         _queue.append(run_id)
 
 
-def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None) -> dict[str, Any]:
+def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
+            *, _internal: bool = False) -> dict[str, Any]:
     """
     Stage the OSW + referenced files into /runs/<run_id>/ and execute:
       openstudio run -w <staged_osw>
@@ -429,14 +430,25 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
       - We always validate the OSW JSON and its seed_file reference (if any).
       - If no EPW override is provided, we also require the OSW's weather_file (if set) to exist.
       - If an EPW override is provided, we allow a missing OSW weather_file because it will be replaced.
+
+    Access control: as a PUBLIC tool, run_osw copies the OSW's whole parent dir into
+    the run dir — so an un-gated path discloses arbitrary host / other-tenant files.
+    Public callers must pass an OSW (and EPW) under their own run root or a shared
+    read root (is_path_allowed). `_internal=True` is the trusted path for
+    run_simulation, whose server-built temp OSW lives in a private staging dir and
+    whose inputs it has already validated; it is NOT exposed via the MCP tool.
     """
     src_osw = Path(osw_path).resolve()
     if not src_osw.exists():
         return {"ok": False, "error": f"OSW not found: {osw_path}"}
-    # An OSW bundle may legitimately live anywhere (e.g. a temp staging dir), so we
-    # don't is_path_allowed the OSW path itself — but we must never FOLLOW a symlink
-    # in its tree that escapes the bundle (would copy a host file into the run dir).
-    # User-facing entry points (run_simulation) validate their inputs separately.
+    if not _internal:
+        # Gate BEFORE reading/validating/copying anything from the path.
+        if not is_path_allowed(src_osw):
+            return {"ok": False, "error": f"OSW path not allowed: {osw_path}"}
+        if epw_path and not is_path_allowed(Path(epw_path)):
+            return {"ok": False, "error": f"EPW path not allowed: {epw_path}"}
+    # We must never FOLLOW a symlink in the OSW's tree that escapes the bundle
+    # (would copy a host file into the run dir), even for the trusted internal path.
     sym_err = reject_escaping_symlinks(src_osw.parent)
     if sym_err:
         return {"ok": False, "error": sym_err}
@@ -858,5 +870,7 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         osw_path_out = stage / "workflow.osw"
         osw_path_out.write_text(json.dumps(osw, indent=2), encoding="utf-8")
 
-        # Delegate to run_osw — pass epw_path so it handles staging into files/
-        return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name)
+        # Delegate to run_osw — pass epw_path so it handles staging into files/.
+        # _internal=True: osm + epw are already is_path_allowed above and the temp
+        # OSW is server-built in a private staging dir (not a caller-supplied path).
+        return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name, _internal=True)

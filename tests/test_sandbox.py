@@ -790,3 +790,50 @@ def test_wrap_cmd_grants_device_files_not_whole_dev(monkeypatch, tmp_path):
     assert "/dev/null" in rw and "/dev/zero" in rw, f"missing rw device files: {rw}"
     assert "/dev/urandom" in ro and "/dev/random" in ro, f"missing ro device files: {ro}"
     assert "/dev/shm" not in rw and "/dev/shm" not in ro, "/dev/shm must never be granted"  # noqa: S108
+
+
+def test_test_measure_does_not_mutate_shared_source(tmp_path, monkeypatch):
+    # Regression (Codex #3): test_measure executed in the caller's measure dir,
+    # writing test_model.osm + chowning + Landlock-granting it. For a measure under a
+    # SHARED read-only root (e.g. a bundled measure) that mutates shared/host content.
+    # The fix copies a non-writable-root measure into a private run dir and tests the
+    # copy, leaving the source untouched. (Monkeypatches config ROOTS — environment
+    # setup, like RUN_ROOT — not the unit under test.)
+    from mcp_server import config
+    from mcp_server.skills.measure_authoring import operations as mops
+
+    shared_root = tmp_path / "shared"
+    measure = shared_root / "mymeasure"
+    (measure / "tests").mkdir(parents=True)
+    (measure / "measure.rb").write_text("# fake ModelMeasure\nclass M\nend\n")
+    (measure / "tests" / "mymeasure_test.rb").write_text("require 'openstudio'\n")
+    model = shared_root / "seed.osm"
+    model.write_text("OS:Version,;\n")  # a readable file to copy as the test model
+
+    # Treat shared_root as a shared READ-ONLY root; private writable area elsewhere.
+    monkeypatch.setattr(config, "_SHARED_READ_ROOTS",
+                        [*config._SHARED_READ_ROOTS, shared_root.resolve()])
+    run_root = tmp_path / "runs"
+    run_root.mkdir()
+    monkeypatch.setattr(mops, "user_run_root", lambda: run_root)
+
+    mops.test_measure_op(str(measure), model_path=str(model))
+
+    assert not (measure / "tests" / "test_model.osm").exists(), \
+        "test_model.osm was written into the SHARED measure source — must use a private copy"
+    assert sorted(p.name for p in (measure / "tests").iterdir()) == ["mymeasure_test.rb"], \
+        "shared measure source/tests was mutated"
+
+
+def test_input_root_not_in_landlock_ro_allowlist():
+    # Regression (Codex #5): /inputs (INPUT_ROOT) is a SHARED multi-tenant dir;
+    # granting it read in the Landlock policy let one tenant's confined measure read
+    # another tenant's inputs. Inputs are staged into the run dir, so /inputs must
+    # NOT be a read-only root.
+    from mcp_server import sandbox
+    from mcp_server.config import COMMON_MEASURES_DIR, COMSTOCK_MEASURES_DIR, INPUT_ROOT
+    ro = sandbox._ro_paths()
+    assert str(INPUT_ROOT) not in ro, f"INPUT_ROOT must not be a Landlock RO root: {ro}"
+    # The legitimately-needed shared measure roots are still granted.
+    assert str(COMSTOCK_MEASURES_DIR) in ro and str(COMMON_MEASURES_DIR) in ro, \
+        f"bundled-measure roots must stay readable: {ro}"
