@@ -13,12 +13,13 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import INPUT_ROOT, user_run_root
+from mcp_server.config import CUSTOM_MEASURES_DIR, INPUT_ROOT, user_run_root
+from mcp_server.util import create_run_dir
 
 
 def custom_measures_dir() -> Path:
-    """The caller's private custom-measures directory (RUN_ROOT/<user_key>/custom_measures)."""
-    return user_run_root() / "custom_measures"
+    """The shared mounted custom-measures directory (/measures/custom by default)."""
+    return CUSTOM_MEASURES_DIR.resolve()
 
 # Default test model for measure tests — rich model with HVAC, plant loops,
 # constructions, schedules.  Searched in order; first hit wins.
@@ -855,7 +856,6 @@ def _test_reporting_measure_with_run(
     """
     import json
     import os
-    import uuid as _uuid
 
     from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
     from mcp_server.util import resolve_run_dir
@@ -870,10 +870,7 @@ def _test_reporting_measure_with_run(
         return {"ok": False, "error": f"No eplusout.sql in run {run_id} — simulation may not have completed"}
 
     # Build temp run dir
-    test_run_id = _uuid.uuid4().hex[:12]
-    runs_dir = Path(os.environ["MCP_RUNS_DIR"]) if "MCP_RUNS_DIR" in os.environ else user_run_root()
-    run_dir = runs_dir / f"measure_test_{test_run_id}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    _test_run_id, run_dir = create_run_dir(user_run_root(), "measure_test", mdir.name)
 
     # Stage simulation artifacts
     ep_run = run_dir / "run"
@@ -1236,7 +1233,7 @@ def edit_measure_op(
 
 
 def list_custom_measures_op() -> dict[str, Any]:
-    """List all custom measures under the caller's run root (custom_measures/)."""
+    """List all custom measures under the mounted custom measures directory."""
     try:
         cm_dir = custom_measures_dir()
         if not cm_dir.is_dir():

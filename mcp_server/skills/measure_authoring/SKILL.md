@@ -14,6 +14,8 @@ create_measure → test_measure → apply_measure
 
 Use `edit_measure` to iterate on existing measures. Use `list_custom_measures` to find previously created measures.
 
+For requests to use an existing measure by name or intent, first call `list_local_measures` and look for matches in mounted measures, `/measures/custom`, bundled common measures, and bundled ComStock measures. If no local match is suitable, ask the user before trying BCL or `download_measure_from_bcl`.
+
 ## Before Writing HVAC Measures
 
 LLM training data may reference deprecated or nonexistent OpenStudio methods. Before writing SDK calls:
@@ -74,7 +76,7 @@ Types: `Boolean` | `Double` | `Integer` | `String` | `Choice`
 ## Tools
 
 ### create_measure
-Scaffold a new measure with user-provided run() body and arguments. Output: `/runs/custom_measures/<name>/`.
+Scaffold a new measure with user-provided run() body and arguments. Output: `/measures/custom/<name>/`.
 
 ### test_measure
 Run tests against a real model (not empty). Auto-detects language. For ReportingMeasures, provide `run_id` of a completed simulation.
@@ -83,7 +85,13 @@ Run tests against a real model (not empty). Auto-detects language. For Reporting
 Replace run() body, arguments, or description on an existing measure. Use to add arguments to a measure that hard-codes values.
 
 ### list_custom_measures
-List all measures in `/runs/custom_measures/`.
+List all measures in `/measures/custom/`.
+
+### list_local_measures
+Search mounted, downloaded, custom, common measures, and ComStock measures. Use this before BCL/download when the user asks for an existing measure.
+
+### download_measure_from_bcl
+Download a measure archive into `/measures/bcl`. Use only after local search does not find a suitable measure and the user agrees to try BCL/download.
 
 ### apply_measure
 Apply a measure to the currently loaded model (from `measure_application` skill).

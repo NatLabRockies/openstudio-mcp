@@ -76,6 +76,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 ENV COMMON_MEASURES_DIR=/opt/common-measures
+ENV OPENSTUDIO_MCP_MEASURES_DIR=/measures
+ENV OPENSTUDIO_MCP_CUSTOM_MEASURES_DIR=/measures/custom
+ENV OPENSTUDIO_MCP_BCL_MEASURES_DIR=/measures/bcl
+RUN mkdir -p /measures/custom /measures/bcl /runs /inputs
 
 WORKDIR /repo
 

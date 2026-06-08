@@ -14,7 +14,7 @@ from mcp_server.skills.measure_authoring.operations import (
 def register(mcp):
     @mcp.tool(tags={"measures"}, name="list_custom_measures")
     def list_custom_measures_tool():
-        """List custom measures (under your run root, custom_measures/) created with create_measure.
+        """List custom measures under /measures/custom created with create_measure.
 
         Returns name, language, and measure_dir for each. Use measure_dir
         with test_measure or apply_measure. Use name with edit_measure.
@@ -42,7 +42,7 @@ def register(mcp):
         search_wiring_patterns for working connection code.
 
         Scaffolds via SDK, then injects arguments() and run() body. Output
-        dir: <your run root>/custom_measures/<name>/. Idempotent — overwrites if exists.
+        dir: /measures/custom/<name>/ by default. Idempotent — overwrites if exists.
 
         Workflow: create_measure → test_measure → apply_measure.
 
@@ -221,7 +221,7 @@ def register(mcp):
 
         TIP: call get_skill('measure-authoring') first for templates, API patterns, and common pitfalls.
 
-        Looks up custom_measures/<measure_name>/ under your run root. Replaces run() body
+        Looks up /measures/custom/<measure_name>/ by default. Replaces run() body
         between markers, regenerates arguments() method, updates test file.
         Use list_custom_measures to find available measure names.
 

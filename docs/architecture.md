@@ -102,14 +102,14 @@ The default Docker configuration prioritizes ease of development. The container:
 | Runs as root | No `USER` directive in Dockerfile |
 | Has network access | No `--network none` flag |
 | Read/write volume mounts | `/inputs` and `/runs` are both writable |
-| Path validation enforced | `is_path_allowed()` restricts access to `/inputs`, `/runs`, `/repo`, `/opt/comstock-measures` |
+| Path validation enforced | `is_path_allowed()` restricts access to `/inputs`, `/runs`, `/repo`, and configured measure/skill roots |
 
 ### Path Traversal Protection (Built-in)
 
 The server validates all file paths at runtime via `config.py`:
 - `is_path_allowed()` resolves symlinks and checks against an allowlist
 - Rejects paths containing `..` traversal
-- Only permits access to `/inputs`, `/runs`, `/repo`, `/opt/comstock-measures`
+- Only permits access to `/inputs`, `/runs`, `/repo`, `/measures`, `/measures/custom`, `/measures/bcl`, `/opt/common-measures`, `/opt/comstock-measures`, and `/skills`
 
 ### Potential Security Concerns
 

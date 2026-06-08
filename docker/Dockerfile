@@ -26,6 +26,10 @@ RUN curl -sL https://github.com/NatLabRockies/openstudio-common-measures-gem/arc
     rm -rf /tmp/openstudio-common-measures-gem-*
 
 ENV COMMON_MEASURES_DIR=/opt/common-measures
+ENV OPENSTUDIO_MCP_MEASURES_DIR=/measures
+ENV OPENSTUDIO_MCP_CUSTOM_MEASURES_DIR=/measures/custom
+ENV OPENSTUDIO_MCP_BCL_MEASURES_DIR=/measures/bcl
+RUN mkdir -p /measures/custom /measures/bcl /runs /inputs
 
 # The nrel/openstudio base image already includes /var/oscli/ with bundled gems
 # (openstudio-extension, openstudio-standards, etc.). No bundle install needed.

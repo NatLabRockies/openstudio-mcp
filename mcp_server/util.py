@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from pathlib import Path
 
 
@@ -19,6 +20,31 @@ def load_json(path: Path) -> dict:
 def dump_json(path: Path, obj: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+
+def safe_name(s: str) -> str:
+    """Sanitize a string for use as a filesystem-safe name."""
+    s = str(s)
+    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in s).strip("_") or "run"
+
+def create_run_dir(run_root: Path, prefix: str, name: str | None = None) -> tuple[str, Path]:
+    """Create a readable, unique run directory and return (run_id, path)."""
+    label = safe_name(name or prefix)
+    if label == "run" and prefix:
+        label = safe_name(prefix)
+    elif prefix and not label.startswith(f"{prefix}_"):
+        label = f"{safe_name(prefix)}_{label}"
+
+    for _ in range(10):
+        run_id = f"{label}_{uuid.uuid4().hex[:12]}"
+        run_dir = (run_root / run_id).resolve()
+        if run_dir.parent != run_root.resolve():
+            raise FileNotFoundError(f"Invalid run directory: {run_id}")
+        try:
+            run_dir.mkdir(parents=True, exist_ok=False)
+            return run_id, run_dir
+        except FileExistsError:
+            continue
+    raise FileExistsError(f"Could not create unique run directory under {run_root}")
 
 def resolve_run_dir(run_root: Path, run_id: str) -> Path:
     """Resolve / validate a run directory on disk.

@@ -52,6 +52,10 @@ OSCLI_GEM_PATH = os.environ.get("OSCLI_GEM_PATH", "/var/oscli/gems")
 
 COMSTOCK_MEASURES_DIR = Path(os.environ.get("COMSTOCK_MEASURES_DIR", "/opt/comstock-measures"))
 COMMON_MEASURES_DIR = Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures"))
+USER_MEASURES_DIR = Path(os.environ.get("OPENSTUDIO_MCP_MEASURES_DIR", "/measures"))
+MEASURES_DIR = USER_MEASURES_DIR
+CUSTOM_MEASURES_DIR = Path(os.environ.get("OPENSTUDIO_MCP_CUSTOM_MEASURES_DIR", str(USER_MEASURES_DIR / "custom")))
+BCL_MEASURES_DIR = Path(os.environ.get("OPENSTUDIO_MCP_BCL_MEASURES_DIR", str(USER_MEASURES_DIR / "bcl")))
 SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/skills"))
 
 INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolve()
@@ -66,6 +70,10 @@ _SHARED_READ_ROOTS = [
     COMSTOCK_MEASURES_DIR.resolve(),
     COMMON_MEASURES_DIR.resolve(),
     SKILLS_DIR.resolve(),
+    USER_MEASURES_DIR.resolve(),
+    MEASURES_DIR.resolve(),
+    CUSTOM_MEASURES_DIR.resolve(),
+    BCL_MEASURES_DIR.resolve(),
 ]
 
 

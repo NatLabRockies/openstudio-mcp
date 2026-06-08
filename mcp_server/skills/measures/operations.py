@@ -10,16 +10,238 @@ import json
 import os
 import shutil
 import subprocess
-import uuid
+import zipfile
+from html.parser import HTMLParser
+from urllib.error import HTTPError, URLError
+from urllib.parse import unquote, urljoin, urlparse
+from urllib.request import Request, urlopen
 from pathlib import Path
 from typing import Any
 
 import openstudio
 
-from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
+from mcp_server.config import (
+    BCL_MEASURES_DIR,
+    COMMON_MEASURES_DIR,
+    COMSTOCK_MEASURES_DIR,
+    CUSTOM_MEASURES_DIR,
+    INPUT_ROOT,
+    MEASURES_DIR,
+    OSCLI_GEM_PATH,
+    OSCLI_GEMFILE,
+    RUN_ROOT,
+    is_path_allowed,
+    user_run_root,
+)
 from mcp_server.model_manager import get_model, load_model
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather
-from mcp_server.util import resolve_run_dir
+from mcp_server.util import create_run_dir, resolve_run_dir
+
+
+MEASURE_DOWNLOAD_HOSTS = {"bcl.nrel.gov", "bcl.nlr.gov", "github.com", "raw.githubusercontent.com"}
+
+
+class _BCLDownloadLinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.download_links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        attr_map = dict(attrs)
+        href = attr_map.get("href") or ""
+        if "/api/download?" in href:
+            self.download_links.append(href)
+
+
+def _is_measure_dir(path: Path) -> bool:
+    return path.is_dir() and ((path / "measure.rb").is_file() or (path / "measure.py").is_file())
+
+
+def _measure_entry(path: Path, source: str) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "name": path.name,
+        "measure_dir": str(path),
+        "source": source,
+        "has_measure_xml": (path / "measure.xml").is_file(),
+    }
+    try:
+        bcl = openstudio.BCLMeasure(openstudio.toPath(str(path)))
+        entry["display_name"] = bcl.name()
+        entry["description"] = bcl.description()[:300]
+        entry["measure_type"] = bcl.measureType().valueName()
+        entry["num_arguments"] = len(bcl.arguments())
+    except Exception:
+        entry["display_name"] = path.name
+        entry["description"] = ""
+        entry["measure_type"] = None
+        entry["num_arguments"] = -1
+    return entry
+
+
+def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
+    if _is_measure_dir(root):
+        return [root]
+    found = []
+    base_depth = len(root.parts)
+    for path in root.rglob("*"):
+        if len(path.parts) - base_depth > max_depth:
+            continue
+        if _is_measure_dir(path):
+            found.append(path)
+    return found
+
+
+def _safe_extract_zip(zip_path: Path, output_dir: Path) -> list[Path]:
+    extracted = []
+    output_root = output_dir.resolve()
+    with zipfile.ZipFile(zip_path) as archive:
+        for member in archive.infolist():
+            target = (output_root / member.filename).resolve()
+            if not (str(target).startswith(str(output_root) + os.sep) or target == output_root):
+                raise ValueError(f"ZIP member would extract outside destination: {member.filename}")
+        archive.extractall(output_root)
+        extracted = [(output_root / member.filename).resolve() for member in archive.infolist()]
+    return extracted
+
+
+def _guess_download_name(url: str, fallback: str = "downloaded_measure.zip") -> str:
+    name = Path(unquote(urlparse(url).path)).name
+    return name or fallback
+
+
+def _read_url(url: str, timeout_seconds: int) -> tuple[bytes, str]:
+    req = Request(url, headers={"User-Agent": "openstudio-mcp/measure-downloader"}, method="GET")
+    with urlopen(req, timeout=timeout_seconds) as resp:
+        headers = getattr(resp, "headers", {})
+        content_type = headers.get("Content-Type", "") if headers else ""
+        return resp.read(), content_type
+
+
+def _looks_like_html(payload: bytes, content_type: str) -> bool:
+    head = payload[:500].lstrip().lower()
+    return "html" in content_type.lower() or head.startswith(b"<!doctype html") or head.startswith(b"<html")
+
+
+def _resolve_bcl_content_download(url: str, payload: bytes) -> str | None:
+    parsed = urlparse(url)
+    if parsed.hostname not in {"bcl.nrel.gov", "bcl.nlr.gov"}:
+        return None
+    parser = _BCLDownloadLinkParser()
+    parser.feed(payload.decode("utf-8", errors="replace"))
+    if not parser.download_links:
+        return None
+    return urljoin(url, parser.download_links[0])
+
+
+def list_local_measures(
+    root_dir: str | None = None,
+    max_depth: int = 3,
+    max_results: int = 200,
+) -> dict[str, Any]:
+    """List measures in mounted/user/bundled measure directories."""
+    try:
+        if root_dir:
+            roots = [(Path(root_dir).expanduser().resolve(), "requested")]
+        else:
+            roots = [
+                (CUSTOM_MEASURES_DIR.resolve(), "custom"),
+                (MEASURES_DIR.resolve(), "measures"),
+                ((INPUT_ROOT / "measures").resolve(), "inputs"),
+                ((RUN_ROOT / "custom_measures").resolve(), "legacy_custom"),
+                (COMMON_MEASURES_DIR.resolve(), "common"),
+                (COMSTOCK_MEASURES_DIR.resolve(), "comstock"),
+                (BCL_MEASURES_DIR.resolve(), "bcl"),
+                ((INPUT_ROOT / "measures" / "bcl").resolve(), "legacy_bcl"),
+            ]
+
+        results = []
+        seen = set()
+        for root, source in roots:
+            if not root.is_dir():
+                continue
+            if not is_path_allowed(root):
+                return {"ok": False, "error": f"Directory not allowed: {root}"}
+            for measure_dir in _iter_measure_dirs(root, max_depth=max_depth):
+                resolved = measure_dir.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                results.append(_measure_entry(resolved, source))
+                if len(results) >= max_results:
+                    return {"ok": True, "count": len(results), "truncated": True, "measures": results}
+
+        return {"ok": True, "count": len(results), "truncated": False, "measures": results}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to list local measures: {e}"}
+
+
+def download_measure_archive(
+    url: str,
+    output_dir: str | None = None,
+    measure_name: str | None = None,
+    timeout_seconds: int = 300,
+) -> dict[str, Any]:
+    """Download and safely extract a measure ZIP into a writable measure directory."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme != "https":
+            return {"ok": False, "error": "Only HTTPS measure downloads are allowed."}
+        if parsed.hostname not in MEASURE_DOWNLOAD_HOSTS:
+            allowed = ", ".join(sorted(MEASURE_DOWNLOAD_HOSTS))
+            return {"ok": False, "error": f"Download host not allowed: {parsed.hostname}. Allowed: {allowed}"}
+
+        destination_root = Path(output_dir).expanduser().resolve() if output_dir else BCL_MEASURES_DIR.resolve()
+        if not is_path_allowed(destination_root):
+            return {"ok": False, "error": f"Output directory not allowed: {destination_root}"}
+        destination_root.mkdir(parents=True, exist_ok=True)
+
+        download_url = url
+        payload, content_type = _read_url(download_url, timeout_seconds)
+        if _looks_like_html(payload, content_type):
+            resolved_url = _resolve_bcl_content_download(download_url, payload)
+            if resolved_url:
+                download_url = resolved_url
+                payload, content_type = _read_url(download_url, timeout_seconds)
+
+        archive_name = _guess_download_name(download_url)
+        archive_path = destination_root / archive_name
+        archive_path.write_bytes(payload)
+
+        extract_root = destination_root / (measure_name or archive_path.stem)
+        extract_root.mkdir(parents=True, exist_ok=True)
+        _safe_extract_zip(archive_path, extract_root)
+
+        measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
+        if not measures.get("ok"):
+            return measures
+        if measures.get("count", 0) == 0:
+            return {
+                "ok": False,
+                "error": "Downloaded archive did not contain a measure directory with measure.rb or measure.py.",
+                "archive_path": str(archive_path),
+                "extract_dir": str(extract_root),
+            }
+        return {
+            "ok": True,
+            "download_url": download_url,
+            "archive_path": str(archive_path),
+            "extract_dir": str(extract_root),
+            "count": measures["count"],
+            "measures": measures["measures"],
+        }
+    except zipfile.BadZipFile:
+        return {"ok": False, "error": "Downloaded file is not a valid ZIP archive."}
+    except HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        return {"ok": False, "error": f"Download failed with HTTP {e.code}: {detail[:500]}"}
+    except URLError as e:
+        return {"ok": False, "error": f"Could not download measure archive: {e.reason}"}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to download measure archive: {e}"}
 
 
 def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
@@ -150,10 +372,7 @@ def apply_measure(
             return {"ok": False, "error": f"No measure.rb or measure.py found in {measure_dir}"}
 
         # Create temp directory for the run
-        measure_run_id = uuid.uuid4().hex[:12]
-        runs_dir = Path(os.environ["MCP_RUNS_DIR"]) if "MCP_RUNS_DIR" in os.environ else user_run_root()
-        run_dir = runs_dir / f"measure_{measure_run_id}"
-        run_dir.mkdir(parents=True, exist_ok=True)
+        _measure_run_id, run_dir = create_run_dir(user_run_root(), "measure", measure_path.name)
 
         # Save current model to temp OSM
         temp_osm = run_dir / "in.osm"

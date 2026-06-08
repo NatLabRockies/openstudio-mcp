@@ -178,7 +178,7 @@ def test_apply_measure_vs_create_measure():
         pytest.skip("Baseline model not found")
 
     result = run_claude(
-        LOAD + "apply the measure at /inputs/measures/"
+        LOAD + "apply the measure at /measures/"
         "replace_terminals_with_four_pipe_beams using apply_measure. "
         "Use MCP tools only.",
         timeout=120,
