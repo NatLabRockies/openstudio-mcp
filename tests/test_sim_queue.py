@@ -87,6 +87,40 @@ def test_run_simulation_leaves_no_orphan_staging_dir():
 
 
 @pytest.mark.integration
+def test_sim_timeout_kills_long_run():
+    # Validates: OSMCP_SIM_TIMEOUT_SECONDS caps wall-clock — a sim that exceeds it
+    # is terminated and marked failed with a timeout error (runaway/DoS guard). A
+    # 2s cap fires long before the example-model sim could ever finish.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    with http_server({"MCP_AUTH": "none", "OSMCP_SIM_TIMEOUT_SECONDS": "2"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                cr = unwrap(await s.call_tool(
+                    "create_example_osm", {"name": f"to_{uuid.uuid4().hex[:8]}"}))
+                assert cr["ok"] is True, cr
+                rs = unwrap(await s.call_tool(
+                    "run_simulation", {"osm_path": cr["osm_path"], "epw_path": EPW_PATH}))
+                assert rs["ok"] is True, rs
+                run_id = rs["run_id"]
+
+                status, err = rs["status"], ""
+                for _ in range(120):  # up to 60s; the 2s cap fires far sooner
+                    run = unwrap(await s.call_tool("get_run_status", {"run_id": run_id}))["run"]
+                    status, err = run["status"], (run.get("error") or "")
+                    if status in ("success", "failed", "cancelled", "error"):
+                        break
+                    await asyncio.sleep(0.5)
+
+                assert status == "failed", f"timed-out sim must be 'failed', got {status!r}"
+                assert "cap" in err.lower() or "exceeded" in err.lower(), \
+                    f"error should indicate the wall-clock timeout; got {err!r}"
+
+        asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_cancelled_running_sim_stays_cancelled():
     # Regression: _refresh_status reclassified a cancelled (running) run as "failed"
     # on the next get_run_status — a killed pid reads as failure — breaking the
@@ -127,3 +161,61 @@ def test_cancelled_running_sim_stays_cancelled():
                     await asyncio.sleep(0.3)
 
         asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_enforce_timeouts_skips_dead_pid(monkeypatch):
+    # Regression: _enforce_timeouts marked a finished-but-unreaped run as 'failed'
+    # without checking _pid_alive, clobbering a possibly-successful result. A run
+    # whose process already exited must be left for the reaper to classify by exit
+    # code, not force-failed by the timeout enforcer.
+    import time
+
+    from mcp_server.skills.simulation import operations as ops
+
+    monkeypatch.setattr(ops, "SIM_TIMEOUT_SECONDS", 1.0)
+    started = time.time() - 10_000  # well past the 1s cap
+    rec = ops.RunRecord(
+        run_id="t_dead_pid", user_key="u", name="n", status="running",
+        created_at=started, started_at=started, ended_at=None,
+        pid=2_000_000_000,  # bogus pid -> _pid_alive() is False (no such process)
+        run_dir=Path("/runs/none"), osw_path=Path("/runs/none/in.osw"),
+        epw_path=None, exit_code=None, error=None,
+    )
+    monkeypatch.setitem(ops._RUNS, rec.run_id, rec)
+    ops._enforce_timeouts()
+    assert ops._RUNS[rec.run_id].status == "running", \
+        "dead-but-unreaped run was force-failed instead of left for the reaper"
+
+
+@pytest.mark.integration
+def test_kill_process_group_terminates_session_leader():
+    # Regression: timeout/cancel killed only the leader pid, orphaning forked
+    # children (EnergyPlus). Runs now launch in their own session (start_new_session)
+    # and _kill_process_group signals the whole group; the kernel delivers killpg to
+    # every group member, so verifying the new-session leader dies via the group path
+    # is sufficient (and never touches the server's own group).
+    import contextlib as _ctx
+    import os
+    import subprocess
+    import time
+
+    import psutil
+
+    from mcp_server.skills.simulation import operations as ops
+
+    if not hasattr(os, "getpgid"):
+        pytest.skip("POSIX process groups not available")
+    p = subprocess.Popen(["sleep", "60"], start_new_session=True)  # noqa: S607
+    try:
+        assert os.getpgid(p.pid) == p.pid, "start_new_session should make pid the group leader"
+        ops._kill_process_group(p.pid)  # SIGTERMs the group and reaps the leader
+        deadline = time.time() + 5
+        while psutil.pid_exists(p.pid) and time.time() < deadline:
+            time.sleep(0.1)
+        assert not psutil.pid_exists(p.pid), "session-leader survived group kill"
+    finally:
+        with _ctx.suppress(Exception):
+            p.kill()
+        with _ctx.suppress(Exception):
+            p.wait(timeout=2)

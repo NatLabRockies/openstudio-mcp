@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import os
+import sys
 from pathlib import Path
 
 RUN_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs"))).resolve()
@@ -14,9 +16,14 @@ def _safe_int(env_val: str, default: int) -> int:
 
 def _safe_float(env_val: str, default: float) -> float:
     try:
-        return float(env_val)
+        v = float(env_val)
     except (ValueError, TypeError):
         return default
+    # Reject NaN/inf: a non-finite SIM_TIMEOUT would make both `<= 0` and the
+    # elapsed-time comparison false, silently disabling timeout enforcement.
+    if not math.isfinite(v):
+        return default
+    return v
 
 _raw_concurrency = os.environ.get("OPENSTUDIO_MCP_MAX_CONCURRENCY", os.environ.get("OSMCP_MAX_CONCURRENCY", "1"))
 MAX_CONCURRENCY = _safe_int(_raw_concurrency, 1)
@@ -57,6 +64,109 @@ SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/skills"))
 INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolve()
 
 ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
+
+# Subprocess confinement for measure/simulation execution (see mcp_server/sandbox.py).
+#   off    — full passthrough (explicit escape hatch for trusted/local-tooling use)
+#   posix  — clean-env allowlist + UID drop (if root) + rlimits
+#   auto   — best confinement available (default): clean-env + Landlock FS +
+#            seccomp net-deny + rlimits, plus UID drop when running as root.
+# Secure by default. Degrades loudly: the unprivileged layers (Landlock/seccomp)
+# apply even for a non-root local server; on a platform without a kernel backend
+# (macOS/Windows bare installs) it falls back to clean-env only and logs a notice.
+_SANDBOX_OFF_ALIASES = frozenset({"", "off", "0", "false", "no"})
+_SANDBOX_ON_MODES = frozenset({"posix", "auto", "full", "landlock"})
+
+
+def _normalize_sandbox_mode(raw: str) -> str:
+    """Map OSMCP_SANDBOX to a known mode, FAIL-CLOSED on an unrecognized value.
+
+    A typo like ``atuo`` would otherwise leave ``enabled()`` True but ``_full()``
+    False — silently downgrading from the default Landlock+seccomp tier to
+    posix-only. To never weaken confinement on a typo, force the most-restrictive
+    ``auto`` and warn loudly. Off-aliases are honored as-is (disabling is explicit).
+    """
+    v = (raw or "").strip().lower()
+    if v in _SANDBOX_OFF_ALIASES or v in _SANDBOX_ON_MODES:
+        return v
+    print(f"[sandbox] unknown OSMCP_SANDBOX={raw!r}; falling back to 'auto' "
+          "(fail-closed). Valid values: off, posix, auto, full, landlock.",
+          file=sys.stderr)
+    return "auto"
+
+
+SANDBOX_MODE = _normalize_sandbox_mode(os.environ.get("OSMCP_SANDBOX", "auto"))
+# Network policy for confined subprocesses: deny (default) blocks outbound TCP
+# once the seccomp backend lands; allow leaves it open (trusted/BCL deployments).
+SANDBOX_NET = os.environ.get("OSMCP_SANDBOX_NET", "deny").strip().lower()
+
+# Wall-clock cap for a single simulation (run_osw/run_simulation). 0 = no cap.
+SIM_TIMEOUT_SECONDS = _safe_float(
+    os.environ.get("OPENSTUDIO_MCP_SIM_TIMEOUT_SECONDS",
+                   os.environ.get("OSMCP_SIM_TIMEOUT_SECONDS", "7200")),
+    7200.0,
+)
+
+# Unprivileged account confined subprocesses drop to (baked into the image as
+# `sandbox`). See mcp_server/_sandbox_exec.py.
+def _safe_sandbox_id(env_val: str, default: int) -> int:
+    """A positive uid/gid. Rejects <=0 (esp. 0=root) so a bad override can never
+    leave confined code running as root after the setuid 'drop'."""
+    v = _safe_int(env_val, default)
+    return v if v > 0 else default
+
+
+SANDBOX_UID = _safe_sandbox_id(os.environ.get("OSMCP_SANDBOX_UID", "1001"), 1001)
+SANDBOX_GID = _safe_sandbox_id(os.environ.get("OSMCP_SANDBOX_GID", "1001"), 1001)
+
+# Per-tenant uid derivation (multi-user hardening). Every distinct remote caller
+# (HTTP session / auth principal) gets its OWN sandbox uid so that:
+#   - RLIMIT_NPROC — which the kernel counts PER REAL UID — is a private budget,
+#     so one tenant's fork bomb can't starve every other tenant's runs; and
+#   - DAC isolates tenants' run dirs from each other even in the posix tier
+#     (no Landlock), since the dirs are chowned to, and processes run as,
+#     different uids.
+# The local single user (stdio / off-request) keeps the baked-in SANDBOX_UID,
+# preserving today's behavior. Derived uids sit above the system/sandbox range
+# and below `nobody`, and are never root.
+_PER_TENANT_UID_BASE = 2000
+_PER_TENANT_UID_SPAN = 60000  # uids 2000..61999
+
+
+def _derive_tenant_uid(key: str) -> int:
+    """Stable, process-independent uid for a tenant key.
+
+    Uses hashlib (NOT the salted builtin hash()) so chown (server) and setuid
+    (shim, a separate process) derive the SAME uid for a request across restarts.
+    """
+    import hashlib
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    return _PER_TENANT_UID_BASE + (int.from_bytes(digest[:4], "big") % _PER_TENANT_UID_SPAN)
+
+
+def sandbox_ids() -> tuple[int, int]:
+    """(uid, gid) the CURRENT caller's confined subprocess drops to.
+
+    Resolved per-call from caller identity (same key in → same uid out, so a
+    request's prepare_workdir chown and the shim's setuid agree). LOCAL → the
+    baked SANDBOX_UID/GID; each remote tenant → its own derived uid (gid==uid).
+    """
+    from mcp_server.identity import LOCAL, user_key
+    key = user_key()
+    if key == LOCAL:
+        return (SANDBOX_UID, SANDBOX_GID)
+    uid = _derive_tenant_uid(key)
+    return (uid, uid)
+
+# rlimit backstops for confined subprocesses (0 = off). Generous by design — they
+# catch runaway bombs, not tune normal use. CPU/AS default off: a CPU-second cap
+# would kill long annual sims, and RLIMIT_AS (virtual address space) breaks
+# EnergyPlus/allocators — real memory control belongs to the container cgroup.
+_GB = 1024 ** 3
+SANDBOX_RLIMIT_FSIZE = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_FSIZE", str(10 * _GB)), 10 * _GB)
+SANDBOX_RLIMIT_NPROC = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_NPROC", "1024"), 1024)
+SANDBOX_RLIMIT_NOFILE = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_NOFILE", "0"), 0)
+SANDBOX_RLIMIT_CPU = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_CPU", "0"), 0)
+SANDBOX_RLIMIT_AS = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_AS", "0"), 0)
 
 # Shared roots are read-only for everyone; the only per-user writable area is
 # RUN_ROOT/<user_key> (see user_run_root). Writes elsewhere are denied.
