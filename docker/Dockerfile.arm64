@@ -26,6 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ruby-full \
     && rm -rf /var/lib/apt/lists/*
 
+# Unprivileged account that confined measure/simulation subprocesses drop to
+# (parity with docker/Dockerfile; see mcp_server/_sandbox_exec.py).
+RUN useradd -r -u 1001 -s /usr/sbin/nologin sandbox
+
 # OpenStudio arm64 — official NREL .deb. Pulls in libstdc++ etc. as deps.
 RUN curl -fSL \
       "https://github.com/NREL/OpenStudio/releases/download/v${OPENSTUDIO_VERSION}/OpenStudio-${OPENSTUDIO_VERSION}+${OPENSTUDIO_SHA}-Ubuntu-24.04-arm64.deb" \
@@ -40,9 +44,14 @@ RUN curl -fSL \
 # The nrel/openstudio base image does this; the .deb does not. Without it,
 # every measure-based MCP tool fails at runtime (ComStock, common-measures,
 # apply_measure). Mirrors NREL/docker-openstudio's /var/oscli setup.
+# A stable symlink (/usr/local/openstudio-Ruby) is created in the RUN below so
+# RUBYLIB can be a fixed ENV — the install dir name carries a build-SHA suffix.
+# Both link and target live under /usr/local, which the sandbox Landlock policy
+# grants read+exec.
 RUN OPENSTUDIO_FOLDER=$(find /usr -maxdepth 2 -name "openstudio-${OPENSTUDIO_VERSION}*" -type d | head -n1) \
     && test -n "$OPENSTUDIO_FOLDER" || { echo "openstudio install dir not found"; exit 1; } \
     && echo "OPENSTUDIO_FOLDER=$OPENSTUDIO_FOLDER" \
+    && ln -sfn "$OPENSTUDIO_FOLDER/Ruby" /usr/local/openstudio-Ruby \
     && gem install bundler -v ${OS_BUNDLER_VERSION} --no-document \
     && gem install zip --no-document \
     && mkdir -p /var/oscli \
@@ -52,6 +61,12 @@ RUN OPENSTUDIO_FOLDER=$(find /usr -maxdepth 2 -name "openstudio-${OPENSTUDIO_VER
     && cd /var/oscli \
     && bundle _${OS_BUNDLER_VERSION}_ install --path=gems --without=native_ext --jobs=4 --retry=3 \
     && test -d /var/oscli/gems || { echo "/var/oscli/gems missing after bundle install"; exit 1; }
+
+# Let the system `ruby` resolve `require 'openstudio'` (parity with the amd64
+# nrel/openstudio base, which sets RUBYLIB to the install's Ruby dir). test_measure
+# runs Ruby unit tests via `ruby -I .` directly — `openstudio measure -r` does not
+# run minitest — so without this the measure tests fail with a LoadError.
+ENV RUBYLIB=/usr/local/openstudio-Ruby
 
 # ComStock measures (openstudio-standards-based templates for space types,
 # constructions, HVAC, schedules). Only the measures/ directory is kept (~50 MB).
