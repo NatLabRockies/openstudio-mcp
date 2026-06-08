@@ -105,6 +105,18 @@ EXPECTED_TOOLS = {
     "set_simulation_control",
     "get_run_period",
     "set_run_period",
+    # OpenStudio Server analysis workflows
+    "openstudio_analysis_create_osa_json",
+    "openstudio_analysis_validate_osa_json",
+    "openstudio_analysis_create_osa_json_from_measures",
+    "openstudio_analysis_add_measure_to_osa_json",
+    "openstudio_analysis_create_project",
+    "openstudio_analysis_submit",
+    "openstudio_analysis_status",
+    "openstudio_analysis_wait",
+    "openstudio_analysis_download_data",
+    "openstudio_analysis_results_json",
+    "openstudio_analysis_submit_wait_download",
     # Phase 6D: Measures
     "list_measure_arguments",
     "apply_measure",
@@ -194,7 +206,7 @@ def test_all_skills_registered():
 
 
 def test_all_tool_names_registered():
-    # Validates: all 146 expected tools are registered, no extras — migration backward-compatibility
+    # Validates: all expected tools are registered, no extras — migration backward-compatibility
     """Every expected tool function is registered via mcp.tool()."""
     registered_tools = {}
 

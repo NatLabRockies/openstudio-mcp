@@ -21,7 +21,8 @@ venv/
 !.claude/skills/
 
 # Test artifacts — generated OSM files from integration test runs
-runs/
+/runs/
+/analyses/
 
 # OS
 .DS_Store

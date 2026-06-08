@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**146 tools · 12 workflow skills · 480+ integration tests**
+**157 tools · 12 workflow skills · 480+ integration tests**
 
 ---
 
@@ -16,6 +16,7 @@
 - *"Add R-30 roof insulation and see how it affects the cooling load."*
 - *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing."*
 - *"Write a measure that sets all lights to 8 W/m², test it, apply it, and compare the EUI."*
+- *"Submit this OpenStudio analysis JSON to my server, wait for completion, and download the results"*
 
 The AI picks the right tools, calls them in sequence, and summarizes — no scripting.
 
@@ -65,6 +66,11 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 The `-v host:container` mounts expose your folders inside the container: `/inputs` for your models (starts with the bundled test models), `/runs` for simulation outputs, `/skills` for the workflow guides. Use absolute paths if `./` doesn't resolve from where your host launches Docker.
 
+- `./tests/assets:/inputs` — mounts the included test models so you can experiment right away. Replace with your own folder (e.g. `~/my-models:/inputs`) when ready.
+- `./runs:/runs` — simulation outputs are written here
+- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
+- **Restart Claude Desktop** after saving the config file
+
 ### 3. Verify and chat
 
 Look for the **hammer icon** in Claude Desktop's input — click it to see the openstudio-mcp tools. Then try, in order:
@@ -73,17 +79,48 @@ Look for the **hammer icon** in Claude Desktop's input — click it to see the o
 
 **Use the `/inputs` mount for your own files** rather than uploading through chat — Claude Desktop's upload sandbox can't reach MCP tools, so the AI may fall back to writing scripts. Drop a file in the host folder mapped to `/inputs` and reference it by that path. Simulation outputs in `/runs` are already reachable.
 
-**Other hosts:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [VS Code Copilot](https://code.visualstudio.com/), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) use similar JSON config — see the [MCP docs](https://modelcontextprotocol.io/quickstart/user).
+Try these prompts in order of complexity:
+
+> **Simple:** "Create an example model and tell me about it"
+
+> **Medium:** "Create a baseline office with ASHRAE System 3 and show me the HVAC components"
+
+> **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
+
+The AI reads your prompt, picks the right tools from the 157 available, calls them in sequence, and summarizes the results — no scripting required.
+
+### Working with Your Own Files
+
+**Place files in the `/inputs` mount** (the host folder mapped to `/inputs` in the config above) rather than uploading them through the chat interface. This ensures the MCP tools can access them directly.
+
+```
+# Example: analyzing an EnergyPlus error file
+# 1. Copy to your inputs folder
+cp eplusout.err ./tests/assets/
+
+# 2. Reference by MCP path in your prompt
+"Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
+```
+
+**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 157 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
+
+For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
+
+### Other MCP Hosts
+
+[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+
+### Client Compatibility
 
 | Client | Status | Notes |
 |--------|--------|-------|
-| Claude Desktop | ✅ Full | all tools available |
-| Claude Code | ✅ Full | ToolSearch auto-defers tools for efficient discovery |
-| VS Code Copilot | ✅ Compatible | MCP via config |
-| Windsurf | ✅ Compatible | under the 100-tool limit |
-| Gemini CLI | ✅ Compatible | use includeTools/excludeTools if needed |
-| OpenAI API | ✅ Compatible | use defer_loading for best results |
-| Cursor | ⚠️ Limited | 40-tool hard cap — use Claude Code or Windsurf |
+| Claude Desktop | Full support | All 157 tools available |
+| Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
+| VS Code Copilot | Compatible | MCP support via config |
+| Windsurf | Compatible | Under 100-tool limit |
+| Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
+| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
+| OpenAI API | Compatible | Use defer_loading for best results |
 
 ---
 
@@ -95,7 +132,7 @@ See **[docs/remote-multi-user.md](docs/remote-multi-user.md)** for setup, auth, 
 
 ---
 
-## Workflow skills
+## Skills & Tools (157 total)
 
 In Claude Code, 12 bundled skills add workflow automation and domain knowledge:
 
@@ -120,7 +157,7 @@ Workflow/task skills are invoked with `/name`; knowledge skills load automatical
 
 ## Tool reference
 
-146 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
+157 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
 
 <details>
 <summary><b>Model creation & management</b> — 13 tools</summary>
@@ -353,6 +390,25 @@ Reclaim disk from old run directories. See [docs/run-retention.md](docs/run-rete
 | `delete_run` | Delete one of your run directories |
 | `pin_run` | Protect a run from automatic cleanup |
 | `unpin_run` | Allow a pinned run to be cleaned up again |
+
+</details>
+
+<details>
+<summary><b>OpenStudio Server analysis</b> — 11 tools</summary>
+
+| Tool | Description |
+|------|-------------|
+| `openstudio_analysis_create_osa_json` | Create an OpenStudio Server OSA JSON file |
+| `openstudio_analysis_validate_osa_json` | Validate an OSA JSON file locally |
+| `openstudio_analysis_create_osa_json_from_measures` | Create OSA JSON from measure directories, static arguments, and variable parameters |
+| `openstudio_analysis_add_measure_to_osa_json` | Add a measure step and optional algorithm variables to an existing OSA JSON workflow |
+| `openstudio_analysis_create_project` | Create an OpenStudio Server project |
+| `openstudio_analysis_submit` | Submit OSA JSON and optional support ZIP to a project |
+| `openstudio_analysis_status` | Check analysis status |
+| `openstudio_analysis_wait` | Poll analysis status until completion/failure/timeout |
+| `openstudio_analysis_download_data` | Download exported analysis data |
+| `openstudio_analysis_results_json` | Fetch analysis result data as JSON |
+| `openstudio_analysis_submit_wait_download` | Submit analysis, wait for completion, and download results |
 
 </details>
 
