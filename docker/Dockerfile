@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1.7
+# Requires BuildKit (DOCKER_BUILDKIT=1) for RUN --mount cache support.
 ARG OPENSTUDIO_VERSION=3.11.0
 FROM nrel/openstudio:${OPENSTUDIO_VERSION}
 ARG OPENSTUDIO_VERSION
