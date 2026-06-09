@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1.7
+# Requires BuildKit (DOCKER_BUILDKIT=1) for RUN --mount cache support.
 # Native arm64 image for Apple Silicon. Mirrors the canonical
 # docker/Dockerfile but bases on ubuntu:24.04 + the official NREL arm64 .deb
 # instead of the amd64-only nrel/openstudio image. Only this file's first
