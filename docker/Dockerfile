@@ -52,7 +52,18 @@ COPY pyproject.toml /repo/pyproject.toml
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -U pip "setuptools>=69" wheel \
-    && python3 -c "import subprocess, sys, tomllib; data = tomllib.load(open('pyproject.toml', 'rb')); deps = data['project'].get('dependencies', []) + data['project'].get('optional-dependencies', {}).get('dev', []); subprocess.check_call([sys.executable, '-m', 'pip', 'install', *deps])"
+    && python3 - <<'PY'
+import subprocess
+import sys
+import tomllib
+
+with open("pyproject.toml", "rb") as f:
+    data = tomllib.load(f)
+
+deps = data["project"].get("dependencies", []) + data["project"].get("optional-dependencies", {}).get("dev", [])
+if deps:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", *deps])
+PY
 
 COPY mcp_server /repo/mcp_server
 
