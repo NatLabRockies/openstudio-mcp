@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ARG OPENSTUDIO_VERSION=3.11.0
 FROM nrel/openstudio:${OPENSTUDIO_VERSION}
 ARG OPENSTUDIO_VERSION
@@ -43,18 +44,25 @@ ENV VENV_PATH=/opt/venv
 RUN python3 -m venv $VENV_PATH
 ENV PATH="$VENV_PATH/bin:$PATH"
 
-# Copy everything needed to install the package
+# Install third-party Python dependencies from package metadata before copying
+# source. This keeps the expensive dependency layer cached when only package
+# code, tests, scripts, or docs change.
 COPY pyproject.toml /repo/pyproject.toml
-COPY mcp_server /repo/mcp_server
-COPY docker /repo/docker
 
-RUN pip install --no-cache-dir -U pip \
-    && pip install --no-cache-dir -e ".[dev]"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -U pip "setuptools>=69" wheel \
+    && python3 -c "import subprocess, sys, tomllib; data = tomllib.load(open('pyproject.toml', 'rb')); deps = data['project'].get('dependencies', []) + data['project'].get('optional-dependencies', {}).get('dev', []); subprocess.check_call([sys.executable, '-m', 'pip', 'install', *deps])"
+
+COPY mcp_server /repo/mcp_server
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-deps -e .
 
 # (Optional) If you want the container to include any other repo files too:
 # COPY . /repo
 
 COPY .claude/skills /skills
+COPY docker /repo/docker
 COPY scripts /repo/scripts
 COPY tests /repo/tests
 COPY README.md /repo/README.md
