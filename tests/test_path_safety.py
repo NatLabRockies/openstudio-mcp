@@ -5,11 +5,98 @@ No Docker/OpenStudio needed — these test pure Python logic.
 from __future__ import annotations
 
 import json
+import os
 import subprocess as _subprocess
 
 import pytest
 
+from mcp_server.util import read_file_bounded
+
 pytestmark = pytest.mark.unit
+
+
+class TestReadFileBounded:
+    """read_file_bounded — bounded, symlink-refusing copy-back read used after
+    confined `openstudio measure -u` regenerates measure.xml/README.md."""
+
+    def test_reads_within_bound(self, tmp_path):
+        # Validates: a normal generated file is returned verbatim.
+        f = tmp_path / "measure.xml"
+        f.write_bytes(b"<measure/>" * 5)
+        assert read_file_bounded(f, 1000) == b"<measure/>" * 5
+
+    def test_rejects_oversize(self, tmp_path):
+        # Regression: untrusted measure -u could write a giant measure.xml; the
+        # read is bounded (max_bytes+1) so it can't be slurped wholesale into
+        # the unconfined server's memory (Copilot C1).
+        f = tmp_path / "big.xml"
+        f.write_bytes(b"A" * 200)
+        with pytest.raises(ValueError, match="exceeds"):
+            read_file_bounded(f, 100)
+
+    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW is POSIX-only")
+    def test_refuses_to_follow_symlink(self, tmp_path):
+        # Regression: measure -u (untrusted) could swap the output for a symlink
+        # to a host secret; O_NOFOLLOW means copy-back never reads the link
+        # target (TOCTOU). A naive read_bytes() would return the secret here.
+        secret = tmp_path / "secret"
+        secret.write_bytes(b"TOPSECRET")
+        link = tmp_path / "measure.xml"
+        link.symlink_to(secret)
+        with pytest.raises(ValueError, match="symlink"):
+            read_file_bounded(link, 1000)
+
+    @pytest.mark.skipif(not hasattr(os, "O_NONBLOCK"), reason="POSIX fifo test")
+    def test_refuses_non_regular_file(self, tmp_path):
+        # Validates: a fifo/dir masquerading as a generated file is rejected
+        # (not a regular file) instead of blocking or reading junk.
+        d = tmp_path / "README.md"
+        d.mkdir()
+        with pytest.raises(ValueError, match="not a regular file"):
+            read_file_bounded(d, 1000)
+
+
+class TestPerTenantSandboxUid:
+    """Per-tenant sandbox uid derivation (M1/M2). Each remote tenant gets its own
+    uid so RLIMIT_NPROC (per-uid) is a private budget and DAC isolates run dirs
+    even without Landlock; the local single user keeps the baked-in base uid."""
+
+    def test_local_keeps_base_uid(self, monkeypatch):
+        # Validates: stdio/off-request single user keeps the baked sandbox uid —
+        # preserves today's behavior, no per-tenant derivation.
+        import mcp_server.config as cfg
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "local")
+        assert cfg.sandbox_ids() == (cfg.SANDBOX_UID, cfg.SANDBOX_GID)
+
+    def test_distinct_uid_per_tenant(self, monkeypatch):
+        # Regression (M1/M2): all tenants shared uid 1001 -> one shared NPROC
+        # budget (cross-tenant fork-bomb DoS) and zero DAC isolation in the posix
+        # tier. Each tenant key must map to its OWN non-root uid.
+        import mcp_server.config as cfg
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "alice")
+        a = cfg.sandbox_ids()
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "bob")
+        b = cfg.sandbox_ids()
+        assert a != b, "distinct tenants must get distinct sandbox uids"
+        assert a[0] >= 2000 and b[0] >= 2000, "derived uids must be above the system/sandbox range"
+        assert a[0] != cfg.SANDBOX_UID, "a tenant uid must differ from the local base uid"
+        assert a[1] == a[0] and b[1] == b[0], "gid tracks uid"
+
+    def test_uid_stable_for_same_key(self, monkeypatch):
+        # Validates: derivation is stable across calls (hashlib, not randomized
+        # hash()) so a request's chown and setuid agree on the same uid.
+        import mcp_server.config as cfg
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "carol")
+        assert cfg.sandbox_ids() == cfg.sandbox_ids()
+
+    def test_sandbox_uid_zero_clamped(self):
+        # Regression (Codex H5): OSMCP_SANDBOX_UID<=0 must clamp to a non-root uid
+        # so the local base uid can never be root (kept as a unit test now that the
+        # HTTP h5 path exercises per-tenant derivation instead of the base uid).
+        import mcp_server.config as cfg
+        assert cfg._safe_sandbox_id("0", 1001) == 1001
+        assert cfg._safe_sandbox_id("-5", 1001) == 1001
+        assert cfg._safe_sandbox_id("4242", 1001) == 4242
 
 # ---------------------------------------------------------------------------
 # C-1: seed_file path traversal guard in run_osw
@@ -72,7 +159,7 @@ class TestSeedFilePathTraversal:
 
         monkeypatch.setattr(_subprocess, "Popen", _FakePopen)
 
-        result = run_osw(str(osw_path))
+        result = run_osw(str(osw_path), _internal=True)  # exercise staging/flatten, not the access gate
         # Staging happens before subprocess — verify unconditionally
         assert "escapes" not in result.get("error", ""), f"Path traversal error: {result}"
         run_dirs = list(run_root.iterdir())
@@ -122,7 +209,7 @@ class TestSeedFilePathTraversal:
 
         monkeypatch.setattr(_subprocess, "Popen", _FakePopen)
 
-        result = run_osw(str(osw_path))
+        result = run_osw(str(osw_path), _internal=True)  # exercise staging/flatten, not the access gate
         # Staging happens before subprocess — verify unconditionally
         assert "escapes" not in result.get("error", ""), "Normal seed incorrectly rejected"
         run_dirs = list(run_root.iterdir())
@@ -461,3 +548,60 @@ class TestRunPeriodValidation:
         result = set_run_period(begin_month=1, begin_day=1, end_month=13, end_day=31)
         assert result["ok"] is False
         assert "end_month" in result["error"]
+
+
+class TestRunOswAccessControl:
+    """#2 (Codex): the PUBLIC run_osw must reject an OSW outside the caller's
+    allowed roots — it copies the OSW's whole parent dir into the run dir, so an
+    un-gated path is a cross-tenant / host file-disclosure vector."""
+
+    def _stub(self, monkeypatch, run_root):
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations.user_run_root", lambda: run_root)
+        monkeypatch.setattr(
+            "mcp_server.skills.simulation.operations._ensure_dispatcher", lambda: None)
+
+    def test_out_of_policy_osw_rejected(self, tmp_path, monkeypatch):
+        # Regression: run_osw skipped is_path_allowed and _copy_tree'd the OSW's whole
+        # parent dir into the run dir, disclosing arbitrary host / other-tenant files.
+        outside = tmp_path / "other_tenant"
+        outside.mkdir()
+        (outside / "secret.osm").write_text("another tenant's model")
+        (outside / "workflow.osw").write_text(json.dumps({"seed_file": "secret.osm"}))
+        run_root = tmp_path / "runs"
+        run_root.mkdir()
+        self._stub(monkeypatch, run_root)
+
+        from mcp_server.skills.simulation.operations import run_osw
+        result = run_osw(str(outside / "workflow.osw"))  # public call (no _internal)
+        assert result["ok"] is False, f"out-of-policy OSW must be rejected: {result}"
+        assert "not allowed" in result.get("error", "").lower(), result
+        assert list(run_root.iterdir()) == [], "nothing may be staged from a rejected path"
+
+    def test_internal_trusted_path_still_stages(self, tmp_path, monkeypatch):
+        # Validates: the internal staging path (run_simulation's server-built temp OSW)
+        # still works via _internal=True, even from a dir outside the allowed roots.
+        stage = tmp_path / "stage"
+        stage.mkdir()
+        (stage / "model.osm").write_text("seed")
+        (stage / "workflow.osw").write_text(json.dumps({"seed_file": "model.osm"}))
+        run_root = tmp_path / "runs"
+        run_root.mkdir()
+        self._stub(monkeypatch, run_root)
+
+        class _FakePopen:
+            def __init__(self, *a, **kw):
+                self.returncode = 1
+                self.pid = 999
+            def poll(self):
+                return self.returncode
+            def wait(self, timeout=None):
+                return self.returncode
+            def kill(self):
+                pass
+
+        monkeypatch.setattr(_subprocess, "Popen", _FakePopen)
+        from mcp_server.skills.simulation.operations import run_osw
+        result = run_osw(str(stage / "workflow.osw"), _internal=True)
+        assert "not allowed" not in result.get("error", "").lower(), result
+        assert len(list(run_root.iterdir())) == 1, f"internal staging should create a run dir: {result}"
