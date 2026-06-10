@@ -10,9 +10,9 @@ __pycache__
 *.pyo
 .DS_Store
 
-analyses
-measures
-runs
+/analyses
+/measures
+/runs
 *.osm
 *.idf
 *.sql
