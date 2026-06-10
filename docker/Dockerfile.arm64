@@ -1,5 +1,5 @@
 # Native arm64 image for Apple Silicon. Mirrors the canonical
-# docker/Dockerfile but bases on ubuntu:24.04 + the official NREL arm64 .deb
+# docker/Dockerfile but bases on ubuntu:24.04 + the official NLR arm64 .deb
 # instead of the amd64-only nrel/openstudio image. Only this file's first
 # stage differs from the canonical Dockerfile; the measure/venv/copy layers
 # below are kept aligned with it.
@@ -7,8 +7,9 @@
 ARG OPENSTUDIO_VERSION=3.11.0
 ARG OPENSTUDIO_SHA=241b8abb4d
 ARG OS_BUNDLER_VERSION=2.4.10
+ARG TARGETPLATFORM=linux/arm64
 
-FROM --platform=linux/arm64 ubuntu:24.04
+FROM --platform=$TARGETPLATFORM ubuntu:24.04
 ARG OPENSTUDIO_VERSION
 ARG OPENSTUDIO_SHA
 ARG OS_BUNDLER_VERSION
@@ -16,7 +17,7 @@ ARG OS_BUNDLER_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Base deps + ruby/bundler toolchain so we can populate /var/oscli below.
-# Mirrors NREL docker-openstudio: ruby-full + libyaml-dev + native build deps,
+# Mirrors NLR docker-openstudio: ruby-full + libyaml-dev + native build deps,
 # plus gdebi for the .deb install (resolves deps cleanly).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip \

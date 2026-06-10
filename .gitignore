@@ -9,6 +9,7 @@ build/
 # Virtual environments
 .venv/
 venv/
+analyses/
 
 # IDE
 .idea/
