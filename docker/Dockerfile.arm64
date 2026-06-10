@@ -115,7 +115,7 @@ with open("pyproject.toml", "rb") as f:
 
 deps = data["project"].get("dependencies", []) + data["project"].get("optional-dependencies", {}).get("dev", [])
 if deps:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", *deps])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", *deps])
 PY
 
 COPY mcp_server /repo/mcp_server
