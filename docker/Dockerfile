@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-# Requires BuildKit (DOCKER_BUILDKIT=1) for RUN --mount cache support.
 ARG OPENSTUDIO_VERSION=3.11.0
 FROM nrel/openstudio:${OPENSTUDIO_VERSION}
 ARG OPENSTUDIO_VERSION
@@ -50,8 +48,7 @@ ENV PATH="$VENV_PATH/bin:$PATH"
 # code, tests, scripts, or docs change.
 COPY pyproject.toml /repo/pyproject.toml
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -U pip "setuptools>=69" wheel \
+RUN pip install --no-cache-dir -U pip "setuptools>=69" wheel \
     && python3 - <<'PY'
 import subprocess
 import sys
@@ -67,8 +64,7 @@ PY
 
 COPY mcp_server /repo/mcp_server
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-deps -e .
+RUN pip install --no-cache-dir --no-deps -e .
 
 # (Optional) If you want the container to include any other repo files too:
 # COPY . /repo
