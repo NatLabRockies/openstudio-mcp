@@ -328,3 +328,78 @@ def test_download_audit_attributes_user():
     dl = [r for r in records if r.get("event") == "file_download"]
     assert len(dl) == 1, records
     assert dl[0].get("user") == "local", f"download audit must say who: {dl[0]}"
+
+
+def test_chmod_failure_does_not_crash_route():
+    # Regression: tmp.chmod() ran outside the stream try/except — an OSError on an
+    # exotic mount crashed the route and leaked the temp instead of finalizing
+    data = b"chmod-resilient"
+    req = operations.request_upload_op(filename="c.bin", size_bytes=len(data))
+    fid = req["file_id"]
+    token = signing.make_token("local", fid, "u", 60)
+    request = _http_request("PUT", f"t={token}", {"file_id": fid}, [
+        {"type": "http.request", "body": data, "more_body": False}])
+
+    real_chmod = Path.chmod
+
+    def _boom(self, *a, **k):
+        # only sabotage the .incoming temp's chmod, not unrelated chmods
+        if self.name.startswith(".incoming"):
+            raise OSError("chmod not supported on this mount")
+        return real_chmod(self, *a, **k)
+
+    orig = Path.chmod
+    Path.chmod = _boom
+    try:
+        res = asyncio.run(routes.upload_route(request))  # must not raise
+    finally:
+        Path.chmod = orig
+    assert res.status_code == 200, res.status_code
+    info = operations.get_upload_op(fid)
+    assert info["ready"] is True, info
+    entry = operations._entry_dir("local", fid)
+    stray = [p.name for p in entry.iterdir() if p.name.startswith(".incoming")]
+    assert stray == [], f"chmod failure leaked a temp: {stray}"
+    operations.delete_upload_op(fid)
+
+
+def test_finalize_concurrent_claim_rejects_second():
+    # Regression: two concurrent PUTs both passed the status!="ready" check before
+    # either wrote ready, both finalized -> double 200, nondeterministic bytes. An
+    # exclusive finalize claim must reject the loser even while status is "pending".
+    data = b"0123456789"
+    req = operations.request_upload_op(filename="r.bin", size_bytes=len(data))
+    fid = req["file_id"]
+    entry = operations._entry_dir("local", fid)
+    # Simulate PUT-A having claimed but not yet flipped status to ready:
+    (entry / ".finalized").write_bytes(b"")
+    tmp = entry / ".incoming"
+    tmp.write_bytes(data)
+    res = operations.finalize_upload("local", fid, tmp,
+                                     hashlib.sha256(data).hexdigest(), len(data))
+    assert res["ok"] is False and res["status"] == 409, res
+    assert not tmp.exists(), "loser's temp must be cleaned up"
+    operations.delete_upload_op(fid)
+
+
+def test_finalize_enforces_quota_post_extraction(monkeypatch, tmp_path):
+    # Regression: quota was only checked at mint (compressed size); a small archive
+    # expanding past OSMCP_USER_QUOTA_MB on extraction, or raced concurrent mints,
+    # could exceed the on-disk cap. finalize must re-check and roll back.
+    monkeypatch.setattr(operations, "OSMCP_USER_QUOTA_MB", 1)  # 1 MB cap
+    monkeypatch.setattr(operations, "_uploads_dir", lambda _key: tmp_path)  # isolate
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("m/big.bin", b"\0" * (3 * _MB))  # expands to 3 MB > 1 MB cap
+    data = buf.getvalue()
+    req = operations.request_upload_op(filename="x.zip", size_bytes=len(data), kind="measure")
+    assert req["ok"] is True, req  # tiny compressed size passes the mint check
+    fid = req["file_id"]
+    tmp = operations._entry_dir("local", fid) / ".incoming"
+    tmp.write_bytes(data)
+    res = operations.finalize_upload("local", fid, tmp,
+                                     hashlib.sha256(data).hexdigest(), len(data))
+    assert res["ok"] is False and res["status"] == 413, res
+    assert "quota" in res["error"].lower()
+    assert not operations._entry_dir("local", fid).exists(), \
+        "over-quota upload must roll back the whole entry"

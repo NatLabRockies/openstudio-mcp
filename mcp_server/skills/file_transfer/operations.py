@@ -9,6 +9,7 @@ Two call sites:
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 import shutil
@@ -213,6 +214,16 @@ def finalize_upload(key: str, file_id: str, tmp_path: Path, sha_hex: str, size: 
         return {"ok": False, "status": 422, "error": "sha256 mismatch"}
 
     entry = _entry_dir(key, file_id)
+    # Atomic finalize claim: the first PUT to win this exclusive create proceeds; a
+    # concurrent PUT on the same token (TOCTOU on status above) loses and is rejected,
+    # preserving one-time semantics. Released on failure below so a retry can succeed.
+    claim = entry / ".finalized"
+    try:
+        os.close(os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+    except FileExistsError:
+        tmp_path.unlink(missing_ok=True)
+        return {"ok": False, "status": 409, "error": "upload already completed"}
+
     # Payload lives one level down so a filename like "meta.json" or "extracted"
     # can never collide with the entry's own bookkeeping files.
     data_dir = entry / "data"
@@ -230,8 +241,18 @@ def finalize_upload(key: str, file_id: str, tmp_path: Path, sha_hex: str, size: 
         )
         if err:
             shutil.rmtree(extract_dir, ignore_errors=True)
+            claim.unlink(missing_ok=True)  # release the claim so the client can retry
             return {"ok": False, "status": 422, "error": err}
         extracted_path = _resolve_extracted(extract_dir)
+
+    # Hard-enforce the per-user quota at PUT time: the mint-time check sees only the
+    # compressed size and can be raced by concurrent mints, so an archive can expand
+    # past the cap here. Roll the whole entry back if it does.
+    if OSMCP_USER_QUOTA_MB > 0 and _dir_size(_uploads_dir(key)) > OSMCP_USER_QUOTA_MB * _MB:
+        shutil.rmtree(entry, ignore_errors=True)
+        return {"ok": False, "status": 413,
+                "error": (f"upload exceeds your {OSMCP_USER_QUOTA_MB} MB quota — "
+                          f"delete old uploads first")}
 
     meta.update({"status": "ready", "sha256": sha_hex, "size": size,
                  "server_path": server_path, "extracted_path": extracted_path})

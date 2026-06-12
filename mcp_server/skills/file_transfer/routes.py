@@ -7,6 +7,7 @@ the user key, and (for upload) the file_id; the route trusts nothing else.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import tempfile
@@ -46,7 +47,10 @@ async def upload_route(request: Request) -> JSONResponse:
     # (the loser would corrupt the winner's finalized bytes through its open fd).
     fd, tmp_name = tempfile.mkstemp(prefix=".incoming-", dir=entry)
     tmp = Path(tmp_name)
-    tmp.chmod(0o644)  # mkstemp gives 0600; the per-tenant sandbox uid must read uploads
+    with contextlib.suppress(OSError):
+        # best-effort: mkstemp gives 0600; widen so the per-tenant sandbox uid can
+        # read uploads. An exotic mount may reject chmod — upload still finalizes.
+        tmp.chmod(0o644)
     h = hashlib.sha256()
     size = 0
     try:
