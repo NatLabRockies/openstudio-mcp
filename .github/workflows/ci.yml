@@ -209,7 +209,7 @@ jobs:
             2)
               # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report
               # + remote HTTP transport, session isolation, token auth & session eviction (no-sim, fast)
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py"
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py"
               EXTRA_ENV=""
               ;;
             3)

@@ -55,12 +55,12 @@ def _register_tools_with_docs() -> dict[str, dict]:
 
 
 def test_tool_count():
-    # Validates: total registered tool count matches expected 146 — catches accidental add/remove
-    """Record current tool count (146 = 142 + 4 run-retention tools)."""
+    # Validates: total registered tool count matches expected 151 — catches accidental add/remove
+    """Record current tool count (151 = 142 + 4 run-retention + 5 file-transfer tools)."""
     tools = _register_tools_with_docs()
     count = len(tools)
     print(f"\nTool count: {count}")
-    assert count == 146, f"Expected 146 tools, got {count}"
+    assert count == 151, f"Expected 151 tools, got {count}"
 
 
 def test_total_schema_chars():
@@ -82,7 +82,7 @@ def test_total_schema_chars():
 
 
 def test_tags_coverage():
-    # Validates: tag coverage measurement — all 146 tools must be tagged post-Phase 2
+    # Validates: tag coverage measurement — all 151 tools must be tagged post-Phase 2
     """Check how many tools have tags. Post Phase 2: expect 100%."""
     tools = _register_tools_with_docs()
     tagged = {name: t for name, t in tools.items() if t["tags"]}
@@ -95,9 +95,9 @@ def test_tags_coverage():
 
     # Assert actual coverage matches expected state
     assert len(tools) > 0, "Should have tools to measure"
-    # Post-Phase 2: all 146 tools are tagged
-    assert len(tagged) == 146, (
-        f"Expected 146 tagged tools, found {len(tagged)}; "
+    # Post-Phase 2: all 151 tools are tagged
+    assert len(tagged) == 151, (
+        f"Expected 151 tagged tools, found {len(tagged)}; "
         f"untagged: {sorted(untagged)}"
     )
 

@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**146 tools · 12 workflow skills · 480+ integration tests**
+**151 tools · 12 workflow skills · 480+ integration tests**
 
 ---
 
@@ -90,6 +90,8 @@ Look for the **hammer icon** in Claude Desktop's input — click it to see the o
 ## Remote & multi-user (HTTP)
 
 The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, Cursor, and VS Code.
+
+Since a remote server can't see files on your laptop, the `file_transfer` tools (`request_upload` / `get_upload` / `request_download`) move models, weather files, and measure `.zip`s in and out over a signed, out-of-band channel — see **[docs/remote-multi-user.md §6](docs/remote-multi-user.md)**.
 
 See **[docs/remote-multi-user.md](docs/remote-multi-user.md)** for setup, auth, the isolation model, and log access — and **[docs/run-retention.md](docs/run-retention.md)** for optional disk garbage-collection.
 
@@ -190,7 +192,7 @@ Workflow/task skills are invoked with `/name`; knowledge skills load automatical
 
 ## Tool reference
 
-146 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
+151 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
 
 <details>
 <summary><b>Model creation & management</b> — 13 tools</summary>

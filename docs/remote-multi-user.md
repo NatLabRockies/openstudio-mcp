@@ -198,6 +198,13 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_RETENTION_SWEEP_SECONDS` | `3600` | how often the retention daemon sweeps (60s floor) |
 | `MCP_AUDIT` | `on` | structured audit logging (tool calls + sim lifecycle); `off` to disable |
 | `MCP_AUDIT_FILE` | — | also append audit JSON lines to this file (e.g. `/runs/audit.log`) |
+| `OSMCP_MAX_UPLOAD_MB` | `200` | max size of a single uploaded file |
+| `OSMCP_USER_QUOTA_MB` | `4096` | per-user cap on total bytes under `uploads/` (`0` = unlimited) |
+| `OSMCP_UPLOAD_URL_TTL` | `300` | seconds a signed upload/download URL stays valid |
+| `OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB` | `1024` | zip-bomb cap on extracted archive size |
+| `OSMCP_MAX_ARCHIVE_ENTRIES` | `5000` | max entries in an uploaded archive |
+| `OSMCP_PUBLIC_BASE_URL` | — | external base URL so file URLs are absolute (else a relative path is returned) |
+| `OSMCP_FILE_SIGNING_KEY` | auto | HMAC key for signed file URLs (auto-generated + persisted under `RUN_ROOT` if unset) |
 
 Auto-GC of old run dirs is **off by default**. Enable it with `openstudio-mcp --gc`
 (7-day window), `openstudio-mcp --gc-days 14`, or `OSMCP_RUN_RETENTION_DAYS=14`
@@ -207,7 +214,47 @@ for the full setup, safety model, and the `cleanup_runs` / `delete_run` /
 
 ---
 
-## 6. Limitations / not yet
+## 6. Getting your files to & from the server
+
+Over HTTP the server runs on a different machine, so a tool path like
+`load_osm_model(osm_path=...)` can't see a file on your laptop. Move it across
+**out-of-band** with the `file_transfer` tools — bytes travel beside the MCP
+protocol (never through the model context), authorized by a short-lived
+HMAC-signed URL.
+
+**Upload (agent-driven):**
+
+1. `request_upload(filename, size_bytes[, sha256, kind])` → `{file_id, upload_url}`
+2. `curl --upload-file model.osm "<upload_url>"`
+3. `get_upload(file_id)` → `server_path` (or `extracted_path` for a `.zip`)
+4. pass that path to `load_osm_model` / `apply_measure` / `change_building_location`
+
+A `.zip` (or `kind="measure"`) is auto-extracted server-side, guarded against
+zip bombs and path/symlink escapes; `extracted_path` points at the measure dir.
+
+**Download:** `request_download(path=...)` (single file) or
+`request_download(run_id=..., bundle=True)` (zip a run's `reports/`) →
+`download_url`; `curl -O -J "<download_url>"`. Small text → use `read_file`.
+
+**CLI (shell-less clients):**
+
+```bash
+export OSMCP_URL=http://box:8000/mcp OSMCP_TOKEN=s3cret-abc
+python -m mcp_server.tools.osmcp put my_measure.zip --kind measure   # prints server path
+python -m mcp_server.tools.osmcp get /runs/<user>/<run>/exports/model.osm -o model.osm
+```
+
+**Security.** Uploads land only in your own sandboxed `RUN_ROOT/<user>/uploads/`
+(another tenant can't read them). The server mints the `file_id`, so a hostile
+filename can't traverse paths. Enforced: `OSMCP_MAX_UPLOAD_MB`,
+`OSMCP_USER_QUOTA_MB`, optional sha256 integrity, and archive bomb/escape guards.
+The signed URL carries no bearer token, so it never enters the model context and
+expires after `OSMCP_UPLOAD_URL_TTL`. If a reverse proxy fronts the server, set
+`OSMCP_PUBLIC_BASE_URL` so the returned URLs are absolute.
+
+---
+
+## 7. Limitations / not yet
 
 - **Single box only** — in-memory model state isn't shared across machines.
   Horizontal scale would need a per-user-container topology behind a router.
@@ -218,7 +265,7 @@ See `docs/plans/multi-user-remote-mcp.md` for the full design rationale.
 
 ---
 
-## 7. Stress testing locally
+## 8. Stress testing locally
 
 `scripts/stress_remote.py` drives many concurrent sessions at one server and
 asserts the multi-user invariants under load — session isolation, the sim

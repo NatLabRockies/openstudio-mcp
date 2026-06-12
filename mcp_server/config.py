@@ -168,6 +168,24 @@ SANDBOX_RLIMIT_NOFILE = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_NOFILE", 
 SANDBOX_RLIMIT_CPU = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_CPU", "0"), 0)
 SANDBOX_RLIMIT_AS = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_AS", "0"), 0)
 
+# --- Remote file transfer (HTTP deployment) -----------------------------------
+# Over HTTP the user's files live on their laptop, not the server. Bytes move
+# out-of-band via signed PUT/GET routes (see skills/file_transfer); these knobs
+# bound and locate that channel. All sizes are megabytes.
+OSMCP_MAX_UPLOAD_MB = _safe_int(os.environ.get("OSMCP_MAX_UPLOAD_MB", "200"), 200)
+# Per-user cap on total bytes resident under their uploads/ dir (0 = unlimited).
+OSMCP_USER_QUOTA_MB = _safe_int(os.environ.get("OSMCP_USER_QUOTA_MB", "4096"), 4096)
+# How long a minted upload/download URL stays valid (seconds).
+OSMCP_UPLOAD_URL_TTL = _safe_int(os.environ.get("OSMCP_UPLOAD_URL_TTL", "300"), 300)
+# Zip-bomb backstops for auto-extracted archives.
+OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB = _safe_int(
+    os.environ.get("OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB", "1024"), 1024)
+OSMCP_MAX_ARCHIVE_ENTRIES = _safe_int(os.environ.get("OSMCP_MAX_ARCHIVE_ENTRIES", "5000"), 5000)
+# Externally reachable base URL of THIS server (e.g. https://box.example). The
+# server can't know its own proxy-fronted URL, so when unset request_upload
+# returns a relative path and the client prepends the same host it uses for /mcp.
+OSMCP_PUBLIC_BASE_URL = os.environ.get("OSMCP_PUBLIC_BASE_URL", "").rstrip("/")
+
 # Shared roots are read-only for everyone; the only per-user writable area is
 # RUN_ROOT/<user_key> (see user_run_root). Writes elsewhere are denied.
 _SHARED_READ_ROOTS = [
@@ -192,6 +210,33 @@ def user_run_root() -> Path:
     root = (RUN_ROOT if key == LOCAL else RUN_ROOT / key).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def run_root_for(key: str) -> Path:
+    """Run root for an EXPLICIT user key (no identity context needed).
+
+    The signed file-transfer routes run outside MCP request context, so they
+    can't call user_run_root() (which resolves identity per-call). They pass the
+    key carried in the verified URL signature here instead. LOCAL owns the whole
+    RUN_ROOT, matching user_run_root().
+    """
+    from mcp_server.identity import LOCAL
+    root = (RUN_ROOT if key == LOCAL else RUN_ROOT / key).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def is_path_allowed_for(key: str, p: Path, *, write: bool = False) -> bool:
+    """is_path_allowed but for an EXPLICIT user key (used by signed routes)."""
+    rp = p.resolve()
+    own = run_root_for(key)
+    if _under(rp, own):
+        return True
+    if _under(rp, RUN_ROOT):
+        return False
+    if write:
+        return False
+    return any(_under(rp, root) for root in _SHARED_READ_ROOTS)
 
 
 def _under(p: Path, root: Path) -> bool:

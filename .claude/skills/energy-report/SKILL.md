@@ -38,7 +38,7 @@ Extract all result categories from a completed simulation and present a structur
    run_qaqc_checks()
    ```
 
-4. Present structured report with these sections:
+6. Present structured report with these sections:
 
 ### Report Sections
 

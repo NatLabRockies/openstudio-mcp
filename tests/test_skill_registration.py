@@ -177,6 +177,12 @@ EXPECTED_TOOLS = {
     "search_wiring_patterns",
     # Tool Router
     "recommend_tools",
+    # File Transfer (remote/HTTP — get user files to/from the server)
+    "request_upload",
+    "get_upload",
+    "list_uploads",
+    "delete_upload",
+    "request_download",
 }
 
 
@@ -194,7 +200,7 @@ def test_all_skills_registered():
 
 
 def test_all_tool_names_registered():
-    # Validates: all 146 expected tools are registered, no extras — migration backward-compatibility
+    # Validates: all 151 expected tools are registered, no extras — migration backward-compatibility
     """Every expected tool function is registered via mcp.tool()."""
     registered_tools = {}
 
