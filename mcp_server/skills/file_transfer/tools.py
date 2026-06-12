@@ -39,7 +39,8 @@ def register(mcp):
             filename: Original name (used for display + type detection; never as a path)
             size_bytes: Exact size of the file in bytes (enforced + quota-checked)
             sha256: Optional lowercase hex sha256; verified on upload if given
-            kind: "auto" (default), "osm", "weather", "measure", "floorplan", "osw", "other"
+            kind: "auto" (default), "osm", "weather", "measure", "archive",
+                "floorplan", "osw", "other"
         """
         return request_upload_op(filename=filename, size_bytes=size_bytes,
                                  sha256=sha256, kind=kind)
@@ -81,7 +82,8 @@ def register(mcp):
         curl -O -J "<download_url>".
 
         Args:
-            path: Absolute server path to a single file (must be under your run dir)
+            path: Absolute server path to a single file (your run dir, or the
+                shared read-only roots e.g. bundled measures)
             run_id: With bundle=True, zip this run's reports/ for download
             bundle: If True, bundle a run's reports into one .zip (requires run_id)
         """

@@ -45,13 +45,23 @@ def _load_or_create_key() -> bytes:
         pass
     key = secrets.token_bytes(32)
     try:
-        # Write-then-chmod; best-effort 0600 so other tenants can't read the key.
-        _KEY_FILE.write_bytes(key)
-        _KEY_FILE.chmod(0o600)
+        # O_EXCL: born 0600 (no chmod window) and exactly one process wins the
+        # create — concurrent cold-started workers all converge on the same key.
+        fd = os.open(_KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        try:
+            data = _KEY_FILE.read_bytes()
+            if len(data) >= 32:
+                return data
+        except OSError:
+            pass
+        return key
     except OSError:
         # Read-only RUN_ROOT (unusual): fall back to a process-lifetime key. URLs
         # then don't survive a restart, but signing still works within the run.
-        pass
+        return key
+    with os.fdopen(fd, "wb") as f:
+        f.write(key)
     return key
 
 

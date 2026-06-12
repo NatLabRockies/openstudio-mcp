@@ -6,7 +6,10 @@ Adversarial / abuse-case coverage lives in tests/test_security_file_transfer.py
 import asyncio
 import hashlib
 import io
+import json
 import os
+import subprocess
+import sys
 import uuid
 import zipfile
 from pathlib import Path
@@ -121,3 +124,62 @@ def test_download_roundtrip():
                 assert r.content == data
 
         asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_download_bundle_roundtrip():
+    # Validates: request_download(bundle=True) zips a dir under the caller's run
+    # root and serves it with members byte-intact
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                data = b"OS:Version,3.11.0;\nbundle,me\n"
+                info = await _upload(s, url, "bundle_me.osm", data)
+                assert info["ready"] is True, info
+                # uploads/ is itself a dir under the caller's run root — bundle it
+                dl = unwrap(await s.call_tool("request_download",
+                                              {"run_id": "uploads", "bundle": True}))
+                assert dl["ok"] is True and dl["bundle"] is True, dl
+                r = httpx.get(_base(url) + dl["download_path"], timeout=60)
+                assert r.status_code == 200, r.text
+                zf = zipfile.ZipFile(io.BytesIO(r.content))
+                names = [n for n in zf.namelist() if n.endswith("bundle_me.osm")]
+                assert len(names) == 1, f"uploaded file missing from bundle: {zf.namelist()}"
+                assert zf.read(names[0]) == data
+
+        asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_cli_put_get_roundtrip(tmp_path):
+    # Regression: `osmcp put` crashed before moving any bytes — httpx AsyncClient
+    # rejects a sync file object as content= (RuntimeError); CLI path had no test
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    data = b"OS:Version,3.11.0;\n" + b"x," * 5000
+    src = tmp_path / "cli_model.osm"
+    src.write_bytes(data)
+
+    # Token auth (the documented CLI setup): put and get are separate MCP sessions,
+    # so identity must come from the token, not the session, for get to see put's file.
+    with http_server({"MCP_AUTH": "token",
+                      "MCP_TOKENS": json.dumps({"tok-cli": "cliuser"})}) as (url, _proc):
+        env = {**os.environ, "OSMCP_URL": url, "OSMCP_TOKEN": "tok-cli"}
+        put = subprocess.run(  # noqa: S603 - args are sys.executable + test-owned paths
+            [sys.executable, "-m", "mcp_server.tools.osmcp", "put", str(src), "--kind", "osm"],
+            capture_output=True, text=True, env=env, timeout=180, check=False)
+        assert put.returncode == 0, f"osmcp put failed:\n{put.stderr}"
+        server_path = put.stdout.strip().splitlines()[-1]
+        assert server_path.endswith("cli_model.osm"), put.stdout
+        assert Path(server_path).read_bytes() == data
+
+        out = tmp_path / "back.osm"
+        get = subprocess.run(  # noqa: S603 - args are sys.executable + test-owned paths
+            [sys.executable, "-m", "mcp_server.tools.osmcp", "get", server_path, "-o", str(out)],
+            capture_output=True, text=True, env=env, timeout=180, check=False)
+        assert get.returncode == 0, f"osmcp get failed:\n{get.stderr}"
+        assert out.read_bytes() == data

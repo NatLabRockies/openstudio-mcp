@@ -30,6 +30,7 @@ from mcp_server.skills.file_transfer.archive import guarded_extract
 
 _MB = 1024 * 1024
 _FILE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_KINDS = {"auto", "osm", "weather", "measure", "floorplan", "osw", "archive", "other"}
 
 
 def _uploads_dir(key: str) -> Path:
@@ -82,6 +83,10 @@ def request_upload_op(filename: str, size_bytes: int, sha256: str = "", kind: st
         return {"ok": False, "error": "size_bytes must be an integer"}
     if size <= 0:
         return {"ok": False, "error": "size_bytes must be > 0"}
+    kind = str(kind or "auto")
+    if kind not in _KINDS:
+        return {"ok": False,
+                "error": f"unknown kind {kind!r} — expected one of: {', '.join(sorted(_KINDS))}"}
     max_bytes = OSMCP_MAX_UPLOAD_MB * _MB
     if size > max_bytes:
         return {"ok": False, "error": f"file exceeds max upload size ({OSMCP_MAX_UPLOAD_MB} MB)"}
@@ -208,7 +213,11 @@ def finalize_upload(key: str, file_id: str, tmp_path: Path, sha_hex: str, size: 
         return {"ok": False, "status": 422, "error": "sha256 mismatch"}
 
     entry = _entry_dir(key, file_id)
-    dest = entry / meta["filename"]
+    # Payload lives one level down so a filename like "meta.json" or "extracted"
+    # can never collide with the entry's own bookkeeping files.
+    data_dir = entry / "data"
+    data_dir.mkdir(exist_ok=True)
+    dest = data_dir / meta["filename"]
     tmp_path.replace(dest)
     server_path = str(dest)
     extracted_path = None
@@ -258,7 +267,7 @@ def verify_download(token: str) -> dict:
         return {"ok": False, "status": 403, "error": "not allowed"}
     if not target.exists():
         return {"ok": False, "status": 404, "error": "not found"}
-    return {"ok": True, "path": target, "bundle": bool(payload.get("b"))}
+    return {"ok": True, "path": target, "bundle": bool(payload.get("b")), "user": key}
 
 
 def _public_meta(key: str, meta: dict) -> dict:

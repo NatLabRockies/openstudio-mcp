@@ -46,6 +46,14 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+async def _stream_file(path: Path):
+    # httpx.AsyncClient requires an ASYNC byte iterable for content= — a sync
+    # file object raises "Attempted to send an sync request with an AsyncClient".
+    with path.open("rb") as f:
+        while chunk := f.read(1 << 20):
+            yield chunk
+
+
 async def _call(client: Client, name: str, args: dict) -> dict:
     res = await client.call_tool(name, args)
     data = getattr(res, "data", None)
@@ -71,8 +79,7 @@ async def _put(url: str, token: str, mcp_url: str, kind: str) -> int:
             return 1
         put_url = _abs(mcp_url, req.get("upload_url") or req["upload_path"])
         async with httpx.AsyncClient(timeout=_XFER_TIMEOUT) as http:
-            with src.open("rb") as f:
-                r = await http.put(put_url, content=f)
+            r = await http.put(put_url, content=_stream_file(src))
         if r.status_code != 200:
             print(f"upload failed ({r.status_code}): {r.text}", file=sys.stderr)
             return 1
@@ -91,12 +98,15 @@ async def _get(server_path: str, token: str, mcp_url: str, out: str | None) -> i
             return 1
         get_url = _abs(mcp_url, req.get("download_url") or req["download_path"])
         dest = Path(out) if out else Path(Path(server_path).name)
-        async with httpx.AsyncClient(timeout=_XFER_TIMEOUT) as http:
-            r = await http.get(get_url)
-        if r.status_code != 200:
-            print(f"download failed ({r.status_code}): {r.text}", file=sys.stderr)
-            return 1
-        dest.write_bytes(r.content)
+        async with httpx.AsyncClient(timeout=_XFER_TIMEOUT) as http, \
+                   http.stream("GET", get_url) as r:
+            if r.status_code != 200:
+                body = (await r.aread()).decode(errors="replace")
+                print(f"download failed ({r.status_code}): {body}", file=sys.stderr)
+                return 1
+            with dest.open("wb") as f:
+                async for chunk in r.aiter_bytes():
+                    f.write(chunk)
         print(str(dest))
         return 0
 

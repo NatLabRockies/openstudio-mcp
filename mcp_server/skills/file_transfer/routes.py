@@ -14,7 +14,8 @@ import zipfile
 from pathlib import Path
 
 from starlette.background import BackgroundTask
-from starlette.requests import Request
+from starlette.concurrency import run_in_threadpool
+from starlette.requests import ClientDisconnect, Request
 from starlette.responses import FileResponse, JSONResponse
 
 from mcp_server.audit import audit
@@ -41,11 +42,15 @@ async def upload_route(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "unknown or expired upload"}, status_code=404)
 
     max_bytes = OSMCP_MAX_UPLOAD_MB * _MB
-    tmp = entry / ".incoming"
+    # Unique temp per request: concurrent PUTs on one token must not share a file
+    # (the loser would corrupt the winner's finalized bytes through its open fd).
+    fd, tmp_name = tempfile.mkstemp(prefix=".incoming-", dir=entry)
+    tmp = Path(tmp_name)
+    tmp.chmod(0o644)  # mkstemp gives 0600; the per-tenant sandbox uid must read uploads
     h = hashlib.sha256()
     size = 0
     try:
-        with tmp.open("wb") as f:
+        with os.fdopen(fd, "wb") as f:
             async for chunk in request.stream():
                 size += len(chunk)
                 if size > max_bytes:
@@ -56,6 +61,9 @@ async def upload_route(request: Request) -> JSONResponse:
                         status_code=413)
                 h.update(chunk)
                 f.write(chunk)
+    except ClientDisconnect:
+        tmp.unlink(missing_ok=True)
+        return JSONResponse({"ok": False, "error": "client disconnected"}, status_code=400)
     except OSError as e:
         tmp.unlink(missing_ok=True)
         return JSONResponse({"ok": False, "error": f"write failed: {e}"}, status_code=500)
@@ -73,10 +81,10 @@ async def download_route(request: Request):
     if not res["ok"]:
         return JSONResponse({"ok": False, "error": res["error"]}, status_code=res["status"])
     path: Path = res["path"]
+    audit("file_download", user=res["user"], file=str(path), bundle=res["bundle"])
     if res["bundle"]:
-        audit("file_download", file=str(path), bundle=True)
-        return _zip_bundle(path)
-    audit("file_download", file=str(path), bundle=False)
+        # Zipping a run dir is heavy sync I/O — keep it off the event loop.
+        return await run_in_threadpool(_zip_bundle, path)
     return FileResponse(path, filename=path.name)
 
 

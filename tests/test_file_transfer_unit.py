@@ -1,19 +1,42 @@
 """Unit tests for the file-transfer channel: signing, filename safety, archive
-guards, and upload finalization. No server, no openstudio — pure logic.
+guards, upload finalization, and route behavior (via fake ASGI requests).
+No server, no openstudio — pure logic.
 """
+import asyncio
 import base64
 import hashlib
+import io
 import json
+import logging
 import zipfile
+from pathlib import Path
 
 import pytest
 
-from mcp_server.skills.file_transfer import operations, signing
+from mcp_server.skills.file_transfer import operations, routes, signing
 from mcp_server.skills.file_transfer.archive import guarded_extract
 
 pytestmark = pytest.mark.unit
 
 _MB = 1 << 20
+
+
+def _http_request(method: str, query: str, path_params: dict, messages=None):
+    """Build a real starlette Request driven by a canned ASGI message list."""
+    from starlette.requests import Request
+
+    msgs = iter(messages or [])
+
+    async def receive():
+        return next(msgs)
+
+    scope = {
+        "type": "http", "method": method, "scheme": "http", "http_version": "1.1",
+        "server": ("test", 80), "client": ("127.0.0.1", 1), "root_path": "",
+        "path": "/files/x", "raw_path": b"/files/x",
+        "query_string": query.encode(), "headers": [], "path_params": path_params,
+    }
+    return Request(scope, receive)
 
 
 def test_signed_token_roundtrip():
@@ -159,3 +182,149 @@ def test_finalize_rejects_sha_mismatch():
     assert res["status"] == 422
     assert "sha256 mismatch" in res["error"]
     operations.delete_upload_op(fid)
+
+
+def test_reserved_filename_meta_json_preserved():
+    # Regression: uploading a file literally named meta.json had its bytes silently
+    # replaced by the entry's own metadata (finalize wrote both to the same path)
+    data = b"the users actual file bytes"
+    req = operations.request_upload_op(filename="meta.json", size_bytes=len(data))
+    assert req["ok"] is True, req
+    fid = req["file_id"]
+    tmp = operations._entry_dir("local", fid) / ".incoming"
+    tmp.write_bytes(data)
+    res = operations.finalize_upload("local", fid, tmp,
+                                     hashlib.sha256(data).hexdigest(), len(data))
+    assert res["ok"] is True, res
+    assert Path(res["server_path"]).read_bytes() == data, \
+        "uploaded bytes must survive a filename that collides with internal files"
+    info = operations.get_upload_op(fid)
+    assert info["ok"] is True and info["ready"] is True, info
+    operations.delete_upload_op(fid)
+
+
+def test_reserved_filename_extracted_archive_finalizes():
+    # Regression: a measure upload whose name sanitized to "extracted" collided with
+    # the extraction dir — uncaught FileExistsError became an HTTP 500 from the route
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("m/measure.rb", "class M; end\n")
+    data = buf.getvalue()
+    req = operations.request_upload_op(filename="extracted", size_bytes=len(data),
+                                       kind="measure")
+    fid = req["file_id"]
+    tmp = operations._entry_dir("local", fid) / ".incoming"
+    tmp.write_bytes(data)
+    res = operations.finalize_upload("local", fid, tmp,
+                                     hashlib.sha256(data).hexdigest(), len(data))
+    assert res["ok"] is True, res
+    assert (Path(res["extracted_path"]) / "measure.rb").is_file(), res
+    operations.delete_upload_op(fid)
+
+
+def test_unknown_kind_rejected():
+    # Validates: kind is validated against the documented enum, not silently stored
+    req = operations.request_upload_op(filename="x.osm", size_bytes=10, kind="bogus")
+    if req.get("ok"):  # red-run hygiene: don't leave an entry behind
+        operations.delete_upload_op(req["file_id"])
+    assert req["ok"] is False, req
+    assert "kind" in req["error"].lower()
+
+
+def test_disconnect_mid_put_cleans_partial():
+    # Regression: a client disconnect mid-PUT raised ClientDisconnect through the
+    # route and leaked the partial temp file, permanently counting toward quota
+    req = operations.request_upload_op(filename="part.bin", size_bytes=8)
+    fid = req["file_id"]
+    token = signing.make_token("local", fid, "u", 60)
+    request = _http_request("PUT", f"t={token}", {"file_id": fid}, [
+        {"type": "http.request", "body": b"abcd", "more_body": True},
+        {"type": "http.disconnect"},
+    ])
+    res = asyncio.run(routes.upload_route(request))  # must not raise
+    assert res.status_code == 400, res.status_code
+    entry = operations._entry_dir("local", fid)
+    stray = [p.name for p in entry.iterdir() if p.name.startswith(".incoming")]
+    assert stray == [], f"partial upload left behind: {stray}"
+    assert operations.get_upload_op(fid)["ready"] is False
+    operations.delete_upload_op(fid)
+
+
+def test_concurrent_puts_same_token_keep_winner_intact():
+    # Regression: two concurrent PUTs on one token shared the same temp file — the
+    # losing request's interleaved writes corrupted the winner's finalized upload
+    from starlette.requests import Request
+
+    data_a, data_b = b"A" * 8, b"B" * 8
+    req = operations.request_upload_op(filename="race.bin", size_bytes=8)
+    fid = req["file_id"]
+    token = signing.make_token("local", fid, "u", 60)
+
+    async def _run():
+        a_blocked, b_done = asyncio.Event(), asyncio.Event()
+        calls = {"n": 0}
+
+        async def receive_a():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return {"type": "http.request", "body": data_a[:4], "more_body": True}
+            a_blocked.set()
+            await b_done.wait()
+            return {"type": "http.request", "body": data_a[4:], "more_body": False}
+
+        scope = {
+            "type": "http", "method": "PUT", "scheme": "http", "http_version": "1.1",
+            "server": ("test", 80), "client": ("127.0.0.1", 1), "root_path": "",
+            "path": "/files/x", "raw_path": b"/files/x",
+            "query_string": f"t={token}".encode(), "headers": [],
+            "path_params": {"file_id": fid},
+        }
+        req_a = Request(scope, receive_a)
+        req_b = _http_request("PUT", f"t={token}", {"file_id": fid}, [
+            {"type": "http.request", "body": data_b, "more_body": False}])
+
+        task_a = asyncio.create_task(routes.upload_route(req_a))
+        await a_blocked.wait()                      # A mid-stream, holding its temp
+        res_b = await routes.upload_route(req_b)    # B streams fully and finalizes
+        b_done.set()
+        res_a = await task_a                        # A resumes after B won
+        return res_a, res_b
+
+    res_a, res_b = asyncio.run(_run())
+    assert res_b.status_code == 200, res_b.status_code
+    assert res_a.status_code == 409, res_a.status_code
+    info = operations.get_upload_op(fid)
+    assert info["ready"] is True, info
+    assert Path(info["server_path"]).read_bytes() == data_b, \
+        "winner's finalized bytes were corrupted by the losing PUT"
+    entry = operations._entry_dir("local", fid)
+    stray = [p.name for p in entry.iterdir() if p.name.startswith(".incoming")]
+    assert stray == [], f"losing PUT left a temp file: {stray}"
+    operations.delete_upload_op(fid)
+
+
+def test_download_audit_attributes_user():
+    # Regression: file_download audit lines carried no user attribution — the
+    # exfiltration direction was the one place audit couldn't say who
+    probe = operations._uploads_dir("local") / "audit_probe.txt"
+    probe.write_text("x")
+    token = signing.make_token("local", "-", "d", 60, p=str(probe))
+    records = []
+
+    class _Capture(logging.Handler):
+        def emit(self, rec):
+            records.append(json.loads(rec.getMessage()))
+
+    logger = logging.getLogger("openstudio-mcp.audit")
+    cap = _Capture()
+    logger.addHandler(cap)
+    try:
+        res = asyncio.run(routes.download_route(
+            _http_request("GET", f"t={token}", {"name": "audit_probe.txt"})))
+        assert res.status_code == 200, res.status_code
+    finally:
+        logger.removeHandler(cap)
+        probe.unlink(missing_ok=True)
+    dl = [r for r in records if r.get("event") == "file_download"]
+    assert len(dl) == 1, records
+    assert dl[0].get("user") == "local", f"download audit must say who: {dl[0]}"
