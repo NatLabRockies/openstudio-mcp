@@ -37,6 +37,8 @@ test_measure(measure_dir="/runs/custom_measures/set_lights_8w")
 Tests run against the currently loaded model (or SystemD_baseline.osm fallback),
 so measures that depend on HVAC, plant loops, or zones will work correctly.
 Use `model_path` to test against a specific model.
+Over HTTP, custom measures land under `/runs/<user>/custom_measures` — always use
+the `measure_dir` path that `create_measure` returns, not a hardcoded one.
 
 ### 3. Apply to Model
 ```
@@ -165,7 +167,9 @@ Python gotchas (different from Ruby):
 ## ReportingMeasures
 
 ReportingMeasures run **after simulation** and access SQL results. Use when the user wants to
-generate custom reports, extract specific metrics, or post-process simulation output.
+generate custom reports, extract specific metrics, or post-process simulation output — but only
+when the existing `extract_*` / `query_timeseries` tools don't already cover the metric
+(CLAUDE.md's "never write scripts to parse SQL" rule; this is the sanctioned exception).
 
 ### Create a ReportingMeasure
 ```

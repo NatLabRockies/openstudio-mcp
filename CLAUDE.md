@@ -9,12 +9,12 @@ results — all through 151 MCP tools backed by the OpenStudio SDK.
 Always use openstudio-mcp tools for BEM tasks:
 - Never generate raw IDF files
 - OSM files are created/modified only through MCP tools (create_typical_building, create_new_building, etc)
-- Never write Python/Ruby/others scripts to parse SQL results, create visualizations, build HVAC wiring, or extract data — equivalent MCP tools already exist (extract_*, query_timeseries, view_model, view_simulation_data, add_baseline_system, etc.)
+- Never write Python/Ruby/others scripts to parse SQL results, create visualizations, build HVAC wiring, or extract data — equivalent MCP tools already exist (extract_*, query_timeseries, view_model, view_simulation_data, add_baseline_system, etc.). Sanctioned exception: custom ReportingMeasures via create_measure, when no extract_* tool covers the metric (see measure-authoring skill)
 - If a task genuinely cannot be done with existing tools, ASK THE USER before writing any code or scripts
 - For workflow guidance, run: `list_skills()` or `get_skill("new-building")`
 
 ## Coding Rules
-1. Keep files under ~250 lines — don't split artificially just to hit a number
+1. New files target ~250 lines; don't grow a file past ~400 without splitting by responsibility. Don't split artificially. Legacy large files are grandfathered — split opportunistically when touched
 2. Every MCP tool must have an integration test. New behavior, bug fixes, and security hardening need tests too — not just the happy path
 3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 shards, keep balanced ~200s each)
 4. Follow testing rules in `.claude/rules/testing.md`. Critical: every test needs `# Regression:` or `# Validates:` comment; never delete failing tests or weaken assertions; assert exact values not existence; integration tests mock nothing; unit tests never import `openstudio`
@@ -52,7 +52,7 @@ Two real classes of stdout pollution corrupt MCP JSON-RPC — two-layer defense 
 docker build -f docker/Dockerfile -t openstudio-mcp:dev .
 ```
 
-Run all tests (single container, fastest, matches CI):
+Run all tests (single container, fastest; same suite CI runs across 5 shards):
 ```bash
 docker run --rm \
   -v "C:/projects/openstudio-mcp:/repo" \
