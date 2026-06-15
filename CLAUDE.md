@@ -3,7 +3,7 @@ always be brutally honest
 ## Project: openstudio-mcp
 MCP server giving AI agents full control of building energy modeling —
 create buildings, author measures, configure HVAC, run EnergyPlus sims, extract
-results — all through 151 MCP tools backed by the OpenStudio SDK.
+results — all through 150+ MCP tools backed by the OpenStudio SDK.
 
 ## Critical: Use MCP Tools — Do Not Reinvent
 Always use openstudio-mcp tools for BEM tasks:
@@ -27,6 +27,7 @@ Always use openstudio-mcp tools for BEM tasks:
 11. Bundled measures get wrapper tools with typed args — don't expose raw `apply_measure` as primary interface
 12. No `getattr()` or string-based dispatch — every OpenStudio API method called directly (grepable, lintable, visible in stack traces)
 13. MCP clients may send `list[str]` as JSON strings — use `list[str] | str` type annotation + `parse_str_list()` from `osm_helpers.py`
+14. Tool roster has ONE source of truth: `EXPECTED_TOOLS` in `tests/test_skill_registration.py`. Add/remove a tool → edit that set (one line per tool; merges cleanly across branches). `test_tool_count`/`test_tags_coverage` derive from it — never hardcode a tool-count literal in tests. Docs/instructions say "150+ tools", not an exact count
 
 ## Architecture
 - Each skill lives in `mcp_server/skills/<name>/`

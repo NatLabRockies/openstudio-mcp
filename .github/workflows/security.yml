@@ -7,11 +7,18 @@ name: security
 # use arch-specific syscall numbers, so arm64 must be exercised explicitly.
 # Individual tests still pin their own mode per fixture (off/posix/auto).
 
+# Same triggers as ci.yml so the security suite runs like every other test:
+# every PR, plus post-merge on long-lived branches. workflow_dispatch keeps a
+# manual "run now" button.
 on:
   push:
-    branches: [feat/measure-exec-sandbox]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   security-tests:
