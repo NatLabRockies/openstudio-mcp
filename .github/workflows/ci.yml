@@ -1,8 +1,19 @@
 name: ci
 
+# Trigger on PRs (open + every push to the PR) and on pushes to long-lived
+# branches only. Without the push branch filter, a push to a branch that has
+# an open PR fires BOTH push and pull_request → every job runs twice.
 on:
   push:
+    branches: [main, develop]
   pull_request:
+
+# Cancel superseded in-progress runs on rapid re-push (saves runner minutes).
+# Note: this does NOT dedupe push vs pull_request — they use different
+# github.ref values; the push branch filter above is what removes that dup.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   arm64-build:
