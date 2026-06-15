@@ -29,12 +29,12 @@ Inspect the current model for common issues before running a simulation.
    - **No design days:** needed for HVAC sizing
    - **No run period:** `get_run_period()` — check if simulation dates are set
 
-3. Run ASHRAE QA/QC checks (if model has been simulated):
+4. Run ASHRAE QA/QC checks (if model has been simulated):
    ```
    run_qaqc_checks(template="90.1-2019")
    ```
 
-4. Report findings organized by severity:
+5. Report findings organized by severity:
 
    **Errors** (will cause simulation failure):
    - Missing weather file
@@ -52,4 +52,4 @@ Inspect the current model for common issues before running a simulation.
    - Total conditioned area
    - HVAC system types in use
 
-5. Suggest fixes for each issue found, referencing specific tools.
+6. Suggest fixes for each issue found, referencing specific tools.

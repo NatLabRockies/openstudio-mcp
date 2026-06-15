@@ -179,6 +179,12 @@ EXPECTED_TOOLS = {
     "search_wiring_patterns",
     # Tool Router
     "recommend_tools",
+    # File Transfer (remote/HTTP — get user files to/from the server)
+    "request_upload",
+    "get_upload",
+    "list_uploads",
+    "delete_upload",
+    "request_download",
 }
 
 

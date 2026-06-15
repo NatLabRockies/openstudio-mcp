@@ -7,11 +7,18 @@ name: security
 # use arch-specific syscall numbers, so arm64 must be exercised explicitly.
 # Individual tests still pin their own mode per fixture (off/posix/auto).
 
+# Same triggers as ci.yml so the security suite runs like every other test:
+# every PR, plus post-merge on long-lived branches. workflow_dispatch keeps a
+# manual "run now" button.
 on:
   push:
-    branches: [feat/measure-exec-sandbox]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   security-tests:
@@ -40,12 +47,19 @@ jobs:
           OSMCP_SANDBOX: "auto"
         run: |
           mkdir -p runs
-          FILES=$(ls tests/test_sandbox.py tests/test_security_*.py 2>/dev/null || true)
-          if [ -z "$FILES" ]; then
+          # Build the list as an array — ls output is newline-separated, and an
+          # unquoted $FILES inside bash -lc "…" split the inner script across
+          # lines, executing the 2nd test file as a command (exit 126).
+          FILES=()
+          [ -f tests/test_sandbox.py ] && FILES+=(tests/test_sandbox.py)
+          for f in tests/test_security_*.py; do
+            [ -e "$f" ] && FILES+=("$f")
+          done
+          if [ ${#FILES[@]} -eq 0 ]; then
             echo "No security tests present in this checkout — nothing to run."
             exit 0
           fi
-          echo "[${{ matrix.arch }}] security tests under OSMCP_SANDBOX=$OSMCP_SANDBOX: $FILES"
+          echo "[${{ matrix.arch }}] security tests under OSMCP_SANDBOX=$OSMCP_SANDBOX: ${FILES[*]}"
           docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
             -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD -e OSMCP_SANDBOX \
-            openstudio-mcp:dev bash -lc "cd /repo && pytest -vv $FILES"
+            openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv "$@"' -- "${FILES[@]}"

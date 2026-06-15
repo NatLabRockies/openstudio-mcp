@@ -1,8 +1,19 @@
 name: ci
 
+# Trigger on PRs (open + every push to the PR) and on pushes to long-lived
+# branches only. Without the push branch filter, a push to a branch that has
+# an open PR fires BOTH push and pull_request → every job runs twice.
 on:
   push:
+    branches: [main, develop]
   pull_request:
+
+# Cancel superseded in-progress runs on rapid re-push (saves runner minutes).
+# Note: this does NOT dedupe push vs pull_request — they use different
+# github.ref values; the push branch filter above is what removes that dup.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   arm64-build:
@@ -209,7 +220,7 @@ jobs:
             2)
               # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report
               # + remote HTTP transport, session isolation, token auth & session eviction (no-sim, fast)
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py"
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py"
               EXTRA_ENV=""
               ;;
             3)
