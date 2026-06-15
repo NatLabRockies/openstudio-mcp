@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from test_skill_registration import EXPECTED_TOOLS
 
 from mcp_server.skills import register_all_skills
 
@@ -55,12 +56,21 @@ def _register_tools_with_docs() -> dict[str, dict]:
 
 
 def test_tool_count():
-    # Validates: total registered tool count matches expected 157 — catches accidental add/remove
-    """Record current tool count (157 registered MCP tools)."""
+    # Validates: registered tool count equals the EXPECTED_TOOLS manifest — catches accidental add/remove
+    """Tool count is derived from EXPECTED_TOOLS, not a hardcoded literal.
+
+    The exact set is pinned in test_skill_registration.EXPECTED_TOOLS, which
+    merges cleanly across branches (one line per tool). A scalar literal here
+    would conflict on every tool-adding PR for no added safety —
+    test_all_tool_names_registered already pins the exact set by name.
+    """
     tools = _register_tools_with_docs()
     count = len(tools)
     print(f"\nTool count: {count}")
-    assert count == 157, f"Expected 157 tools, got {count}"
+    assert count == len(EXPECTED_TOOLS), (
+        f"Registered {count} tools but EXPECTED_TOOLS pins {len(EXPECTED_TOOLS)}; "
+        "add/remove the tool in test_skill_registration.EXPECTED_TOOLS"
+    )
 
 
 def test_total_schema_chars():
@@ -82,7 +92,7 @@ def test_total_schema_chars():
 
 
 def test_tags_coverage():
-    # Validates: tag coverage measurement — all 157 tools must be tagged post-Phase 2
+    # Validates: every registered tool is tagged (100% tag coverage) — no literal count to drift
     """Check how many tools have tags. Post Phase 2: expect 100%."""
     tools = _register_tools_with_docs()
     tagged = {name: t for name, t in tools.items() if t["tags"]}
@@ -95,10 +105,10 @@ def test_tags_coverage():
 
     # Assert actual coverage matches expected state
     assert len(tools) > 0, "Should have tools to measure"
-    # Post-Phase 2: all 157 tools are tagged
-    assert len(tagged) == 157, (
-        f"Expected 157 tagged tools, found {len(tagged)}; "
-        f"untagged: {sorted(untagged)}"
+    # Post-Phase 2: every registered tool must be tagged (100% coverage)
+    assert not untagged, (
+        f"All {len(tools)} tools must be tagged; "
+        f"{len(untagged)} untagged: {sorted(untagged)}"
     )
 
 

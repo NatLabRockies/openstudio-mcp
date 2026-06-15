@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**157 tools · 12 workflow skills · 480+ integration tests**
+**150+ tools · 12 workflow skills · 480+ integration tests**
 
 ---
 
@@ -53,7 +53,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "./tests/assets:/inputs",
+        "-v", "./tests/assets:/inputs:ro",
         "-v", "./runs:/runs",
         "-v", "./.claude/skills:/skills:ro",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
@@ -87,7 +87,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 157 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 150+ available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Working with Your Own Files
 
@@ -102,7 +102,7 @@ cp eplusout.err ./tests/assets/
 "Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
 ```
 
-**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 157 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
+**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 150+ specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
 
 For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
 
@@ -114,7 +114,7 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 
 | Client | Status | Notes |
 |--------|--------|-------|
-| Claude Desktop | Full support | All 157 tools available |
+| Claude Desktop | Full support | All tools available |
 | Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
 | VS Code Copilot | Compatible | MCP support via config |
 | Windsurf | Compatible | Under 100-tool limit |
@@ -128,11 +128,83 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 
 The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, Cursor, and VS Code.
 
+Since a remote server can't see files on your laptop, the `file_transfer` tools (`request_upload` / `get_upload` / `request_download`) move models, weather files, and measure `.zip`s in and out over a signed, out-of-band channel — see **[docs/remote-multi-user.md §6](docs/remote-multi-user.md)**.
+
 See **[docs/remote-multi-user.md](docs/remote-multi-user.md)** for setup, auth, the isolation model, and log access — and **[docs/run-retention.md](docs/run-retention.md)** for optional disk garbage-collection.
 
 ---
 
-## Skills & Tools (157 total)
+## Security and simulation sandbox
+
+OpenStudio measures are Ruby or Python programs and must be treated as untrusted
+code. EnergyPlus workflows can also invoke measure code. Docker isolates the
+container from the host, while openstudio-mcp adds a second sandbox around the
+child processes used by `apply_measure`, `test_measure`, measure metadata
+refresh, and simulations.
+
+The default `OSMCP_SANDBOX=auto` mode provides the following controls on Linux,
+including Docker Desktop's Linux VM:
+
+- **Privilege drop:** child processes run as the image's unprivileged
+  `sandbox` user (UID/GID 1001), while the MCP server retains only the
+  privileges needed to prepare run directories.
+- **Filesystem policy:** Landlock denies filesystem access by default. The
+  current run or staged measure directory is writable; required system and
+  OpenStudio directories are read-only. `/repo`, `/inputs`, and other users'
+  run directories are not exposed to measure code.
+- **Network policy:** seccomp denies outbound IP networking by default.
+- **Secret isolation:** child processes receive an allowlisted environment
+  instead of inheriting API keys, tokens, and other server environment
+  variables.
+- **Process hardening:** `no_new_privs` prevents privilege recovery through
+  setuid executables. Resource limits constrain generated file size and process
+  count, and simulations have a wall-clock timeout.
+- **Staging:** input models, weather files, measures, and OSWs are copied into a
+  private run directory before execution. Escaping symlinks are rejected.
+
+On Linux, `auto` fails closed if Landlock or the seccomp network filter cannot
+be installed: the untrusted child process does not run. On native macOS or
+Windows without Docker, kernel confinement is unavailable and the server warns
+that only environment filtering is active. Use the Docker image when running
+untrusted measures.
+
+### Sandbox options
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `OSMCP_SANDBOX` | `auto` | `auto`, `full`, and `landlock` request environment filtering, UID/GID drop, resource limits, Landlock filesystem confinement, and seccomp network denial. `posix` omits Landlock and seccomp. `off` disables child-process confinement and is only appropriate for trusted local code. Unknown values fall back to `auto`. |
+| `OSMCP_SANDBOX_NET` | `deny` | `deny` blocks outbound IP networking. `allow` permits it for trusted measures that must fetch external resources. |
+| `OSMCP_SANDBOX_UID` / `OSMCP_SANDBOX_GID` | `1001` | Account used for confined child processes. Values less than 1 are rejected. The default matches the `sandbox` user built into the image. |
+| `OSMCP_SANDBOX_RLIMIT_FSIZE` | `10737418240` | Maximum size in bytes of one file created by a child process. `0` disables this limit. |
+| `OSMCP_SANDBOX_RLIMIT_NPROC` | `1024` | Maximum processes/threads for the sandbox UID. `0` disables this limit. |
+| `OSMCP_SANDBOX_RLIMIT_NOFILE` | `0` | Optional open-file descriptor limit. |
+| `OSMCP_SANDBOX_RLIMIT_CPU` | `0` | Optional CPU-seconds limit. Disabled by default because annual simulations can be long-running. |
+| `OSMCP_SANDBOX_RLIMIT_AS` | `0` | Optional virtual-memory limit. Prefer Docker memory limits because restrictive address-space limits can break EnergyPlus. |
+| `OSMCP_SIM_TIMEOUT_SECONDS` | `7200` | Wall-clock timeout for a simulation. `0` disables the timeout. |
+
+### Secure deployment guidance
+
+- Mount `/inputs` read-only: `-v /host/inputs:/inputs:ro`.
+- Mount only the output directory at `/runs`; any process allowed to write
+  `/runs` can modify that host directory by design.
+- Mount workflow guides read-only at `/skills`, or use the copy already baked
+  into the image: `-v /host/.claude/skills:/skills:ro`.
+- Do not mount the repository, home directory, Docker socket, credentials, or
+  broad host paths into production containers. The `/repo` source mount in the
+  testing commands is for development only.
+- Keep `OSMCP_SANDBOX=auto` and `OSMCP_SANDBOX_NET=deny` for untrusted measure
+  authoring. Docker's `--network none` can provide an additional
+  container-wide network boundary when remote access is not required.
+- Use Docker CPU, memory, PID, and disk quotas as outer limits. The in-process
+  resource limits are defense in depth, not replacements for container limits.
+
+The sandbox protects the host and other run directories, but it intentionally
+allows measure code to modify its own staged run directory. Treat resulting
+OSM, SQL, report, and log files as untrusted outputs.
+
+---
+
+## Skills & Tools (150+ total)
 
 In Claude Code, 12 bundled skills add workflow automation and domain knowledge:
 
@@ -157,7 +229,7 @@ Workflow/task skills are invoked with `/name`; knowledge skills load automatical
 
 ## Tool reference
 
-157 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
+150+ tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
 
 <details>
 <summary><b>Model creation & management</b> — 13 tools</summary>
