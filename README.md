@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**151 tools · 12 workflow skills · 480+ integration tests**
+**150+ tools · 12 workflow skills · 480+ integration tests**
 
 ---
 
@@ -192,7 +192,7 @@ Workflow/task skills are invoked with `/name`; knowledge skills load automatical
 
 ## Tool reference
 
-151 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
+150+ tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
 
 <details>
 <summary><b>Model creation & management</b> — 13 tools</summary>
