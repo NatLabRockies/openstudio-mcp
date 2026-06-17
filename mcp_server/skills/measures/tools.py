@@ -6,8 +6,10 @@ from typing import Any
 from mcp_server.skills.measures.operations import (
     apply_measure,
     download_measure_archive,
+    find_measure,
     list_local_measures,
     list_measure_arguments,
+    search_bcl_measures,
 )
 
 
@@ -31,6 +33,63 @@ def register(mcp):
         """
         return list_local_measures(root_dir=root_dir, max_depth=max_depth, max_results=max_results)
 
+    @mcp.tool(tags={"measures"}, name="find_measure")
+    def find_measure_tool(
+        query: str,
+        download_if_bcl_match: bool = True,
+        min_match_score: float = 0.72,
+        max_results: int = 10,
+        timeout_seconds: int = 300,
+    ):
+        """Find a measure by name or intent, searching local measures before BCL.
+
+        This is the safest default when the user names an existing measure.
+        It ranks local custom/mounted/common/ComStock/BCL-cache measures first.
+        If no local result is a good match, it searches BCL. When the best BCL
+        result is above min_match_score, it downloads the measure into
+        /measures/bcl. On success, use the top-level measure_dir or
+        selected_measure_dir with list_measure_arguments and apply_measure.
+        The response also includes next.list_arguments and next.apply tool
+        argument objects for easy chaining.
+
+        Example: query="Replace Chiller with Air Source Heat Pumps Measure Details"
+
+        Args:
+            query: Measure name, BCL page title, or intent text to find.
+            download_if_bcl_match: Download the best BCL match when it is good.
+            min_match_score: Minimum score required before accepting a match.
+            max_results: Number of local/BCL candidates to return.
+            timeout_seconds: Network/download timeout for BCL requests.
+        """
+        return find_measure(
+            query=query,
+            download_if_bcl_match=download_if_bcl_match,
+            min_match_score=min_match_score,
+            max_results=max_results,
+            timeout_seconds=timeout_seconds,
+        )
+
+    @mcp.tool(tags={"measures"}, name="search_bcl_measures")
+    def search_bcl_measures_tool(
+        query: str,
+        max_results: int = 10,
+        timeout_seconds: int = 60,
+        page: int = 0,
+    ):
+        """Search BCL for measures and rank likely matches.
+
+        Prefer find_measure for normal user requests because it searches local
+        measures first and can download a strong BCL match. Use this when you
+        need to inspect BCL candidates without downloading. Uses BCL wildcard
+        search with bundle:measure and page query parameters.
+        """
+        return search_bcl_measures(
+            query=query,
+            max_results=max_results,
+            timeout_seconds=timeout_seconds,
+            page=page,
+        )
+
     @mcp.tool(tags={"measures"}, name="list_measure_arguments")
     def list_measure_arguments_tool(measure_dir: str):
         """List argument names, types, defaults, and choices for an OpenStudio measure.
@@ -53,8 +112,9 @@ def register(mcp):
         measures, or ComStock match and the user agrees to try BCL/download.
         Defaults to /measures/bcl so downloaded measures persist when
         /measures is host-mounted. Accepts HTTPS URLs from BCL/NREL and GitHub.
-        Returns discovered measure_dir values for list_measure_arguments,
-        apply_measure, and OSA generation tools.
+        Returns top-level measure_dir and selected_measure_dir for the first
+        discovered measure, plus next.list_arguments and next.apply tool
+        argument objects for easy chaining.
         """
         return download_measure_archive(
             url=url,
@@ -71,10 +131,8 @@ def register(mcp):
         """Run an existing local OpenStudio measure against the loaded model.
 
         Use to apply a measure after you have a measure_dir. When the user asks
-        for a measure by name or intent, first call list_local_measures to find
-        mounted, custom, common measures, or ComStock measures. If no local
-        match exists, ask before using BCL/download. To create a new measure,
-        use create_measure.
+        for a measure by name or intent, call find_measure first and pass its
+        top-level measure_dir here. To create a new measure, use create_measure.
 
         Args:
             measure_dir: Path to the measure directory (contains measure.rb)

@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**148 tools · 12 workflow skills · 480+ integration tests**
+**150 tools · 12 workflow skills · 480+ integration tests**
 
 ---
 
@@ -90,7 +90,7 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 148 available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 150 available, calls them in sequence, and summarizes the results — no scripting required.
 
 ### Working with Your Own Files
 
@@ -105,7 +105,7 @@ cp eplusout.err ./tests/assets/
 "Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
 ```
 
-**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 148 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
+**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 150 specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
 
 For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
 
@@ -117,7 +117,7 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 
 | Client | Status | Notes |
 |--------|--------|-------|
-| Claude Desktop | Full support | All 148 tools available |
+| Claude Desktop | Full support | All 150 tools available |
 | Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
 | VS Code Copilot | Compatible | MCP support via config |
 | Windsurf | Compatible | Under 100-tool limit |
@@ -205,7 +205,7 @@ OSM, SQL, report, and log files as untrusted outputs.
 
 ---
 
-## Skills & Tools (148 total)
+## Skills & Tools (150 total)
 
 In Claude Code, 12 bundled skills add workflow automation and domain knowledge:
 
@@ -230,7 +230,7 @@ Workflow/task skills are invoked with `/name`; knowledge skills load automatical
 
 ## Tool reference
 
-148 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
+150 tools, grouped by area — expand a group to see its tools. New here? `create_new_building`, `run_simulation`, and `extract_summary_metrics` cover most workflows; `list_skills()` and `recommend_tools(task)` help the AI find the rest.
 
 <details>
 <summary><b>Model creation & management</b> — 13 tools</summary>
@@ -435,11 +435,13 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Measures</b> — 4 tools</summary>
+<summary><b>Measures</b> — 6 tools</summary>
 
 | Tool | Description |
 |------|-------------|
 | `list_local_measures` | Discover mounted, downloaded, bundled, and custom OpenStudio measures |
+| `find_measure` | Find a measure locally first, then BCL; download a strong BCL match |
+| `search_bcl_measures` | Search BCL measure candidates without downloading |
 | `list_measure_arguments` | List measure arguments with defaults and choices |
 | `download_measure_from_bcl` | Download and extract a measure ZIP into `/measures/bcl` |
 | `apply_measure` | Apply OpenStudio measure to in-memory model |

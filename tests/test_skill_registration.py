@@ -107,6 +107,8 @@ EXPECTED_TOOLS = {
     "set_run_period",
     # Phase 6D: Measures
     "list_local_measures",
+    "find_measure",
+    "search_bcl_measures",
     "list_measure_arguments",
     "download_measure_from_bcl",
     "apply_measure",
