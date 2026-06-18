@@ -4,6 +4,7 @@ Tests create_measure, test_measure, edit_measure.
 """
 import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import integration_enabled, server_params, setup_example, unwrap
@@ -201,6 +202,59 @@ def test_test_measure_ruby_passes():
                 assert res["ok"] is True, res.get("test_output", "")
                 assert res["passed"] > 0
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_xml_refresh_failure_preserves_passing_test_results():
+    # Regression: a post-test metadata-refresh failure must NOT mask a passing
+    # (confined) test. The test drops an escaping symlink while confined; the
+    # post-test reject_escaping_symlinks guard then makes _update_measure_xml
+    # raise. Before this fix that raise propagated and test_measure returned
+    # ok:False, dropping passed/failed. Confinement — not the refresh's success —
+    # is the security boundary.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("xml_refresh_warn"),
+                    "description": "metadata refresh warning probe",
+                    "run_body": '    runner.registerInfo("ok")',
+                    "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                measure_dir = Path(create["measure_dir"])
+                # Replace the generated test with a PASSING one that, while running
+                # confined, plants an escaping symlink in the measure dir. The
+                # post-test reject_escaping_symlinks guard trips _update_measure_xml
+                # — deterministic, unlike `measure -u`'s (very tolerant) exit code.
+                test_files = sorted((measure_dir / "tests").glob("*_test.rb"))
+                assert len(test_files) == 1, test_files
+                test_files[0].write_text(
+                    "require 'minitest/autorun'\n"
+                    "class EscapeLinkTest < Minitest::Test\n"
+                    "  def test_drop_escaping_symlink\n"
+                    "    File.symlink('/etc/shadow', 'evil_escape_link') "
+                    "unless File.symlink?('evil_escape_link')\n"
+                    "    assert(File.symlink?('evil_escape_link'))\n"
+                    "  end\n"
+                    "end\n",
+                    encoding="utf-8",
+                )
+                return unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": str(measure_dir),
+                }))
+
+    res = asyncio.run(_run())
+    assert res["ok"] is True, f"passing test masked by xml-refresh failure: {res}"
+    assert res["passed"] > 0, res
+    assert "metadata_warning" in res, (
+        f"expected non-fatal metadata_warning when refresh fails, got: {res}"
+    )
+    assert "escape" in res["metadata_warning"].lower(), res["metadata_warning"]
 
 
 @pytest.mark.integration
@@ -1147,4 +1201,59 @@ def test_create_bad_syntax_returns_ok_false():
                 assert "syntax error" in res.get("error", "").lower()
                 # Should still include measure_dir for debugging
                 assert "measure_dir" in res
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_ruby_description_interpolation_neutralized():
+    # Regression: a measure description was emitted into a Ruby double-quoted
+    # literal WITHOUT escaping '#', so '#{...}' was live interpolation. When
+    # `openstudio measure -u` (run unsandboxed, as root) evaluated description(),
+    # the payload executed = RCE. _escape_ruby_str must escape '#' -> '\#'.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from pathlib import Path
+
+    payload = "harmless pwn#{2+2} tail"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                name = _unique("rb_inject")
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": name,
+                    "description": payload,
+                    "run_body": RUBY_BODY,
+                    "language": "Ruby",
+                }))
+                assert res["ok"] is True, res
+                rb = Path(res["measure_dir"], "measure.rb").read_text(encoding="utf-8")
+                # The escaped form must be present and the live-interpolation form absent.
+                assert "pwn\\#{2+2}" in rb, f"description '#' not escaped:\n{rb}"
+                assert "pwn#{2+2}" not in rb, f"live Ruby interpolation survived:\n{rb}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_uppercase_arg_name_rejected():
+    # Regression: an uppercase-leading arg name became a bare Ruby local `Foo = ...`,
+    # which Ruby parses as dynamic constant assignment (SyntaxError) inside a method,
+    # breaking the generated measure. _ARG_NAME_RE must reject uppercase-leading names.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("up_arg"),
+                    "description": "uppercase arg name",
+                    "run_body": RUBY_BODY,
+                    "language": "Ruby",
+                    "arguments": [{"name": "BadName", "type": "String", "required": False}],
+                }))
+                assert res["ok"] is False, f"uppercase arg name must be rejected: {res}"
+                assert "argument name" in res.get("error", "").lower(), res
     asyncio.run(_run())

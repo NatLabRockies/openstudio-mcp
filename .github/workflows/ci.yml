@@ -1,8 +1,19 @@
 name: ci
 
+# Trigger on PRs (open + every push to the PR) and on pushes to long-lived
+# branches only. Without the push branch filter, a push to a branch that has
+# an open PR fires BOTH push and pull_request → every job runs twice.
 on:
   push:
+    branches: [main, develop]
   pull_request:
+
+# Cancel superseded in-progress runs on rapid re-push (saves runner minutes).
+# Note: this does NOT dedupe push vs pull_request — they use different
+# github.ref values; the push branch filter above is what removes that dup.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   arm64-build:
@@ -92,14 +103,15 @@ jobs:
           retention-days: 1
 
   arm64-test:
-    # Start of arm64 test matrix: shard 1 only (real EnergyPlus sim via SEB4 OSW,
-    # asserts EUI ≈ 1.875 ± 2%). Expand to [1..5] once arm64 sim parity is proven.
+    # arm64 test matrix: shard 1 = real EnergyPlus sim via SEB4 OSW (asserts EUI
+    # ≈ 1.875 ± 2%) + weather/loops; shard 2 = the arch-sensitive set (SWIG/stdout
+    # deb-vs-wheel, measure exec/bundler, an HVAC sim). Both run confined (auto).
     needs: arm64-build
     runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
-        shard: [1]
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
 
@@ -115,6 +127,9 @@ jobs:
         env:
           RUN_OPENSTUDIO_INTEGRATION: "1"
           MCP_SERVER_CMD: "openstudio-mcp"
+          # Run the integration suite confined (explicit, not via the code default).
+          # Measures/sims drop to the unprivileged sandbox uid + Landlock + seccomp.
+          OSMCP_SANDBOX: "auto"
         run: |
           mkdir -p runs
           case ${{ matrix.shard }} in
@@ -123,10 +138,19 @@ jobs:
               FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py"
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
+            2)
+              # arm64 arch-sensitive coverage (the deb-vs-wheel / native-ISA risks):
+              #  - SWIG memleak + stdout suppression (wheel-vs-deb behaviour)
+              #  - measure apply + authoring (Ruby/Python exec + bundler on arm64)
+              #  - an HVAC EnergyPlus sim (arm64 E+ build correctness)
+              # (The sandbox/security PoC runs on arm64 via the security workflow.)
+              FILES="tests/test_swig_memleak_cleanup.py tests/test_stdout_logger_silence.py tests/test_measures.py tests/test_measure_authoring.py tests/test_hvac_supply_sim.py"
+              EXTRA_ENV=""
+              ;;
           esac
           docker run --rm \
             -v "$PWD:/repo" -v "$PWD/runs:/runs" \
-            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD \
+            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD -e OSMCP_SANDBOX \
             $EXTRA_ENV \
             openstudio-mcp:arm64 bash -lc "cd /repo && pytest -vv -s $FILES"
 
@@ -182,6 +206,9 @@ jobs:
         env:
           RUN_OPENSTUDIO_INTEGRATION: "1"
           MCP_SERVER_CMD: "openstudio-mcp"
+          # Run the integration suite confined (explicit, not via the code default).
+          # Measures/sims drop to the unprivileged sandbox uid + Landlock + seccomp.
+          OSMCP_SANDBOX: "auto"
         run: |
           mkdir -p runs
           case ${{ matrix.shard }} in
@@ -193,7 +220,7 @@ jobs:
             2)
               # common_measures, hvac_systems, geometry, zone terminal, skill_energy_report
               # + remote HTTP transport, session isolation, token auth & session eviction (no-sim, fast)
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py"
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py"
               EXTRA_ENV=""
               ;;
             3)
@@ -215,6 +242,6 @@ jobs:
           esac
           docker run --rm \
             -v "$PWD:/repo" -v "$PWD/runs:/runs" \
-            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD \
+            -e RUN_OPENSTUDIO_INTEGRATION -e MCP_SERVER_CMD -e OSMCP_SANDBOX \
             $EXTRA_ENV \
             openstudio-mcp:dev bash -lc "cd /repo && pytest -vv -s $FILES"

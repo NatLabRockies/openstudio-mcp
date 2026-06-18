@@ -5,6 +5,7 @@ import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -17,6 +18,7 @@ from typing import Any, Literal
 
 import psutil
 
+from mcp_server import sandbox
 from mcp_server.audit import audit
 from mcp_server.config import (
     LOG_TAIL_DEFAULT,
@@ -24,10 +26,12 @@ from mcp_server.config import (
     MAX_CONCURRENCY_PER_USER,
     OSCLI_GEM_PATH,
     OSCLI_GEMFILE,
+    SIM_TIMEOUT_SECONDS,
+    is_path_allowed,
     user_run_root,
 )
 from mcp_server.identity import user_key
-from mcp_server.util import resolve_run_dir
+from mcp_server.util import reject_escaping_symlinks, resolve_run_dir
 
 # Where the MCP server stores runs inside the container
 DEFAULT_LOG_TAIL = LOG_TAIL_DEFAULT
@@ -251,6 +255,37 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _kill_process_group(pid: int, *, grace: float = 5.0) -> None:
+    """Terminate the run's whole process group (SIGTERM, then SIGKILL after grace).
+
+    Sims launch with start_new_session=True, so the child is its own group leader
+    (pgid == pid); killing the group reaps forked children (EnergyPlus, ruby
+    helpers) that a single-pid kill would orphan. We only signal a group we created
+    (pgid == pid) — never the server's own group. Falls back to a single-pid kill
+    when the group can't be resolved or on non-POSIX (no os.killpg).
+    """
+    pgid = None
+    if hasattr(os, "getpgid") and hasattr(os, "killpg"):
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            pgid = os.getpgid(pid)
+    if pgid is not None and pgid == pid:
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(pgid, signal.SIGTERM)
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.TimeoutExpired):
+            psutil.Process(pid).wait(timeout=grace)
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(pgid, signal.SIGKILL)  # ESRCH if the group already exited
+        return
+    # Fallback: pgid unavailable / not a leader / non-POSIX — single-pid kill.
+    with contextlib.suppress(psutil.NoSuchProcess, Exception):
+        p = psutil.Process(pid)
+        p.terminate()
+        try:
+            p.wait(timeout=grace)
+        except psutil.TimeoutExpired:
+            p.kill()
+
+
 def _build_run_cmd(osw_path: Path) -> list[str]:
     """openstudio CLI command to run a staged OSW (with bundle flags)."""
     return [
@@ -265,12 +300,21 @@ def _build_run_cmd(osw_path: Path) -> list[str]:
 def _launch(rec: RunRecord) -> None:
     """Start the EnergyPlus subprocess for a queued run. Caller holds _sim_lock."""
     log = rec.run_dir / "openstudio.log"
+    # build_env creates run_dir/tmp (TMPDIR) as root; chown after so the dropped
+    # process owns it (order matters — see apply_measure).
+    run_env = sandbox.build_env(rec.run_dir)
+    sandbox.prepare_workdir(rec.run_dir)
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
-        _build_run_cmd(rec.osw_path),
+        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path), rec.run_dir),
         cwd=str(rec.run_dir),
         stdout=log.open("w", encoding="utf-8"),
         stderr=subprocess.STDOUT,
-        env=os.environ.copy(),
+        env=run_env,
+        # New session => the child is its own process-group leader (pgid == pid),
+        # so a timeout/cancel can kill the WHOLE group (EnergyPlus + any forked
+        # helpers) without ever signalling the server's own group. See
+        # _kill_process_group(). No-op on non-POSIX.
+        start_new_session=True,
     )
     rec.pid = proc.pid
     rec.status = "running"
@@ -318,8 +362,44 @@ def _dispatch_once() -> None:
                 _queue.remove(run_id)
 
 
+def _enforce_timeouts() -> None:
+    """Terminate running sims past the wall-clock cap and mark them failed.
+
+    OSMCP_SIM_TIMEOUT_SECONDS=0 disables. The kill (terminate -> wait -> kill)
+    runs outside _sim_lock so a slow exit can't stall the dispatcher.
+    """
+    if SIM_TIMEOUT_SECONDS <= 0:
+        return
+    now = _now()
+    with _sim_lock:
+        expired = [
+            rec for rec in _RUNS.values()
+            if rec.status == "running" and rec.pid is not None
+            and rec.started_at is not None
+            and now - rec.started_at > SIM_TIMEOUT_SECONDS
+            # Skip a process that already exited but hasn't been reaped yet: let
+            # _dispatch_once()/_refresh_status() classify it by its real exit code
+            # instead of force-failing a run that may have completed successfully.
+            and _pid_alive(rec.pid)
+        ]
+    for rec in expired:
+        _kill_process_group(rec.pid)  # whole group: EnergyPlus + any forked helpers
+        with _sim_lock:
+            rec.status = "failed"
+            rec.ended_at = _now()
+            rec.exit_code = -1 if rec.exit_code is None else rec.exit_code
+            rec.error = (f"Simulation exceeded the {SIM_TIMEOUT_SECONDS:.0f}s wall-clock "
+                         "cap (OSMCP_SIM_TIMEOUT_SECONDS)")
+            _RUNS[rec.run_id] = rec
+        _persist_run_record(rec)
+        audit("sim_timeout", run_id=rec.run_id, user=rec.user_key,
+              ran_seconds=round(now - (rec.started_at or now), 1))
+
+
 def _dispatch_loop() -> None:
     while True:
+        with contextlib.suppress(Exception):
+            _enforce_timeouts()
         with contextlib.suppress(Exception):
             _dispatch_once()
         time.sleep(0.5)
@@ -340,7 +420,8 @@ def _enqueue(run_id: str) -> None:
         _queue.append(run_id)
 
 
-def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None) -> dict[str, Any]:
+def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
+            *, _internal: bool = False) -> dict[str, Any]:
     """
     Stage the OSW + referenced files into /runs/<run_id>/ and execute:
       openstudio run -w <staged_osw>
@@ -349,10 +430,28 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None)
       - We always validate the OSW JSON and its seed_file reference (if any).
       - If no EPW override is provided, we also require the OSW's weather_file (if set) to exist.
       - If an EPW override is provided, we allow a missing OSW weather_file because it will be replaced.
+
+    Access control: as a PUBLIC tool, run_osw copies the OSW's whole parent dir into
+    the run dir — so an un-gated path discloses arbitrary host / other-tenant files.
+    Public callers must pass an OSW (and EPW) under their own run root or a shared
+    read root (is_path_allowed). `_internal=True` is the trusted path for
+    run_simulation, whose server-built temp OSW lives in a private staging dir and
+    whose inputs it has already validated; it is NOT exposed via the MCP tool.
     """
     src_osw = Path(osw_path).resolve()
     if not src_osw.exists():
         return {"ok": False, "error": f"OSW not found: {osw_path}"}
+    if not _internal:
+        # Gate BEFORE reading/validating/copying anything from the path.
+        if not is_path_allowed(src_osw):
+            return {"ok": False, "error": f"OSW path not allowed: {osw_path}"}
+        if epw_path and not is_path_allowed(Path(epw_path)):
+            return {"ok": False, "error": f"EPW path not allowed: {epw_path}"}
+    # We must never FOLLOW a symlink in the OSW's tree that escapes the bundle
+    # (would copy a host file into the run dir), even for the trusted internal path.
+    sym_err = reject_escaping_symlinks(src_osw.parent)
+    if sym_err:
+        return {"ok": False, "error": sym_err}
 
     # Fail fast on invalid OSW (before staging any run dir)
     v = validate_osw(str(src_osw), epw_path=epw_path)
@@ -644,13 +743,15 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
 
+    if not _pid_alive(pid):
+        # Finished before the cancel landed — classify by exit code, don't mislabel
+        # a completed run as cancelled.
+        with _sim_lock:
+            rec = _refresh_status(rec)
+            _RUNS[run_id] = rec
+        return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     try:
-        p = psutil.Process(pid)
-        p.terminate()
-        try:
-            p.wait(timeout=5)
-        except psutil.TimeoutExpired:
-            p.kill()
+        _kill_process_group(pid)  # whole group (EnergyPlus + helpers), not just the leader
         with _sim_lock:
             rec.status = "cancelled"
             rec.ended_at = rec.ended_at or _now()
@@ -658,11 +759,6 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         _persist_run_record(rec)  # disk record must read 'cancelled' so GC can reclaim it
         audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
-    except psutil.NoSuchProcess:
-        with _sim_lock:
-            rec = _refresh_status(rec)
-            _RUNS[run_id] = rec
-        return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     except Exception as e:
         return {"ok": False, "run_id": run_id, "error": str(e)}
 
@@ -744,6 +840,8 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
     osm = Path(osm_path)
     if not osm.exists():
         return {"ok": False, "error": f"OSM file not found: {osm_path}"}
+    if not is_path_allowed(osm):
+        return {"ok": False, "error": f"OSM path not allowed: {osm_path}"}
 
     # Validate EPW path upfront if provided
     epw_abs: str | None = None
@@ -751,6 +849,8 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         epw = Path(epw_path)
         if not epw.exists():
             return {"ok": False, "error": f"EPW file not found: {epw_path}"}
+        if not is_path_allowed(epw):
+            return {"ok": False, "error": f"EPW path not allowed: {epw_path}"}
         epw_abs = str(epw.resolve())
 
     # Stage the minimal OSW in a throwaway temp dir. run_osw() copies the staged
@@ -770,5 +870,7 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         osw_path_out = stage / "workflow.osw"
         osw_path_out.write_text(json.dumps(osw, indent=2), encoding="utf-8")
 
-        # Delegate to run_osw — pass epw_path so it handles staging into files/
-        return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name)
+        # Delegate to run_osw — pass epw_path so it handles staging into files/.
+        # _internal=True: osm + epw are already is_path_allowed above and the temp
+        # OSW is server-built in a private staging dir (not a caller-supplied path).
+        return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name, _internal=True)

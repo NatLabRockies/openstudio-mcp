@@ -57,7 +57,7 @@ def _build_auth():
 mcp = FastMCP(
     "openstudio-mcp",
     instructions=(
-        "Building energy simulation server (OpenStudio SDK) with 146 tools for "
+        "Building energy simulation server (OpenStudio SDK) with 150+ tools for "
         "creating, modifying, simulating, and analyzing building energy models. "
         "Use these tools for all building energy modeling tasks — if no tool "
         "exists for a task, ask the user before writing code. "
