@@ -437,11 +437,13 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Measures</b> — 4 tools</summary>
+<summary><b>Measures</b> — 6 tools</summary>
 
 | Tool | Description |
 |------|-------------|
 | `list_local_measures` | Discover mounted, downloaded, bundled, and custom OpenStudio measures |
+| `find_measure` | Find a measure locally first, then BCL; download a strong BCL match |
+| `search_bcl_measures` | Search BCL measure candidates without downloading |
 | `list_measure_arguments` | List measure arguments with defaults and choices |
 | `download_measure_from_bcl` | Download and extract a measure ZIP into `/measures/bcl` |
 | `apply_measure` | Apply OpenStudio measure to in-memory model |

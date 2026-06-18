@@ -13,7 +13,7 @@ import subprocess
 import zipfile
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import quote, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,8 @@ from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_ru
 
 
 MEASURE_DOWNLOAD_HOSTS = {"bcl.nrel.gov", "bcl.nlr.gov", "github.com", "raw.githubusercontent.com"}
+BCL_SEARCH_HOST = "https://bcl.nlr.gov"
+MATCH_STOPWORDS = {"measure", "details"}
 
 
 class _BCLDownloadLinkParser(HTMLParser):
@@ -136,6 +138,313 @@ def _resolve_bcl_content_download(url: str, payload: bytes) -> str | None:
     return urljoin(url, parser.download_links[0])
 
 
+def _search_text(value: Any) -> str:
+    return str(value or "").lower().replace("_", " ").replace("-", " ")
+
+
+def _search_tokens(value: Any) -> set[str]:
+    token = ""
+    tokens = set()
+    for char in _search_text(value):
+        if char.isalnum():
+            token += char
+        elif token:
+            if token not in MATCH_STOPWORDS:
+                tokens.add(token)
+            token = ""
+    if token and token not in MATCH_STOPWORDS:
+        tokens.add(token)
+    return tokens
+
+
+def _measure_match_score(query: str, candidate: dict[str, Any]) -> float:
+    query_tokens = _search_tokens(query)
+    if not query_tokens:
+        return 0.0
+
+    query_norm = " ".join(sorted(query_tokens))
+    best_norm_score = 0.0
+    for key in ("display_name", "name", "class_name"):
+        candidate_norm = " ".join(sorted(_search_tokens(candidate.get(key))))
+        if not candidate_norm:
+            continue
+        matched = query_tokens & _search_tokens(candidate.get(key))
+        coverage = len(matched) / len(query_tokens)
+        extra_penalty = max(len(_search_tokens(candidate.get(key))) - len(query_tokens), 0) * 0.02
+        norm_score = 1.0 if candidate_norm == query_norm else max(0.0, coverage - extra_penalty)
+        best_norm_score = max(best_norm_score, norm_score)
+
+    description_tokens = _search_tokens(candidate.get("description")) | _search_tokens(candidate.get("modeler_description"))
+    description_bonus = min(len(query_tokens & description_tokens) / len(query_tokens), 0.25)
+    return min(best_norm_score + description_bonus, 1.0)
+
+
+def _rank_measure_matches(query: str, measures: list[dict[str, Any]], max_results: int) -> list[dict[str, Any]]:
+    ranked = []
+    for measure in measures:
+        entry = dict(measure)
+        entry["match_score"] = round(_measure_match_score(query, entry), 3)
+        ranked.append(entry)
+    ranked.sort(key=lambda m: m["match_score"], reverse=True)
+    return ranked[:max_results]
+
+
+def _measure_next_steps(measure_dir: str | None) -> dict[str, Any]:
+    if not measure_dir:
+        return {}
+    return {
+        "list_arguments": {
+            "tool": "list_measure_arguments",
+            "arguments": {"measure_dir": measure_dir},
+        },
+        "apply": {
+            "tool": "apply_measure",
+            "arguments": {"measure_dir": measure_dir},
+        },
+    }
+
+
+def _selected_measure_response(
+    *,
+    source: str,
+    query: str | None,
+    match: dict[str, Any],
+    downloaded: bool,
+    measure_dir: str | None = None,
+    download: dict[str, Any] | None = None,
+    local_matches: list[dict[str, Any]] | None = None,
+    bcl_matches: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    selected = dict(match)
+    selected_measure_dir = measure_dir or selected.get("measure_dir")
+    if selected_measure_dir:
+        selected["measure_dir"] = selected_measure_dir
+
+    response: dict[str, Any] = {
+        "ok": True,
+        "source": source,
+        "query": query,
+        "selected_measure": selected,
+        "match": selected,
+        "measure_dir": selected_measure_dir,
+        "downloaded": downloaded,
+        "next": _measure_next_steps(selected_measure_dir),
+    }
+    if selected_measure_dir:
+        response["selected_measure_dir"] = selected_measure_dir
+    if selected.get("download_url"):
+        response["download_url"] = selected.get("download_url")
+    if local_matches is not None:
+        response["local_matches"] = local_matches
+    if bcl_matches is not None:
+        response["bcl_matches"] = bcl_matches
+    if download is not None:
+        response["download"] = download
+    return response
+
+
+def _bcl_measure_entry(raw: dict[str, Any]) -> dict[str, Any]:
+    measure = raw.get("measure", raw)
+    return {
+        "name": measure.get("name"),
+        "display_name": measure.get("display_name") or measure.get("name"),
+        "description": (measure.get("description") or "")[:500],
+        "modeler_description": (measure.get("modeler_description") or "")[:500],
+        "class_name": measure.get("class_name"),
+        "measure_type": _attribute_value(measure, "Measure Type"),
+        "uuid": measure.get("uuid"),
+        "version_id": measure.get("version_id"),
+        "release_tag": measure.get("release_tag"),
+        "repo": measure.get("repo"),
+        "org": measure.get("org"),
+        "measure_url": measure.get("measure_url"),
+        "readme_url": measure.get("readme_url"),
+        "download_url": measure.get("download_url"),
+        "source": "bcl",
+    }
+
+
+def _attribute_value(measure: dict[str, Any], name: str) -> str | None:
+    attrs = measure.get("attributes", {}).get("attribute", [])
+    if isinstance(attrs, dict):
+        attrs = [attrs]
+    for attr in attrs:
+        if attr.get("name") == name:
+            return attr.get("value")
+    return None
+
+
+def _bcl_search_urls(term: str, *, page: int, show_rows: int) -> tuple[str, str]:
+    wildcard_term = f"*{quote(term, safe='')}*"
+    query = f"fq=bundle:measure&page={page}&show_rows={show_rows}"
+    api_url = f"{BCL_SEARCH_HOST}/api/search/{wildcard_term}.json?{query}"
+    results_url = f"{BCL_SEARCH_HOST}/results/{wildcard_term}?fq=bundle:measure&page={page}"
+    return api_url, results_url
+
+
+def search_bcl_measures(
+    query: str,
+    max_results: int = 10,
+    timeout_seconds: int = 60,
+    page: int = 0,
+) -> dict[str, Any]:
+    """Search BCL for measures and rank the returned candidates locally."""
+    try:
+        query = query.strip()
+        if not query:
+            return {"ok": False, "error": "query is required"}
+
+        search_terms = [
+            query,
+            " ".join(token for token in _search_text(query).split() if token not in MATCH_STOPWORDS),
+        ]
+        seen_terms = set()
+        candidates_by_uuid: dict[str, dict[str, Any]] = {}
+        search_urls = []
+        result_urls = []
+        for term in search_terms:
+            term = term.strip()
+            if not term or term in seen_terms:
+                continue
+            seen_terms.add(term)
+            url, results_url = _bcl_search_urls(term, page=page, show_rows=max(max_results * 3, 10))
+            search_urls.append(url)
+            result_urls.append(results_url)
+            payload, _content_type = _read_url(url, timeout_seconds)
+            data = json.loads(payload.decode("utf-8"))
+            for item in data.get("result", []):
+                entry = _bcl_measure_entry(item)
+                key = entry.get("uuid") or entry.get("download_url") or entry.get("name")
+                if key and key not in candidates_by_uuid:
+                    candidates_by_uuid[key] = entry
+
+        ranked = _rank_measure_matches(query, list(candidates_by_uuid.values()), max_results)
+        best_match = ranked[0] if ranked else None
+        return {
+            "ok": True,
+            "query": query,
+            "count": len(ranked),
+            "best_match": best_match,
+            "download_url": best_match.get("download_url") if best_match else None,
+            "search_urls": search_urls,
+            "result_urls": result_urls,
+            "measures": ranked,
+        }
+    except HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        return {"ok": False, "error": f"BCL search failed with HTTP {e.code}: {detail[:500]}"}
+    except URLError as e:
+        return {"ok": False, "error": f"Could not search BCL: {e.reason}"}
+    except json.JSONDecodeError as e:
+        return {"ok": False, "error": f"BCL search returned invalid JSON: {e}"}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to search BCL: {e}"}
+
+
+def find_measure(
+    query: str,
+    download_if_bcl_match: bool = True,
+    min_match_score: float = 0.72,
+    max_results: int = 10,
+    timeout_seconds: int = 300,
+) -> dict[str, Any]:
+    """Find a measure locally first, then in BCL, optionally downloading a good BCL match."""
+    try:
+        query = query.strip()
+        if not query:
+            return {"ok": False, "error": "query is required"}
+
+        local = list_local_measures(max_results=500)
+        if not local.get("ok"):
+            return local
+
+        local_matches = _rank_measure_matches(query, local.get("measures", []), max_results)
+        best_local = local_matches[0] if local_matches else None
+        if best_local and best_local["match_score"] >= min_match_score:
+            return _selected_measure_response(
+                source="local",
+                query=query,
+                match=best_local,
+                downloaded=False,
+                local_matches=local_matches,
+            )
+
+        bcl = search_bcl_measures(query=query, max_results=max_results, timeout_seconds=timeout_seconds)
+        if not bcl.get("ok"):
+            return {
+                "ok": False,
+                "error": bcl.get("error", "BCL search failed"),
+                "query": query,
+                "best_local_match": best_local,
+                "local_matches": local_matches,
+            }
+
+        best_bcl = bcl["measures"][0] if bcl.get("measures") else None
+        if not best_bcl or best_bcl["match_score"] < min_match_score:
+            return {
+                "ok": False,
+                "error": "No local or BCL measure matched the query above the threshold.",
+                "query": query,
+                "min_match_score": min_match_score,
+                "best_local_match": best_local,
+                "bcl_matches": bcl.get("measures", []),
+                "bcl_search_urls": bcl.get("search_urls", []),
+            }
+
+        if not download_if_bcl_match:
+            return _selected_measure_response(
+                source="bcl",
+                query=query,
+                match=best_bcl,
+                downloaded=False,
+                local_matches=local_matches,
+                bcl_matches=bcl.get("measures", []),
+            )
+
+        download_url = best_bcl.get("download_url")
+        if not download_url:
+            return {
+                "ok": False,
+                "error": "Best BCL match did not include a download_url.",
+                "query": query,
+                "match": best_bcl,
+                "bcl_matches": bcl.get("measures", []),
+            }
+
+        download = download_measure_archive(
+            url=download_url,
+            measure_name=best_bcl.get("name") or best_bcl.get("display_name"),
+            timeout_seconds=timeout_seconds,
+        )
+        if not download.get("ok"):
+            return {
+                "ok": False,
+                "error": download.get("error", "Failed to download BCL measure."),
+                "query": query,
+                "match": best_bcl,
+                "download": download,
+            }
+
+        selected_download = download["measures"][0] if download.get("measures") else {}
+        selected = dict(best_bcl)
+        if selected_download.get("measure_dir"):
+            selected["measure_dir"] = selected_download["measure_dir"]
+        if selected_download.get("name"):
+            selected["downloaded_name"] = selected_download["name"]
+        return _selected_measure_response(
+            source="bcl",
+            query=query,
+            match=selected,
+            downloaded=True,
+            measure_dir=selected_download.get("measure_dir"),
+            download=download,
+            local_matches=local_matches,
+            bcl_matches=bcl.get("measures", []),
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to find measure: {e}"}
+
+
 def list_local_measures(
     root_dir: str | None = None,
     max_depth: int = 3,
@@ -224,12 +533,18 @@ def download_measure_archive(
                 "archive_path": str(archive_path),
                 "extract_dir": str(extract_root),
             }
+        selected_measure = measures["measures"][0] if measures["measures"] else {}
+        selected_measure_dir = selected_measure.get("measure_dir")
         return {
             "ok": True,
             "download_url": download_url,
             "archive_path": str(archive_path),
             "extract_dir": str(extract_root),
             "count": measures["count"],
+            "selected_measure": selected_measure,
+            "measure_dir": selected_measure_dir,
+            "selected_measure_dir": selected_measure_dir,
+            "next": _measure_next_steps(selected_measure_dir),
             "measures": measures["measures"],
         }
     except zipfile.BadZipFile:

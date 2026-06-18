@@ -14,7 +14,14 @@ create_measure → test_measure → apply_measure
 
 Use `edit_measure` to iterate on existing measures. Use `list_custom_measures` to find previously created measures.
 
-For requests to use an existing measure by name or intent, first call `list_local_measures` and look for matches in mounted measures, `/measures/custom`, bundled common measures, and bundled ComStock measures. If no local match is suitable, ask the user before trying BCL or `download_measure_from_bcl`.
+For requests to use an existing measure by name, BCL page title, or intent,
+first call `find_measure`. It searches mounted measures, `/measures/custom`,
+bundled common measures, bundled ComStock measures, and local BCL caches before
+searching BCL. If BCL returns a strong match, `find_measure` downloads it into
+`/measures/bcl` and returns a top-level `measure_dir` / `selected_measure_dir`.
+Pass that value directly to `list_measure_arguments` or `apply_measure`. Use
+`search_bcl_measures` only when you need to inspect BCL candidates without
+downloading.
 
 ## Before Writing HVAC Measures
 
@@ -88,10 +95,24 @@ Replace run() body, arguments, or description on an existing measure. Use to add
 List all measures in `/measures/custom/`.
 
 ### list_local_measures
-Search mounted, downloaded, custom, common measures, and ComStock measures. Use this before BCL/download when the user asks for an existing measure.
+Search mounted, downloaded, custom, common measures, and ComStock measures. Use directly only when you need the full local inventory; otherwise prefer `find_measure`.
+
+### find_measure
+Find an existing measure by name, BCL page title, or intent. This is the default
+tool for existing-measure requests. It searches locally first, then BCL, and
+downloads a strong BCL match into `/measures/bcl`. On success, use the top-level
+`measure_dir` or `next.apply.arguments.measure_dir` for the next tool call.
+
+Example query: `Replace Chiller with Air Source Heat Pumps Measure Details`.
+
+### search_bcl_measures
+Search BCL and rank candidates without downloading. Use this when you need to
+show or inspect BCL candidates before choosing one.
 
 ### download_measure_from_bcl
-Download a measure archive into `/measures/bcl`. Use only after local search does not find a suitable measure and the user agrees to try BCL/download.
+Download a known measure archive URL into `/measures/bcl`. Prefer `find_measure`
+when starting from a measure name or intent. On success, use the top-level
+`measure_dir` or `next.apply.arguments.measure_dir`.
 
 ### apply_measure
 Apply a measure to the currently loaded model (from `measure_application` skill).

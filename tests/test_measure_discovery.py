@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sys
 import types
@@ -129,12 +130,162 @@ def test_download_measure_archive_pulls_bcl_zip(monkeypatch, tmp_path):
         "measure_dir": str(measure_dir.resolve()),
         "source": "requested",
     }]
+    assert result["measure_dir"] == str(measure_dir.resolve())
+    assert result["selected_measure_dir"] == str(measure_dir.resolve())
+    assert result["selected_measure"]["measure_dir"] == str(measure_dir.resolve())
+    assert result["next"]["apply"]["arguments"]["measure_dir"] == str(measure_dir.resolve())
     assert result["archive_path"] == str(bcl_root / "test_measure.zip")
     assert result["extract_dir"] == str(bcl_root / "test_measure")
     assert measure_dir.joinpath("measure.rb").is_file()
     assert calls[0][0].full_url == "https://bcl.nrel.gov/api/measure/download/test_measure.zip"
     assert calls[0][0].headers["User-agent"] == "openstudio-mcp/measure-downloader"
     assert calls[0][1] == 12
+
+
+def test_bcl_search_urls_use_wildcard_results_query(monkeypatch, tmp_path):
+    # BCL UI searches use /results/*query*?fq=bundle:measure&page=0.
+    # The MCP tool uses the matching JSON API path while returning the browser
+    # results URL for verification.
+    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
+
+    api_url, results_url = ops._bcl_search_urls(
+        "Replace Chiller with Air Source Heat Pumps Measure Details",
+        page=0,
+        show_rows=30,
+    )
+
+    assert api_url == (
+        "https://bcl.nlr.gov/api/search/"
+        "*Replace%20Chiller%20with%20Air%20Source%20Heat%20Pumps%20Measure%20Details*"
+        ".json?fq=bundle:measure&page=0&show_rows=30"
+    )
+    assert results_url == (
+        "https://bcl.nlr.gov/results/"
+        "*Replace%20Chiller%20with%20Air%20Source%20Heat%20Pumps%20Measure%20Details*"
+        "?fq=bundle:measure&page=0"
+    )
+
+
+def test_find_measure_returns_local_match_before_bcl(monkeypatch, tmp_path):
+    # The high-level finder must prefer an existing local/bundled measure over
+    # BCL, even if the query came from a BCL page title ending in "Measure Details".
+    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
+    local_root = tmp_path / "common"
+    _make_measure(local_root, "replace_chiller_with_air_source_heat_pumps")
+
+    monkeypatch.setattr(ops, "CUSTOM_MEASURES_DIR", tmp_path / "custom")
+    monkeypatch.setattr(ops, "MEASURES_DIR", tmp_path / "measures")
+    monkeypatch.setattr(ops, "INPUT_ROOT", tmp_path / "inputs")
+    monkeypatch.setattr(ops, "RUN_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(ops, "COMMON_MEASURES_DIR", local_root)
+    monkeypatch.setattr(ops, "COMSTOCK_MEASURES_DIR", tmp_path / "comstock")
+    monkeypatch.setattr(ops, "BCL_MEASURES_DIR", tmp_path / "bcl")
+    monkeypatch.setattr(ops, "is_path_allowed", lambda _path: True)
+    monkeypatch.setattr(
+        ops,
+        "_measure_entry",
+        lambda path, source: {
+            "name": path.name,
+            "display_name": "Replace Chiller with Air Source Heat Pumps",
+            "measure_dir": str(path),
+            "source": source,
+        },
+    )
+
+    def fail_bcl(*_args, **_kwargs):
+        raise AssertionError("BCL should not be searched when local match is strong")
+
+    monkeypatch.setattr(ops, "search_bcl_measures", fail_bcl)
+
+    result = ops.find_measure("Replace Chiller with Air Source Heat Pumps Measure Details")
+
+    assert result["ok"] is True
+    assert result["source"] == "local"
+    assert result["downloaded"] is False
+    assert result["match"]["source"] == "common"
+    assert result["measure_dir"] == str(local_root / "replace_chiller_with_air_source_heat_pumps")
+    assert result["selected_measure_dir"] == str(local_root / "replace_chiller_with_air_source_heat_pumps")
+    assert result["selected_measure"]["measure_dir"] == str(local_root / "replace_chiller_with_air_source_heat_pumps")
+    assert result["next"]["list_arguments"]["arguments"]["measure_dir"] == result["measure_dir"]
+    assert result["next"]["apply"]["arguments"]["measure_dir"] == result["measure_dir"]
+
+
+def test_find_measure_searches_bcl_and_downloads_good_match(monkeypatch, tmp_path):
+    # If local discovery cannot find the requested measure, the high-level
+    # finder searches BCL, scores the candidates, and downloads only a good match.
+    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
+    bcl_root = tmp_path / "measures" / "bcl"
+
+    monkeypatch.setattr(ops, "CUSTOM_MEASURES_DIR", tmp_path / "custom")
+    monkeypatch.setattr(ops, "MEASURES_DIR", tmp_path / "measures")
+    monkeypatch.setattr(ops, "INPUT_ROOT", tmp_path / "inputs")
+    monkeypatch.setattr(ops, "RUN_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(ops, "COMMON_MEASURES_DIR", tmp_path / "common")
+    monkeypatch.setattr(ops, "COMSTOCK_MEASURES_DIR", tmp_path / "comstock")
+    monkeypatch.setattr(ops, "BCL_MEASURES_DIR", bcl_root)
+    monkeypatch.setattr(ops, "is_path_allowed", lambda _path: True)
+    monkeypatch.setattr(
+        ops,
+        "_measure_entry",
+        lambda path, source: {"name": path.name, "measure_dir": str(path), "source": source},
+    )
+
+    bcl_payload = {
+        "result": [
+            {
+                "measure": {
+                    "name": "radiant_slab_with_doas",
+                    "display_name": "Radiant Slab with DOAS",
+                    "uuid": "not-the-one",
+                    "download_url": "https://bcl.nlr.gov/api/download?uids=not-the-one",
+                }
+            },
+            {
+                "measure": {
+                    "name": "replace_chiller_with_air_source_heat_pumps",
+                    "display_name": "Replace Chiller with Air Source Heat Pumps",
+                    "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                    "description": (
+                        "Replaces the water-cooled chiller with an air-source "
+                        "heat pump for cooling."
+                    ),
+                    "download_url": "https://bcl.nlr.gov/api/download?uids=a1b2c3d4-e5f6",
+                }
+            },
+        ]
+    }
+    search_calls = []
+
+    def fake_read_url(url, _timeout_seconds):
+        if "/api/search/" in url:
+            search_calls.append(url)
+            return json.dumps(bcl_payload).encode("utf-8"), "application/json"
+        if "/api/download" in url:
+            return _measure_zip(), "application/zip"
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(ops, "_read_url", fake_read_url)
+
+    result = ops.find_measure("Replace Chiller with Air Source Heat Pumps Measure Details")
+
+    assert result["ok"] is True
+    assert result["source"] == "bcl"
+    assert result["downloaded"] is True
+    assert result["match"]["name"] == "replace_chiller_with_air_source_heat_pumps"
+    assert result["match"]["match_score"] >= 0.72
+    assert result["measure_dir"].endswith("downloaded_measure")
+    assert result["selected_measure_dir"] == result["measure_dir"]
+    assert result["selected_measure"]["measure_dir"] == result["measure_dir"]
+    assert result["selected_measure"]["downloaded_name"] == "downloaded_measure"
+    assert result["next"]["apply"]["arguments"]["measure_dir"] == result["measure_dir"]
+    assert Path(result["measure_dir"], "measure.rb").is_file()
+    assert search_calls[0].startswith(
+        "https://bcl.nlr.gov/api/search/"
+        "*Replace%20Chiller%20with%20Air%20Source%20Heat%20Pumps%20Measure%20Details*"
+        ".json?"
+    )
+    assert "fq=bundle:measure" in search_calls[0]
+    assert "page=0" in search_calls[0]
 
 
 @pytest.mark.integration
