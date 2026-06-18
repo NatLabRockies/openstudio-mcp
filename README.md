@@ -16,6 +16,7 @@
 - *"Add R-30 roof insulation and see how it affects the cooling load."*
 - *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing."*
 - *"Write a measure that sets all lights to 8 W/m², test it, apply it, and compare the EUI."*
+- *"Apply the AEDG Small Office measure from my local measures directory"*
 
 The AI picks the right tools, calls them in sequence, and summarizes — no scripting.
 
@@ -43,7 +44,11 @@ Both produce the same `openstudio-mcp:dev` image. The arm64 Dockerfile builds na
 
 ### 2. Configure your host
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), then restart Claude Desktop:
+**Option A: Claude Desktop (JSON)**
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), then restart Claude Desktop.
+
+Replace `/path/to/openstudio-mcp` with your absolute path to the repository (e.g., `/Users/you/openstudio-mcp` on macOS or `C:/Users/you/openstudio-mcp` on Windows):
 
 ```json
 {
@@ -52,9 +57,10 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "./tests/assets:/inputs:ro",
-        "-v", "./runs:/runs",
-        "-v", "./.claude/skills:/skills:ro",
+        "-v", "/path/to/openstudio-mcp/tests/assets:/inputs:ro",
+        "-v", "/path/to/openstudio-mcp/runs:/runs",
+        "-v", "/path/to/openstudio-mcp/measures:/measures",
+        "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
         "openstudio-mcp:dev", "openstudio-mcp"
       ]
@@ -63,7 +69,44 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-The `-v host:container` mounts expose your folders inside the container: `/inputs` for your models (starts with the bundled test models), `/runs` for simulation outputs, `/skills` for the workflow guides. Use absolute paths if `./` doesn't resolve from where your host launches Docker.
+**Option B: Codex & other clients (TOML)**
+
+Add to your client config (e.g., `~/.codex/config.toml` on macOS/Linux, `%APPDATA%\.codex\config.toml` on Windows).
+
+Replace `/path/to/openstudio-mcp` with your absolute path to your openstudio-mcp checkout:
+
+```toml
+[mcp_servers.openstudio-mcp]
+command = "docker"
+startup_timeout_sec = 120
+args = [
+  "run", "--rm", "-i",
+  "-v", "/path/to/openstudio-mcp/tests/assets:/inputs:ro",
+  "-v", "/path/to/openstudio-mcp/runs:/runs",
+  "-v", "/path/to/openstudio-mcp/measures:/measures",
+  "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
+  "-e", "OPENSTUDIO_MCP_MODE=prod",
+  "openstudio-mcp:dev", "openstudio-mcp"
+]
+```
+
+**Configuration notes:**
+
+The `-v host:container` mounts expose your folders inside the container. **Use absolute paths** to ensure mounts resolve correctly regardless of where your client launches Docker:
+
+On **Windows** (using forward slashes in Docker args):
+```json
+"-v", "C:/Users/you/openstudio-mcp/tests/assets:/inputs:ro",
+"-v", "C:/Users/you/openstudio-mcp/runs:/runs",
+```
+
+**Mount purposes:**
+- `/inputs` — test models + your own models (replace `tests/assets` with your model folder)
+- `/runs` — simulation outputs written here
+- `/measures` — per-user measures root; each user's authored + downloaded measures live under `/measures/<user>/{custom,bcl}` (isolated in multi-user mode; mount writable like `/runs`)
+- `/skills` — workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
+- To keep downloaded or hand-managed measures persistent, mount a host folder under `/measures` and use `list_local_measures` to discover them.
+- **Restart your client** after saving the config file
 
 ### 3. Verify and chat
 
@@ -73,17 +116,49 @@ Look for the **hammer icon** in Claude Desktop's input — click it to see the o
 
 **Use the `/inputs` mount for your own files** rather than uploading through chat — Claude Desktop's upload sandbox can't reach MCP tools, so the AI may fall back to writing scripts. Drop a file in the host folder mapped to `/inputs` and reference it by that path. Simulation outputs in `/runs` are already reachable.
 
-**Other hosts:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [VS Code Copilot](https://code.visualstudio.com/), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) use similar JSON config — see the [MCP docs](https://modelcontextprotocol.io/quickstart/user).
+Try these prompts in order of complexity:
+
+> **Simple:** "Create an example model and tell me about it"
+
+> **Medium:** "Create a baseline office with ASHRAE System 3 and show me the HVAC components"
+
+> **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
+
+The AI reads your prompt, picks the right tools from the 150+ available, calls them in sequence, and summarizes the results — no scripting required.
+
+### Working with Your Own Files
+
+**Place files in the `/inputs` mount** (the host folder mapped to `/inputs` in the config above) rather than uploading them through the chat interface. This ensures the MCP tools can access them directly.
+
+```bash
+# Example: analyzing an EnergyPlus error file
+# 1. Copy to your inputs folder
+cp eplusout.err ./tests/assets/
+
+# 2. Reference by MCP path in your prompt
+"Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
+```
+
+**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 150+ specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
+
+For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
+
+### Other MCP Hosts
+
+[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://developers.openai.com/codex), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+
+### Client Compatibility
 
 | Client | Status | Notes |
 |--------|--------|-------|
-| Claude Desktop | ✅ Full | all tools available |
-| Claude Code | ✅ Full | ToolSearch auto-defers tools for efficient discovery |
-| VS Code Copilot | ✅ Compatible | MCP via config |
-| Windsurf | ✅ Compatible | under the 100-tool limit |
-| Gemini CLI | ✅ Compatible | use includeTools/excludeTools if needed |
-| OpenAI API | ✅ Compatible | use defer_loading for best results |
-| Cursor | ⚠️ Limited | 40-tool hard cap — use Claude Code or Windsurf |
+| Claude Desktop | Full support | All tools available |
+| Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
+| Codex | Compatible | MCP client via config |
+| VS Code Copilot | Compatible | MCP support via config |
+| Windsurf | Compatible | Under 100-tool limit |
+| Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
+| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
+| OpenAI API | Compatible | Use defer_loading for best results |
 
 ---
 
@@ -167,7 +242,7 @@ OSM, SQL, report, and log files as untrusted outputs.
 
 ---
 
-## Workflow skills
+## Skills & Tools (150+ total)
 
 In Claude Code, 12 bundled skills add workflow automation and domain knowledge:
 
@@ -393,6 +468,20 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 | `set_simulation_control` | Modify sizing flags and/or timestep |
 | `get_run_period` | Read run-period dates |
 | `set_run_period` | Set run-period dates |
+
+</details>
+
+<details>
+<summary><b>Measures</b> — 6 tools</summary>
+
+| Tool | Description |
+|------|-------------|
+| `list_local_measures` | Discover mounted, downloaded, bundled, and custom OpenStudio measures |
+| `find_measure` | Find a measure locally first, then BCL; download a strong BCL match |
+| `search_bcl_measures` | Search BCL measure candidates without downloading |
+| `list_measure_arguments` | List measure arguments with defaults and choices |
+| `download_measure_from_bcl` | Download and extract a measure ZIP into your per-user BCL cache (`/measures/<user>/bcl`) |
+| `apply_measure` | Apply OpenStudio measure to in-memory model |
 
 </details>
 

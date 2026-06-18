@@ -31,8 +31,8 @@ An energy modeler wants to evaluate the impact of reducing lighting power densit
      description="Set all lights to 8 W/m2",
      language="Ruby",
      run_body="    model.getLightsDefinitions.each do |ld|\n      ld.setWattsperSpaceFloorArea(8.0)\n    end\n    runner.registerFinalCondition('Set all lights to 8 W/m2')")
-8. test_measure(measure_dir="/runs/custom_measures/set_lights_8w")
-9. apply_measure(measure_dir="/runs/custom_measures/set_lights_8w")
+8. test_measure(measure_dir="/measures/local/custom/set_lights_8w")
+9. apply_measure(measure_dir="/measures/local/custom/set_lights_8w")
 ```
 
 ### Retrofit Simulation

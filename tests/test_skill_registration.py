@@ -106,7 +106,11 @@ EXPECTED_TOOLS = {
     "get_run_period",
     "set_run_period",
     # Phase 6D: Measures
+    "list_local_measures",
+    "find_measure",
+    "search_bcl_measures",
     "list_measure_arguments",
+    "download_measure_from_bcl",
     "apply_measure",
     "list_custom_measures",
     "create_measure",
@@ -200,7 +204,7 @@ def test_all_skills_registered():
 
 
 def test_all_tool_names_registered():
-    # Validates: all 151 expected tools are registered, no extras — migration backward-compatibility
+    # Validates: all expected tools are registered, no extras — migration backward-compatibility
     """Every expected tool function is registered via mcp.tool()."""
     registered_tools = {}
 

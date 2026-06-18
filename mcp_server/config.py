@@ -59,6 +59,11 @@ OSCLI_GEM_PATH = os.environ.get("OSCLI_GEM_PATH", "/var/oscli/gems")
 
 COMSTOCK_MEASURES_DIR = Path(os.environ.get("COMSTOCK_MEASURES_DIR", "/opt/comstock-measures"))
 COMMON_MEASURES_DIR = Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures"))
+# Mount root for per-user measures. Each principal is scoped to MEASURES_DIR/<key>
+# (see user_measures_root); custom + bcl live under that, never at the bare root.
+# No per-subdir env overrides: a flat override would silently break tenant scoping.
+USER_MEASURES_DIR = Path(os.environ.get("OPENSTUDIO_MCP_MEASURES_DIR", "/measures"))
+MEASURES_DIR = USER_MEASURES_DIR
 SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/skills"))
 
 INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolve()
@@ -186,8 +191,12 @@ OSMCP_MAX_ARCHIVE_ENTRIES = _safe_int(os.environ.get("OSMCP_MAX_ARCHIVE_ENTRIES"
 # returns a relative path and the client prepends the same host it uses for /mcp.
 OSMCP_PUBLIC_BASE_URL = os.environ.get("OSMCP_PUBLIC_BASE_URL", "").rstrip("/")
 
-# Shared roots are read-only for everyone; the only per-user writable area is
-# RUN_ROOT/<user_key> (see user_run_root). Writes elsewhere are denied.
+# Shared roots are read-only for everyone; the only per-user writable areas are
+# RUN_ROOT/<user_key> (runs) and MEASURES_DIR/<user_key> (measures) — see
+# user_run_root / user_measures_root. Writes elsewhere are denied. The measures tree
+# is deliberately NOT listed here: it is per-user, not a global shared dir. Adding it
+# would expose every tenant's authored measures to every other tenant (see
+# docs/security-isolation.md).
 _SHARED_READ_ROOTS = [
     Path("/repo").resolve(),
     INPUT_ROOT,
@@ -226,6 +235,35 @@ def run_root_for(key: str) -> Path:
     return root
 
 
+def user_measures_root() -> Path:
+    """The caller's private measures root (MEASURES_DIR/<user_key>), created if missing.
+
+    Unlike user_run_root(), EVERY principal is keyed — including the local single user
+    (MEASURES_DIR/local). Nobody owns the bare MEASURES_DIR, so no identity can reach
+    another tenant's measures, and the fixed `custom`/`bcl` leaf names can never alias
+    a user key. Measures is a new feature, so there is no legacy layout to preserve.
+    See docs/security-isolation.md.
+    """
+    from mcp_server.identity import user_key
+    root = (MEASURES_DIR / user_key()).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def user_custom_measures_dir() -> Path:
+    """The caller's private authored-measures dir (MEASURES_DIR/<user_key>/custom)."""
+    d = (user_measures_root() / "custom").resolve()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def user_bcl_measures_dir() -> Path:
+    """The caller's private downloaded-BCL-measures dir (MEASURES_DIR/<user_key>/bcl)."""
+    d = (user_measures_root() / "bcl").resolve()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def is_path_allowed_for(key: str, p: Path, *, write: bool = False) -> bool:
     """is_path_allowed but for an EXPLICIT user key (used by signed routes)."""
     rp = p.resolve()
@@ -247,14 +285,19 @@ def is_path_allowed(p: Path, *, write: bool = False) -> bool:
     """Whether the caller may access path `p`.
 
     - Own run root (RUN_ROOT/<user_key>): read + write.
-    - Elsewhere under RUN_ROOT (another user's runs): always denied.
-    - Shared roots (repo, inputs, measures, skills): read-only.
+    - Own measures root (MEASURES_DIR/<user_key>): read + write.
+    - Elsewhere under RUN_ROOT or MEASURES_DIR (another user's area): always denied.
+    - Shared roots (repo, inputs, bundled measures, skills): read-only.
     """
     rp = p.resolve()
     if _under(rp, user_run_root()):
         return True
     if _under(rp, RUN_ROOT):
         return False  # another user's run area
+    if _under(rp, user_measures_root()):
+        return True
+    if _under(rp, MEASURES_DIR):
+        return False  # another user's measures area
     if write:
         return False  # shared roots are read-only
     return any(_under(rp, root) for root in _SHARED_READ_ROOTS)
