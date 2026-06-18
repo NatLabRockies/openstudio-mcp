@@ -44,7 +44,11 @@ Both produce the same `openstudio-mcp:dev` image. The arm64 Dockerfile builds na
 
 ### 2. Configure your host
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), then restart Claude Desktop:
+**Option A: Claude Desktop (JSON)**
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), then restart Claude Desktop.
+
+Replace `/path/to/openstudio-mcp` with your absolute path to the repository (e.g., `/Users/you/openstudio-mcp` on macOS or `C:/Users/you/openstudio-mcp` on Windows):
 
 ```json
 {
@@ -53,10 +57,10 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "./tests/assets:/inputs:ro",
-        "-v", "./runs:/runs",
-        "-v", "./measures:/measures",
-        "-v", "./.claude/skills:/skills:ro",
+        "-v", "/path/to/openstudio-mcp/tests/assets:/inputs:ro",
+        "-v", "/path/to/openstudio-mcp/runs:/runs",
+        "-v", "/path/to/openstudio-mcp/measures:/measures",
+        "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
         "openstudio-mcp:dev", "openstudio-mcp"
       ]
@@ -65,14 +69,44 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-The `-v host:container` mounts expose your folders inside the container: `/inputs` for your models (starts with the bundled test models), `/runs` for simulation outputs, `/skills` for the workflow guides. Use absolute paths if `./` doesn't resolve from where your host launches Docker.
+**Option B: Codex & other clients (TOML)**
 
-- `./tests/assets:/inputs` — mounts the included test models so you can experiment right away. Replace with your own folder (e.g. `~/my-models:/inputs`) when ready.
-- `./runs:/runs` — simulation outputs are written here
-- `./measures:/measures` — downloaded BCL measures go under `/measures/bcl`; `create_measure` writes custom measures under `/measures/custom`
-- `./.claude/skills:/skills:ro` — makes workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
+Add to your client config (e.g., `~/.codex/config.toml` on macOS/Linux, `%APPDATA%\.codex\config.toml` on Windows).
+
+Replace `/path/to/openstudio-mcp` with your absolute path to your openstudio-mcp checkout:
+
+```toml
+[mcp_servers.openstudio-mcp]
+command = "docker"
+startup_timeout_sec = 120
+args = [
+  "run", "--rm", "-i",
+  "-v", "/path/to/openstudio-mcp/tests/assets:/inputs:ro",
+  "-v", "/path/to/openstudio-mcp/runs:/runs",
+  "-v", "/path/to/openstudio-mcp/measures:/measures",
+  "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
+  "-e", "OPENSTUDIO_MCP_MODE=prod",
+  "openstudio-mcp:dev", "openstudio-mcp"
+]
+```
+
+**Configuration notes:**
+
+The `-v host:container` mounts expose your folders inside the container. **Use absolute paths** to ensure mounts resolve correctly regardless of where your client launches Docker:
+
+On **Windows** (using forward slashes in Docker args):
+```json
+"-v", "C:/Users/you/openstudio-mcp/tests/assets:/inputs:ro",
+"-v", "C:/Users/you/openstudio-mcp/runs:/runs",
+```
+
+**Mount purposes:**
+- `/inputs` — test models + your own models (replace `tests/assets` with your model folder)
+- `/runs` — simulation outputs written here
+- `/measures` — downloaded BCL measures go under `/measures/bcl`; custom measures under `/measures/custom`
+- `/skills` — workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
 - To keep downloaded or hand-managed measures persistent, mount a host folder under `/measures` and use `list_local_measures` to discover them.
-- **Restart Claude Desktop** after saving the config file
+- **Restart your client** after saving the config file
 
 ### 3. Verify and chat
 
@@ -96,7 +130,7 @@ The AI reads your prompt, picks the right tools from the 150+ available, calls t
 
 **Place files in the `/inputs` mount** (the host folder mapped to `/inputs` in the config above) rather than uploading them through the chat interface. This ensures the MCP tools can access them directly.
 
-```
+```bash
 # Example: analyzing an EnergyPlus error file
 # 1. Copy to your inputs folder
 cp eplusout.err ./tests/assets/
