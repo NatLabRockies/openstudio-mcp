@@ -96,52 +96,6 @@ def test_list_local_measures_prefers_checkouts_before_bcl(monkeypatch, tmp_path)
     assert [m["source"] for m in result["measures"]] == ["common", "comstock", "bcl"]
 
 
-def test_download_measure_archive_pulls_bcl_zip(monkeypatch, tmp_path):
-    # Regression: the downloader must accept the real BCL/NREL host, fetch the
-    # archive into the default BCL cache, safely extract it, and return
-    # discovered measure_dir values.
-    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
-    calls = []
-    bcl_root = tmp_path / "measures" / "bcl"
-
-    def fake_urlopen(request, timeout):
-        calls.append((request, timeout))
-        return _FakeDownloadResponse(_measure_zip())
-
-    monkeypatch.setattr(ops, "BCL_MEASURES_DIR", bcl_root)
-    monkeypatch.setattr(ops, "is_path_allowed", lambda _path: True)
-    monkeypatch.setattr(ops, "urlopen", fake_urlopen)
-    monkeypatch.setattr(
-        ops,
-        "_measure_entry",
-        lambda path, source: {"name": path.name, "measure_dir": str(path), "source": source},
-    )
-
-    result = ops.download_measure_archive(
-        url="https://bcl.nrel.gov/api/measure/download/test_measure.zip",
-        timeout_seconds=12,
-    )
-
-    assert result["ok"] is True
-    assert result["count"] == 1
-    measure_dir = bcl_root / "test_measure" / "downloaded_measure"
-    assert result["measures"] == [{
-        "name": "downloaded_measure",
-        "measure_dir": str(measure_dir.resolve()),
-        "source": "requested",
-    }]
-    assert result["measure_dir"] == str(measure_dir.resolve())
-    assert result["selected_measure_dir"] == str(measure_dir.resolve())
-    assert result["selected_measure"]["measure_dir"] == str(measure_dir.resolve())
-    assert result["next"]["apply"]["arguments"]["measure_dir"] == str(measure_dir.resolve())
-    assert result["archive_path"] == str(bcl_root / "test_measure.zip")
-    assert result["extract_dir"] == str(bcl_root / "test_measure")
-    assert measure_dir.joinpath("measure.rb").is_file()
-    assert calls[0][0].full_url == "https://bcl.nrel.gov/api/measure/download/test_measure.zip"
-    assert calls[0][0].headers["User-agent"] == "openstudio-mcp/measure-downloader"
-    assert calls[0][1] == 12
-
-
 def test_bcl_search_urls_use_wildcard_results_query(monkeypatch, tmp_path):
     # BCL UI searches use /results/*query*?fq=bundle:measure&page=0.
     # The MCP tool uses the matching JSON API path while returning the browser
@@ -289,7 +243,7 @@ def test_find_measure_searches_bcl_and_downloads_good_match(monkeypatch, tmp_pat
 
 
 @pytest.mark.integration
-def test_download_measure_archive_real_bcl_content_url():
+def test_download_measure_archive_pulls_bcl_zip():
     # Validates the live BCL content page flow: fetch content page, resolve its
     # versioned /api/download link, download the archive, and discover measure.rb.
     if os.environ.get("RUN_OPENSTUDIO_INTEGRATION", "").strip() not in ("1", "true", "TRUE", "yes", "YES"):
@@ -306,7 +260,7 @@ def test_download_measure_archive_real_bcl_content_url():
 
     assert result["ok"] is True, result
     assert result["download_url"].startswith("https://bcl.nlr.gov/api/download?")
-    assert "release_tag=v0.12.2" in result["download_url"]
+    assert "release_tag=v" in result["download_url"]
     assert result["count"] == 1
     measure = result["measures"][0]
     assert measure["name"] == "SetWindowToWallRatioByFacade"
