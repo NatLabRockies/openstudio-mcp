@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 import zipfile
 from html.parser import HTMLParser
@@ -123,6 +124,12 @@ def _safe_extract_zip(zip_path: Path, output_dir: Path) -> list[Path]:
 
         total = 0
         for member in members:
+            # Reject symlink members. CPython's extractall writes them as regular files
+            # (it doesn't restore links), but reject explicitly so a link can never be
+            # materialized — on any platform/extractor — and later point outside output_root.
+            if stat.S_ISLNK(member.external_attr >> 16):
+                raise ValueError(f"ZIP member is a symlink (not allowed): {member.filename}")
+
             total += int(getattr(member, "file_size", 0) or 0)
             if total > max_uncompressed_bytes:
                 raise ValueError("ZIP uncompressed size is too large")

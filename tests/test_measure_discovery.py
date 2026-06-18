@@ -75,6 +75,15 @@ def _measure_zip() -> bytes:
     return payload.getvalue()
 
 
+def _symlink_zip() -> bytes:
+    payload = BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        info = zipfile.ZipInfo("evil_link")
+        info.external_attr = 0o120777 << 16  # S_IFLNK | 0777 in the high mode bits
+        archive.writestr(info, "/etc/passwd")  # symlink target stored as the member content
+    return payload.getvalue()
+
+
 def test_list_local_measures_prefers_checkouts_before_bcl(monkeypatch, request, tmp_path):
     # Regression: measure discovery should search local/common/ComStock checkouts
     # before BCL caches so agents do not jump to BCL for measures already bundled.
@@ -278,6 +287,18 @@ def test_download_measure_archive_rejects_measure_name_traversal(monkeypatch, re
     assert "escape" in result["error"].lower(), result
     # The escape target (sibling of the tenant's own dir) must never be created.
     assert not (tmp_path / "measures" / "escaped").exists(), "extraction escaped destination_root"
+
+
+def test_safe_extract_zip_rejects_symlink_members(monkeypatch, request, tmp_path):
+    # Defense-in-depth: a ZIP symlink member must be rejected before extraction, even
+    # though CPython's extractall writes it as a regular file — so no extractor/platform
+    # can ever materialize a link that later points outside output_root.
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    zip_path = tmp_path / "evil.zip"
+    zip_path.write_bytes(_symlink_zip())
+
+    with pytest.raises(ValueError, match="symlink"):
+        ops._safe_extract_zip(zip_path, tmp_path / "out")
 
 
 @pytest.mark.integration
