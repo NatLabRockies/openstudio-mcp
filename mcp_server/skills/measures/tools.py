@@ -23,13 +23,13 @@ def register(mcp):
         """Find existing OpenStudio measures before considering BCL download.
 
         Use this first when the user asks for a measure by name or intent.
-        Searches mounted/user measures plus bundled common measures and
-        ComStock measures by default. Only ask the user about downloading from
-        BCL if no suitable local match is found.
+        Searches your per-user measures plus bundled common and ComStock measures
+        by default. Only ask the user about downloading from BCL if no suitable
+        local match is found.
 
-        Search order: your custom measures, legacy /inputs measures,
-        /opt/common-measures, /opt/comstock-measures, then your BCL cache.
-        Pass root_dir to inspect one allowed measure folder.
+        Search order: your custom measures, your legacy run-root custom measures,
+        /opt/common-measures, /opt/comstock-measures, /inputs/measures, your BCL
+        cache, then legacy /inputs BCL. Pass root_dir to inspect one allowed folder.
         """
         return list_local_measures(root_dir=root_dir, max_depth=max_depth, max_results=max_results)
 

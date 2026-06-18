@@ -38,7 +38,13 @@ from mcp_server.skills.measures.osw_weather import resolve_osw_weather
 from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_run_dir
 
 
-MEASURE_DOWNLOAD_HOSTS = {"bcl.nrel.gov", "bcl.nlr.gov", "github.com", "raw.githubusercontent.com"}
+# github.com archive/release URLs redirect to codeload / objects.githubusercontent.com,
+# so those must be allowed too or the post-redirect host check rejects GitHub downloads.
+MEASURE_DOWNLOAD_HOSTS = {
+    "bcl.nrel.gov", "bcl.nlr.gov",
+    "github.com", "raw.githubusercontent.com",
+    "codeload.github.com", "objects.githubusercontent.com",
+}
 BCL_SEARCH_HOST = "https://bcl.nlr.gov"
 MATCH_STOPWORDS = {"measure", "details"}
 
@@ -555,11 +561,18 @@ def download_measure_archive(
                 download_url = resolved_url
                 payload, content_type = _read_url(download_url, timeout_seconds)
 
+        # measure_name (a tool input) and the URL-derived archive name are untrusted; a
+        # value like "../.." would make these escape destination_root despite the earlier
+        # destination check, writing outside the caller's per-user measures area. Verify
+        # both resolve to a strict subpath of destination_root BEFORE any filesystem write.
         archive_name = _guess_download_name(download_url)
         archive_path = destination_root / archive_name
-        archive_path.write_bytes(payload)
-
         extract_root = destination_root / (measure_name or archive_path.stem)
+        dest_resolved = str(destination_root.resolve())
+        for _p in (archive_path, extract_root):
+            if not str(_p.resolve()).startswith(dest_resolved + os.sep):
+                return {"ok": False, "error": f"measure_name/archive escapes destination: {_p}"}
+        archive_path.write_bytes(payload)
         extract_root.mkdir(parents=True, exist_ok=True)
         _safe_extract_zip(archive_path, extract_root)
 

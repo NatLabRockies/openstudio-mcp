@@ -17,26 +17,28 @@ BCL_CONTENT_URL = "https://bcl.nlr.gov/content/c567a0bf-a7d9-4a06-afe9-bf7df79e6
 
 
 def _import_measure_ops(monkeypatch, request, run_root: Path):
-    # Snapshot sys.modules BEFORE faking openstudio, and fully revert to it at teardown.
-    # This reimport binds the fake openstudio into mcp_server modules (notably
-    # model_manager, first-imported in-process here); without the revert that fake leaks
-    # into later test files in the same process (e.g. test_validate_model.load_model ->
-    # openstudio.osversion). A blind purge is wrong too — it must RESTORE the real
-    # modules other files already hold (e.g. test_skill_tools), not just delete them.
-    saved_modules = dict(sys.modules)
-    fake_openstudio = types.SimpleNamespace()
-    monkeypatch.setitem(sys.modules, "openstudio", fake_openstudio)
     monkeypatch.setenv("OPENSTUDIO_MCP_RUN_ROOT", str(run_root))
-    sys.modules.pop("mcp_server.config", None)
-    sys.modules.pop("mcp_server.skills.measures.operations", None)
+    try:
+        import openstudio  # noqa: F401 — real SDK present (Docker/dev): no fake needed.
+        return importlib.import_module("mcp_server.skills.measures.operations")
+    except ImportError:
+        # No SDK (pure no-Docker unit run): fake openstudio just long enough to import
+        # measures.operations, then restore the affected modules at teardown so the fake
+        # can't leak into later test files in the same process (e.g. test_validate_model).
+        monkeypatch.setitem(sys.modules, "openstudio", types.SimpleNamespace())
+        saved = {n: sys.modules.get(n) for n in ("mcp_server.config", "mcp_server.skills.measures.operations")}
+        for name in saved:
+            sys.modules.pop(name, None)
 
-    def _restore_modules():
-        for name in [n for n in sys.modules if n not in saved_modules]:
-            del sys.modules[name]
-        sys.modules.update(saved_modules)
+        def _restore():
+            for name, mod in saved.items():
+                if mod is not None:
+                    sys.modules[name] = mod
+                else:
+                    sys.modules.pop(name, None)
 
-    request.addfinalizer(_restore_modules)
-    return importlib.import_module("mcp_server.skills.measures.operations")
+        request.addfinalizer(_restore)
+        return importlib.import_module("mcp_server.skills.measures.operations")
 
 
 def _import_real_measure_ops():
@@ -251,6 +253,31 @@ def test_find_measure_searches_bcl_and_downloads_good_match(monkeypatch, request
     )
     assert "fq=bundle:measure" in search_calls[0]
     assert "page=0" in search_calls[0]
+
+
+def test_download_measure_archive_rejects_measure_name_traversal(monkeypatch, request, tmp_path):
+    # Regression: measure_name is a tool input (download_measure_from_bcl); a value like
+    # "../.." made extract_root = destination_root / measure_name escape the per-user
+    # measures dir, bypassing path-safety AND tenant isolation. It must be sanitized and
+    # containment-checked before any filesystem write.
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    measures_root = tmp_path / "measures" / "alice"
+    bcl_root = measures_root / "bcl"
+    bcl_root.mkdir(parents=True)
+    monkeypatch.setattr(ops, "user_bcl_measures_dir", lambda: bcl_root)
+    monkeypatch.setattr(ops, "user_measures_root", lambda: measures_root)
+    monkeypatch.setattr(ops, "is_path_allowed", lambda _p, **_kw: True)
+    monkeypatch.setattr(ops, "_read_url", lambda _url, _t: (_measure_zip(), "application/zip"))
+
+    result = ops.download_measure_archive(
+        url="https://bcl.nlr.gov/api/download?uids=x",
+        measure_name="../../escaped",
+    )
+
+    assert result["ok"] is False, f"measure_name traversal must be rejected, got {result}"
+    assert "escape" in result["error"].lower(), result
+    # The escape target (sibling of the tenant's own dir) must never be created.
+    assert not (tmp_path / "measures" / "escaped").exists(), "extraction escaped destination_root"
 
 
 @pytest.mark.integration
