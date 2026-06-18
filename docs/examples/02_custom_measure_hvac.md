@@ -33,7 +33,7 @@ A mechanical engineer is exploring a retrofit from conventional VAV terminals to
      description="Replace air terminals with 4-pipe chilled beams",
      language="Ruby",
      run_body=<see below>)
-10. test_measure(measure_dir="/measures/custom/replace_terminals_beam")
+10. test_measure(measure_dir="/measures/local/custom/replace_terminals_beam")
 ```
 
 The `run_body` iterates air loops, removes existing terminals, creates `CoilCoolingFourPipeBeam` + `CoilHeatingFourPipeBeam`, wires them to plant loops, constructs `AirTerminalSingleDuctConstantVolumeFourPipeBeam`, and reconnects via `addBranchForZone`.
@@ -41,7 +41,7 @@ The `run_body` iterates air loops, removes existing terminals, creates `CoilCool
 ### Apply and Compare
 
 ```
-11. apply_measure(measure_dir="/measures/custom/replace_terminals_beam")
+11. apply_measure(measure_dir="/measures/local/custom/replace_terminals_beam")
 12. save_osm_model(save_path="/runs/retrofit_beams.osm")
 13. run_simulation(osm_path="/runs/retrofit_beams.osm")
 14. get_run_status(run_id=<id>)

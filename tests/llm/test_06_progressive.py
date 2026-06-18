@@ -364,9 +364,9 @@ PROGRESSIVE_CASES = [
         "needs_model": False,
         "expected": ["test_measure"],
         "L1": "Run the tests for my custom measure.",
-        "L2": "Run the test suite for the measure at /measures/custom/my_measure.",
+        "L2": "Run the test suite for the measure at /measures/local/custom/my_measure.",
         "L3": "Test the measure using test_measure with measure_dir "
-              "/measures/custom/my_measure.",
+              "/measures/local/custom/my_measure.",
     },
     {
         "id": "apply_existing_measure",
