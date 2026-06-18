@@ -145,7 +145,7 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 
 ### Other MCP Hosts
 
-[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP with similar JSON config. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://developers.openai.com/codex), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
 
 ### Client Compatibility
 
@@ -153,6 +153,7 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 |--------|--------|-------|
 | Claude Desktop | Full support | All tools available |
 | Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
+| Codex | Compatible | MCP client via config |
 | VS Code Copilot | Compatible | MCP support via config |
 | Windsurf | Compatible | Under 100-tool limit |
 | Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
