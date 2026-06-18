@@ -117,6 +117,10 @@ def _guess_download_name(url: str, fallback: str = "downloaded_measure.zip") -> 
 def _read_url(url: str, timeout_seconds: int) -> tuple[bytes, str]:
     req = Request(url, headers={"User-Agent": "openstudio-mcp/measure-downloader"}, method="GET")
     with urlopen(req, timeout=timeout_seconds) as resp:
+        final_url = getattr(resp, "geturl", lambda: url)()
+        parsed = urlparse(final_url)
+        if parsed.scheme != "https" or parsed.hostname not in MEASURE_DOWNLOAD_HOSTS:
+            raise ValueError(f"Redirected download host not allowed: {parsed.hostname}")
         headers = getattr(resp, "headers", {})
         content_type = headers.get("Content-Type", "") if headers else ""
         return resp.read(), content_type
