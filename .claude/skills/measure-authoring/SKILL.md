@@ -32,17 +32,18 @@ create_measure(
 
 ### 2. Test It
 ```
-test_measure(measure_dir="/runs/custom_measures/set_lights_8w")
+test_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
 ```
 Tests run against the currently loaded model (or SystemD_baseline.osm fallback),
 so measures that depend on HVAC, plant loops, or zones will work correctly.
 Use `model_path` to test against a specific model.
-Over HTTP, custom measures land under `/runs/<user>/custom_measures` — always use
-the `measure_dir` path that `create_measure` returns, not a hardcoded one.
+Custom measures are per-user: they land under `/measures/<user>/custom` and are
+private to each HTTP user. Always use the `measure_dir` path that `create_measure`
+returns, not a hardcoded one.
 
 ### 3. Apply to Model
 ```
-apply_measure(measure_dir="/runs/custom_measures/set_lights_8w")
+apply_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
 ```
 
 ### 4. Verify Results (Before/After Comparison)
@@ -54,7 +55,7 @@ extract_summary_metrics(run_id=<baseline_id>)   # record baseline EUI
 
 # reload, apply measure, re-simulate
 load_osm_model(osm_path="<original>")
-apply_measure(measure_dir="/runs/custom_measures/set_lights_8w")
+apply_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
 save_osm_model(save_path="/runs/retrofit.osm")
 run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
 extract_summary_metrics(run_id=<retrofit_id>)   # compare to baseline
@@ -185,13 +186,13 @@ create_measure(
 ### Test with Simulation Results
 ```
 # ReportingMeasures need SQL — provide run_id from a completed sim
-test_measure(measure_dir="/runs/custom_measures/custom_eui_report", run_id="<completed_run_id>")
+test_measure(measure_dir="/measures/<user>/custom/custom_eui_report", run_id="<completed_run_id>")
 ```
 Without `run_id`, only argument validation tests run (no `run()` execution).
 
 ### Apply to Completed Simulation
 ```
-apply_measure(measure_dir="/runs/custom_measures/custom_eui_report", run_id="<completed_run_id>")
+apply_measure(measure_dir="/measures/<user>/custom/custom_eui_report", run_id="<completed_run_id>")
 ```
 
 ### Key Differences from ModelMeasure

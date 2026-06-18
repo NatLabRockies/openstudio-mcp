@@ -17,9 +17,9 @@ import openstudio
 
 from mcp_server import sandbox
 from mcp_server.config import (
-    CUSTOM_MEASURES_DIR,
     INPUT_ROOT,
     is_path_allowed,
+    user_custom_measures_dir,
     user_run_root,
 )
 from mcp_server.util import (
@@ -30,8 +30,12 @@ from mcp_server.util import (
 
 
 def custom_measures_dir() -> Path:
-    """The shared mounted custom-measures directory (/measures/custom by default)."""
-    return CUSTOM_MEASURES_DIR.resolve()
+    """The caller's private custom-measures dir (MEASURES_DIR/<user_key>/custom).
+
+    Per-user, so one tenant's authored measures are never visible or writable by
+    another over HTTP. See docs/security-isolation.md.
+    """
+    return user_custom_measures_dir()
 
 # Default test model for measure tests — rich model with HVAC, plant loops,
 # constructions, schedules.  Searched in order; first hit wins.
@@ -949,7 +953,6 @@ def _test_reporting_measure_with_run(
     and runs ``openstudio run --postprocess_only``.
     """
     import json
-    import os
 
     from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
     from mcp_server.util import resolve_run_dir

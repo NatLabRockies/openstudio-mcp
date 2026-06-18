@@ -16,12 +16,26 @@ import pytest
 BCL_CONTENT_URL = "https://bcl.nlr.gov/content/c567a0bf-a7d9-4a06-afe9-bf7df79e6bf8"
 
 
-def _import_measure_ops(monkeypatch, run_root: Path):
+def _import_measure_ops(monkeypatch, request, run_root: Path):
+    # Snapshot sys.modules BEFORE faking openstudio, and fully revert to it at teardown.
+    # This reimport binds the fake openstudio into mcp_server modules (notably
+    # model_manager, first-imported in-process here); without the revert that fake leaks
+    # into later test files in the same process (e.g. test_validate_model.load_model ->
+    # openstudio.osversion). A blind purge is wrong too — it must RESTORE the real
+    # modules other files already hold (e.g. test_skill_tools), not just delete them.
+    saved_modules = dict(sys.modules)
     fake_openstudio = types.SimpleNamespace()
     monkeypatch.setitem(sys.modules, "openstudio", fake_openstudio)
     monkeypatch.setenv("OPENSTUDIO_MCP_RUN_ROOT", str(run_root))
     sys.modules.pop("mcp_server.config", None)
     sys.modules.pop("mcp_server.skills.measures.operations", None)
+
+    def _restore_modules():
+        for name in [n for n in sys.modules if n not in saved_modules]:
+            del sys.modules[name]
+        sys.modules.update(saved_modules)
+
+    request.addfinalizer(_restore_modules)
     return importlib.import_module("mcp_server.skills.measures.operations")
 
 
@@ -59,13 +73,12 @@ def _measure_zip() -> bytes:
     return payload.getvalue()
 
 
-def test_list_local_measures_prefers_checkouts_before_bcl(monkeypatch, tmp_path):
+def test_list_local_measures_prefers_checkouts_before_bcl(monkeypatch, request, tmp_path):
     # Regression: measure discovery should search local/common/ComStock checkouts
     # before BCL caches so agents do not jump to BCL for measures already bundled.
-    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
 
     custom_root = tmp_path / "custom"
-    mounted_root = tmp_path / "measures"
     input_root = tmp_path / "inputs"
     run_root = tmp_path / "runs"
     common_root = tmp_path / "common"
@@ -76,14 +89,13 @@ def test_list_local_measures_prefers_checkouts_before_bcl(monkeypatch, tmp_path)
     _make_measure(comstock_root, "change_building_location")
     _make_measure(bcl_root, "aedg_small_office")
 
-    monkeypatch.setattr(ops, "CUSTOM_MEASURES_DIR", custom_root)
-    monkeypatch.setattr(ops, "MEASURES_DIR", mounted_root)
+    monkeypatch.setattr(ops, "user_custom_measures_dir", lambda: custom_root)
+    monkeypatch.setattr(ops, "user_bcl_measures_dir", lambda: bcl_root)
+    monkeypatch.setattr(ops, "user_run_root", lambda: run_root)
     monkeypatch.setattr(ops, "INPUT_ROOT", input_root)
-    monkeypatch.setattr(ops, "RUN_ROOT", run_root)
     monkeypatch.setattr(ops, "COMMON_MEASURES_DIR", common_root)
     monkeypatch.setattr(ops, "COMSTOCK_MEASURES_DIR", comstock_root)
-    monkeypatch.setattr(ops, "BCL_MEASURES_DIR", bcl_root)
-    monkeypatch.setattr(ops, "is_path_allowed", lambda _path: True)
+    monkeypatch.setattr(ops, "is_path_allowed", lambda _path, **_kw: True)
     monkeypatch.setattr(
         ops,
         "_measure_entry",
@@ -96,11 +108,11 @@ def test_list_local_measures_prefers_checkouts_before_bcl(monkeypatch, tmp_path)
     assert [m["source"] for m in result["measures"]] == ["common", "comstock", "bcl"]
 
 
-def test_bcl_search_urls_use_wildcard_results_query(monkeypatch, tmp_path):
+def test_bcl_search_urls_use_wildcard_results_query(monkeypatch, request, tmp_path):
     # BCL UI searches use /results/*query*?fq=bundle:measure&page=0.
     # The MCP tool uses the matching JSON API path while returning the browser
     # results URL for verification.
-    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
 
     api_url, results_url = ops._bcl_search_urls(
         "Replace Chiller with Air Source Heat Pumps Measure Details",
@@ -120,21 +132,20 @@ def test_bcl_search_urls_use_wildcard_results_query(monkeypatch, tmp_path):
     )
 
 
-def test_find_measure_returns_local_match_before_bcl(monkeypatch, tmp_path):
+def test_find_measure_returns_local_match_before_bcl(monkeypatch, request, tmp_path):
     # The high-level finder must prefer an existing local/bundled measure over
     # BCL, even if the query came from a BCL page title ending in "Measure Details".
-    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
     local_root = tmp_path / "common"
     _make_measure(local_root, "replace_chiller_with_air_source_heat_pumps")
 
-    monkeypatch.setattr(ops, "CUSTOM_MEASURES_DIR", tmp_path / "custom")
-    monkeypatch.setattr(ops, "MEASURES_DIR", tmp_path / "measures")
+    monkeypatch.setattr(ops, "user_custom_measures_dir", lambda: tmp_path / "custom")
+    monkeypatch.setattr(ops, "user_bcl_measures_dir", lambda: tmp_path / "bcl")
+    monkeypatch.setattr(ops, "user_run_root", lambda: tmp_path / "runs")
     monkeypatch.setattr(ops, "INPUT_ROOT", tmp_path / "inputs")
-    monkeypatch.setattr(ops, "RUN_ROOT", tmp_path / "runs")
     monkeypatch.setattr(ops, "COMMON_MEASURES_DIR", local_root)
     monkeypatch.setattr(ops, "COMSTOCK_MEASURES_DIR", tmp_path / "comstock")
-    monkeypatch.setattr(ops, "BCL_MEASURES_DIR", tmp_path / "bcl")
-    monkeypatch.setattr(ops, "is_path_allowed", lambda _path: True)
+    monkeypatch.setattr(ops, "is_path_allowed", lambda _path, **_kw: True)
     monkeypatch.setattr(
         ops,
         "_measure_entry",
@@ -164,20 +175,20 @@ def test_find_measure_returns_local_match_before_bcl(monkeypatch, tmp_path):
     assert result["next"]["apply"]["arguments"]["measure_dir"] == result["measure_dir"]
 
 
-def test_find_measure_searches_bcl_and_downloads_good_match(monkeypatch, tmp_path):
+def test_find_measure_searches_bcl_and_downloads_good_match(monkeypatch, request, tmp_path):
     # If local discovery cannot find the requested measure, the high-level
     # finder searches BCL, scores the candidates, and downloads only a good match.
-    ops = _import_measure_ops(monkeypatch, tmp_path / "runs")
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
     bcl_root = tmp_path / "measures" / "bcl"
 
-    monkeypatch.setattr(ops, "CUSTOM_MEASURES_DIR", tmp_path / "custom")
-    monkeypatch.setattr(ops, "MEASURES_DIR", tmp_path / "measures")
+    monkeypatch.setattr(ops, "user_custom_measures_dir", lambda: tmp_path / "custom")
+    monkeypatch.setattr(ops, "user_bcl_measures_dir", lambda: bcl_root)
+    monkeypatch.setattr(ops, "user_measures_root", lambda: tmp_path / "measures")
+    monkeypatch.setattr(ops, "user_run_root", lambda: tmp_path / "runs")
     monkeypatch.setattr(ops, "INPUT_ROOT", tmp_path / "inputs")
-    monkeypatch.setattr(ops, "RUN_ROOT", tmp_path / "runs")
     monkeypatch.setattr(ops, "COMMON_MEASURES_DIR", tmp_path / "common")
     monkeypatch.setattr(ops, "COMSTOCK_MEASURES_DIR", tmp_path / "comstock")
-    monkeypatch.setattr(ops, "BCL_MEASURES_DIR", bcl_root)
-    monkeypatch.setattr(ops, "is_path_allowed", lambda _path: True)
+    monkeypatch.setattr(ops, "is_path_allowed", lambda _path, **_kw: True)
     monkeypatch.setattr(
         ops,
         "_measure_entry",
@@ -267,7 +278,66 @@ def test_download_measure_archive_pulls_bcl_zip():
     assert measure["has_measure_xml"] is True
     assert measure["measure_type"] == "ModelMeasure"
     assert measure["num_arguments"] == 8
-    assert result["extract_dir"] == str(ops.BCL_MEASURES_DIR.resolve() / measure_name)
+    assert result["extract_dir"] == str(ops.user_bcl_measures_dir().resolve() / measure_name)
     assert Path(result["extract_dir"]).is_dir()
-    assert Path(measure["measure_dir"]).is_relative_to(ops.BCL_MEASURES_DIR.resolve())
+    assert Path(measure["measure_dir"]).is_relative_to(ops.user_bcl_measures_dir().resolve())
     assert Path(measure["measure_dir"], "measure.rb").is_file()
+
+
+@pytest.mark.integration
+def test_custom_measures_isolated_across_http_sessions():
+    # Regression: PR #65 stored custom measures in a flat shared /measures/custom, so
+    # over HTTP one tenant could see, edit, and overwrite another tenant's authored
+    # measures. Each HTTP principal must get a private measures area: a measure tenant
+    # A creates must be invisible to tenant B, and B must be denied access to A's dir.
+    import asyncio
+    import uuid
+
+    from conftest import http_server, http_session, integration_enabled, unwrap
+
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    name_a = f"iso_a_{uuid.uuid4().hex[:8]}"
+
+    # Two no-auth HTTP sessions share one server process but get distinct session ids,
+    # hence distinct user_keys → distinct /measures/<key> areas.
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s1, http_session(url) as s2:
+                # --- Arrange/Act: tenant A authors a measure ---
+                created = unwrap(await s1.call_tool("create_measure", {
+                    "name": name_a,
+                    "description": "isolation probe",
+                    "run_body": '    runner.registerInfo("IsoA")',
+                    "language": "Ruby",
+                }))
+                assert created["ok"] is True, f"create_measure failed: {created.get('error')}"
+                measure_dir_a = created["measure_dir"]
+
+                # A sees its own measure.
+                a_list = unwrap(await s1.call_tool("list_custom_measures", {}))
+                assert a_list["ok"] is True, a_list
+                a_names = [m.get("name") for m in a_list.get("measures", [])]
+                assert name_a in a_names, f"author must see own measure, got {a_names}"
+
+                # A can EXECUTE its own measure in place (HTTP authoring + per-tenant
+                # sandbox uid + chown of its own /measures/<A>/custom dir).
+                a_test = unwrap(await s1.call_tool("test_measure", {"measure_dir": measure_dir_a}))
+                assert a_test["ok"] is True, f"tenant A must run its own measure: {a_test.get('test_output', a_test)}"
+                assert a_test["passed"] > 0, f"expected passing tests, got {a_test}"
+
+                # --- Assert: tenant B cannot see tenant A's measure ---
+                b_list = unwrap(await s2.call_tool("list_custom_measures", {}))
+                assert b_list["ok"] is True, b_list
+                b_names = [m.get("name") for m in b_list.get("measures", [])]
+                assert name_a not in b_names, f"tenant B must NOT see tenant A's measure, saw {b_names}"
+                b_dirs = [m.get("measure_dir") for m in b_list.get("measures", [])]
+                assert measure_dir_a not in b_dirs, "tenant B listing must not include A's measure dir"
+
+                # --- Assert: tenant B is denied direct access to A's measure dir ---
+                denied = unwrap(await s2.call_tool("test_measure", {"measure_dir": measure_dir_a}))
+                assert denied["ok"] is False, f"B must not access A's measure dir: {denied}"
+                assert "not allowed" in denied["error"].lower(), denied
+
+        asyncio.run(_run())

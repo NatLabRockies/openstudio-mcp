@@ -14,11 +14,16 @@ create_measure → test_measure → apply_measure
 
 Use `edit_measure` to iterate on existing measures. Use `list_custom_measures` to find previously created measures.
 
+Custom measures are **private per user**: in multi-user (HTTP) mode each caller's
+authored and downloaded measures live under their own `/measures/<user>/{custom,bcl}`
+and are never visible to or writable by other users. Don't tell users measures are
+shared.
+
 For requests to use an existing measure by name, BCL page title, or intent,
-first call `find_measure`. It searches mounted measures, `/measures/custom`,
-bundled common measures, bundled ComStock measures, and local BCL caches before
-searching BCL. If BCL returns a strong match, `find_measure` downloads it into
-`/measures/bcl` and returns a top-level `measure_dir` / `selected_measure_dir`.
+first call `find_measure`. It searches the caller's own custom measures,
+bundled common measures, bundled ComStock measures, and the caller's BCL cache
+before searching BCL. If BCL returns a strong match, `find_measure` downloads it
+into the caller's `bcl` dir and returns a top-level `measure_dir` / `selected_measure_dir`.
 Pass that value directly to `list_measure_arguments` or `apply_measure`. Use
 `search_bcl_measures` only when you need to inspect BCL candidates without
 downloading.
@@ -83,7 +88,7 @@ Types: `Boolean` | `Double` | `Integer` | `String` | `Choice`
 ## Tools
 
 ### create_measure
-Scaffold a new measure with user-provided run() body and arguments. Output: `/measures/custom/<name>/`.
+Scaffold a new measure with user-provided run() body and arguments. Output: your per-user custom measures dir.
 
 ### test_measure
 Run tests against a real model (not empty). Auto-detects language. For ReportingMeasures, provide `run_id` of a completed simulation.
@@ -92,7 +97,7 @@ Run tests against a real model (not empty). Auto-detects language. For Reporting
 Replace run() body, arguments, or description on an existing measure. Use to add arguments to a measure that hard-codes values.
 
 ### list_custom_measures
-List all measures in `/measures/custom/`.
+List all measures in your per-user custom measures dir.
 
 ### list_local_measures
 Search mounted, downloaded, custom, common measures, and ComStock measures. Use directly only when you need the full local inventory; otherwise prefer `find_measure`.
@@ -100,7 +105,7 @@ Search mounted, downloaded, custom, common measures, and ComStock measures. Use 
 ### find_measure
 Find an existing measure by name, BCL page title, or intent. This is the default
 tool for existing-measure requests. It searches locally first, then BCL, and
-downloads a strong BCL match into `/measures/bcl`. On success, use the top-level
+downloads a strong BCL match into your per-user BCL cache. On success, use the top-level
 `measure_dir` or `next.apply.arguments.measure_dir` for the next tool call.
 
 Example query: `Replace Chiller with Air Source Heat Pumps Measure Details`.
@@ -110,7 +115,7 @@ Search BCL and rank candidates without downloading. Use this when you need to
 show or inspect BCL candidates before choosing one.
 
 ### download_measure_from_bcl
-Download a known measure archive URL into `/measures/bcl`. Prefer `find_measure`
+Download a known measure archive URL into your per-user BCL cache. Prefer `find_measure`
 when starting from a measure name or intent. On success, use the top-level
 `measure_dir` or `next.apply.arguments.measure_dir`.
 

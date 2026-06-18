@@ -27,8 +27,8 @@ def register(mcp):
         ComStock measures by default. Only ask the user about downloading from
         BCL if no suitable local match is found.
 
-        Search order: /measures/custom, /measures, legacy /inputs measures,
-        /opt/common-measures, /opt/comstock-measures, then local BCL caches.
+        Search order: your custom measures, legacy /inputs measures,
+        /opt/common-measures, /opt/comstock-measures, then your BCL cache.
         Pass root_dir to inspect one allowed measure folder.
         """
         return list_local_measures(root_dir=root_dir, max_depth=max_depth, max_results=max_results)
@@ -47,7 +47,7 @@ def register(mcp):
         It ranks local custom/mounted/common/ComStock/BCL-cache measures first.
         If no local result is a good match, it searches BCL. When the best BCL
         result is above min_match_score, it downloads the measure into
-        /measures/bcl. On success, use the top-level measure_dir or
+        your per-user BCL cache. On success, use the top-level measure_dir or
         selected_measure_dir with list_measure_arguments and apply_measure.
         The response also includes next.list_arguments and next.apply tool
         argument objects for easy chaining.
@@ -110,7 +110,7 @@ def register(mcp):
 
         Use only after list_local_measures finds no suitable local, common
         measures, or ComStock match and the user agrees to try BCL/download.
-        Defaults to /measures/bcl so downloaded measures persist when
+        Defaults to your per-user BCL cache so downloaded measures persist when
         /measures is host-mounted. Accepts HTTPS URLs from BCL/NREL and GitHub.
         Returns top-level measure_dir and selected_measure_dir for the first
         discovered measure, plus next.list_arguments and next.apply tool

@@ -22,16 +22,15 @@ import openstudio
 
 from mcp_server import sandbox
 from mcp_server.config import (
-    BCL_MEASURES_DIR,
     COMMON_MEASURES_DIR,
     COMSTOCK_MEASURES_DIR,
-    CUSTOM_MEASURES_DIR,
     INPUT_ROOT,
-    MEASURES_DIR,
     OSCLI_GEM_PATH,
     OSCLI_GEMFILE,
-    RUN_ROOT,
     is_path_allowed,
+    user_bcl_measures_dir,
+    user_custom_measures_dir,
+    user_measures_root,
     user_run_root,
 )
 from mcp_server.model_manager import get_model, load_model
@@ -480,16 +479,23 @@ def list_local_measures(
     """List measures in mounted/user/bundled measure directories."""
     try:
         if root_dir:
-            roots = [(Path(root_dir).expanduser().resolve(), "requested")]
+            requested = Path(root_dir).expanduser().resolve()
+            if not is_path_allowed(requested):
+                return {"ok": False, "error": f"Directory not allowed: {requested}"}
+            roots = [(requested, "requested")]
         else:
+            # Per-user roots first (the caller's own authored + downloaded measures),
+            # then bundled libraries, then the caller's BCL cache. Custom comes before
+            # bundled/BCL so an agent prefers a measure the user authored; BCL last so
+            # bundled checkouts win over a downloaded copy. All identity-scoped — no
+            # tenant's measures appear in another's listing.
             roots = [
-                (CUSTOM_MEASURES_DIR.resolve(), "custom"),
-                (MEASURES_DIR.resolve(), "measures"),
-                ((INPUT_ROOT / "measures").resolve(), "inputs"),
-                ((RUN_ROOT / "custom_measures").resolve(), "legacy_custom"),
+                (user_custom_measures_dir(), "custom"),
+                ((user_run_root() / "custom_measures").resolve(), "legacy_custom"),
                 (COMMON_MEASURES_DIR.resolve(), "common"),
                 (COMSTOCK_MEASURES_DIR.resolve(), "comstock"),
-                (BCL_MEASURES_DIR.resolve(), "bcl"),
+                ((INPUT_ROOT / "measures").resolve(), "inputs"),
+                (user_bcl_measures_dir(), "bcl"),
                 ((INPUT_ROOT / "measures" / "bcl").resolve(), "legacy_bcl"),
             ]
 
@@ -498,8 +504,12 @@ def list_local_measures(
         for root, source in roots:
             if not root.is_dir():
                 continue
+            # Internal default roots are the caller's own or shared-readable, so skip
+            # any that resolve as not-allowed rather than erroring (an error would also
+            # leak that another tenant's dir exists). A user-supplied root_dir is
+            # validated up front above.
             if not is_path_allowed(root):
-                return {"ok": False, "error": f"Directory not allowed: {root}"}
+                continue
             for measure_dir in _iter_measure_dirs(root, max_depth=max_depth):
                 resolved = measure_dir.resolve()
                 if resolved in seen:
@@ -529,11 +539,11 @@ def download_measure_archive(
             allowed = ", ".join(sorted(MEASURE_DOWNLOAD_HOSTS))
             return {"ok": False, "error": f"Download host not allowed: {parsed.hostname}. Allowed: {allowed}"}
 
-        destination_root = Path(output_dir).expanduser().resolve() if output_dir else BCL_MEASURES_DIR.resolve()
-        measures_root = MEASURES_DIR.resolve()
+        destination_root = Path(output_dir).expanduser().resolve() if output_dir else user_bcl_measures_dir()
+        measures_root = user_measures_root()
         if not (destination_root == measures_root or str(destination_root).startswith(str(measures_root) + os.sep)):
             return {"ok": False, "error": f"Output directory must be under {measures_root}: {destination_root}"}
-        if not is_path_allowed(destination_root):
+        if not is_path_allowed(destination_root, write=True):
             return {"ok": False, "error": f"Output directory not allowed: {destination_root}"}
         destination_root.mkdir(parents=True, exist_ok=True)
 
