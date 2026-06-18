@@ -112,10 +112,12 @@ On a VPN with `MCP_AUTH=none`, drop the `headers` block. The local stdio config
   windows (even the same user) never overwrite each other's working model.
   Idle sessions are dropped after `OSMCP_SESSION_TTL` (default 30 min); a hard
   cap (`OSMCP_MAX_SESSIONS`, default 16) bounds resident models.
-- **Per-user files.** Everything a user creates lives under `/runs/<user>/…`.
-  Tool path arguments are scoped: a user can't read or write another user's run
-  area; shared reference dirs (measures, `/inputs`) are read-only. `list_files`
-  with `/runs` shows only the caller's own runs.
+- **Per-user files.** Everything a user creates lives under `/runs/<user>/…`, and
+  authored/downloaded measures under `/measures/<user>/{custom,bcl}`. Tool path
+  arguments are scoped: a user can't read or write another user's run **or measures**
+  area. Shared reference dirs (`/inputs`, bundled common/ComStock measures) are
+  read-only. `list_files` with `/runs` (and `list_custom_measures`) show only the
+  caller's own. See [security-isolation.md](security-isolation.md).
 - **Run ownership.** `get_run_status` / `get_run_logs` / `get_run_artifacts` /
   `cancel_run` only work on the caller's own runs — another user's `run_id`
   returns "unknown run_id".
@@ -194,6 +196,7 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
 | `OSMCP_SESSION_TTL` | `1800` | idle seconds before a session model is dropped (`0` disables) |
 | `OSMCP_RUN_ROOT` | `/runs` | base directory for per-user run dirs |
+| `OPENSTUDIO_MCP_MEASURES_DIR` | `/measures` | base dir for per-user measures (`<dir>/<user>/{custom,bcl}`); mount writable + chownable like `/runs` |
 | `OSMCP_RUN_RETENTION_DAYS` | `0` (off) | enable auto-GC: delete finished run dirs older than N days (`0` = off) |
 | `OSMCP_RETENTION_SWEEP_SECONDS` | `3600` | how often the retention daemon sweeps (60s floor) |
 | `MCP_AUDIT` | `on` | structured audit logging (tool calls + sim lifecycle); `off` to disable |

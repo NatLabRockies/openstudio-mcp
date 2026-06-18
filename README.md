@@ -103,7 +103,7 @@ On **Windows** (using forward slashes in Docker args):
 **Mount purposes:**
 - `/inputs` — test models + your own models (replace `tests/assets` with your model folder)
 - `/runs` — simulation outputs written here
-- `/measures` — downloaded BCL measures go under `/measures/bcl`; custom measures under `/measures/custom`
+- `/measures` — per-user measures root; each user's authored + downloaded measures live under `/measures/<user>/{custom,bcl}` (isolated in multi-user mode; mount writable like `/runs`)
 - `/skills` — workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
 - To keep downloaded or hand-managed measures persistent, mount a host folder under `/measures` and use `list_local_measures` to discover them.
 - **Restart your client** after saving the config file

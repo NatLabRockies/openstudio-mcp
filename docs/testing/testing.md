@@ -134,6 +134,24 @@ Pure Python, no Docker or OpenStudio required.
 - `test_contract.py` — JSON schema validation
 - `test_stdio_smoke.py` — Raw JSON-RPC protocol (no SWIG warnings on stdout)
 
+### Multi-user isolation tests
+
+Any per-user storage helper (`user_run_root`, `user_measures_root`, …) or path-scope
+decision (`is_path_allowed`) needs an isolation test — this is a top-priority security
+invariant (see [security-isolation.md](../security-isolation.md)). Drive two
+identities by monkeypatching identity, and assert:
+
+- two distinct `user_key`s yield **disjoint, non-nested** paths, and
+- `is_path_allowed` **denies** a cross-tenant path (read AND write).
+
+```python
+monkeypatch.setattr("mcp_server.identity.user_key", lambda: "alice")
+```
+
+This is the test class that would have caught a per-user store silently collapsing to
+a shared dir. Examples: `test_measure_isolation.py` (unit), and the two-HTTP-session
+checks in `test_session_isolation.py` / `test_measure_discovery.py` (integration).
+
 ### Simulation tests
 
 Long-running tests that run full EnergyPlus simulations. Use polling:
