@@ -97,15 +97,29 @@ def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
 
 
 def _safe_extract_zip(zip_path: Path, output_dir: Path) -> list[Path]:
-    extracted = []
+    extracted: list[Path] = []
     output_root = output_dir.resolve()
+    max_members = 10_000
+    max_uncompressed_bytes = 500 * 1024 * 1024  # 500 MiB
+
     with zipfile.ZipFile(zip_path) as archive:
-        for member in archive.infolist():
+        members = archive.infolist()
+        if len(members) > max_members:
+            raise ValueError(f"ZIP contains too many files ({len(members)} > {max_members})")
+
+        total = 0
+        for member in members:
+            total += int(getattr(member, "file_size", 0) or 0)
+            if total > max_uncompressed_bytes:
+                raise ValueError("ZIP uncompressed size is too large")
+
             target = (output_root / member.filename).resolve()
             if not (str(target).startswith(str(output_root) + os.sep) or target == output_root):
                 raise ValueError(f"ZIP member would extract outside destination: {member.filename}")
+
         archive.extractall(output_root)
-        extracted = [(output_root / member.filename).resolve() for member in archive.infolist()]
+        extracted = [(output_root / member.filename).resolve() for member in members]
+
     return extracted
 
 
