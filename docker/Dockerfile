@@ -47,18 +47,34 @@ ENV VENV_PATH=/opt/venv
 RUN python3 -m venv $VENV_PATH
 ENV PATH="$VENV_PATH/bin:$PATH"
 
-# Copy everything needed to install the package
+# Install third-party Python dependencies from package metadata before copying
+# source. This keeps the expensive dependency layer cached when only package
+# code, tests, scripts, or docs change.
 COPY pyproject.toml /repo/pyproject.toml
-COPY mcp_server /repo/mcp_server
-COPY docker /repo/docker
 
-RUN pip install --no-cache-dir -U pip \
-    && pip install --no-cache-dir -e ".[dev]"
+RUN pip install --no-cache-dir -U pip "setuptools>=69" wheel \
+    && python3 - <<'PY'
+import subprocess
+import sys
+import tomllib
+
+with open("pyproject.toml", "rb") as f:
+    data = tomllib.load(f)
+
+deps = data["project"].get("dependencies", []) + data["project"].get("optional-dependencies", {}).get("dev", [])
+if deps:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", *deps])
+PY
+
+COPY mcp_server /repo/mcp_server
+
+RUN pip install --no-cache-dir --no-deps -e .
 
 # (Optional) If you want the container to include any other repo files too:
 # COPY . /repo
 
 COPY .claude/skills /skills
+COPY docker /repo/docker
 COPY scripts /repo/scripts
 COPY tests /repo/tests
 COPY README.md /repo/README.md
