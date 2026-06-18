@@ -507,6 +507,9 @@ def download_measure_archive(
             return {"ok": False, "error": f"Download host not allowed: {parsed.hostname}. Allowed: {allowed}"}
 
         destination_root = Path(output_dir).expanduser().resolve() if output_dir else BCL_MEASURES_DIR.resolve()
+        measures_root = MEASURES_DIR.resolve()
+        if not (destination_root == measures_root or str(destination_root).startswith(str(measures_root) + os.sep)):
+            return {"ok": False, "error": f"Output directory must be under {measures_root}: {destination_root}"}
         if not is_path_allowed(destination_root):
             return {"ok": False, "error": f"Output directory not allowed: {destination_root}"}
         destination_root.mkdir(parents=True, exist_ok=True)
