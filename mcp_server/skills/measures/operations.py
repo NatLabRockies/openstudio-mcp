@@ -86,13 +86,22 @@ def _measure_entry(path: Path, source: str) -> dict[str, Any]:
 def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
     if _is_measure_dir(root):
         return [root]
-    found = []
+
+    found: list[Path] = []
+    root = root.resolve()
     base_depth = len(root.parts)
-    for path in root.rglob("*"):
-        if len(path.parts) - base_depth > max_depth:
+
+    for dirpath, dirnames, _filenames in os.walk(root):
+        depth = len(Path(dirpath).parts) - base_depth
+        if depth > max_depth:
+            dirnames[:] = []
             continue
-        if _is_measure_dir(path):
-            found.append(path)
+
+        p = Path(dirpath)
+        if _is_measure_dir(p):
+            found.append(p)
+            dirnames[:] = []  # don't descend into a measure dir
+
     return found
 
 
