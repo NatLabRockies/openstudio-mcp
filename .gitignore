@@ -9,6 +9,7 @@ build/
 # Virtual environments
 .venv/
 venv/
+analyses/
 
 # IDE
 .idea/
@@ -23,6 +24,7 @@ venv/
 # Test artifacts — generated OSM files from integration test runs
 /runs/
 /analyses/
+/measures/
 
 # OS
 .DS_Store

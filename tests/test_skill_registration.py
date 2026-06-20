@@ -118,7 +118,11 @@ EXPECTED_TOOLS = {
     "openstudio_analysis_results_json",
     "openstudio_analysis_submit_wait_download",
     # Phase 6D: Measures
+    "list_local_measures",
+    "find_measure",
+    "search_bcl_measures",
     "list_measure_arguments",
+    "download_measure_from_bcl",
     "apply_measure",
     "list_custom_measures",
     "create_measure",

@@ -102,14 +102,18 @@ The default Docker configuration prioritizes ease of development. The container:
 | Runs as root | No `USER` directive in Dockerfile |
 | Has network access | No `--network none` flag |
 | Read/write volume mounts | `/inputs` and `/runs` are both writable |
-| Path validation enforced | `is_path_allowed()` restricts access to `/inputs`, `/runs`, `/repo`, `/opt/comstock-measures` |
+| Path validation enforced | `is_path_allowed()` restricts access to `/inputs`, `/runs/<user>`, `/measures/<user>`, `/repo`, and shared read-only roots |
 
 ### Path Traversal Protection (Built-in)
 
 The server validates all file paths at runtime via `config.py`:
 - `is_path_allowed()` resolves symlinks and checks against an allowlist
 - Rejects paths containing `..` traversal
-- Only permits access to `/inputs`, `/runs`, `/repo`, `/opt/comstock-measures`
+- Per-user read+write areas: the caller's own `/runs/<user>` and `/measures/<user>`
+  (authored + downloaded measures). Another tenant's run/measures area is denied —
+  measures are **not** a shared dir. See [security-isolation.md](security-isolation.md).
+- Shared read-only roots: `/inputs`, `/repo`, `/opt/common-measures`,
+  `/opt/comstock-measures`, `/skills`
 
 ### Potential Security Concerns
 

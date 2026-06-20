@@ -31,6 +31,11 @@ RUN curl -sL https://github.com/NatLabRockies/openstudio-common-measures-gem/arc
     rm -rf /tmp/openstudio-common-measures-gem-*
 
 ENV COMMON_MEASURES_DIR=/opt/common-measures
+# Per-user measures mount root. Subdirs are MEASURES_DIR/<user_key>/{custom,bcl},
+# created per-user at runtime (see config.user_measures_root). Mount writable +
+# chownable like /runs.
+ENV OPENSTUDIO_MCP_MEASURES_DIR=/measures
+RUN mkdir -p /measures /runs /inputs
 
 # The nrel/openstudio base image already includes /var/oscli/ with bundled gems
 # (openstudio-extension, openstudio-standards, etc.). No bundle install needed.

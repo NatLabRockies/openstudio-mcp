@@ -10,7 +10,6 @@ import subprocess
 import tempfile
 import threading
 import time
-import uuid
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,7 +30,12 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.identity import user_key
-from mcp_server.util import reject_escaping_symlinks, resolve_run_dir
+from mcp_server.util import (
+    create_run_dir,
+    reject_escaping_symlinks,
+    resolve_run_dir,
+    safe_name,
+)
 
 # Where the MCP server stores runs inside the container
 DEFAULT_LOG_TAIL = LOG_TAIL_DEFAULT
@@ -146,11 +150,6 @@ def _get_run_record(run_id: str) -> RunRecord | None:
 def _now() -> float:
     """Current epoch timestamp."""
     return time.time()
-
-
-def _safe_name(s: str) -> str:
-    """Sanitize a string for use as a filesystem-safe run name."""
-    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in s).strip("_") or "run"
 
 
 def _tail_text(path: Path, tail_lines: int) -> str:
@@ -423,7 +422,7 @@ def _enqueue(run_id: str) -> None:
 def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             *, _internal: bool = False) -> dict[str, Any]:
     """
-    Stage the OSW + referenced files into /runs/<run_id>/ and execute:
+    Stage the OSW + referenced files into /runs/<descriptive_name>_<short_id>/ and execute:
       openstudio run -w <staged_osw>
 
     Notes on validation:
@@ -468,10 +467,11 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     if epw_path:
         epw_src = Path(epw_path).resolve()
 
-    # Create run directory
-    run_id = uuid.uuid4().hex
-    run_dir = (user_run_root() / run_id).resolve()
-    run_dir.mkdir(parents=True, exist_ok=True)
+    source_osw = v.get("osw") if isinstance(v.get("osw"), dict) else {}
+    run_name = safe_name(name or source_osw.get("name") or src_osw.stem)
+
+    # Create caller-scoped run directory
+    run_id, run_dir = create_run_dir(user_run_root(), "run", run_name)
 
     # Stage OSW directory contents
     src_dir = src_osw.parent.resolve()
@@ -508,9 +508,6 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         shutil.copy2(epw_src, staged_epw)
         osw["weather_file"] = f"files/{epw_src.name}"
         _dump_json(staged_osw, osw)
-
-    # Determine run display name
-    run_name = _safe_name(name or osw.get("name") or src_osw.stem)
 
     # Build the run command (executed later by the dispatcher when a slot frees)
     cmd = _build_run_cmd(staged_osw)
@@ -873,4 +870,9 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         # Delegate to run_osw — pass epw_path so it handles staging into files/.
         # _internal=True: osm + epw are already is_path_allowed above and the temp
         # OSW is server-built in a private staging dir (not a caller-supplied path).
-        return run_osw(osw_path=str(osw_path_out), epw_path=epw_abs, name=name, _internal=True)
+        return run_osw(
+            osw_path=str(osw_path_out),
+            epw_path=epw_abs,
+            name=name or osm.stem,
+            _internal=True,
+        )
