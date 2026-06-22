@@ -98,6 +98,24 @@ def test_sanitize_filename(raw, expected):
     assert "/" not in out and "\\" not in out and ".." not in out
 
 
+@pytest.mark.parametrize(("base", "host", "scheme", "expected"), [
+    # operator override always wins (e.g. pinned behind a TLS reverse proxy)
+    ("https://api.example.com", "10.0.0.5:8000", "http", "https://api.example.com"),
+    # direct LAN/VPN: trust the Host the caller reached us on
+    ("", "192.168.4.29:8000", "http", "http://192.168.4.29:8000"),
+    ("", "localhost:8000", "http", "http://localhost:8000"),
+    # scheme from the request is honored when no override
+    ("", "api.example.com", "https", "https://api.example.com"),
+    # off-request / no Host header -> relative (caller stitches its own host)
+    ("", None, "http", None),
+])
+def test_resolve_base_url(base, host, scheme, expected):
+    # Regression: request_upload/download returned a RELATIVE url; the model never
+    # sees the client's .mcp.json host, so the agent couldn't PUT/GET. Resolve the
+    # absolute origin server-side: env override, else request Host, else relative.
+    assert operations._resolve_base_url(base, host, scheme) == expected
+
+
 def test_archive_rejects_path_escape(tmp_path):
     # Regression: a `..` zip entry must not write outside the extract dir
     z = tmp_path / "evil.zip"
