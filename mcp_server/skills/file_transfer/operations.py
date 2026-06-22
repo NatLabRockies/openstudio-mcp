@@ -150,7 +150,8 @@ def request_upload_op(filename: str, size_bytes: int, sha256: str = "", kind: st
         "hint": ("PUT the raw file bytes to upload_url, e.g. "
                  "curl --upload-file <file> '<upload_url>', then call "
                  "get_upload(file_id) for the server path. If upload_url is "
-                 "relative (no Host resolved), prefix it with your MCP base URL."),
+                 "relative (no Host resolved), prefix it with your MCP server's "
+                 "origin (scheme://host[:port]) — not the /mcp endpoint URL."),
     }
 
 
