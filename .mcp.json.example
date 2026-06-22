@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "openstudio-mcp": {
+      "type": "http",
+      "url": "http://192.168.4.XXX:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer 82c371a2ce0f6f3b2247XXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      }
+    }
+  }
+}
