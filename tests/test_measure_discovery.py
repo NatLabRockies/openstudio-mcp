@@ -317,6 +317,16 @@ def test_download_measure_archive_pulls_bcl_zip():
         timeout_seconds=60,
     )
 
+    # BCL is a live external service; a transient outage (5xx / unreachable) is an
+    # environment condition, not a code defect — skip rather than redden unrelated
+    # PRs. A 404 or wrong content still fails the assertions below, so this does not
+    # mask a real download/parse regression.
+    err = result.get("error") or ""
+    if not result["ok"] and any(s in err for s in (
+        "HTTP 502", "HTTP 503", "HTTP 504", "Service Unavailable", "timed out", "Connection",
+    )):
+        pytest.skip(f"BCL unavailable: {err[:120]}")
+
     assert result["ok"] is True, result
     assert result["download_url"].startswith("https://bcl.nlr.gov/api/download?")
     assert "release_tag=v" in result["download_url"]
