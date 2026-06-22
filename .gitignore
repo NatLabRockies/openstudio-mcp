@@ -37,3 +37,7 @@ docs/review/
 
 # Codex CLI
 .codex/
+
+# Local HTTP deployment — contains live bearer tokens + machine IPs, never commit
+.mcp.json
+HTTP-DEPLOYMENT-LOCAL.md

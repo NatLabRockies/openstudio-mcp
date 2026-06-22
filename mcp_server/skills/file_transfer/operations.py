@@ -68,8 +68,41 @@ def _is_archive(filename: str, kind: str) -> bool:
     return kind in ("measure", "archive") or filename.lower().endswith(".zip")
 
 
+def _http_request():
+    """Current Starlette HTTP request, or None off-request (stdio / unit tests)."""
+    try:
+        from fastmcp.server.dependencies import get_http_request
+
+        return get_http_request()
+    except Exception:
+        return None
+
+
+def _resolve_base_url(public_base_url: str, host: str | None, scheme: str) -> str | None:
+    """Public origin (``scheme://host``) to prefix signed file URLs with, or None.
+
+    The MCP transport never tells the model the server host — it lives only in the
+    client's .mcp.json, which the model can't read — so a relative URL would force
+    the agent to guess where to PUT/GET. Resolve it server-side:
+      1. OSMCP_PUBLIC_BASE_URL — operator override; wins. Pin this behind a TLS
+         reverse proxy, which terminates HTTPS and rewrites scheme/host.
+      2. the request's own Host header — the address the caller reached us on
+         (correct for direct LAN/VPN, the documented default deployment).
+      3. None — off-request/stdio or no Host: caller stitches its own host.
+    """
+    if public_base_url:
+        return public_base_url
+    if host:
+        return f"{scheme}://{host}"
+    return None
+
+
 def _public_url(path: str) -> str:
-    return f"{OSMCP_PUBLIC_BASE_URL}{path}" if OSMCP_PUBLIC_BASE_URL else path
+    req = _http_request()
+    host = req.headers.get("host") if req is not None else None
+    scheme = req.url.scheme if req is not None else "http"
+    base = _resolve_base_url(OSMCP_PUBLIC_BASE_URL, host, scheme)
+    return f"{base}{path}" if base else path
 
 
 # --- MCP-context tools --------------------------------------------------------
@@ -114,9 +147,11 @@ def request_upload_op(filename: str, size_bytes: int, sha256: str = "", kind: st
         "ok": True, "file_id": file_id, "method": "PUT",
         "upload_url": _public_url(path), "upload_path": path,
         "expires_in": OSMCP_UPLOAD_URL_TTL, "max_size_bytes": max_bytes,
-        "hint": ("PUT the raw file bytes to upload_url (or upload_path on the same "
-                 "host as /mcp), e.g. curl --upload-file <file> '<upload_url>', "
-                 "then call get_upload(file_id) for the server path."),
+        "hint": ("PUT the raw file bytes to upload_url, e.g. "
+                 "curl --upload-file <file> '<upload_url>', then call "
+                 "get_upload(file_id) for the server path. If upload_url is "
+                 "relative (no Host resolved), prefix it with your MCP server's "
+                 "origin (scheme://host[:port]) — not the /mcp endpoint URL."),
     }
 
 

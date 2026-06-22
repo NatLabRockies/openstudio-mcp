@@ -73,6 +73,38 @@ def test_upload_roundtrip_loads_model():
 
 
 @pytest.mark.integration
+def test_request_upload_returns_absolute_url():
+    # Regression: request_upload returned a RELATIVE upload_url. The MCP transport
+    # never tells the model the server host (it lives only in the client's
+    # .mcp.json), so the agent couldn't build `curl --upload-file ... <url>`. The
+    # URL must be absolute, derived from the request Host, and work PUT'd directly.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                data = b"OS:Version,3.11.0;\nabs,url\n"
+                req = unwrap(await s.call_tool("request_upload", {
+                    "filename": "abs.osm", "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(), "kind": "osm",
+                }))
+                assert req["ok"] is True, req
+                assert req["upload_url"].startswith("http://"), \
+                    f"upload_url must be absolute so the agent can PUT it: {req['upload_url']}"
+                assert req["upload_url"] == _base(url) + req["upload_path"], \
+                    f"absolute upload_url must be host-base + relative path: {req}"
+                # Works PUT'd directly — no client-side host stitching needed.
+                r = httpx.put(req["upload_url"], content=data, timeout=60)
+                assert r.status_code == 200, f"direct PUT to absolute url failed: {r.status_code} {r.text}"
+                info = unwrap(await s.call_tool("get_upload", {"file_id": req["file_id"]}))
+                assert info["ready"] is True, info
+                assert info["sha256"] == hashlib.sha256(data).hexdigest(), info
+
+        asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_measure_zip_autoextract():
     # Validates: an uploaded measure .zip is extracted to a usable measure dir
     if not integration_enabled():
@@ -119,7 +151,9 @@ def test_download_roundtrip():
                 info = await _upload(s, url, "rt.osm", data)
                 dl = unwrap(await s.call_tool("request_download", {"path": info["server_path"]}))
                 assert dl["ok"] is True, dl
-                r = httpx.get(_base(url) + dl["download_path"], timeout=30)
+                # download_url is absolute too (same resolver as upload) — GET it directly.
+                assert dl["download_url"] == _base(url) + dl["download_path"], dl
+                r = httpx.get(dl["download_url"], timeout=30)
                 assert r.status_code == 200, r.text
                 assert r.content == data
 

@@ -23,28 +23,39 @@ another user's runs or files. Simulations are queued so the box isn't thrashed.
 
 The server stays single-box (model state is heavy and in-memory). Put it on a
 machine your users can reach — see [Network & security](#4-network--security).
+Build the image once: `docker build -f docker/Dockerfile -t openstudio-mcp:dev .`
 
-**Trusted network / VPN (no app auth):**
-```bash
-docker run -d --name openstudio-mcp \
-  -p 8000:8000 \
-  -e MCP_TRANSPORT=http \
-  -e MCP_AUTH=none \
-  -v /data/runs:/runs \
-  -v /data/inputs:/inputs \
-  openstudio-mcp:dev openstudio-mcp
-```
-
-**With per-user tokens (default for HTTP):**
+**macOS / Linux — per-user tokens (the default for HTTP):**
 ```bash
 docker run -d --name openstudio-mcp \
   -p 8000:8000 \
   -e MCP_TRANSPORT=http \
   -e MCP_AUTH=token \
-  -e MCP_TOKENS='{"s3cret-alice":"alice","s3cret-bob":"bob"}' \
+  -e MCP_TOKENS='{"<token-alice>":"alice","<token-bob>":"bob"}' \
   -v /data/runs:/runs \
+  -v /data/inputs:/inputs \
   openstudio-mcp:dev openstudio-mcp
 ```
+
+**Windows (PowerShell) — per-user tokens:**
+```powershell
+# Pass MCP_TOKENS via $env, NOT inline -e "...": Windows PowerShell strips the
+# embedded double quotes when handing JSON to docker.exe, so the JSON arrives
+# malformed and the server fails closed. Setting $env: first sidesteps that.
+$env:MCP_TOKENS = '{"<token-alice>":"alice","<token-bob>":"bob"}'
+docker run -d --name openstudio-mcp `
+  -p 8000:8000 `
+  -e MCP_TRANSPORT=http `
+  -e MCP_AUTH=token `
+  -e MCP_TOKENS `
+  -v "C:/data/runs:/runs" `
+  -v "C:/data/inputs:/inputs" `
+  openstudio-mcp:dev openstudio-mcp
+```
+
+**Trusted network / VPN, no app auth** — drop the two token lines and add
+`-e MCP_AUTH=none` instead. Verify either way: `docker logs openstudio-mcp`
+should show `Uvicorn running on http://0.0.0.0:8000`.
 
 `MCP_TOKENS` maps each bearer token → a username. That username becomes the
 user's identity: it scopes their run directory and their run ownership. If you
@@ -52,8 +63,19 @@ set `MCP_TRANSPORT=http` and forget `MCP_AUTH`, it defaults to `token` and — w
 no `MCP_TOKENS` — rejects everyone (fail-closed). Use `MCP_AUTH=none` to opt out.
 
 **You issue the tokens.** There is no self-service signup: the operator generates
-a strong random string per user (e.g. `openssl rand -hex 24`), adds it to
-`MCP_TOKENS`, and hands it to that user out-of-band — treat it like a password.
+a strong random string per user, adds it to `MCP_TOKENS`, and hands it to that
+user out-of-band — treat it like a password.
+
+```bash
+openssl rand -hex 24                                   # macOS / Linux
+```
+```powershell
+# Windows PowerShell — cryptographically random 24-byte hex token
+$b = New-Object byte[] 24
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+($b | ForEach-Object { '{0:x2}' -f $_ }) -join ''
+```
+
 The server verifies the `Authorization: Bearer …` header on **every** request
 before any tool runs; a missing or unknown token is rejected (401). Rotate or
 revoke by editing `MCP_TOKENS` and restarting. For `jwt` mode, tokens are minted
@@ -70,6 +92,7 @@ and signed by your IdP instead, and the server only verifies them.
 
 `url` points at the server's `/mcp` path; add the bearer header only if you ran
 with `MCP_AUTH=token`. **Claude Code, Cursor, and VS Code** all support this.
+Copy [`.mcp.json.example`](../.mcp.json.example) and fill in your host + token.
 
 **Claude Code** — add to `.mcp.json` (or `claude mcp add`):
 ```json
@@ -103,6 +126,40 @@ with `MCP_AUTH=token`. **Claude Code, Cursor, and VS Code** all support this.
 
 On a VPN with `MCP_AUTH=none`, drop the `headers` block. The local stdio config
 (README Quick Start) is unchanged and still works for single-user use.
+
+> **Restart your MCP client after editing its config** — Claude Code reads
+> `.mcp.json` only at startup; then `/mcp` shows the server connected.
+
+### Reaching the server from another computer
+
+The client `url` is the only thing pointing at the server, so it must be an
+address the *other* machine can route to — `localhost` only works on the box
+running the container. Use the server's LAN IP (or its VPN/Tailscale address).
+
+**Find the server's address** (run on the server):
+```bash
+ip -4 addr | grep inet            # Linux
+ipconfig getifaddr en0            # macOS (Wi-Fi; try en1 if blank)
+```
+```powershell
+Get-NetIPAddress -AddressFamily IPv4 |
+  Where-Object { $_.IPAddress -notlike '169.*' -and $_.IPAddress -ne '127.0.0.1' } |
+  Select-Object IPAddress, InterfaceAlias        # Windows
+```
+
+**Open the firewall** for inbound TCP 8000 on the server (skip for a VPN-only
+interface you already trust):
+```bash
+sudo ufw allow 8000/tcp                                   # Linux (ufw)
+# macOS: System Settings → Network → Firewall (often off on a trusted LAN)
+```
+```powershell
+New-NetFirewallRule -DisplayName "openstudio-mcp 8000" `
+  -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow   # Windows (admin)
+```
+
+Then set the other computer's `.mcp.json` `url` to `http://<server-ip>:8000/mcp`
+with that user's token. Keep this on a LAN/VPN — see [Network & security](#4-network--security).
 
 ---
 
@@ -206,7 +263,7 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_UPLOAD_URL_TTL` | `300` | seconds a signed upload/download URL stays valid |
 | `OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB` | `1024` | zip-bomb cap on extracted archive size |
 | `OSMCP_MAX_ARCHIVE_ENTRIES` | `5000` | max entries in an uploaded archive |
-| `OSMCP_PUBLIC_BASE_URL` | — | external base URL so file URLs are absolute (else a relative path is returned) |
+| `OSMCP_PUBLIC_BASE_URL` | — | pin the public origin for signed file URLs (set behind a TLS reverse proxy); direct connections auto-resolve it from the request `Host` |
 | `OSMCP_FILE_SIGNING_KEY` | auto | HMAC key for signed file URLs (auto-generated + persisted under `RUN_ROOT` if unset) |
 
 Auto-GC of old run dirs is **off by default**. Enable it with `openstudio-mcp --gc`
@@ -232,6 +289,13 @@ HMAC-signed URL.
 3. `get_upload(file_id)` → `server_path` (or `extracted_path` for a `.zip`)
 4. pass that path to `load_osm_model` / `apply_measure` / `change_building_location`
 
+`upload_url` (and `download_url`) come back **absolute** — resolved from the host
+you connected on — so the agent PUTs/GETs them directly without ever being told
+the server address (the MCP transport hides it; it lives only in client config).
+Behind a TLS reverse proxy, set `OSMCP_PUBLIC_BASE_URL` to pin the public origin.
+On Windows use `curl.exe --upload-file …` (bare `curl` is a PowerShell alias for
+`Invoke-WebRequest`, which takes different flags).
+
 A `.zip` (or `kind="measure"`) is auto-extracted server-side, guarded against
 zip bombs and path/symlink escapes; `extracted_path` points at the measure dir.
 
@@ -252,8 +316,13 @@ python -m mcp_server.tools.osmcp get /runs/<user>/<run>/exports/model.osm -o mod
 filename can't traverse paths. Enforced: `OSMCP_MAX_UPLOAD_MB`,
 `OSMCP_USER_QUOTA_MB`, optional sha256 integrity, and archive bomb/escape guards.
 The signed URL carries no bearer token, so it never enters the model context and
-expires after `OSMCP_UPLOAD_URL_TTL`. If a reverse proxy fronts the server, set
-`OSMCP_PUBLIC_BASE_URL` so the returned URLs are absolute.
+expires after `OSMCP_UPLOAD_URL_TTL` (default 300 s). That TTL bounds when the PUT
+must **begin**, not how long the transfer may take — the URL is verified once when
+the route receives the request, then bytes stream — so a large model over a slow
+link is fine as long as the agent doesn't stall between `request_upload` and the
+`curl`. Raise `OSMCP_UPLOAD_URL_TTL` if you expect a long gap there. The URL's
+absolute origin is resolved from the request host; behind a reverse proxy, set
+`OSMCP_PUBLIC_BASE_URL` to pin it.
 
 ---
 
