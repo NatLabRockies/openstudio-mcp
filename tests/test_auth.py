@@ -92,11 +92,15 @@ def test_http_jwt_auth_accepts_signed_rejects_unsigned():
 # --- Self-signed JWT: restart-free user onboarding (scripts/mint_token.py) ------
 # These exercise the SAME minting code an operator runs to add a user, then prove
 # the server accepts tokens it never saw at startup and keeps users isolated.
-import sys  # noqa: E402
+import importlib.util  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import mint_token  # noqa: E402
+# Load scripts/mint_token.py by path without mutating sys.path (no global shadowing).
+_mint_spec = importlib.util.spec_from_file_location(
+    "mint_token", Path(__file__).resolve().parent.parent / "scripts" / "mint_token.py",
+)
+mint_token = importlib.util.module_from_spec(_mint_spec)
+_mint_spec.loader.exec_module(mint_token)
 
 JWT_ISSUER = "urn:openstudio-mcp"
 JWT_AUDIENCE = "openstudio-mcp"
@@ -115,6 +119,19 @@ def _mint(private_pem: str, user: str, **kw) -> str:
     kw.setdefault("issuer", JWT_ISSUER)
     kw.setdefault("audience", JWT_AUDIENCE)
     return mint_token.issue_token(private_pem, user, **kw)
+
+
+def test_issue_token_normalizes_subject_whitespace():
+    # Regression: issue_token validated subject.strip() but signed the UNstripped
+    # subject, so "  alice  " and "alice" minted different identities -> different
+    # /runs/<user>/ dirs. The subject must be normalized before signing. Unit-level
+    # (no server, no openstudio import): mint and decode without verifying.
+    import jwt as pyjwt
+
+    private_pem, _ = mint_token.generate_keypair()
+    token = mint_token.issue_token(private_pem, "  alice  ", issuer=JWT_ISSUER, audience=JWT_AUDIENCE)
+    claims = pyjwt.decode(token, options={"verify_signature": False, "verify_aud": False})
+    assert claims["sub"] == "alice", f"subject must be stripped before signing: {claims!r}"
 
 
 @pytest.mark.integration

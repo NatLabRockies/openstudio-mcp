@@ -85,6 +85,7 @@ def issue_token(
 
     if not subject or not subject.strip():
         raise ValueError("subject (username) must be a non-empty string")
+    subject = subject.strip()  # normalize: " alice " and "alice" must be one identity
     issued = now or datetime.now(UTC)
     payload = {
         "sub": subject,

@@ -116,7 +116,7 @@ docker run -d --name openstudio-mcp -p 8000:8000 \
   -e MCP_JWT_ISSUER=urn:openstudio-mcp \
   -e MCP_JWT_AUDIENCE=openstudio-mcp \
   -v /data/runs:/runs -v /data/inputs:/inputs \
-  openstudio-mcp:latest
+  openstudio-mcp:dev openstudio-mcp
 ```
 
 ```powershell
@@ -128,7 +128,7 @@ docker run -d --name openstudio-mcp -p 8000:8000 `
   -e MCP_JWT_ISSUER=urn:openstudio-mcp `
   -e MCP_JWT_AUDIENCE=openstudio-mcp `
   -v "C:/data/runs:/runs" -v "C:/data/inputs:/inputs" `
-  openstudio-mcp:latest
+  openstudio-mcp:dev openstudio-mcp
 ```
 
 The minted token goes in the user's `.mcp.json` exactly like a static token (see
