@@ -78,13 +78,81 @@ $b = New-Object byte[] 24
 
 The server verifies the `Authorization: Bearer …` header on **every** request
 before any tool runs; a missing or unknown token is rejected (401). Rotate or
-revoke by editing `MCP_TOKENS` and restarting. For `jwt` mode, tokens are minted
-and signed by your IdP instead, and the server only verifies them.
+revoke by editing `MCP_TOKENS` and restarting. For `jwt` mode, tokens are signed
+by an IdP — or by your own key (see below) — and the server only verifies them.
 
 > **Token storage is plaintext** (`StaticTokenVerifier`). Fine for a trusted team
 > behind a VPN. For SSO/public deployments use `MCP_AUTH=jwt` and point it at your
 > IdP's verifying key (`MCP_JWT_PUBLIC_KEY`, a PEM) or JWKS endpoint
 > (`MCP_JWT_JWKS_URI`), optionally constraining `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE`.
+
+### Adding users without a restart (self-signed JWT)
+
+Token mode is simple but **static**: every add / rotate / revoke means editing
+`MCP_TOKENS` and restarting (which drops live sessions). If your roster changes
+often, run `MCP_AUTH=jwt` and become your own tiny token issuer — no external IdP
+required. The server then holds only a **public key**; you keep the **private
+key** and mint one token per user. Adding a user touches nothing on the server,
+so **no restart**.
+
+`scripts/mint_token.py` is the whole workflow:
+
+```bash
+# one-time: generate an RSA key pair in the current dir (private.pem + public.pem)
+python scripts/mint_token.py keygen
+
+# per user, any time (no restart): prints a ready-to-paste Authorization header
+python scripts/mint_token.py issue --user alice          # 30-day token
+python scripts/mint_token.py issue --user bob --days 7
+```
+
+Start the server with the **public** key only (`issuer`/`audience` are fixed
+labels the server re-checks on every request — pick them once):
+
+```bash
+docker run -d --name openstudio-mcp -p 8000:8000 \
+  -e MCP_TRANSPORT=http -e MCP_AUTH=jwt \
+  -e MCP_JWT_PUBLIC_KEY="$(cat public.pem)" \
+  -e MCP_JWT_ISSUER=urn:openstudio-mcp \
+  -e MCP_JWT_AUDIENCE=openstudio-mcp \
+  -v /data/runs:/runs -v /data/inputs:/inputs \
+  openstudio-mcp:dev openstudio-mcp
+```
+
+```powershell
+# Windows PowerShell — pass the multi-line PEM via $env, not inline -e "..."
+$env:MCP_JWT_PUBLIC_KEY = Get-Content public.pem -Raw
+docker run -d --name openstudio-mcp -p 8000:8000 `
+  -e MCP_TRANSPORT=http -e MCP_AUTH=jwt `
+  -e MCP_JWT_PUBLIC_KEY `
+  -e MCP_JWT_ISSUER=urn:openstudio-mcp `
+  -e MCP_JWT_AUDIENCE=openstudio-mcp `
+  -v "C:/data/runs:/runs" -v "C:/data/inputs:/inputs" `
+  openstudio-mcp:dev openstudio-mcp
+```
+
+The minted token goes in the user's `.mcp.json` exactly like a static token (see
+§2). The username becomes the token's `sub` claim and scopes that user's
+`/runs/<user>/` — same isolation as token mode.
+
+**The tradeoff is revocation.** JWTs are stateless: a token is valid until it
+expires. You cannot cheaply kill one leaked token early — your options are (a)
+let it expire, so keep TTLs short enough that "wait it out" is acceptable, or (b)
+rotate the key pair (`keygen` again → update `MCP_JWT_PUBLIC_KEY` → restart once →
+re-issue everyone), which invalidates **all** tokens at once. If you need instant
+per-user revoke or SSO, graduate to a managed IdP via `MCP_JWT_JWKS_URI` (config
+only, no code change).
+
+> **Guard the private key like a root password.** Anyone holding it can mint a
+> token for any user. It lives only on your admin machine — never in the repo, a
+> `.mcp.json`, or a Docker image (`*.pem` is gitignored). The server only ever
+> sees the public key.
+>
+> **Don't let tokens carry a `client_id` or `azp` claim.** Identity resolves as
+> `client_id || azp || sub`, so a shared `azp` (common from real IdPs, where it's
+> the *application* id) would collapse every user onto one identity and one run
+> dir. `mint_token.py` sets only `sub`; if you move to a managed IdP, map the
+> per-user claim accordingly.
 
 ---
 
@@ -330,8 +398,9 @@ absolute origin is resolved from the request host; behind a reverse proxy, set
 
 - **Single box only** — in-memory model state isn't shared across machines.
   Horizontal scale would need a per-user-container topology behind a router.
-- **Static token auth is plaintext** — use `MCP_AUTH=jwt` (IdP-signed JWTs) for
-  SSO/public deployments.
+- **Static token auth is plaintext, and adding/revoking a token needs a restart**
+  — for restart-free onboarding use `MCP_AUTH=jwt` (self-signed key or an IdP); see
+  [Adding users without a restart](#adding-users-without-a-restart-self-signed-jwt).
 
 See `docs/plans/multi-user-remote-mcp.md` for the full design rationale.
 
