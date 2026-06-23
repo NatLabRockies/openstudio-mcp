@@ -41,3 +41,6 @@ docs/review/
 # Local HTTP deployment — contains live bearer tokens + machine IPs, never commit
 .mcp.json
 HTTP-DEPLOYMENT-LOCAL.md
+
+# JWT signing keys (scripts/mint_token.py) — private key mints any user; never commit
+*.pem
