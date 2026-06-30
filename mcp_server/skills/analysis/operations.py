@@ -4,19 +4,126 @@ import json
 import mimetypes
 import os
 import re
+import hashlib
+import shutil
 import time
+import tempfile
 import uuid
 import xml.etree.ElementTree as ET
+import zipfile
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from jsonschema import Draft4Validator, SchemaError
 
 DONE_STATUSES = {"completed", "complete", "succeeded", "success", "finished"}
 FAILED_STATUSES = {"failed", "error", "cancelled", "canceled"}
 SUPPORTED_DISTRIBUTIONS = {"discrete", "uniform", "triangle", "normal", "lognormal", "integer_sequence"}
+OSA_SCHEMA_ENV_VARS = ("OPENSTUDIO_OSA_SCHEMA_PATH", "OSAF_SCHEMA_PATH")
+DEFAULT_OSA_SCHEMA_PATH = Path(__file__).with_name("osa_server_schema.json")
+REQUIRED_ANALYSIS_PACKAGE_ROOTS = frozenset({"measures", "weather", "seeds", "scripts", "lib"})
+SEED_SUFFIXES = frozenset({".osm", ".osw"})
+WEATHER_SUFFIXES = frozenset({".epw", ".ddy", ".stat"})
+SEED_QAQC_MANIFEST = "lib/seed_simulation_qaqc.json"
+FOUNDATIONAL_ANALYSIS_MEASURES: tuple[dict[str, Any], ...] = (
+    {
+        "measure_name": "view_model",
+        "arguments": {"use_geometry_diagnostics": False},
+        "instance_name": "view_model",
+        "display_name": "View Model",
+    },
+    {
+        "measure_name": "openstudio_results",
+        "arguments": {"units": "IP"},
+        "instance_name": "openstudio_results",
+        "display_name": "OpenStudio Results",
+    },
+    {
+        "measure_name": "generic_qaqc",
+        "arguments": {"template": "90.1-2019"},
+        "instance_name": "generic_qaqc",
+        "display_name": "Generic QAQC",
+    },
+)
+END_USE_CATEGORIES: tuple[str, ...] = (
+    "cooling",
+    "exterior_equipment",
+    "exterior_lighting",
+    "fans",
+    "generators",
+    "heat_recovery",
+    "heat_rejection",
+    "heating",
+    "humidification",
+    "interior_equipment",
+    "interior_lighting",
+    "pumps",
+    "refrigeration",
+    "water_systems",
+)
+END_USE_FUELS: tuple[str, ...] = ("electricity", "natural_gas")
+WHOLE_BUILDING_OUTPUT_VARIABLE_NAMES: tuple[str, ...] = (
+    "electricity_ip",
+    "natural_gas_ip",
+    "eui",
+    "total_site_eui",
+    "net_site_energy",
+    "annual_peak_electric_demand",
+    "unmet_hours_during_cooling",
+    "unmet_hours_during_heating",
+    "unmet_hours_during_occupied_cooling",
+    "unmet_hours_during_occupied_heating",
+)
+
+
+def _openstudio_results_output_variable(display_name: str, name: str) -> dict[str, Any]:
+    return {
+        "objective_function": False,
+        "objective_function_index": None,
+        "objective_function_target": None,
+        "objective_function_group": None,
+        "scaling_factor": None,
+        "display_name": display_name,
+        "display_name_short": display_name,
+        "metadata_id": None,
+        "name": name,
+        "visualize": True,
+        "export": True,
+        "variable_type": "double",
+    }
+
+
+def _default_end_use_output_variables() -> tuple[dict[str, Any], ...]:
+    variables: list[dict[str, Any]] = []
+    for fuel in END_USE_FUELS:
+        for category in END_USE_CATEGORIES:
+            display_name = f"{fuel}_{category}_ip"
+            variables.append(
+                _openstudio_results_output_variable(
+                    display_name=display_name,
+                    name=f"openstudio_results.{display_name}",
+                )
+            )
+    return tuple(variables)
+
+
+DEFAULT_SUMMARY_OUTPUT_VARIABLES: tuple[dict[str, Any], ...] = (
+    *(
+        _openstudio_results_output_variable(
+            display_name=variable_name,
+            name=f"openstudio_results.{variable_name}",
+        )
+        for variable_name in WHOLE_BUILDING_OUTPUT_VARIABLE_NAMES
+    ),
+)
+DEFAULT_OUTPUT_VARIABLES: tuple[dict[str, Any], ...] = (
+    *DEFAULT_SUMMARY_OUTPUT_VARIABLES,
+    *_default_end_use_output_variables(),
+)
 
 
 def _server_url(server_url: str | None = None) -> str:
@@ -53,6 +160,408 @@ def _write_json(path: str | Path, data: dict[str, Any]) -> str:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return str(p)
+
+
+def _sha256_file(path: str | Path) -> str:
+    p = Path(path).expanduser().resolve()
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _zip_member_sha256(archive: zipfile.ZipFile, name: str) -> str:
+    h = hashlib.sha256()
+    with archive.open(name) as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _find_run_file(run_dir: Path, candidates: Iterable[str]) -> Path | None:
+    for candidate in candidates:
+        path = run_dir / candidate
+        if path.exists():
+            return path
+    return None
+
+
+def _run_seed_path(run_dir: Path, osw_path: Path) -> Path | None:
+    try:
+        osw = json.loads(osw_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    seed_file = osw.get("seed_file")
+    if not seed_file:
+        return None
+    path = (osw_path.parent / seed_file).resolve()
+    return path if path.exists() else None
+
+
+def _run_weather_path(run_dir: Path, osw_path: Path, rec_epw_path: Path | None) -> Path | None:
+    if rec_epw_path and rec_epw_path.exists():
+        return rec_epw_path
+    try:
+        osw = json.loads(osw_path.read_text(encoding="utf-8"))
+    except Exception:
+        osw = {}
+    weather_file = osw.get("weather_file")
+    if isinstance(weather_file, str) and weather_file:
+        path = (osw_path.parent / weather_file).resolve()
+        if path.exists():
+            return path
+    epws = sorted(run_dir.glob("files/*.epw"))
+    return epws[0] if epws else None
+
+
+def _load_run_record_json(meta_path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _find_completed_seed_run(seed_hash: str, epw_hash: str | None = None) -> dict[str, Any] | None:
+    """Return a completed simulation run whose staged seed/EPW hashes match."""
+    from mcp_server.config import user_run_root
+
+    root = user_run_root()
+    if not root.exists():
+        return None
+
+    matches: list[dict[str, Any]] = []
+    for meta_path in root.glob("run_*/run_record.json"):
+        data = _load_run_record_json(meta_path)
+        if not data or data.get("status") != "success":
+            continue
+        run_dir = Path(data.get("run_dir") or meta_path.parent)
+        osw_path = Path(data.get("osw_path") or (run_dir / "workflow.osw"))
+        if not osw_path.exists():
+            continue
+        seed_path = _run_seed_path(run_dir, osw_path)
+        if seed_path is None or _sha256_file(seed_path) != seed_hash:
+            continue
+        rec_epw = Path(data["epw_path"]) if data.get("epw_path") else None
+        weather_path = _run_weather_path(run_dir, osw_path, rec_epw)
+        if epw_hash is not None:
+            if weather_path is None or _sha256_file(weather_path) != epw_hash:
+                continue
+        if _find_run_file(run_dir, ["run/eplusout.sql", "eplusout.sql"]) is None:
+            continue
+        matches.append(
+            {
+                "run_id": data.get("run_id") or meta_path.parent.name,
+                "run_dir": str(run_dir),
+                "osw_path": str(osw_path),
+                "seed_path": str(seed_path),
+                "weather_path": str(weather_path) if weather_path else None,
+                "created_at": data.get("created_at") or 0,
+                "ended_at": data.get("ended_at") or 0,
+            },
+        )
+    if not matches:
+        return None
+    matches.sort(key=lambda item: float(item.get("ended_at") or item.get("created_at") or 0), reverse=True)
+    return matches[0]
+
+
+def _basic_seed_qaqc(run_id: str) -> dict[str, Any]:
+    """Basic post-simulation QA/QC suitable for gating OSAF packaging."""
+    from mcp_server.skills.results.operations import extract_simulation_errors_op, extract_summary_metrics
+    from mcp_server.skills.simulation.operations import get_run_status
+
+    issues: list[str] = []
+    status = get_run_status(run_id)
+    run = status.get("run") if isinstance(status.get("run"), dict) else {}
+    if not status.get("ok") or run.get("status") != "success":
+        issues.append(f"Simulation run is not successful: {run.get('status') or status.get('error')}")
+
+    errors = extract_simulation_errors_op(run_id)
+    fatal_count = len(errors.get("fatal") or []) if errors.get("ok") else None
+    severe_count = len(errors.get("severe") or []) if errors.get("ok") else None
+    warning_count = errors.get("warning_count") if errors.get("ok") else None
+    if not errors.get("ok"):
+        issues.append(f"Could not parse EnergyPlus errors: {errors.get('message') or errors.get('error')}")
+    else:
+        if fatal_count:
+            issues.append(f"EnergyPlus reported {fatal_count} fatal error(s)")
+        if severe_count:
+            issues.append(f"EnergyPlus reported {severe_count} severe error(s)")
+
+    metrics = extract_summary_metrics(run_id)
+    if not metrics.get("ok"):
+        issues.append(f"Could not extract summary metrics: {metrics.get('message') or metrics.get('error')}")
+    else:
+        warnings = list(metrics.get("warnings") or [])
+        issues.extend(warnings)
+        metric_data = metrics.get("metrics") if isinstance(metrics.get("metrics"), dict) else {}
+        total_site = metric_data.get("total_site_energy") if isinstance(metric_data.get("total_site_energy"), dict) else {}
+        if total_site.get("value") is None:
+            issues.append("Summary metrics did not include total site energy")
+
+    return {
+        "ok": not issues,
+        "passed": not issues,
+        "issues": issues,
+        "run_status": status,
+        "error_summary": {
+            "fatal_count": fatal_count,
+            "severe_count": severe_count,
+            "warning_count": warning_count,
+        },
+        "summary_metrics": metrics,
+    }
+
+
+def _manifest_is_valid(
+    manifest: dict[str, Any],
+    *,
+    seed_hash: str | None = None,
+    epw_hash: str | None = None,
+) -> bool:
+    if manifest.get("ok") is not True:
+        return False
+    if not manifest.get("seed_sha256"):
+        return False
+    if manifest.get("seed_sha256") and seed_hash and manifest.get("seed_sha256") != seed_hash:
+        return False
+    if epw_hash is not None and manifest.get("weather_sha256") not in (epw_hash, None):
+        return False
+    qaqc = manifest.get("basic_qaqc")
+    if not isinstance(qaqc, dict) or qaqc.get("passed") is not True:
+        return False
+    return bool(manifest.get("run_id"))
+
+
+def _read_manifest(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _osa_schema_path(schema_path: str | Path | None = None) -> Path:
+    if schema_path is not None:
+        return Path(schema_path).expanduser().resolve()
+    for env_var in OSA_SCHEMA_ENV_VARS:
+        value = os.environ.get(env_var)
+        if value:
+            return Path(value).expanduser().resolve()
+    return DEFAULT_OSA_SCHEMA_PATH
+
+
+def _read_osa_schema(schema_path: str | Path | None = None) -> tuple[Path, dict[str, Any]]:
+    path = _osa_schema_path(schema_path)
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ValueError(f"OSA JSON schema not found: {path}") from None
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid OSA JSON schema in {path}: {e}") from None
+    if not isinstance(schema, dict):
+        raise ValueError(f"Expected OSA JSON schema object in {path}")
+    try:
+        Draft4Validator.check_schema(schema)
+    except SchemaError as e:
+        raise ValueError(f"Invalid Draft 4 OSA JSON schema in {path}: {e.message}") from None
+    return path, schema
+
+
+def _json_path(parts: Iterable[str | int]) -> str:
+    rendered = "$"
+    for part in parts:
+        if isinstance(part, int):
+            rendered += f"[{part}]"
+        elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part):
+            rendered += f".{part}"
+        else:
+            rendered += f"[{part!r}]"
+    return rendered
+
+
+def _schema_issues(data: dict[str, Any], schema: dict[str, Any]) -> list[str]:
+    validator = Draft4Validator(schema)
+    errors = sorted(validator.iter_errors(data), key=lambda e: (list(e.absolute_path), e.message))
+    return [f"{_json_path(error.absolute_path)}: {error.message}" for error in errors]
+
+
+def _normalize_seed_file(seed: dict[str, Any] | str | None) -> dict[str, Any] | None:
+    if seed is None:
+        return None
+    if isinstance(seed, dict):
+        return seed
+    suffix = Path(seed).suffix.lower()
+    return {"file_type": "OSW" if suffix == ".osw" else "OSM", "path": seed}
+
+
+def _normalize_weather_file(weather_file: dict[str, Any] | str | None) -> dict[str, Any] | None:
+    if weather_file is None:
+        return None
+    if isinstance(weather_file, dict):
+        return weather_file
+    suffix = Path(weather_file).suffix.lower().lstrip(".")
+    return {"file_type": suffix.upper() or "EPW", "path": weather_file}
+
+
+def _normalize_output_variable(output_variable: dict[str, Any]) -> dict[str, Any]:
+    variable = dict(output_variable)
+    name = str(variable.get("name") or "")
+    if not name and variable.get("report") and variable.get("report_file") and variable.get("var_name"):
+        parts = [variable["report"], variable["report_file"], variable["var_name"]]
+        if variable.get("end_use"):
+            parts.append(variable["end_use"])
+        if variable.get("end_use_category"):
+            parts.append(variable["end_use_category"])
+        name = ".".join(str(part) for part in parts)
+        variable["name"] = name
+    display_name = variable.get("display_name") or name
+    variable.setdefault("display_name", display_name)
+    variable.setdefault("display_name_short", display_name)
+    variable.setdefault("objective_function", False)
+    variable.setdefault("objective_function_index", None)
+    variable.setdefault("objective_function_target", None)
+    variable.setdefault("scaling_factor", None)
+    variable.setdefault("objective_function_group", None)
+    variable.setdefault("metadata_id", None)
+    variable.setdefault("visualize", True)
+    variable.setdefault("export", True)
+    variable.setdefault("variable_type", "double")
+    return variable
+
+
+def _normalize_workflow(workflow: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    normalized = []
+    for index, step in enumerate(workflow or []):
+        item = dict(step)
+        item.setdefault("workflow_index", index)
+        normalized.append(item)
+    return normalized
+
+
+def _default_output_variables() -> list[dict[str, Any]]:
+    return [dict(variable) for variable in DEFAULT_OUTPUT_VARIABLES]
+
+
+def get_default_output_variables() -> dict[str, Any]:
+    """Return the foundational OSAF output variables used by default analysis JSON creation."""
+    return {
+        "ok": True,
+        "output_variables": _default_output_variables(),
+        "count": len(DEFAULT_OUTPUT_VARIABLES),
+        "names": [str(variable["name"]) for variable in DEFAULT_OUTPUT_VARIABLES],
+    }
+
+
+def _common_measures_dir() -> Path:
+    return Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures")).expanduser().resolve()
+
+
+def _foundational_measure_path(measure_name: str) -> Path:
+    return _common_measures_dir() / measure_name
+
+
+def get_foundational_analysis_measures() -> dict[str, Any]:
+    measures: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for spec in FOUNDATIONAL_ANALYSIS_MEASURES:
+        measure_name = str(spec["measure_name"])
+        path = _foundational_measure_path(measure_name)
+        entry = {**spec, "measure_dir": str(path), "available": path.is_dir()}
+        measures.append(entry)
+        if not path.is_dir():
+            missing.append(measure_name)
+    return {
+        "ok": not missing,
+        "common_measures_dir": str(_common_measures_dir()),
+        "measure_names": [str(spec["measure_name"]) for spec in FOUNDATIONAL_ANALYSIS_MEASURES],
+        "measures": measures,
+        "missing": missing,
+        "error": None if not missing else f"Missing foundational analysis measures: {', '.join(missing)}",
+    }
+
+
+def _workflow_measure_names(workflow: list[dict[str, Any]]) -> set[str]:
+    names: set[str] = set()
+    for step in workflow:
+        if not isinstance(step, dict):
+            continue
+        for key in ("measure_definition_name", "measure_definition_name_xml", "name"):
+            value = step.get(key)
+            if value:
+                names.add(str(value))
+    return names
+
+
+def _foundational_measure_names() -> list[str]:
+    return [str(spec["measure_name"]) for spec in FOUNDATIONAL_ANALYSIS_MEASURES]
+
+
+def _missing_foundational_workflow_measures(problem: dict[str, Any]) -> list[str]:
+    workflow = problem.get("workflow")
+    if not isinstance(workflow, list):
+        return _foundational_measure_names()
+    workflow_names = _workflow_measure_names(workflow)
+    return [name for name in _foundational_measure_names() if name not in workflow_names]
+
+
+def _foundational_analysis_workflow_steps(existing_workflow: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    existing_names = _workflow_measure_names(existing_workflow)
+    steps: list[dict[str, Any]] = []
+    for spec in FOUNDATIONAL_ANALYSIS_MEASURES:
+        measure_name = str(spec["measure_name"])
+        if measure_name in existing_names:
+            continue
+        measure_dir = _foundational_measure_path(measure_name)
+        if not measure_dir.is_dir():
+            raise ValueError(
+                f"Foundational analysis measure '{measure_name}' not found at {measure_dir}. "
+                "Set COMMON_MEASURES_DIR or disable foundational analysis measures.",
+            )
+        steps.append(
+            build_measure_workflow_step(
+                str(measure_dir),
+                arguments=dict(spec.get("arguments") or {}),
+                instance_name=str(spec.get("instance_name") or measure_name),
+                display_name=str(spec.get("display_name") or measure_name),
+            )
+        )
+    return steps
+
+
+def _normalize_analysis_workflow(
+    workflow: list[dict[str, Any]] | None,
+    *,
+    include_foundational_measures: bool = True,
+) -> list[dict[str, Any]]:
+    normalized = _normalize_workflow(workflow)
+    if include_foundational_measures:
+        normalized.extend(_foundational_analysis_workflow_steps(normalized))
+    for index, step in enumerate(normalized):
+        step["workflow_index"] = index
+    return normalized
+
+
+def _zip_member_parts(name: str) -> list[str]:
+    normalized = name.replace("\\", "/")
+    return [part for part in normalized.split("/") if part]
+
+
+def _zip_member_is_symlink(info: zipfile.ZipInfo) -> bool:
+    return (info.external_attr >> 16) & 0o170000 == 0o120000
+
+
+def _measure_dirs(entries: list[str]) -> dict[str, set[str]]:
+    measures: dict[str, set[str]] = {}
+    for name in entries:
+        parts = _zip_member_parts(name)
+        if len(parts) < 3 or parts[0] != "measures":
+            continue
+        measure_name = parts[1]
+        measures.setdefault(measure_name, set()).add(parts[-1])
+    return measures
 
 
 def _text(parent: ET.Element, path: str, default: str | None = None) -> str | None:
@@ -276,6 +785,33 @@ def _request_json(
         raise RuntimeError(f"Could not reach OpenStudio Server at {server_url}: {e.reason}") from None
 
 
+def _request_form(
+    method: str,
+    server_url: str,
+    path: str,
+    *,
+    form: dict[str, Any],
+    timeout: int = 600,
+) -> dict[str, Any]:
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        **_auth_headers(),
+    }
+    data = urlencode({key: str(value) for key, value in form.items() if value is not None}).encode("utf-8")
+    req = Request(_url(server_url, path), data=data, headers=headers, method=method)
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            parsed = json.loads(raw) if raw.strip() else {}
+            return {"ok": True, "status": resp.status, "response": parsed}
+    except HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        return {"ok": False, "error": f"OpenStudio Server HTTP {e.code} for {path}: {detail}"}
+    except URLError as e:
+        return {"ok": False, "error": f"Could not reach OpenStudio Server at {server_url}: {e.reason}"}
+
+
 def _download(
     server_url: str,
     path: str,
@@ -351,35 +887,68 @@ def create_osa_json(
     output_variables: list[dict[str, Any]] | None = None,
     algorithm: dict[str, Any] | None = None,
     extra_analysis_fields: dict[str, Any] | None = None,
+    seed: dict[str, Any] | str | None = None,
+    weather_file: dict[str, Any] | str | None = None,
+    file_format_version: int = 1,
+    schema_path: str | None = None,
+    validate_after_create: bool = True,
+    include_foundational_measures: bool = True,
 ) -> dict[str, Any]:
     analysis_uuid = str(uuid.uuid4())
     machine_name = re.sub(r"[^a-zA-Z0-9_]+", "_", analysis_name).strip("_").lower() or "analysis"
-    analysis = {
-        "display_name": analysis_name,
-        "name": machine_name,
-        "uuid": analysis_uuid,
-        "output_variables": output_variables or [],
-        "problem": {
-            "analysis_type": analysis_type,
-            "algorithm": algorithm or {},
-            "workflow": workflow or [],
-        },
-    }
-    if extra_analysis_fields:
-        analysis.update(extra_analysis_fields)
+    normalized_output_variables = output_variables if output_variables is not None else _default_output_variables()
+    try:
+        analysis = {
+            "display_name": analysis_name,
+            "name": machine_name,
+            "uuid": analysis_uuid,
+            "output_variables": [_normalize_output_variable(v) for v in normalized_output_variables],
+            "file_format_version": file_format_version,
+            "problem": {
+                "analysis_type": analysis_type,
+                "algorithm": algorithm or {},
+                "workflow": _normalize_analysis_workflow(
+                    workflow,
+                    include_foundational_measures=include_foundational_measures,
+                ),
+            },
+        }
+        normalized_seed = _normalize_seed_file(seed)
+        if normalized_seed is not None:
+            analysis["seed"] = normalized_seed
+        normalized_weather = _normalize_weather_file(weather_file)
+        if normalized_weather is not None:
+            analysis["weather_file"] = normalized_weather
+        if extra_analysis_fields:
+            analysis.update(extra_analysis_fields)
 
-    path = _write_json(output_path, {"analysis": analysis})
-    return {"ok": True, "osa_json_path": path, "analysis_id": analysis_uuid, "analysis": analysis}
+        path = _write_json(output_path, {"analysis": analysis})
+        result = {"ok": True, "osa_json_path": path, "analysis_id": analysis_uuid, "analysis": analysis}
+        if validate_after_create:
+            result["validation"] = validate_osa_json(
+                path,
+                schema_path=schema_path,
+                require_foundational_measures=include_foundational_measures,
+            )
+        return result
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
 
 
 def create_osa_json_from_measures(
     output_path: str,
     analysis_name: str,
     measure_specs: list[dict[str, Any]],
-    analysis_type: str = "batch_run",
+    analysis_type: str = "single_run",
     algorithm: dict[str, Any] | None = None,
     output_variables: list[dict[str, Any]] | None = None,
     extra_analysis_fields: dict[str, Any] | None = None,
+    seed: dict[str, Any] | str | None = None,
+    weather_file: dict[str, Any] | str | None = None,
+    file_format_version: int = 1,
+    schema_path: str | None = None,
+    validate_after_create: bool = True,
+    include_foundational_measures: bool = True,
 ) -> dict[str, Any]:
     """Create an OSA JSON file from measure directories and variable specs."""
     try:
@@ -401,6 +970,12 @@ def create_osa_json_from_measures(
             output_variables=output_variables,
             algorithm=algorithm,
             extra_analysis_fields=extra_analysis_fields,
+            seed=seed,
+            weather_file=weather_file,
+            file_format_version=file_format_version,
+            schema_path=schema_path,
+            validate_after_create=validate_after_create,
+            include_foundational_measures=include_foundational_measures,
         )
     except (KeyError, ValueError) as e:
         return {"ok": False, "error": str(e)}
@@ -430,13 +1005,298 @@ def add_measure_to_osa_json(
             display_name=display_name,
         )
         workflow.append(step)
+        for index, workflow_step in enumerate(workflow):
+            if isinstance(workflow_step, dict):
+                workflow_step.setdefault("workflow_index", index)
         path = _write_json(osa_json_path, data)
-        return {"ok": True, "osa_json_path": path, "workflow_count": len(workflow), "measure_step": step}
+        return {
+            "ok": True,
+            "osa_json_path": path,
+            "workflow_count": len(workflow),
+            "measure_step": step,
+            "validation": validate_osa_json(path),
+        }
     except ValueError as e:
         return {"ok": False, "error": str(e)}
 
 
-def validate_osa_json(osa_json_path: str) -> dict[str, Any]:
+def preflight_seed_for_analysis_package(
+    seed_path: str,
+    weather_file: str | None = None,
+    manifest_path: str | None = None,
+    *,
+    template: str = "90.1-2019",
+    force_rerun: bool = False,
+    wait_timeout_seconds: int = 0,
+    poll_interval_seconds: int = 30,
+) -> dict[str, Any]:
+    """Ensure an OSAF seed has simulated and passed basic QA/QC.
+
+    Reuses an existing completed simulation when the staged seed and EPW hashes
+    match. If no completed run exists, starts one with run_simulation. The
+    manifest is written only when the simulation is successful and QA/QC passes.
+    """
+    from mcp_server.config import is_path_allowed
+    from mcp_server.skills.simulation.operations import get_run_status, run_simulation
+
+    seed = Path(seed_path).expanduser().resolve()
+    if not seed.exists():
+        return {"ok": False, "ready": False, "error": f"Seed model not found: {seed}"}
+    if seed.suffix.lower() != ".osm":
+        return {"ok": False, "ready": False, "error": "Seed preflight currently requires an .osm seed model."}
+    if not is_path_allowed(seed):
+        return {"ok": False, "ready": False, "error": f"Seed path is not allowed: {seed}"}
+
+    epw: Path | None = None
+    if weather_file:
+        epw = Path(weather_file).expanduser().resolve()
+        if not epw.exists():
+            return {"ok": False, "ready": False, "error": f"Weather file not found: {epw}"}
+        if epw.suffix.lower() != ".epw":
+            return {"ok": False, "ready": False, "error": "Seed preflight weather_file must be an .epw file."}
+        if not is_path_allowed(epw):
+            return {"ok": False, "ready": False, "error": f"Weather path is not allowed: {epw}"}
+
+    seed_hash = _sha256_file(seed)
+    epw_hash = _sha256_file(epw) if epw else None
+    manifest = Path(manifest_path).expanduser().resolve() if manifest_path else None
+    if manifest and manifest.exists() and not force_rerun:
+        existing_manifest = _read_manifest(manifest)
+        if existing_manifest and _manifest_is_valid(
+            existing_manifest,
+            seed_hash=seed_hash,
+            epw_hash=epw_hash,
+        ):
+            return {
+                "ok": True,
+                "ready": True,
+                "reused": True,
+                "source": "manifest",
+                "manifest_path": str(manifest),
+                "manifest": existing_manifest,
+            }
+
+    cached_run = None if force_rerun else _find_completed_seed_run(seed_hash, epw_hash=epw_hash)
+    run_id: str | None = None
+    reused = False
+    if cached_run:
+        run_id = str(cached_run["run_id"])
+        reused = True
+    else:
+        started = run_simulation(
+            osm_path=str(seed),
+            epw_path=str(epw) if epw else None,
+            name=f"analysis_seed_preflight_{seed.stem}",
+        )
+        if not started.get("ok"):
+            return {"ok": False, "ready": False, "error": "Could not start seed simulation.", "simulation": started}
+        run_id = str(started["run_id"])
+
+        deadline = time.time() + max(0, int(wait_timeout_seconds))
+        while wait_timeout_seconds > 0:
+            status = get_run_status(run_id)
+            run = status.get("run") if isinstance(status.get("run"), dict) else {}
+            if run.get("status") in DONE_STATUSES or run.get("status") in FAILED_STATUSES:
+                break
+            if time.time() >= deadline:
+                break
+            time.sleep(max(1, int(poll_interval_seconds)))
+
+        status = get_run_status(run_id)
+        run = status.get("run") if isinstance(status.get("run"), dict) else {}
+        if run.get("status") not in DONE_STATUSES:
+            return {
+                "ok": True,
+                "ready": False,
+                "status": run.get("status"),
+                "run_id": run_id,
+                "simulation": started,
+                "message": "Seed simulation has started but is not complete; rerun this preflight after it finishes.",
+            }
+
+    qaqc = _basic_seed_qaqc(run_id)
+    ready = bool(qaqc.get("passed"))
+    result_manifest = {
+        "ok": ready,
+        "schema": "openstudio-mcp.analysis.seed_qaqc.v1",
+        "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "seed_file": str(seed),
+        "seed_sha256": seed_hash,
+        "weather_file": str(epw) if epw else None,
+        "weather_sha256": epw_hash,
+        "template": template,
+        "run_id": run_id,
+        "simulation_reused": reused,
+        "basic_qaqc": qaqc,
+    }
+    if manifest:
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(json.dumps(result_manifest, indent=2) + "\n", encoding="utf-8")
+
+    return {
+        "ok": ready,
+        "ready": ready,
+        "reused": reused,
+        "run_id": run_id,
+        "manifest_path": str(manifest) if manifest else None,
+        "manifest": result_manifest,
+        "basic_qaqc": qaqc,
+        "error": None if ready else "Seed simulation QA/QC failed.",
+    }
+
+
+def _resolve_package_seed(package_dir: Path, seed_path: str | None) -> Path | None:
+    if seed_path:
+        return Path(seed_path).expanduser().resolve()
+    candidates = sorted((package_dir / "seeds").glob("*.osm"))
+    return candidates[0].resolve() if candidates else None
+
+
+def _resolve_package_weather(package_dir: Path, weather_file: str | None) -> Path | None:
+    if weather_file:
+        return Path(weather_file).expanduser().resolve()
+    candidates = sorted((package_dir / "weather").glob("*.epw"))
+    return candidates[0].resolve() if candidates else None
+
+
+def _write_support_zip(package_dir: Path, output_zip_path: Path) -> None:
+    output_zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(output_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for root in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
+            root_dir = package_dir / root
+            if not root_dir.exists():
+                continue
+            for path in sorted(root_dir.rglob("*")):
+                arcname = path.relative_to(package_dir).as_posix()
+                if path.is_dir():
+                    continue
+                archive.write(path, arcname)
+
+
+def _ensure_foundational_measures_in_package(package_dir: Path) -> dict[str, Any]:
+    copied: list[str] = []
+    present: list[str] = []
+    missing: list[str] = []
+    target_root = package_dir / "measures"
+    target_root.mkdir(parents=True, exist_ok=True)
+
+    for spec in FOUNDATIONAL_ANALYSIS_MEASURES:
+        measure_name = str(spec["measure_name"])
+        target = target_root / measure_name
+        if target.is_dir() and (target / "measure.rb").is_file() and (target / "measure.xml").is_file():
+            present.append(measure_name)
+            continue
+        source = _foundational_measure_path(measure_name)
+        if not source.is_dir():
+            missing.append(measure_name)
+            continue
+        if target.exists():
+            shutil.rmtree(target)
+        ignore = shutil.ignore_patterns(".git", ".bundle", "__pycache__", "*.pyc")
+        shutil.copytree(source, target, ignore=ignore)
+        copied.append(measure_name)
+
+    return {
+        "ok": not missing,
+        "copied": copied,
+        "present": present,
+        "missing": missing,
+        "common_measures_dir": str(_common_measures_dir()),
+        "error": None if not missing else f"Missing foundational analysis measures: {', '.join(missing)}",
+    }
+
+
+def prepare_analysis_package(
+    package_dir: str,
+    output_zip_path: str,
+    seed_path: str | None = None,
+    weather_file: str | None = None,
+    *,
+    template: str = "90.1-2019",
+    force_rerun: bool = False,
+    include_foundational_measures: bool = True,
+    wait_timeout_seconds: int = 0,
+    poll_interval_seconds: int = 30,
+) -> dict[str, Any]:
+    """Run/reuse seed preflight, write manifest, then create an OSAF support ZIP."""
+    from mcp_server.config import is_path_allowed
+
+    pkg = Path(package_dir).expanduser().resolve()
+    if not pkg.exists() or not pkg.is_dir():
+        return {"ok": False, "error": f"Package directory not found: {pkg}"}
+    if not is_path_allowed(pkg, write=True):
+        return {"ok": False, "error": f"Package directory is not writable/allowed: {pkg}"}
+    out = Path(output_zip_path).expanduser().resolve()
+    if not is_path_allowed(out, write=True):
+        return {"ok": False, "error": f"Output ZIP path is not writable/allowed: {out}"}
+
+    seed = _resolve_package_seed(pkg, seed_path)
+    if seed is None:
+        return {"ok": False, "error": "No .osm seed model found in package_dir/seeds; pass seed_path explicitly."}
+    epw = _resolve_package_weather(pkg, weather_file)
+    manifest_path = pkg / SEED_QAQC_MANIFEST
+    preflight = preflight_seed_for_analysis_package(
+        seed_path=str(seed),
+        weather_file=str(epw) if epw else None,
+        manifest_path=str(manifest_path),
+        template=template,
+        force_rerun=force_rerun,
+        wait_timeout_seconds=wait_timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+    if not preflight.get("ready"):
+        return {
+            "ok": False,
+            "error": "Seed model must complete simulation and pass basic QA/QC before packaging.",
+            "preflight": preflight,
+        }
+
+    foundational_measures = None
+    if include_foundational_measures:
+        foundational_measures = _ensure_foundational_measures_in_package(pkg)
+        if not foundational_measures.get("ok"):
+            return {
+                "ok": False,
+                "error": "Foundational analysis measures must be available before packaging.",
+                "preflight": preflight,
+                "foundational_measures": foundational_measures,
+            }
+
+    _write_support_zip(pkg, out)
+    validation = validate_analysis_package(str(out), require_seed_qaqc=True)
+    return {
+        "ok": validation.get("ok", False),
+        "zip_path": str(out),
+        "preflight": preflight,
+        "foundational_measures": foundational_measures,
+        "validation": validation,
+        "error": None if validation.get("ok") else "Created ZIP failed package validation.",
+    }
+
+
+def _analysis_variable_count(problem: dict[str, Any]) -> int:
+    workflow = problem.get("workflow")
+    if not isinstance(workflow, list):
+        return 0
+
+    count = 0
+    for step in workflow:
+        if not isinstance(step, dict):
+            continue
+        variables = step.get("variables")
+        if not isinstance(variables, list):
+            continue
+        for variable in variables:
+            if isinstance(variable, dict) and variable.get("variable") is not False and not variable.get("pivot"):
+                count += 1
+    return count
+
+
+def validate_osa_json(
+    osa_json_path: str,
+    schema_path: str | None = None,
+    require_foundational_measures: bool = True,
+) -> dict[str, Any]:
     issues: list[str] = []
     try:
         data = _read_json(osa_json_path)
@@ -465,12 +1325,228 @@ def validate_osa_json(osa_json_path: str) -> dict[str, Any]:
     if "output_variables" in analysis and not isinstance(analysis["output_variables"], list):
         issues.append("analysis.output_variables must be an array when present.")
 
+    variable_count = _analysis_variable_count(problem)
+    analysis_type = problem.get("analysis_type")
+    if isinstance(analysis_type, str) and analysis_type.lower() == "doe" and variable_count < 2:
+        issues.append(
+            "DOE analyses require at least two measure variables in analysis.problem.workflow. "
+            "Use single_run for a single datapoint, use a schema-supported sampling analysis type such as lhs, "
+            "or add another real variable before selecting DOE.",
+        )
+    missing_foundational: list[str] = []
+    if require_foundational_measures:
+        missing_foundational = _missing_foundational_workflow_measures(problem)
+        if missing_foundational:
+            issues.append(
+                "analysis.problem.workflow is missing foundational analysis measure(s): "
+                f"{', '.join(missing_foundational)}. Include view_model, openstudio_results, and generic_qaqc "
+                "in the OSA JSON workflow before submitting to OSAF.",
+            )
+
+    schema_file = _osa_schema_path(schema_path)
+    try:
+        schema_file, schema = _read_osa_schema(schema_path)
+        schema_issues = _schema_issues(data, schema)
+    except ValueError as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "issues": issues + [str(e)],
+            "structural_issues": issues,
+            "schema_issues": [str(e)],
+            "schema_path": str(schema_file),
+            "osa_json_path": str(Path(osa_json_path).expanduser().resolve()),
+            "analysis_id": analysis.get("uuid"),
+            "analysis_type": analysis_type,
+            "analysis_variable_count": variable_count,
+            "require_foundational_measures": require_foundational_measures,
+            "foundational_measure_names": _foundational_measure_names(),
+            "missing_foundational_measures": missing_foundational,
+        }
+    issues.extend(schema_issues)
+
     return {
         "ok": not issues,
         "issues": issues,
+        "structural_issues": issues[: len(issues) - len(schema_issues)],
+        "schema_issues": schema_issues,
+        "schema_path": str(schema_file),
         "osa_json_path": str(Path(osa_json_path).expanduser().resolve()),
         "analysis_id": analysis.get("uuid"),
-        "analysis_type": problem.get("analysis_type"),
+        "analysis_type": analysis_type,
+        "analysis_variable_count": variable_count,
+        "require_foundational_measures": require_foundational_measures,
+        "foundational_measure_names": _foundational_measure_names(),
+        "missing_foundational_measures": missing_foundational,
+    }
+
+
+def validate_analysis_package(
+    zip_path: str,
+    require_seed_qaqc: bool = True,
+    require_foundational_measures: bool = True,
+) -> dict[str, Any]:
+    """Validate the OSAF support ZIP layout before upload.
+
+    Expected root layout matches OpenStudio-analysis-gem's osw_project fixture:
+    measures/, weather/, seeds/, scripts/, and lib/ at the archive root.
+    When require_seed_qaqc=True, the ZIP must also contain
+    lib/seed_simulation_qaqc.json proving the packaged seed already simulated
+    successfully and passed basic QA/QC.
+    """
+    path = Path(zip_path).expanduser().resolve()
+    issues: list[str] = []
+    seed_qaqc_manifest: dict[str, Any] | None = None
+    try:
+        with zipfile.ZipFile(path) as archive:
+            infos = archive.infolist()
+            if SEED_QAQC_MANIFEST in archive.namelist():
+                try:
+                    parsed = json.loads(archive.read(SEED_QAQC_MANIFEST).decode("utf-8"))
+                    if isinstance(parsed, dict):
+                        seed_qaqc_manifest = parsed
+                    else:
+                        issues.append(f"{SEED_QAQC_MANIFEST} must contain a JSON object.")
+                except Exception as e:
+                    issues.append(f"Could not parse {SEED_QAQC_MANIFEST}: {e}")
+    except FileNotFoundError:
+        return {"ok": False, "error": f"Analysis package ZIP not found: {path}", "issues": [f"File not found: {path}"]}
+    except zipfile.BadZipFile:
+        return {"ok": False, "error": f"Invalid analysis package ZIP: {path}", "issues": ["Not a valid ZIP archive."]}
+    except OSError as e:
+        return {"ok": False, "error": f"Could not read analysis package ZIP {path}: {e}", "issues": [str(e)]}
+
+    if not infos:
+        issues.append("Analysis package ZIP is empty.")
+
+    names = [info.filename for info in infos]
+    file_names = [name for name, info in zip(names, infos) if not info.is_dir()]
+    seen_names: set[str] = set()
+    duplicate_names: set[str] = set()
+    roots: set[str] = set()
+    uncompressed_bytes = 0
+    compressed_bytes = 0
+
+    for info in infos:
+        name = info.filename
+        parts = _zip_member_parts(name)
+        if not parts:
+            issues.append("Archive contains an empty member name.")
+            continue
+        if name.startswith("/") or parts[0] in (".", "..") or ".." in parts:
+            issues.append(f"Archive member must not use absolute or parent paths: {name}")
+        if len(parts) == 1 and not info.is_dir():
+            issues.append(f"Archive member must be inside a required root folder: {name}")
+        roots.add(parts[0])
+        if name in seen_names:
+            duplicate_names.add(name)
+        seen_names.add(name)
+        if _zip_member_is_symlink(info):
+            issues.append(f"Archive member must not be a symlink: {name}")
+        uncompressed_bytes += info.file_size
+        compressed_bytes += info.compress_size
+
+    missing_roots = sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS - roots)
+    extra_roots = sorted(roots - REQUIRED_ANALYSIS_PACKAGE_ROOTS)
+    if missing_roots:
+        issues.append(f"Missing required root folders: {', '.join(missing_roots)}")
+    if extra_roots:
+        issues.append(f"Unexpected root folders/files: {', '.join(extra_roots)}")
+    if duplicate_names:
+        issues.append(f"Duplicate archive members: {', '.join(sorted(duplicate_names))}")
+
+    grouped_files: dict[str, list[str]] = {root: [] for root in REQUIRED_ANALYSIS_PACKAGE_ROOTS}
+    for name in file_names:
+        parts = _zip_member_parts(name)
+        if parts and parts[0] in grouped_files:
+            grouped_files[parts[0]].append(name)
+
+    seed_files = grouped_files["seeds"]
+    weather_files = grouped_files["weather"]
+    script_files = grouped_files["scripts"]
+    lib_files = grouped_files["lib"]
+    measure_files = grouped_files["measures"]
+
+    if not any(Path(name).suffix.lower() in SEED_SUFFIXES for name in seed_files):
+        issues.append("seeds/ must contain at least one .osm or .osw seed file.")
+    if not any(Path(name).suffix.lower() == ".epw" for name in weather_files):
+        issues.append("weather/ must contain at least one .epw weather file.")
+    unexpected_weather = sorted(
+        name
+        for name in weather_files
+        if Path(name).suffix.lower() and Path(name).suffix.lower() not in WEATHER_SUFFIXES
+    )
+    if unexpected_weather:
+        issues.append(f"weather/ contains unexpected file types: {', '.join(unexpected_weather)}")
+    if not script_files:
+        issues.append("scripts/ must contain analysis or data_point scripts.")
+    if not lib_files:
+        issues.append("lib/ must contain supporting files.")
+    if not measure_files:
+        issues.append("measures/ must contain at least one measure directory.")
+
+    if require_foundational_measures:
+        measures = _measure_dirs(measure_files)
+        missing_foundational = [
+            str(spec["measure_name"])
+            for spec in FOUNDATIONAL_ANALYSIS_MEASURES
+            if str(spec["measure_name"]) not in measures
+        ]
+        if missing_foundational:
+            issues.append(
+                "Missing foundational analysis measure(s): "
+                f"{', '.join(missing_foundational)}. Run openstudio_analysis_prepare_package first.",
+            )
+
+    if require_seed_qaqc:
+        if seed_qaqc_manifest is None:
+            issues.append(
+                f"Missing required seed simulation QA/QC manifest: {SEED_QAQC_MANIFEST}. "
+                "Run openstudio_analysis_prepare_package first.",
+            )
+        else:
+            if not _manifest_is_valid(seed_qaqc_manifest):
+                issues.append(f"{SEED_QAQC_MANIFEST} does not show a passing seed simulation QA/QC result.")
+            manifest_seed_hash = seed_qaqc_manifest.get("seed_sha256")
+            if manifest_seed_hash and seed_files:
+                with zipfile.ZipFile(path) as archive:
+                    seed_hashes = {_zip_member_sha256(archive, seed_file) for seed_file in seed_files}
+                if manifest_seed_hash not in seed_hashes:
+                    issues.append(f"{SEED_QAQC_MANIFEST} seed_sha256 does not match any seed in seeds/.")
+
+    measures = _measure_dirs(measure_files)
+    complete_measure_dirs = sorted(
+        measure_name
+        for measure_name, filenames in measures.items()
+        if {"measure.rb", "measure.xml"}.issubset(filenames)
+    )
+    if not complete_measure_dirs:
+        issues.append("measures/ must contain at least one measure directory with measure.rb and measure.xml.")
+    for measure_name, filenames in sorted(measures.items()):
+        missing = {"measure.rb", "measure.xml"} - filenames
+        if missing:
+            issues.append(f"Measure '{measure_name}' is missing: {', '.join(sorted(missing))}")
+
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "zip_path": str(path),
+        "required_roots": sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS),
+        "root_folders": sorted(roots),
+        "file_count": len(file_names),
+        "measure_count": len(measures),
+        "complete_measure_count": len(complete_measure_dirs),
+        "seed_files": sorted(seed_files),
+        "weather_files": sorted(weather_files),
+        "script_files": sorted(script_files),
+        "lib_files": sorted(lib_files),
+        "measure_files": sorted(measure_files),
+        "require_seed_qaqc": require_seed_qaqc,
+        "require_foundational_measures": require_foundational_measures,
+        "foundational_measure_names": [str(spec["measure_name"]) for spec in FOUNDATIONAL_ANALYSIS_MEASURES],
+        "seed_qaqc_manifest": seed_qaqc_manifest,
+        "uncompressed_bytes": uncompressed_bytes,
+        "compressed_bytes": compressed_bytes,
     }
 
 
@@ -483,16 +1559,41 @@ def create_project(project_name: str, server_url: str | None = None) -> dict[str
     return {"ok": True, "project_id": str(project_id), "response": response}
 
 
+def check_server_health(server_url: str | None = None) -> dict[str, Any]:
+    base = _server_url(server_url)
+    try:
+        response = _request_json("GET", base, "/status.json", timeout=60)
+    except RuntimeError as e:
+        return {"ok": False, "server_url": base, "error": str(e)}
+    return {"ok": True, "server_url": base, "response": response}
+
+
 def submit_analysis(
     project_id: str,
     osa_json_path: str,
     server_url: str | None = None,
     analysis_name: str | None = None,
     upload_zip_path: str | None = None,
+    schema_path: str | None = None,
+    require_foundational_measures: bool = True,
 ) -> dict[str, Any]:
-    validation = validate_osa_json(osa_json_path)
+    validation = validate_osa_json(
+        osa_json_path,
+        schema_path=schema_path,
+        require_foundational_measures=require_foundational_measures,
+    )
     if not validation["ok"]:
         return {"ok": False, "error": "OSA JSON validation failed.", "validation": validation}
+    package_validation = None
+    if upload_zip_path:
+        package_validation = validate_analysis_package(upload_zip_path)
+        if not package_validation["ok"]:
+            return {
+                "ok": False,
+                "error": "Analysis package ZIP validation failed.",
+                "validation": validation,
+                "package_validation": package_validation,
+            }
 
     base = _server_url(server_url)
     formulation = _read_json(osa_json_path)
@@ -514,9 +1615,116 @@ def submit_analysis(
     if upload_zip_path:
         upload = _multipart_upload(base, f"/analyses/{quote(str(analysis_id))}/upload.json", upload_zip_path)
         if not upload.get("ok"):
-            return {"ok": False, "error": "Analysis created but ZIP upload failed.", "analysis_id": analysis_id, "upload": upload}
+            return {
+                "ok": False,
+                "error": "Analysis created but ZIP upload failed.",
+                "analysis_id": analysis_id,
+                "upload": upload,
+            }
 
-    return {"ok": True, "analysis_id": str(analysis_id), "response": response, "upload": upload}
+    return {
+        "ok": True,
+        "analysis_id": str(analysis_id),
+        "response": response,
+        "upload": upload,
+        "package_validation": package_validation,
+    }
+
+
+def start_analysis(
+    analysis_id: str,
+    server_url: str | None = None,
+    analysis_type: str = "single_run",
+    without_delay: bool = False,
+) -> dict[str, Any]:
+    base = _server_url(server_url)
+    result = _request_form(
+        "POST",
+        base,
+        f"/analyses/{quote(analysis_id)}/action.json",
+        form={
+            "analysis_action": "start",
+            "analysis_type": analysis_type,
+            "without_delay": "true" if without_delay else None,
+        },
+        timeout=600,
+    )
+    if not result.get("ok"):
+        return {"ok": False, "analysis_id": analysis_id, "analysis_type": analysis_type, **result}
+    response = result.get("response") if isinstance(result.get("response"), dict) else {}
+    code = response.get("code")
+    if code not in (None, 200):
+        return {
+            "ok": False,
+            "analysis_id": analysis_id,
+            "analysis_type": analysis_type,
+            "error": response.get("error") or f"OpenStudio Server returned action code {code}.",
+            "response": response,
+            "status": result.get("status"),
+        }
+    return {
+        "ok": True,
+        "analysis_id": analysis_id,
+        "analysis_type": analysis_type,
+        "status": result.get("status"),
+        "response": response,
+    }
+
+
+def start_sampled_analysis_run(
+    analysis_id: str,
+    server_url: str | None = None,
+    sampler_analysis_type: str = "lhs",
+    without_delay: bool = False,
+) -> dict[str, Any]:
+    """Generate sampled datapoints, then queue them with batch_run."""
+    if sampler_analysis_type == "batch_run":
+        return {
+            "ok": False,
+            "analysis_id": analysis_id,
+            "sampler_analysis_type": sampler_analysis_type,
+            "error": "sampler_analysis_type must be a sampling analysis type such as lhs, not batch_run.",
+        }
+
+    sampler_start = start_analysis(
+        analysis_id=analysis_id,
+        server_url=server_url,
+        analysis_type=sampler_analysis_type,
+        without_delay=without_delay,
+    )
+    if not sampler_start.get("ok"):
+        return {
+            "ok": False,
+            "stage": f"start_{sampler_analysis_type}",
+            "analysis_id": analysis_id,
+            "sampler_analysis_type": sampler_analysis_type,
+            "sampler_start": sampler_start,
+        }
+
+    batch_run_start = start_analysis(
+        analysis_id=analysis_id,
+        server_url=server_url,
+        analysis_type="batch_run",
+        without_delay=without_delay,
+    )
+    if not batch_run_start.get("ok"):
+        return {
+            "ok": False,
+            "stage": "start_batch_run",
+            "analysis_id": analysis_id,
+            "sampler_analysis_type": sampler_analysis_type,
+            "sampler_start": sampler_start,
+            "batch_run_start": batch_run_start,
+        }
+
+    return {
+        "ok": True,
+        "stage": "started",
+        "analysis_id": analysis_id,
+        "sampler_analysis_type": sampler_analysis_type,
+        "sampler_start": sampler_start,
+        "batch_run_start": batch_run_start,
+    }
 
 
 def get_analysis_status(
@@ -539,6 +1747,292 @@ def get_analysis_status(
         "done": status in DONE_STATUSES,
         "failed": status in FAILED_STATUSES,
         "response": response,
+    }
+
+
+def _status_datapoint_count(status: dict[str, Any]) -> int:
+    response = status.get("response") if isinstance(status.get("response"), dict) else {}
+    analysis = response.get("analysis") if isinstance(response.get("analysis"), dict) else {}
+    value = analysis.get("total_datapoints")
+    return value if isinstance(value, int) else 0
+
+
+def _status_datapoints(status: dict[str, Any]) -> list[dict[str, Any]]:
+    response = status.get("response") if isinstance(status.get("response"), dict) else {}
+    analysis = response.get("analysis") if isinstance(response.get("analysis"), dict) else {}
+    data_points = analysis.get("data_points")
+    return data_points if isinstance(data_points, list) else []
+
+
+def _wait_for_datapoints(
+    analysis_id: str,
+    server_url: str,
+    *,
+    timeout_seconds: int,
+    poll_interval_seconds: int,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    last_status: dict[str, Any] | None = None
+    while time.monotonic() - started <= timeout_seconds:
+        last_status = get_analysis_status(analysis_id, server_url=server_url)
+        if _status_datapoint_count(last_status) > 0:
+            return {"ok": True, "status": last_status}
+        time.sleep(max(1, int(poll_interval_seconds)))
+    return {
+        "ok": False,
+        "error": f"Timed out after {timeout_seconds}s waiting for single_run to create a datapoint.",
+        "last_status": last_status,
+    }
+
+
+def _wait_for_datapoint_completion(
+    analysis_id: str,
+    server_url: str,
+    *,
+    timeout_seconds: int,
+    poll_interval_seconds: int,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    last_status: dict[str, Any] | None = None
+    while time.monotonic() - started <= timeout_seconds:
+        last_status = get_analysis_status(analysis_id, server_url=server_url)
+        data_points = _status_datapoints(last_status)
+        if data_points:
+            statuses = {str(dp.get("status") or "unknown").lower() for dp in data_points}
+            status_messages = [str(dp.get("status_message") or "").lower() for dp in data_points]
+            failure_messages = [message for message in status_messages if "failure" in message or "error" in message]
+            if failure_messages:
+                return {
+                    "ok": False,
+                    "error": f"At least one datapoint reported failure: {', '.join(sorted(set(failure_messages)))}",
+                    "status": last_status,
+                    "data_point_statuses": sorted(statuses),
+                }
+            if statuses and statuses.issubset(DONE_STATUSES):
+                return {"ok": True, "status": last_status, "data_point_statuses": sorted(statuses)}
+            if any(status in FAILED_STATUSES for status in statuses):
+                return {
+                    "ok": False,
+                    "error": f"At least one datapoint failed: {', '.join(sorted(statuses))}",
+                    "status": last_status,
+                    "data_point_statuses": sorted(statuses),
+                }
+        time.sleep(max(1, int(poll_interval_seconds)))
+    return {
+        "ok": False,
+        "error": f"Timed out after {timeout_seconds}s waiting for datapoint simulation completion.",
+        "last_status": last_status,
+    }
+
+
+def _package_seed_weather_refs(package_validation: dict[str, Any]) -> tuple[dict[str, str] | None, dict[str, str] | None]:
+    seed_files = package_validation.get("seed_files") if isinstance(package_validation.get("seed_files"), list) else []
+    weather_files = package_validation.get("weather_files") if isinstance(package_validation.get("weather_files"), list) else []
+    seed = {"file_type": "OSM", "path": f"./{seed_files[0]}"} if seed_files else None
+    epw_files = [path for path in weather_files if str(path).lower().endswith(".epw")]
+    weather_path = epw_files[0] if epw_files else (weather_files[0] if weather_files else None)
+    weather = {"file_type": "EPW", "path": f"./{weather_path}"} if weather_path else None
+    return seed, weather
+
+
+def _ordered_package_measure_names(package_validation: dict[str, Any]) -> list[str]:
+    measure_files = package_validation.get("measure_files") if isinstance(package_validation.get("measure_files"), list) else []
+    measure_names = sorted(_measure_dirs(measure_files))
+    foundational = _foundational_measure_names()
+    foundational_set = set(foundational)
+    ordered = [name for name in measure_names if name not in foundational_set]
+    ordered.extend(name for name in foundational if name in measure_names)
+    return ordered
+
+
+def _build_static_workflow_from_package(zip_path: str, package_validation: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build a single-run workflow from all packaged measures using default argument values."""
+    measure_names = _ordered_package_measure_names(package_validation)
+    if not measure_names:
+        raise ValueError("Package contains no measure directories to submit in the smoke-test OSA JSON.")
+
+    with tempfile.TemporaryDirectory(prefix="openstudio_smoke_measures_") as tmpdir:
+        tmp = Path(tmpdir)
+        with zipfile.ZipFile(Path(zip_path).expanduser().resolve()) as archive:
+            for info in archive.infolist():
+                parts = _zip_member_parts(info.filename)
+                if len(parts) >= 2 and parts[0] == "measures":
+                    archive.extract(info, tmp)
+
+        workflow = [
+            build_measure_workflow_step(str(tmp / "measures" / measure_name))
+            for measure_name in measure_names
+        ]
+
+    for index, step in enumerate(workflow):
+        step["workflow_index"] = index
+    return workflow
+
+
+def test_server_config_single_run(
+    upload_zip_path: str,
+    server_url: str | None = "http://localhost:8080",
+    output_dir: str | None = None,
+    project_name: str = "OpenStudio Server Config Smoke Test",
+    wait_timeout_seconds: int = 600,
+    poll_interval_seconds: int = 10,
+    schema_path: str | None = None,
+) -> dict[str, Any]:
+    """Smoke-test OpenStudio Server by submitting and starting a single_run analysis."""
+    base = _server_url(server_url)
+    health = check_server_health(base)
+    if not health.get("ok"):
+        return {"ok": False, "stage": "health", "server_url": base, "health": health}
+
+    package_validation = validate_analysis_package(upload_zip_path)
+    if not package_validation.get("ok"):
+        return {
+            "ok": False,
+            "stage": "package_validation",
+            "server_url": base,
+            "health": health,
+            "package_validation": package_validation,
+        }
+
+    seed, weather = _package_seed_weather_refs(package_validation)
+    if seed is None:
+        return {"ok": False, "stage": "package_validation", "error": "Package validation found no seed model."}
+    try:
+        workflow = _build_static_workflow_from_package(upload_zip_path, package_validation)
+    except ValueError as e:
+        return {
+            "ok": False,
+            "stage": "build_static_workflow",
+            "server_url": base,
+            "health": health,
+            "package_validation": package_validation,
+            "error": str(e),
+        }
+
+    if output_dir:
+        out_dir = Path(output_dir).expanduser().resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        out_dir = Path(tempfile.mkdtemp(prefix="openstudio_server_config_", dir="/tmp")).resolve()
+
+    osa_path = out_dir / "single_run_server_config_test.json"
+    created = create_osa_json(
+        output_path=str(osa_path),
+        analysis_name=project_name,
+        analysis_type="single_run",
+        workflow=workflow,
+        algorithm={"number_of_samples": 1},
+        extra_analysis_fields={
+            "cli_debug": "",
+            "cli_verbose": "",
+            "download_reports": False,
+            "download_osw": False,
+            "download_osm": False,
+            "download_zip": False,
+        },
+        seed=seed,
+        weather_file=weather,
+        schema_path=schema_path,
+        validate_after_create=True,
+    )
+    if not created.get("ok") or not created.get("validation", {}).get("ok"):
+        return {
+            "ok": False,
+            "stage": "create_osa_json",
+            "server_url": base,
+            "health": health,
+            "created": created,
+            "package_validation": package_validation,
+        }
+
+    project = create_project(project_name=project_name, server_url=base)
+    if not project.get("ok"):
+        return {"ok": False, "stage": "create_project", "server_url": base, "health": health, "project": project}
+
+    submission = submit_analysis(
+        project_id=project["project_id"],
+        osa_json_path=str(osa_path),
+        server_url=base,
+        upload_zip_path=upload_zip_path,
+        schema_path=schema_path,
+        require_foundational_measures=True,
+    )
+    if not submission.get("ok"):
+        return {
+            "ok": False,
+            "stage": "submit",
+            "server_url": base,
+            "health": health,
+            "project": project,
+            "submission": submission,
+        }
+
+    analysis_id = submission["analysis_id"]
+    single_run_start = start_analysis(analysis_id, server_url=base, analysis_type="single_run")
+    if not single_run_start.get("ok"):
+        return {
+            "ok": False,
+            "stage": "start_single_run",
+            "server_url": base,
+            "health": health,
+            "project": project,
+            "submission": submission,
+            "single_run_start": single_run_start,
+        }
+
+    datapoints = _wait_for_datapoints(
+        analysis_id,
+        base,
+        timeout_seconds=max(0, int(wait_timeout_seconds)),
+        poll_interval_seconds=poll_interval_seconds,
+    )
+    if not datapoints.get("ok"):
+        return {
+            "ok": False,
+            "stage": "wait_for_single_run_datapoint",
+            "server_url": base,
+            "health": health,
+            "project": project,
+            "submission": submission,
+            "single_run_start": single_run_start,
+            "datapoints": datapoints,
+        }
+
+    batch_run_start = start_analysis(analysis_id, server_url=base, analysis_type="batch_run")
+    if not batch_run_start.get("ok"):
+        return {
+            "ok": False,
+            "stage": "start_batch_run",
+            "server_url": base,
+            "health": health,
+            "project": project,
+            "submission": submission,
+            "single_run_start": single_run_start,
+            "datapoints": datapoints,
+            "batch_run_start": batch_run_start,
+        }
+
+    final_status = _wait_for_datapoint_completion(
+        analysis_id,
+        base,
+        poll_interval_seconds=max(1, int(poll_interval_seconds)),
+        timeout_seconds=max(0, int(wait_timeout_seconds)),
+    )
+    return {
+        "ok": bool(final_status.get("ok")),
+        "stage": "complete" if final_status.get("ok") else "wait_for_batch_run",
+        "server_url": base,
+        "health": health,
+        "project_id": project["project_id"],
+        "analysis_id": analysis_id,
+        "osa_json_path": str(osa_path),
+        "package_validation": package_validation,
+        "submission": submission,
+        "single_run_start": single_run_start,
+        "datapoints": datapoints,
+        "batch_run_start": batch_run_start,
+        "final_status": final_status,
+        "error": None if final_status.get("ok") else final_status.get("error"),
     }
 
 
@@ -594,10 +2088,12 @@ def submit_wait_download(
     server_url: str | None = None,
     analysis_name: str | None = None,
     upload_zip_path: str | None = None,
+    schema_path: str | None = None,
     analysis_type: str | None = None,
     poll_interval_seconds: int = 60,
     timeout_seconds: int = 86400,
     download_format: str = "csv",
+    require_foundational_measures: bool = True,
 ) -> dict[str, Any]:
     submission = submit_analysis(
         project_id=project_id,
@@ -605,6 +2101,8 @@ def submit_wait_download(
         server_url=server_url,
         analysis_name=analysis_name,
         upload_zip_path=upload_zip_path,
+        schema_path=schema_path,
+        require_foundational_measures=require_foundational_measures,
     )
     if not submission.get("ok"):
         return {"ok": False, "stage": "submit", "submission": submission}

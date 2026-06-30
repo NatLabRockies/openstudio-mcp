@@ -40,3 +40,6 @@ package-dir = {"" = "."}
 [tool.setuptools.packages.find]
 include = ["mcp_server*"]
 exclude = ["docker*", "tests*", "scripts*"]
+
+[tool.setuptools.package-data]
+"mcp_server.skills.analysis" = ["*.json"]
