@@ -705,4 +705,4 @@ Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full syste
 
 ## License
 
-See [LICENSE](LICENSE.md).
+See [LICENSE](LICENSE.txt).
