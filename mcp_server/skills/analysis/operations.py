@@ -1947,7 +1947,10 @@ def get_analysis_status(
     analysis_type: str | None = None,
 ) -> dict[str, Any]:
     base = _server_url(server_url)
-    response = _request_json("GET", base, f"/analyses/{quote(analysis_id)}/status.json", timeout=300)
+    try:
+        response = _request_json("GET", base, f"/analyses/{quote(analysis_id)}/status.json", timeout=300)
+    except RuntimeError as e:
+        return {"ok": False, "analysis_id": analysis_id, "error": str(e), "server_url": base}
     analysis = response.get("analysis") if isinstance(response.get("analysis"), dict) else {}
     status = str(analysis.get("status") or response.get("status") or "unknown").lower()
     response_analysis_type = analysis.get("analysis_type")
