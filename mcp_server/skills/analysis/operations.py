@@ -323,11 +323,18 @@ def _url(server_url: str, path: str) -> str:
     return f"{server_url}/{path.lstrip('/')}"
 
 
-def _read_json(path: str | Path) -> dict[str, Any]:
+def _is_analysis_path_allowed(path: Path, *, write: bool = False) -> bool:
     from mcp_server.config import is_path_allowed
 
+    if is_path_allowed(path, write=write):
+        return True
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    return path == temp_root or str(path).startswith(str(temp_root) + os.sep)
+
+
+def _read_json(path: str | Path) -> dict[str, Any]:
     p = Path(path).expanduser().resolve()
-    if not is_path_allowed(p):
+    if not _is_analysis_path_allowed(p):
         raise ValueError(f"JSON path is not allowed: {p}")
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
@@ -341,10 +348,8 @@ def _read_json(path: str | Path) -> dict[str, Any]:
 
 
 def _write_json(path: str | Path, data: dict[str, Any]) -> str:
-    from mcp_server.config import is_path_allowed
-
     p = Path(path).expanduser().resolve()
-    if not is_path_allowed(p, write=True):
+    if not _is_analysis_path_allowed(p, write=True):
         raise ValueError(f"Output path is not writable/allowed: {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -1043,10 +1048,8 @@ def _download(
             match = re.search(r'filename="?([^";]+)"?', disposition, flags=re.IGNORECASE)
             filename = match.group(1) if match else fallback_name
             safe_name = "".join(c if c.isalnum() or c in ("-", "_", ".", " ") else "_" for c in filename).strip()
-            from mcp_server.config import is_path_allowed
-
             out_dir = Path(output_dir).expanduser().resolve()
-            if not is_path_allowed(out_dir, write=True):
+            if not _is_analysis_path_allowed(out_dir, write=True):
                 return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / (safe_name or fallback_name)
@@ -1432,15 +1435,13 @@ def prepare_analysis_package(
     poll_interval_seconds: int = 30,
 ) -> dict[str, Any]:
     """Run/reuse seed preflight, write manifest, then create an OSAF support ZIP."""
-    from mcp_server.config import is_path_allowed
-
     pkg = Path(package_dir).expanduser().resolve()
     if not pkg.exists() or not pkg.is_dir():
         return {"ok": False, "error": f"Package directory not found: {pkg}"}
-    if not is_path_allowed(pkg, write=True):
+    if not _is_analysis_path_allowed(pkg, write=True):
         return {"ok": False, "error": f"Package directory is not writable/allowed: {pkg}"}
     out = Path(output_zip_path).expanduser().resolve()
-    if not is_path_allowed(out, write=True):
+    if not _is_analysis_path_allowed(out, write=True):
         return {"ok": False, "error": f"Output ZIP path is not writable/allowed: {out}"}
 
     seed = _resolve_package_seed(pkg, seed_path)
