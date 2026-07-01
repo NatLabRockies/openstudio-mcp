@@ -341,7 +341,11 @@ def _read_json(path: str | Path) -> dict[str, Any]:
 
 
 def _write_json(path: str | Path, data: dict[str, Any]) -> str:
+    from mcp_server.config import is_path_allowed
+
     p = Path(path).expanduser().resolve()
+    if not is_path_allowed(p, write=True):
+        raise ValueError(f"Output path is not writable/allowed: {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return str(p)
