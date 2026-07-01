@@ -2284,9 +2284,12 @@ def download_analysis_data(
 
 
 def get_analysis_results_json(analysis_id: str, server_url: str | None = None) -> dict[str, Any]:
-    base = _server_url(server_url)
-    return _request_json("GET", base, f"/analyses/{quote(analysis_id)}/analysis_data.json", timeout=600)
-
+    try:
+        base = _server_url(server_url)
+        response = _request_json("GET", base, f"/analyses/{quote(analysis_id)}/analysis_data.json", timeout=600)
+    except (ValueError, RuntimeError) as e:
+        return {"ok": False, "error": str(e), "analysis_id": analysis_id}
+    return {"ok": True, "analysis_id": analysis_id, "response": response}
 
 def submit_wait_download(
     project_id: str,
