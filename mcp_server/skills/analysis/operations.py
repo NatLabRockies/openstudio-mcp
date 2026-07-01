@@ -1062,8 +1062,7 @@ def _download(
 def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, timeout: int = 1800) -> dict[str, Any]:
     p = Path(file_path).expanduser().resolve()
     if not p.exists():
-        raise ValueError(f"Upload file not found: {p}")
-
+        return {"ok": False, "error": f"Upload file not found: {p}"}
     boundary = f"----openstudio-mcp-{uuid.uuid4().hex}"
     content_type = mimetypes.guess_type(str(p))[0] or "application/zip"
     parts = [
