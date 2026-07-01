@@ -622,10 +622,15 @@ def _normalize_output_variable(output_variable: dict[str, Any]) -> dict[str, Any
 
 
 def _normalize_workflow(workflow: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    normalized = []
+    normalized: list[dict[str, Any]] = []
     for index, step in enumerate(workflow or []):
         item = dict(step)
-        item.setdefault("workflow_index", index)
+        item["workflow_index"] = index
+        variables = item.get("variables")
+        if isinstance(variables, list):
+            for variable in variables:
+                if isinstance(variable, dict):
+                    variable["workflow_index"] = index
         normalized.append(item)
     return normalized
 
