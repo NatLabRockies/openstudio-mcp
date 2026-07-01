@@ -2245,6 +2245,11 @@ def wait_for_analysis(
     poll_interval_seconds: int = 60,
     timeout_seconds: int = 86400,
 ) -> dict[str, Any]:
+    if poll_interval_seconds <= 0:
+        return {"ok": False, "error": "poll_interval_seconds must be > 0."}
+    if timeout_seconds <= 0:
+        return {"ok": False, "error": "timeout_seconds must be > 0."}
+
     started = time.monotonic()
     last_status: dict[str, Any] | None = None
     while time.monotonic() - started <= timeout_seconds:
