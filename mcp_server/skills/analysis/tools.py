@@ -13,6 +13,7 @@ from mcp_server.skills.analysis.operations import (
     get_foundational_analysis_measures,
     get_analysis_results_json,
     get_analysis_status,
+    get_osaf_algorithms,
     prepare_analysis_package,
     preflight_seed_for_analysis_package,
     start_analysis,
@@ -41,7 +42,6 @@ def register(mcp):
         file_format_version: int = 1,
         schema_path: str | None = None,
         validate_after_create: bool = True,
-        include_foundational_measures: bool = True,
     ):
         """Create an OpenStudio Server OSA JSON file.
 
@@ -55,7 +55,7 @@ def register(mcp):
         When output_variables is omitted, a foundational OpenStudio Results
         output-variable set is included, including whole-building energy,
         demand, unmet-hours, and all electricity and natural gas *_ip end-use
-        categories. By default the workflow also includes view_model,
+        categories. The workflow always includes view_model,
         openstudio_results, and generic_qaqc.
         """
         return create_osa_json(
@@ -71,23 +71,22 @@ def register(mcp):
             file_format_version=file_format_version,
             schema_path=schema_path,
             validate_after_create=validate_after_create,
-            include_foundational_measures=include_foundational_measures,
         )
 
     @mcp.tool(tags={"analysis"}, name="openstudio_analysis_validate_osa_json")
     def validate_osa_json_tool(
         osa_json_path: str,
         schema_path: str | None = None,
-        require_foundational_measures: bool = True,
+        require_foundational_measures: bool = False,
     ):
         """Validate an OSA JSON file with the OSAF/OpenStudio Server schema.
 
         Checks JSON parsing, key OpenStudio Server fields, and the vendored
         OpenStudio-analysis-gem Draft 4 schema before server submission. Also
         blocks DOE analyses with fewer than two measure variables, which OSAF
-        accepts initially but later fails during analysis startup. By default,
-        also requires the workflow to include view_model, openstudio_results,
-        and generic_qaqc so they are sent with every analysis.
+        accepts initially but later fails during analysis startup. Set
+        require_foundational_measures=True when validating MCP-generated
+        analyses for submission readiness.
         """
         return validate_osa_json(
             osa_json_path,
@@ -116,6 +115,17 @@ def register(mcp):
         support ZIPs by openstudio_analysis_prepare_package.
         """
         return get_foundational_analysis_measures()
+
+    @mcp.tool(tags={"analysis"}, name="openstudio_analysis_algorithms")
+    def osaf_algorithms_tool(category: str | None = None):
+        """List OSAF analysis algorithms and describe when to use them.
+
+        Returns analysis_type values, categories, best-fit use cases, caveats,
+        typical algorithm keys, and the correct start sequence. Optionally pass
+        a category such as "sampling", "sensitivity", or "optimization", or an
+        analysis_type such as "lhs" or "pso" to filter the list.
+        """
+        return get_osaf_algorithms(category=category)
 
     @mcp.tool(tags={"analysis"}, name="openstudio_analysis_validate_package")
     def validate_analysis_package_tool(
@@ -192,7 +202,6 @@ def register(mcp):
             weather_file=weather_file,
             template=template,
             force_rerun=force_rerun,
-            include_foundational_measures=include_foundational_measures,
             wait_timeout_seconds=wait_timeout_seconds,
             poll_interval_seconds=poll_interval_seconds,
         )
@@ -211,7 +220,6 @@ def register(mcp):
         file_format_version: int = 1,
         schema_path: str | None = None,
         validate_after_create: bool = True,
-        include_foundational_measures: bool = True,
     ):
         """Create an OSA JSON file from OpenStudio measures and variable parameters.
 
@@ -223,7 +231,7 @@ def register(mcp):
         datapoint or a schema-supported sampling type such as "lhs" for
         one-variable sampling. When output_variables is omitted, a foundational
         OpenStudio Results output-variable set is included. By
-        default the workflow also includes view_model, openstudio_results, and
+        the workflow always includes view_model, openstudio_results, and
         generic_qaqc.
         """
         return create_osa_json_from_measures(
@@ -239,7 +247,6 @@ def register(mcp):
             file_format_version=file_format_version,
             schema_path=schema_path,
             validate_after_create=validate_after_create,
-            include_foundational_measures=include_foundational_measures,
         )
 
     @mcp.tool(tags={"analysis"}, name="openstudio_analysis_add_measure_to_osa_json")

@@ -124,6 +124,187 @@ DEFAULT_OUTPUT_VARIABLES: tuple[dict[str, Any], ...] = (
     *DEFAULT_SUMMARY_OUTPUT_VARIABLES,
     *_default_end_use_output_variables(),
 )
+OSAF_ALGORITHMS: tuple[dict[str, Any], ...] = (
+    {
+        "analysis_type": "single_run",
+        "category": "smoke_test",
+        "summary": "Generate and run one datapoint.",
+        "best_for": "Server configuration checks, baseline runs, and validating one complete workflow before larger studies.",
+        "avoid_when": "You need parameter exploration, sensitivity indices, or optimization.",
+        "start_sequence": ["single_run", "batch_run"],
+        "typical_algorithm_keys": ["number_of_samples"],
+        "notes": "Use this for the OSAF smoke test path. It creates one datapoint, then batch_run simulates it.",
+    },
+    {
+        "analysis_type": "lhs",
+        "category": "sampling",
+        "summary": "Latin Hypercube Sampling over one or more uncertain variables.",
+        "best_for": "Small to medium sweeps, one-variable studies, broad sampling of continuous or discrete measure variables.",
+        "avoid_when": "You need formal variance decomposition or a full factorial design.",
+        "start_sequence": ["lhs", "batch_run"],
+        "typical_algorithm_keys": ["number_of_samples", "sample_method", "seed", "objective_functions"],
+        "notes": "For OSAF, start lhs first to generate datapoints, then start batch_run to simulate them.",
+    },
+    {
+        "analysis_type": "sobol",
+        "category": "sensitivity",
+        "summary": "Variance-based global sensitivity analysis.",
+        "best_for": "Quantifying first-order or higher-order sensitivity when you can afford enough samples.",
+        "avoid_when": "You only need a quick smoke test or very small sample count.",
+        "start_sequence": ["sobol", "batch_run"],
+        "typical_algorithm_keys": ["number_of_samples", "random_seed", "random_seed_2", "order", "nboot", "conf", "type"],
+        "notes": "Use for defensible sensitivity ranking; results need more samples than simple LHS sweeps.",
+    },
+    {
+        "analysis_type": "morris",
+        "category": "sensitivity",
+        "summary": "Morris elementary-effects screening.",
+        "best_for": "Low-cost screening to identify influential variables before a larger Sobol or optimization run.",
+        "avoid_when": "You need precise variance contributions.",
+        "start_sequence": ["morris", "batch_run"],
+        "typical_algorithm_keys": ["r", "levels", "grid_jump", "check_boundary", "type"],
+        "notes": "Good first pass when many variables make Sobol too expensive.",
+    },
+    {
+        "analysis_type": "fast99",
+        "category": "sensitivity",
+        "summary": "Fourier Amplitude Sensitivity Test.",
+        "best_for": "Global sensitivity analysis with periodic sampling assumptions.",
+        "avoid_when": "You need the simpler screening behavior of Morris or the more common Sobol indices.",
+        "start_sequence": ["fast99", "batch_run"],
+        "typical_algorithm_keys": ["n", "M", "seed", "norm_type", "p_power"],
+        "notes": "Less commonly used than Morris/Sobol in typical OSAF workflows.",
+    },
+    {
+        "analysis_type": "doe",
+        "category": "sampling",
+        "summary": "Design of experiments, commonly full factorial.",
+        "best_for": "Structured experiments across two or more variables with discrete levels.",
+        "avoid_when": "You have only one variable; use lhs or single_run instead.",
+        "start_sequence": ["doe", "batch_run"],
+        "typical_algorithm_keys": ["experiment_type"],
+        "notes": "MCP validation blocks DOE with fewer than two real measure variables because OSAF startup fails later.",
+    },
+    {
+        "analysis_type": "diag",
+        "category": "diagnostic",
+        "summary": "Diagnostic/diagonal sampling.",
+        "best_for": "Quick algorithmic diagnostic runs or diagonal perturbation-style checks.",
+        "avoid_when": "You need a general-purpose sweep or optimization.",
+        "start_sequence": ["diag", "batch_run"],
+        "typical_algorithm_keys": ["experiment_type", "run_baseline"],
+        "notes": "Specialized analysis type retained for server compatibility.",
+    },
+    {
+        "analysis_type": "nsga_nrel",
+        "category": "multi_objective_optimization",
+        "summary": "NREL NSGA-II multi-objective evolutionary optimization.",
+        "best_for": "Calibration or design optimization with multiple competing objectives and Pareto fronts.",
+        "avoid_when": "You only have one objective or cannot afford many simulations.",
+        "start_sequence": ["nsga_nrel", "batch_run"],
+        "typical_algorithm_keys": [
+            "number_of_samples",
+            "generations",
+            "tournament_size",
+            "cprob",
+            "xover_dist_idx",
+            "mu_dist_idx",
+            "mprob",
+            "objective_functions",
+        ],
+        "notes": "Commonly used for calibration examples with objective_functions from reporting measures.",
+    },
+    {
+        "analysis_type": "spea_nrel",
+        "category": "multi_objective_optimization",
+        "summary": "SPEA2-style multi-objective evolutionary optimization.",
+        "best_for": "Alternative Pareto optimization behavior for multi-objective calibration/design studies.",
+        "avoid_when": "A simple LHS or single-objective optimizer is sufficient.",
+        "start_sequence": ["spea_nrel", "batch_run"],
+        "typical_algorithm_keys": ["number_of_samples", "generations", "tournament_size", "cprob", "cidx", "midx", "mprob", "objective_functions"],
+        "notes": "Similar use case to nsga_nrel, with different evolutionary selection mechanics.",
+    },
+    {
+        "analysis_type": "pso",
+        "category": "optimization",
+        "summary": "Particle Swarm Optimization.",
+        "best_for": "Continuous parameter calibration and search when swarm behavior is appropriate.",
+        "avoid_when": "You need exhaustive sampling or formal sensitivity metrics.",
+        "start_sequence": ["pso", "batch_run"],
+        "typical_algorithm_keys": ["npart", "maxit", "maxfn", "lambda", "c1", "c2", "c_1", "c_2", "boundary", "topology", "xini", "vini", "method"],
+        "notes": "Schema accepts both c1/c2 and legacy c_1/c_2 keys used in OpenStudio-server fixtures.",
+    },
+    {
+        "analysis_type": "rgenoud",
+        "category": "optimization",
+        "summary": "Genetic optimization with derivative-based local search support.",
+        "best_for": "Calibration/search problems that benefit from evolutionary search plus optional BFGS-style refinement.",
+        "avoid_when": "You need a transparent grid/sampling study.",
+        "start_sequence": ["rgenoud", "batch_run"],
+        "typical_algorithm_keys": ["popsize", "generations", "wait_generations", "bfgsburnin", "bfgs", "solution_tolerance", "r_genoud_debug_flag"],
+        "notes": "Schema accepts numeric, boolean, and string r_genoud_debug_flag values for legacy compatibility.",
+    },
+    {
+        "analysis_type": "ga",
+        "category": "optimization",
+        "summary": "Single-population genetic algorithm.",
+        "best_for": "Evolutionary search over discrete or mixed parameter spaces.",
+        "avoid_when": "You need multi-objective Pareto optimization; use nsga_nrel or spea_nrel.",
+        "start_sequence": ["ga", "batch_run"],
+        "typical_algorithm_keys": ["popSize", "maxiter", "run", "pcrossover", "pmutation", "elitism"],
+        "notes": "Use when a conventional GA is enough and islands/Pareto fronts are not needed.",
+    },
+    {
+        "analysis_type": "gaisl",
+        "category": "optimization",
+        "summary": "Island-model genetic algorithm.",
+        "best_for": "Evolutionary search where island populations and migration may improve exploration.",
+        "avoid_when": "You need a small, quick, deterministic sampling run.",
+        "start_sequence": ["gaisl", "batch_run"],
+        "typical_algorithm_keys": ["popSize", "numIslands", "migrationRate", "migrationInterval", "maxiter", "run"],
+        "notes": "More complex GA variant; tune population and migration settings carefully.",
+    },
+    {
+        "analysis_type": "optim",
+        "category": "optimization",
+        "summary": "Local numerical optimization.",
+        "best_for": "Smooth-ish calibration/design problems where local search is acceptable.",
+        "avoid_when": "The response surface is discontinuous, highly multimodal, or dominated by discrete variables.",
+        "start_sequence": ["optim", "batch_run"],
+        "typical_algorithm_keys": ["method", "maxit", "factr", "pgtol", "epsilongradient"],
+        "notes": "Usually needs good initial conditions and well-scaled objective functions.",
+    },
+    {
+        "analysis_type": "preflight",
+        "category": "diagnostic",
+        "summary": "Preflight runs at min/max/mode or pivot samples.",
+        "best_for": "Checking variable bounds and workflow viability before a larger run.",
+        "avoid_when": "You need production results or final optimization.",
+        "start_sequence": ["preflight", "batch_run"],
+        "typical_algorithm_keys": ["run_min", "run_max", "run_mode", "run_all_samples_for_pivots"],
+        "notes": "Useful as a guard before expensive studies.",
+    },
+    {
+        "analysis_type": "repeat_run",
+        "category": "diagnostic",
+        "summary": "Repeated runs of the same or similar datapoint.",
+        "best_for": "Debugging stochastic behavior, queue stability, or reproducibility.",
+        "avoid_when": "You need parameter exploration.",
+        "start_sequence": ["repeat_run", "batch_run"],
+        "typical_algorithm_keys": ["number_of_runs"],
+        "notes": "Mostly diagnostic and infrastructure-oriented.",
+    },
+    {
+        "analysis_type": "baseline_perturbation",
+        "category": "sampling",
+        "summary": "Perturb variables around a baseline.",
+        "best_for": "Exploring local changes from a known baseline model/configuration.",
+        "avoid_when": "You need a broad global sample over full variable ranges.",
+        "start_sequence": ["baseline_perturbation", "batch_run"],
+        "typical_algorithm_keys": ["number_of_samples", "seed"],
+        "notes": "Specialized compatibility analysis type.",
+    },
+)
 
 
 def _server_url(server_url: str | None = None) -> str:
@@ -455,6 +636,32 @@ def get_default_output_variables() -> dict[str, Any]:
     }
 
 
+def get_osaf_algorithms(category: str | None = None) -> dict[str, Any]:
+    """Return supported OSAF analysis algorithms and when to use them."""
+    algorithms = [dict(algorithm) for algorithm in OSAF_ALGORITHMS]
+    categories = sorted({str(algorithm["category"]) for algorithm in algorithms})
+    if category:
+        normalized = category.strip().lower()
+        algorithms = [
+            algorithm
+            for algorithm in algorithms
+            if str(algorithm["category"]).lower() == normalized
+            or str(algorithm["analysis_type"]).lower() == normalized
+        ]
+    return {
+        "ok": True,
+        "algorithms": algorithms,
+        "count": len(algorithms),
+        "categories": categories,
+        "analysis_types": [str(algorithm["analysis_type"]) for algorithm in algorithms],
+        "notes": [
+            "For sampled/algorithm-generated analyses, start the algorithm action first, then batch_run.",
+            "For single_run smoke tests, start single_run first, then batch_run.",
+            "Do not use DOE with only one real measure variable; use lhs or single_run instead.",
+        ],
+    }
+
+
 def _common_measures_dir() -> Path:
     return Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures")).expanduser().resolve()
 
@@ -518,7 +725,7 @@ def _foundational_analysis_workflow_steps(existing_workflow: list[dict[str, Any]
         if not measure_dir.is_dir():
             raise ValueError(
                 f"Foundational analysis measure '{measure_name}' not found at {measure_dir}. "
-                "Set COMMON_MEASURES_DIR or disable foundational analysis measures.",
+                "Set COMMON_MEASURES_DIR so analysis JSON creation can include foundational measures.",
             )
         steps.append(
             build_measure_workflow_step(
@@ -531,14 +738,9 @@ def _foundational_analysis_workflow_steps(existing_workflow: list[dict[str, Any]
     return steps
 
 
-def _normalize_analysis_workflow(
-    workflow: list[dict[str, Any]] | None,
-    *,
-    include_foundational_measures: bool = True,
-) -> list[dict[str, Any]]:
+def _normalize_analysis_workflow(workflow: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     normalized = _normalize_workflow(workflow)
-    if include_foundational_measures:
-        normalized.extend(_foundational_analysis_workflow_steps(normalized))
+    normalized.extend(_foundational_analysis_workflow_steps(normalized))
     for index, step in enumerate(normalized):
         step["workflow_index"] = index
     return normalized
@@ -892,7 +1094,6 @@ def create_osa_json(
     file_format_version: int = 1,
     schema_path: str | None = None,
     validate_after_create: bool = True,
-    include_foundational_measures: bool = True,
 ) -> dict[str, Any]:
     analysis_uuid = str(uuid.uuid4())
     machine_name = re.sub(r"[^a-zA-Z0-9_]+", "_", analysis_name).strip("_").lower() or "analysis"
@@ -907,10 +1108,7 @@ def create_osa_json(
             "problem": {
                 "analysis_type": analysis_type,
                 "algorithm": algorithm or {},
-                "workflow": _normalize_analysis_workflow(
-                    workflow,
-                    include_foundational_measures=include_foundational_measures,
-                ),
+                "workflow": _normalize_analysis_workflow(workflow),
             },
         }
         normalized_seed = _normalize_seed_file(seed)
@@ -928,7 +1126,7 @@ def create_osa_json(
             result["validation"] = validate_osa_json(
                 path,
                 schema_path=schema_path,
-                require_foundational_measures=include_foundational_measures,
+                require_foundational_measures=True,
             )
         return result
     except ValueError as e:
@@ -948,7 +1146,6 @@ def create_osa_json_from_measures(
     file_format_version: int = 1,
     schema_path: str | None = None,
     validate_after_create: bool = True,
-    include_foundational_measures: bool = True,
 ) -> dict[str, Any]:
     """Create an OSA JSON file from measure directories and variable specs."""
     try:
@@ -975,7 +1172,6 @@ def create_osa_json_from_measures(
             file_format_version=file_format_version,
             schema_path=schema_path,
             validate_after_create=validate_after_create,
-            include_foundational_measures=include_foundational_measures,
         )
     except (KeyError, ValueError) as e:
         return {"ok": False, "error": str(e)}
@@ -1214,7 +1410,6 @@ def prepare_analysis_package(
     *,
     template: str = "90.1-2019",
     force_rerun: bool = False,
-    include_foundational_measures: bool = True,
     wait_timeout_seconds: int = 0,
     poll_interval_seconds: int = 30,
 ) -> dict[str, Any]:
@@ -1251,19 +1446,17 @@ def prepare_analysis_package(
             "preflight": preflight,
         }
 
-    foundational_measures = None
-    if include_foundational_measures:
-        foundational_measures = _ensure_foundational_measures_in_package(pkg)
-        if not foundational_measures.get("ok"):
-            return {
-                "ok": False,
-                "error": "Foundational analysis measures must be available before packaging.",
-                "preflight": preflight,
-                "foundational_measures": foundational_measures,
-            }
+    foundational_measures = _ensure_foundational_measures_in_package(pkg)
+    if not foundational_measures.get("ok"):
+        return {
+            "ok": False,
+            "error": "Foundational analysis measures must be available before packaging.",
+            "preflight": preflight,
+            "foundational_measures": foundational_measures,
+        }
 
     _write_support_zip(pkg, out)
-    validation = validate_analysis_package(str(out), require_seed_qaqc=True)
+    validation = validate_analysis_package(str(out), require_seed_qaqc=True, require_foundational_measures=True)
     return {
         "ok": validation.get("ok", False),
         "zip_path": str(out),
@@ -1295,7 +1488,7 @@ def _analysis_variable_count(problem: dict[str, Any]) -> int:
 def validate_osa_json(
     osa_json_path: str,
     schema_path: str | None = None,
-    require_foundational_measures: bool = True,
+    require_foundational_measures: bool = False,
 ) -> dict[str, Any]:
     issues: list[str] = []
     try:
@@ -1310,8 +1503,6 @@ def validate_osa_json(
 
     if not analysis.get("name"):
         issues.append("analysis.name is missing.")
-    if not analysis.get("uuid"):
-        issues.append("analysis.uuid is missing.")
 
     problem = analysis.get("problem")
     if not isinstance(problem, dict):

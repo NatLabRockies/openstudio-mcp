@@ -190,6 +190,9 @@
 				"download_zip": {
 					"type": "boolean"
 				},
+				"delete_simulation_dir": {
+					"type": "boolean"
+				},
 				"gemfile": {
 					"description": "set to true to use Gemfile",
 					"type": "boolean"
@@ -357,8 +360,18 @@
 					"type": "number",
 					"default": 1.193147
 				},
+				"c_1": {
+					"description": "PSO: Cognitive acceleration coefficient legacy key",
+					"type": "number",
+					"default": 1.193147
+				},
 				"c2": {
 					"description": "PSO: Social acceleration coefficient",
+					"type": "number",
+					"default": 1.193147
+				},
+				"c_2": {
+					"description": "PSO: Social acceleration coefficient legacy key",
 					"type": "number",
 					"default": 1.193147
 				},
@@ -582,7 +595,9 @@
 				},
 				"number_of_samples": {
 					"description": "Number of samples.",
-					"type": "number",
+					"type": [
+						"number", "string"
+					],
 					"minimum": 1
 				},
 				"numIslands": {
@@ -679,10 +694,12 @@
 				},
 				"r_genoud_debug_flag": {
 					"description": "RGenoud: debug flag Options: 1 or 0 (True or False)",
-					"type": "string",
+					"type": [
+						"string", "number", "boolean"
+					],
 					"default": "true",
 					"enum": [
-						"true", "false"
+						"true", "false", 0, 1, true, false
 					]
 				},
 				"random_seed": {
@@ -691,6 +708,10 @@
 				},
 				"random_seed2": {
 					"description": "Sobol second seed for random number generator.",
+					"type": "number"
+				},
+				"random_seed_2": {
+					"description": "Sobol second seed for random number generator legacy key.",
 					"type": "number"
 				},
 				"report": {

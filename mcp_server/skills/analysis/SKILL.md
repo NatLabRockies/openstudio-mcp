@@ -23,6 +23,23 @@ foundational OpenStudio Results outputs with `export: true` and
 Use `openstudio_analysis_default_output_variables` when a client needs to
 inspect, copy, or extend the default output-variable payload explicitly.
 
+## Existing Server Configs
+
+Use `openstudio_analysis_validate_osa_json` directly for existing
+OpenStudio-server/spec OSA JSON files, including legacy calibration and sampling
+configs. Raw validation is schema-focused by default and does not require the
+MCP foundational measures. Set `require_foundational_measures=true` when the
+file is being checked as an MCP-generated submission package.
+
+## OSAF Algorithms
+
+Use `openstudio_analysis_algorithms` when the user asks to list OSAF algorithms,
+choose an algorithm, or understand what an analysis type is best for. It returns
+structured guidance with categories, best-fit use cases, caveats, typical
+algorithm keys, and start sequence. For sampled/algorithm-generated analyses,
+start the algorithm action first, then `batch_run`; for single-run smoke tests,
+start `single_run`, then `batch_run`.
+
 ## Foundational Measures
 
 Generated analyses include these common measures by default:
@@ -34,9 +51,11 @@ Generated analyses include these common measures by default:
 Use `openstudio_analysis_foundational_measures` to inspect the configured
 measure paths. `openstudio_analysis_prepare_package` copies these measure
 directories from `COMMON_MEASURES_DIR` into `measures/` before writing the ZIP.
-OSA JSON validation and submission require them in `analysis.problem.workflow`
-by default, and package validation requires them in the ZIP, so raw uploads do
-not silently miss standard reports, QA/QC, or model visualization.
+MCP-generated `analysis.json` files always include them in
+`analysis.problem.workflow`, and MCP-created `analysis.zip` support packages
+always include them in `measures/`. Submission/package validation requires them,
+so raw uploads do not silently miss standard reports, QA/QC, or model
+visualization.
 
 ## Server Config Smoke Test
 

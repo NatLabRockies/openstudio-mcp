@@ -139,7 +139,7 @@ def test_foundational_analysis_measures_tool_reports_common_measure_set():
     assert all(measure["measure_dir"].endswith(measure["measure_name"]) for measure in payload["measures"])
 
 
-def test_validate_osa_json_requires_foundational_workflow_measures_by_default(tmp_path):
+def test_validate_osa_json_can_require_foundational_workflow_measures(tmp_path):
     path = tmp_path / "osa.json"
     created = operations.create_osa_json(
         output_path=str(path),
@@ -147,19 +147,21 @@ def test_validate_osa_json_requires_foundational_workflow_measures_by_default(tm
         analysis_type="single_run",
         seed="./seed.osm",
         weather_file="./weather/USA.epw",
-        include_foundational_measures=False,
     )
 
     assert created["ok"] is True
     assert created["validation"]["ok"] is True
-    assert created["validation"]["require_foundational_measures"] is False
+    assert created["validation"]["require_foundational_measures"] is True
+    data = json.loads(path.read_text())
+    data["analysis"]["problem"]["workflow"] = []
+    path.write_text(json.dumps(data))
 
-    validation = operations.validate_osa_json(str(path))
+    validation = operations.validate_osa_json(str(path), require_foundational_measures=True)
     assert validation["ok"] is False
     assert validation["missing_foundational_measures"] == ["view_model", "openstudio_results", "generic_qaqc"]
     assert any("missing foundational analysis measure" in issue for issue in validation["issues"])
 
-    legacy_validation = operations.validate_osa_json(str(path), require_foundational_measures=False)
+    legacy_validation = operations.validate_osa_json(str(path))
     assert legacy_validation["ok"] is True
 
 
@@ -185,6 +187,29 @@ def test_default_output_variables_tool_payload_matches_create_defaults(tmp_path)
 
     data = json.loads(path.read_text())
     assert data["analysis"]["output_variables"] == payload["output_variables"]
+
+
+def test_osaf_algorithms_describe_supported_analysis_types():
+    payload = operations.get_osaf_algorithms()
+
+    assert payload["ok"] is True
+    assert "sampling" in payload["categories"]
+    assert "optimization" in payload["categories"]
+    assert "sensitivity" in payload["categories"]
+
+    by_type = {algorithm["analysis_type"]: algorithm for algorithm in payload["algorithms"]}
+    assert by_type["lhs"]["start_sequence"] == ["lhs", "batch_run"]
+    assert "one-variable" in by_type["lhs"]["best_for"]
+    assert "fewer than two real measure variables" in by_type["doe"]["notes"]
+    assert "c_1" in by_type["pso"]["typical_algorithm_keys"]
+    assert "random_seed_2" in by_type["sobol"]["typical_algorithm_keys"]
+
+    filtered = operations.get_osaf_algorithms(category="sensitivity")
+    assert filtered["ok"] is True
+    assert {algorithm["analysis_type"] for algorithm in filtered["algorithms"]} >= {"sobol", "morris"}
+
+    lhs = operations.get_osaf_algorithms(category="lhs")
+    assert lhs["analysis_types"] == ["lhs"]
 
 
 def test_create_osa_json_explicit_output_variables_override_defaults(tmp_path):
@@ -214,9 +239,112 @@ def test_validate_osa_json_reports_missing_required_fields(tmp_path):
 
     assert validation["ok"] is False
     assert "analysis.name is missing." in validation["issues"]
-    assert "analysis.uuid is missing." in validation["issues"]
     assert "analysis.problem.analysis_type is missing." in validation["issues"]
     assert validation["schema_issues"]
+
+
+def test_validate_osa_json_accepts_legacy_server_algorithm_configs(tmp_path):
+    cases = [
+        (
+            "nsga_nrel",
+            {
+                "number_of_samples": 2,
+                "generations": 1,
+                "tournament_size": 2,
+                "cprob": 0.85,
+                "xover_dist_idx": 5,
+                "mu_dist_idx": 5,
+                "mprob": 0.8,
+                "objective_functions": ["report.electricity"],
+            },
+            {"delete_simulation_dir": True},
+        ),
+        (
+            "pso",
+            {
+                "npart": 2,
+                "maxit": 1,
+                "maxfn": 4,
+                "lambda": 0.9,
+                "c_1": 1,
+                "c_2": 1,
+                "boundary": "reflecting",
+                "topology": "random",
+                "xini": "lhs",
+                "vini": "lhs2011",
+                "method": "spso2011",
+            },
+            {},
+        ),
+        (
+            "rgenoud",
+            {
+                "popsize": 2,
+                "generations": 1,
+                "wait_generations": 2,
+                "bfgsburnin": 6,
+                "bfgs": 0,
+                "r_genoud_debug_flag": 1,
+            },
+            {},
+        ),
+        (
+            "spea_nrel",
+            {
+                "number_of_samples": 2,
+                "generations": 1,
+                "tournament_size": 2,
+                "cprob": 0.85,
+                "cidx": 5,
+                "midx": 5,
+                "mprob": 0.8,
+            },
+            {},
+        ),
+        (
+            "lhs",
+            {
+                "sample_method": "all_variables",
+                "number_of_samples": "2",
+            },
+            {},
+        ),
+        (
+            "sobol",
+            {
+                "number_of_samples": 2,
+                "random_seed": 1979,
+                "random_seed_2": 1973,
+                "order": 1,
+                "nboot": 0,
+                "conf": 0.95,
+                "type": "sobol",
+            },
+            {},
+        ),
+    ]
+
+    for index, (analysis_type, algorithm, analysis_overrides) in enumerate(cases):
+        path = tmp_path / f"legacy_{index}.json"
+        analysis = {
+            "display_name": f"Legacy {analysis_type}",
+            "name": f"legacy_{analysis_type}",
+            "file_format_version": 1,
+            "output_variables": [],
+            "seed": {"file_type": "OSM", "path": "./seeds/example.osm"},
+            "weather_file": {"file_type": "EPW", "path": "./weather/example.epw"},
+            "problem": {
+                "analysis_type": analysis_type,
+                "algorithm": algorithm,
+                "workflow": [],
+            },
+        }
+        analysis.update(analysis_overrides)
+        path.write_text(json.dumps({"analysis": analysis}))
+
+        validation = operations.validate_osa_json(str(path), require_foundational_measures=False)
+
+        assert validation["ok"] is True, validation["issues"]
 
 
 def test_create_osa_json_from_measures_promotes_arguments_to_variables(tmp_path):
@@ -323,7 +451,7 @@ def test_add_measure_to_osa_json_keeps_static_arguments(tmp_path):
         arguments={"building_name": "Fixed Name"},
     )
 
-    assert result["ok"] is True
+    assert result["ok"] is True, result
     data = json.loads(path.read_text())
     step = data["analysis"]["problem"]["workflow"][-1]
     assert step["arguments"][0]["name"] == "building_name"
@@ -369,7 +497,7 @@ def test_submit_analysis_posts_to_project_endpoint(monkeypatch, tmp_path):
         server_url="http://server.example",
     )
 
-    assert result["ok"] is True
+    assert result["ok"] is True, result
     assert result["analysis_id"] == "analysis-123"
     assert seen["url"] == "http://server.example/projects/project-abc/analyses.json"
     assert seen["method"] == "POST"
@@ -491,8 +619,10 @@ def test_submit_analysis_blocks_missing_foundational_measures_before_http(monkey
         analysis_type="single_run",
         seed="./seed.osm",
         weather_file="./weather/USA.epw",
-        include_foundational_measures=False,
     )
+    data = json.loads(osa_path.read_text())
+    data["analysis"]["problem"]["workflow"] = []
+    osa_path.write_text(json.dumps(data))
 
     def fail_urlopen(req, timeout):
         raise AssertionError("submit_analysis should not contact OSAF when foundational measures are missing")
@@ -716,6 +846,60 @@ def test_validate_analysis_package_accepts_seed_qaqc_manifest(tmp_path):
 
     assert validation["ok"] is True
     assert validation["seed_qaqc_manifest"]["run_id"] == "run_seed_preflight_123"
+
+
+def test_prepare_analysis_package_always_adds_foundational_measures(monkeypatch, tmp_path):
+    common_measures = tmp_path / "common_measures"
+    package_dir = tmp_path / "package"
+    seed = b"OSM seed contents"
+    for measure_name in ("view_model", "openstudio_results", "generic_qaqc"):
+        measure_dir = common_measures / measure_name
+        measure_dir.mkdir(parents=True)
+        measure_dir.joinpath("measure.rb").write_text(f"class {measure_name}; end")
+        measure_dir.joinpath("measure.xml").write_text(
+            _measure_xml(
+                measure_name,
+                measure_type="ModelMeasure" if measure_name == "view_model" else "ReportingMeasure",
+            )
+        )
+    package_dir.joinpath("seeds").mkdir(parents=True)
+    package_dir.joinpath("weather").mkdir()
+    package_dir.joinpath("scripts/data_point").mkdir(parents=True)
+    package_dir.joinpath("lib").mkdir()
+    package_dir.joinpath("measures/SetWWR").mkdir(parents=True)
+    package_dir.joinpath("seeds/example.osm").write_bytes(seed)
+    package_dir.joinpath("weather/example.epw").write_text("weather")
+    package_dir.joinpath("scripts/data_point/initialization.sh").write_text("exit 0\n")
+    package_dir.joinpath("measures/SetWWR/measure.rb").write_text("class SetWWR; end")
+    package_dir.joinpath("measures/SetWWR/measure.xml").write_text(_measure_xml("set_wwr", class_name="SetWWR"))
+    monkeypatch.setenv("COMMON_MEASURES_DIR", str(common_measures))
+
+    def fake_preflight_seed_for_analysis_package(**kwargs):
+        manifest = {
+            "ok": True,
+            "ready": True,
+            "seed_sha256": hashlib.sha256(seed).hexdigest(),
+            "run_id": "run_seed_preflight_123",
+            "basic_qaqc": {"passed": True, "issues": []},
+        }
+        Path(kwargs["manifest_path"]).write_text(json.dumps(manifest))
+        return manifest
+
+    monkeypatch.setattr(operations, "preflight_seed_for_analysis_package", fake_preflight_seed_for_analysis_package)
+    monkeypatch.setattr("mcp_server.config.is_path_allowed", lambda path, write=False: True)
+
+    result = operations.prepare_analysis_package(
+        package_dir=str(package_dir),
+        output_zip_path=str(tmp_path / "analysis.zip"),
+    )
+
+    assert result["ok"] is True, result
+    assert result["foundational_measures"]["copied"] == ["view_model", "openstudio_results", "generic_qaqc"]
+    with zipfile.ZipFile(result["zip_path"]) as archive:
+        names = set(archive.namelist())
+    assert "measures/view_model/measure.xml" in names
+    assert "measures/openstudio_results/measure.xml" in names
+    assert "measures/generic_qaqc/measure.xml" in names
 
 
 def test_validate_analysis_package_rejects_wrong_root_layout(tmp_path):

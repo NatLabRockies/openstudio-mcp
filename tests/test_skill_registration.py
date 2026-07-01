@@ -110,6 +110,7 @@ EXPECTED_TOOLS = {
     "openstudio_analysis_validate_osa_json",
     "openstudio_analysis_default_output_variables",
     "openstudio_analysis_foundational_measures",
+    "openstudio_analysis_algorithms",
     "openstudio_analysis_validate_package",
     "openstudio_analysis_preflight_seed",
     "openstudio_analysis_prepare_package",
