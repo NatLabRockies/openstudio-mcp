@@ -1038,7 +1038,11 @@ def _download(
             match = re.search(r'filename="?([^";]+)"?', disposition, flags=re.IGNORECASE)
             filename = match.group(1) if match else fallback_name
             safe_name = "".join(c if c.isalnum() or c in ("-", "_", ".", " ") else "_" for c in filename).strip()
+            from mcp_server.config import is_path_allowed
+
             out_dir = Path(output_dir).expanduser().resolve()
+            if not is_path_allowed(out_dir, write=True):
+                return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / (safe_name or fallback_name)
             out_path.write_bytes(body)
