@@ -1079,6 +1079,8 @@ def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, time
     except HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
         return {"ok": False, "error": f"OpenStudio Server HTTP {e.code} for upload: {detail}"}
+    except URLError as e:
+        return {"ok": False, "error": f"Could not reach OpenStudio Server at {server_url}: {e.reason}"}
 
 
 def create_osa_json(
