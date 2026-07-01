@@ -1742,8 +1742,12 @@ def validate_analysis_package(
 
 
 def create_project(project_name: str, server_url: str | None = None) -> dict[str, Any]:
-    base = _server_url(server_url)
-    response = _request_json("POST", base, "/projects.json", body={"project": {"name": project_name}}, timeout=600)
+    try:
+        base = _server_url(server_url)
+        response = _request_json("POST", base, "/projects.json", body={"project": {"name": project_name}}, timeout=600)
+    except (ValueError, RuntimeError) as e:
+        return {"ok": False, "error": str(e)}
+
     project_id = response.get("_id") or response.get("id") or response.get("uuid")
     if not project_id:
         return {"ok": False, "error": "Project response did not include _id/id/uuid.", "response": response}
