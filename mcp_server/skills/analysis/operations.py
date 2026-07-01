@@ -1789,7 +1789,8 @@ def submit_analysis(
     base = _server_url(server_url)
     formulation = _read_json(osa_json_path)
     if analysis_name:
-        formulation["analysis"]["name"] = analysis_name
+        formulation["analysis"]["display_name"] = analysis_name
+        formulation["analysis"]["name"] = re.sub(r"[^a-zA-Z0-9_]+", "_", analysis_name).strip("_").lower() or "analysis"
 
     response = _request_json(
         "POST",
