@@ -23,6 +23,8 @@ analyses/
 
 # Test artifacts — generated OSM files from integration test runs
 /runs/
+/analyses/
+/analysis_outputs/
 /measures/
 
 # OS

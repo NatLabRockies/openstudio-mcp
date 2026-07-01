@@ -16,6 +16,7 @@
 - *"Add R-30 roof insulation and see how it affects the cooling load."*
 - *"Build two adjacent zones from floor plans, match the shared wall, add 40% south glazing."*
 - *"Write a measure that sets all lights to 8 W/m², test it, apply it, and compare the EUI."*
+- *"Submit this OpenStudio analysis JSON to my server, wait for completion, and download the results"*
 - *"Apply the AEDG Small Office measure from my local measures directory"*
 
 The AI picks the right tools, calls them in sequence, and summarizes — no scripting.
@@ -155,7 +156,7 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 | Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
 | Codex | Compatible | MCP client via config |
 | VS Code Copilot | Compatible | MCP support via config |
-| Windsurf | Compatible | Under 100-tool limit |
+| Windsurf | Compatible | Host tool cap is ~100; use includeTools/excludeTools to limit the exposed tool set |
 | Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
 | Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
 | OpenAI API | Compatible | Use defer_loading for best results |
@@ -514,6 +515,39 @@ Reclaim disk from old run directories. See [docs/run-retention.md](docs/run-rete
 | `delete_run` | Delete one of your run directories |
 | `pin_run` | Protect a run from automatic cleanup |
 | `unpin_run` | Allow a pinned run to be cleaned up again |
+
+</details>
+
+<details>
+<summary><b>OpenStudio Server analysis</b> — 17 tools</summary>
+
+OSA JSON validation blocks DOE analyses with fewer than two measure variables
+and, by default, requires the foundational `view_model`, `openstudio_results`,
+and `generic_qaqc` measures in the workflow. Package validation also requires
+those measures in the support ZIP. Use `single_run` for a single datapoint, a
+schema-supported sampling type such as `lhs` for one-variable sampling, or add
+another real variable before choosing DOE. OSAF's DOE runner accepts a
+one-variable payload but later fails during analysis startup.
+
+| Tool | Description |
+|------|-------------|
+| `openstudio_analysis_create_osa_json` | Create an OpenStudio Server OSA JSON file |
+| `openstudio_analysis_validate_osa_json` | Validate an OSA JSON file locally |
+| `openstudio_analysis_default_output_variables` | Return the foundational output variables used by generated OSA JSON |
+| `openstudio_analysis_foundational_measures` | Return the common measures appended to generated OSA workflows |
+| `openstudio_analysis_preflight_seed` | Simulate/reuse a seed run and write seed QA/QC evidence before packaging |
+| `openstudio_analysis_prepare_package` | Create an OSAF support ZIP only after seed simulation QA/QC passes |
+| `openstudio_analysis_create_osa_json_from_measures` | Create OSA JSON from measure directories, static arguments, and variable parameters |
+| `openstudio_analysis_add_measure_to_osa_json` | Add a measure step and optional algorithm variables to an existing OSA JSON workflow |
+| `openstudio_analysis_create_project` | Create an OpenStudio Server project |
+| `openstudio_analysis_submit` | Submit OSA JSON and optional support ZIP to a project |
+| `openstudio_analysis_status` | Check analysis status |
+| `openstudio_analysis_start` | Start an existing analysis with OSAF's action endpoint |
+| `openstudio_analysis_wait` | Poll analysis status until completion/failure/timeout |
+| `openstudio_analysis_test_server_config` | Check server health, submit a single_run smoke test, and run one datapoint |
+| `openstudio_analysis_download_data` | Download exported analysis data |
+| `openstudio_analysis_results_json` | Fetch analysis result data as JSON |
+| `openstudio_analysis_submit_wait_download` | Submit analysis, wait for completion, and download results |
 
 </details>
 
