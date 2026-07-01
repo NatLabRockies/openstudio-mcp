@@ -324,7 +324,11 @@ def _url(server_url: str, path: str) -> str:
 
 
 def _read_json(path: str | Path) -> dict[str, Any]:
+    from mcp_server.config import is_path_allowed
+
     p = Path(path).expanduser().resolve()
+    if not is_path_allowed(p):
+        raise ValueError(f"JSON path is not allowed: {p}")
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except FileNotFoundError:
