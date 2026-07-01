@@ -156,7 +156,7 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 | Claude Code | Full support | ToolSearch auto-defers tools for efficient discovery |
 | Codex | Compatible | MCP client via config |
 | VS Code Copilot | Compatible | MCP support via config |
-| Windsurf | Compatible | Under 100-tool limit |
+| Windsurf | Compatible | Host tool cap is ~100; use includeTools/excludeTools to limit the exposed tool set |
 | Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
 | Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
 | OpenAI API | Compatible | Use defer_loading for best results |
