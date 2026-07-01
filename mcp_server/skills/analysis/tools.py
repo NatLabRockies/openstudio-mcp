@@ -184,6 +184,7 @@ def register(mcp):
         weather_file: str | None = None,
         template: str = "90.1-2019",
         force_rerun: bool = False,
+        include_foundational_measures: bool = True,
         wait_timeout_seconds: int = 0,
         poll_interval_seconds: int = 30,
     ):
