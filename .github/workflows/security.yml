@@ -35,7 +35,7 @@ jobs:
             runner: ubuntu-24.04-arm
             dockerfile: docker/Dockerfile.arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build image (${{ matrix.arch }})
         run: docker build -f ${{ matrix.dockerfile }} -t openstudio-mcp:dev .
