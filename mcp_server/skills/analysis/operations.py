@@ -310,7 +310,7 @@ OSAF_ALGORITHMS: tuple[dict[str, Any], ...] = (
 def _server_url(server_url: str | None = None) -> str:
     url = server_url or os.environ.get("OPENSTUDIO_SERVER_URL") or os.environ.get("OS_SERVER_URL")
     if not url:
-        raise ValueError("Missing server_url. Pass server_url or set OPENSTUDIO_SERVER_URL.")
+        raise ValueError("Missing server_url. Pass server_url or set OPENSTUDIO_SERVER_URL / OS_SERVER_URL.")
     return url.rstrip("/")
 
 
