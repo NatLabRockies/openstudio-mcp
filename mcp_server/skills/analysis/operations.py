@@ -1814,13 +1814,21 @@ def submit_analysis(
         formulation["analysis"]["display_name"] = analysis_name
         formulation["analysis"]["name"] = re.sub(r"[^a-zA-Z0-9_]+", "_", analysis_name).strip("_").lower() or "analysis"
 
-    response = _request_json(
-        "POST",
-        base,
-        f"/projects/{quote(project_id)}/analyses.json",
-        body=formulation,
-        timeout=600,
-    )
+    try:
+        response = _request_json(
+            "POST",
+            base,
+            f"/projects/{quote(project_id)}/analyses.json",
+            body=formulation,
+            timeout=600,
+        )
+    except RuntimeError as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "validation": validation,
+            "package_validation": package_validation,
+        }
     analysis_id = response.get("_id") or response.get("id") or response.get("uuid") or validation.get("analysis_id")
     if not analysis_id:
         return {"ok": False, "error": "Analysis response did not include _id/id/uuid.", "response": response}
