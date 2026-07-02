@@ -18,7 +18,9 @@ jobs:
           version: "0.11.2"
 
       - name: Install project (dev dependencies)
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          uv venv --python 3.11
+          uv pip install -e ".[dev]"
 
       - name: Run pre-commit (scoped files)
         run: |
