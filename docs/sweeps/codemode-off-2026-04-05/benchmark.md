@@ -1,8 +1,8 @@
 # LLM Benchmark Report
 
-**Date:** 2026-04-05T18:11:01+00:00  
-**Model:** sonnet | **Retries:** 0 | **CodeMode:** OFF  
-**Result:** 123/129 passed (95.3%) in 4140s  
+**Date:** 2026-04-05T18:11:01+00:00
+**Model:** sonnet | **Retries:** 0 | **CodeMode:** OFF
+**Result:** 123/129 passed (95.3%) in 4140s
 **Tokens:** 1.3k in + 127.9k out + 12.3M cache | **Cost:** $9.2912 (notional API pricing)
 
 ## Summary by Tier

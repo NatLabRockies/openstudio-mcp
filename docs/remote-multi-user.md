@@ -429,4 +429,3 @@ them (fast). Add **`--drain`** to instead run them to completion with a live
 ```bash
 python scripts/stress_remote.py --users 6 --cap 2 --drain
 ```
-

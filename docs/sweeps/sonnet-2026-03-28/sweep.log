@@ -263,7 +263,7 @@ case = {'expected_tools': ['extract_summary_metrics', 'extract_end_use_breakdown
         tier = get_tier()
         if tier not in ("all", "1"):
             pytest.skip("Tier 1 not selected")
-    
+
         # Prepend model load for skills that need model state
         prompt = case["prompt"]
         if case["skill"] in NEEDS_MODEL:
@@ -274,15 +274,15 @@ case = {'expected_tools': ['extract_summary_metrics', 'extract_end_use_breakdown
             else:
                 prompt = LOAD_PREFIX + prompt.lower()
         prompt += SUFFIX
-    
+
         timeout = SLOW_SKILLS.get(case["skill"], 120)
         result = run_claude(prompt, timeout=timeout)
         tool_names = result.tool_names
-    
+
         # Merge eval.md expected tools with extra acceptable tools
         expected = set(case["expected_tools"])
         expected.update(EXTRA_EXPECTED.get(case["skill"], []))
-    
+
 >       assert any(t in expected for t in tool_names), (
             f"[{case['skill']}] Expected one of {sorted(expected)}, "
             f"got: {tool_names}"
@@ -303,7 +303,7 @@ case = {'expected_tools': ['run_qaqc_checks', 'inspect_osm_summary'], 'prompt': 
         tier = get_tier()
         if tier not in ("all", "1"):
             pytest.skip("Tier 1 not selected")
-    
+
         # Prepend model load for skills that need model state
         prompt = case["prompt"]
         if case["skill"] in NEEDS_MODEL:
@@ -314,15 +314,15 @@ case = {'expected_tools': ['run_qaqc_checks', 'inspect_osm_summary'], 'prompt': 
             else:
                 prompt = LOAD_PREFIX + prompt.lower()
         prompt += SUFFIX
-    
+
         timeout = SLOW_SKILLS.get(case["skill"], 120)
         result = run_claude(prompt, timeout=timeout)
         tool_names = result.tool_names
-    
+
         # Merge eval.md expected tools with extra acceptable tools
         expected = set(case["expected_tools"])
         expected.update(EXTRA_EXPECTED.get(case["skill"], []))
-    
+
 >       assert any(t in expected for t in tool_names), (
             f"[{case['skill']}] Expected one of {sorted(expected)}, "
             f"got: {tool_names}"
@@ -343,7 +343,7 @@ case = {'expected_tools': ['run_qaqc_checks'], 'prompt': 'Validate before simula
         tier = get_tier()
         if tier not in ("all", "1"):
             pytest.skip("Tier 1 not selected")
-    
+
         # Prepend model load for skills that need model state
         prompt = case["prompt"]
         if case["skill"] in NEEDS_MODEL:
@@ -354,15 +354,15 @@ case = {'expected_tools': ['run_qaqc_checks'], 'prompt': 'Validate before simula
             else:
                 prompt = LOAD_PREFIX + prompt.lower()
         prompt += SUFFIX
-    
+
         timeout = SLOW_SKILLS.get(case["skill"], 120)
         result = run_claude(prompt, timeout=timeout)
         tool_names = result.tool_names
-    
+
         # Merge eval.md expected tools with extra acceptable tools
         expected = set(case["expected_tools"])
         expected.update(EXTRA_EXPECTED.get(case["skill"], []))
-    
+
 >       assert any(t in expected for t in tool_names), (
             f"[{case['skill']}] Expected one of {sorted(expected)}, "
             f"got: {tool_names}"
@@ -383,7 +383,7 @@ case = {'expected_tools': ['get_run_status', 'get_run_logs'], 'prompt': 'My simu
         tier = get_tier()
         if tier not in ("all", "1"):
             pytest.skip("Tier 1 not selected")
-    
+
         # Prepend model load for skills that need model state
         prompt = case["prompt"]
         if case["skill"] in NEEDS_MODEL:
@@ -394,15 +394,15 @@ case = {'expected_tools': ['get_run_status', 'get_run_logs'], 'prompt': 'My simu
             else:
                 prompt = LOAD_PREFIX + prompt.lower()
         prompt += SUFFIX
-    
+
         timeout = SLOW_SKILLS.get(case["skill"], 120)
         result = run_claude(prompt, timeout=timeout)
         tool_names = result.tool_names
-    
+
         # Merge eval.md expected tools with extra acceptable tools
         expected = set(case["expected_tools"])
         expected.update(EXTRA_EXPECTED.get(case["skill"], []))
-    
+
 >       assert any(t in expected for t in tool_names), (
             f"[{case['skill']}] Expected one of {sorted(expected)}, "
             f"got: {tool_names}"
@@ -423,7 +423,7 @@ case = {'expected_tools': ['get_run_logs'], 'prompt': 'Why did EnergyPlus crash?
         tier = get_tier()
         if tier not in ("all", "1"):
             pytest.skip("Tier 1 not selected")
-    
+
         # Prepend model load for skills that need model state
         prompt = case["prompt"]
         if case["skill"] in NEEDS_MODEL:
@@ -434,15 +434,15 @@ case = {'expected_tools': ['get_run_logs'], 'prompt': 'Why did EnergyPlus crash?
             else:
                 prompt = LOAD_PREFIX + prompt.lower()
         prompt += SUFFIX
-    
+
         timeout = SLOW_SKILLS.get(case["skill"], 120)
         result = run_claude(prompt, timeout=timeout)
         tool_names = result.tool_names
-    
+
         # Merge eval.md expected tools with extra acceptable tools
         expected = set(case["expected_tools"])
         expected.update(EXTRA_EXPECTED.get(case["skill"], []))
-    
+
 >       assert any(t in expected for t in tool_names), (
             f"[{case['skill']}] Expected one of {sorted(expected)}, "
             f"got: {tool_names}"
@@ -463,7 +463,7 @@ case = {'any_of': ['compare_runs', 'extract_summary_metrics', 'extract_end_use_b
         tier = get_tier()
         if tier not in ("all", "2"):
             pytest.skip("Tier 2 not selected")
-    
+
         # Build prompt for needs_run cases
         prompt = case["prompt"]
         if case.get("needs_run"):
@@ -480,14 +480,14 @@ case = {'any_of': ['compare_runs', 'extract_summary_metrics', 'extract_end_use_b
             pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
         elif BASELINE_MODEL in prompt and not baseline_model_exists():
             pytest.skip("Baseline model not found — run test_01_setup first")
-    
+
 >       result = run_claude(
             prompt,
             timeout=case.get("timeout", 120),
             max_turns=case.get("max_turns"),
         )
 
-tests\llm\test_04_workflows.py:616: 
+tests\llm\test_04_workflows.py:616:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 tests\llm\runner.py:209: in run_claude
     _last_result = _parse_stream_json(result.stdout)
@@ -500,7 +500,7 @@ raw = None
         """Parse newline-delimited JSON from stream-json output."""
         messages = []
         result_obj = {}
-    
+
 >       for line in raw.strip().splitlines():
                     ^^^^^^^^^
 E       AttributeError: 'NoneType' object has no attribute 'strip'
@@ -517,7 +517,7 @@ language = 'Ruby'
         tier = get_tier()
         if tier not in ("all", "2"):
             pytest.skip("Tier 2 not selected")
-    
+
         prompt = (
             f"Create a {language} ModelMeasure that reduces electric equipment "
             "power density. It must have these arguments:\n"
@@ -538,7 +538,7 @@ language = 'Ruby'
             label=f"plugloads_{language}",
         )
 
-tests\llm\test_04_workflows.py:885: 
+tests\llm\test_04_workflows.py:885:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 result = <llm.runner.ClaudeResult object at 0x000001ED06681D90>
@@ -548,7 +548,7 @@ result = <llm.runner.ClaudeResult object at 0x000001ED06681D90>
         body_keywords, label,
     ):
         """Shared quality checks for measure-with-args tests.
-    
+
         Args:
             result: ClaudeResult from run_claude
             expected_language: "Ruby" or "Python" (case-insensitive match)
@@ -560,31 +560,31 @@ result = <llm.runner.ClaudeResult object at 0x000001ED06681D90>
         assert "create_measure" in tool_names, (
             f"[{label}] Missing create_measure. Tools: {tool_names}"
         )
-    
+
         create_input = _find_create_measure_input(result)
         assert create_input, f"[{label}] create_measure call not found in MCP tool calls"
-    
+
         # Language check
         lang = create_input.get("language", "")
         assert lang.lower() == expected_language.lower(), (
             f"[{label}] Expected language={expected_language}, got {lang}"
         )
-    
+
         args = _parse_args(create_input)
         run_body = create_input.get("run_body", "")
-    
+
         # 1. Has arguments
         assert args and len(args) > 0, (
             f"[{label}] No arguments — LLM hard-coded all values"
         )
-    
+
         # 2. Required argument types present
         arg_types = {a.get("type", "") for a in args}
         for t in expected_arg_types:
             assert t in arg_types, (
                 f"[{label}] Missing arg type {t}. Types found: {arg_types}"
             )
-    
+
         # 3. Choice arg has values list
         for a in args:
             if a.get("type") == "Choice":
@@ -609,7 +609,7 @@ language = 'Python'
         tier = get_tier()
         if tier not in ("all", "2"):
             pytest.skip("Tier 2 not selected")
-    
+
         prompt = (
             f"Create a {language} ModelMeasure that reduces electric equipment "
             "power density. It must have these arguments:\n"
@@ -630,7 +630,7 @@ language = 'Python'
             label=f"plugloads_{language}",
         )
 
-tests\llm\test_04_workflows.py:885: 
+tests\llm\test_04_workflows.py:885:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 result = <llm.runner.ClaudeResult object at 0x000001ED06736870>
@@ -640,7 +640,7 @@ result = <llm.runner.ClaudeResult object at 0x000001ED06736870>
         body_keywords, label,
     ):
         """Shared quality checks for measure-with-args tests.
-    
+
         Args:
             result: ClaudeResult from run_claude
             expected_language: "Ruby" or "Python" (case-insensitive match)
@@ -652,31 +652,31 @@ result = <llm.runner.ClaudeResult object at 0x000001ED06736870>
         assert "create_measure" in tool_names, (
             f"[{label}] Missing create_measure. Tools: {tool_names}"
         )
-    
+
         create_input = _find_create_measure_input(result)
         assert create_input, f"[{label}] create_measure call not found in MCP tool calls"
-    
+
         # Language check
         lang = create_input.get("language", "")
         assert lang.lower() == expected_language.lower(), (
             f"[{label}] Expected language={expected_language}, got {lang}"
         )
-    
+
         args = _parse_args(create_input)
         run_body = create_input.get("run_body", "")
-    
+
         # 1. Has arguments
         assert args and len(args) > 0, (
             f"[{label}] No arguments — LLM hard-coded all values"
         )
-    
+
         # 2. Required argument types present
         arg_types = {a.get("type", "") for a in args}
         for t in expected_arg_types:
             assert t in arg_types, (
                 f"[{label}] Missing arg type {t}. Types found: {arg_types}"
             )
-    
+
         # 3. Choice arg has values list
         for a in args:
             if a.get("type") == "Choice":
@@ -701,7 +701,7 @@ language = 'Ruby'
         tier = get_tier()
         if tier not in ("all", "2"):
             pytest.skip("Tier 2 not selected")
-    
+
         prompt = (
             f"Create a {language} ModelMeasure that upgrades hot water boiler "
             "efficiency. It must have these arguments:\n"
@@ -723,7 +723,7 @@ language = 'Ruby'
             label=f"boiler_{language}",
         )
 
-tests\llm\test_04_workflows.py:926: 
+tests\llm\test_04_workflows.py:926:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 result = <llm.runner.ClaudeResult object at 0x000001ED06737E30>
@@ -733,7 +733,7 @@ result = <llm.runner.ClaudeResult object at 0x000001ED06737E30>
         body_keywords, label,
     ):
         """Shared quality checks for measure-with-args tests.
-    
+
         Args:
             result: ClaudeResult from run_claude
             expected_language: "Ruby" or "Python" (case-insensitive match)
@@ -745,31 +745,31 @@ result = <llm.runner.ClaudeResult object at 0x000001ED06737E30>
         assert "create_measure" in tool_names, (
             f"[{label}] Missing create_measure. Tools: {tool_names}"
         )
-    
+
         create_input = _find_create_measure_input(result)
         assert create_input, f"[{label}] create_measure call not found in MCP tool calls"
-    
+
         # Language check
         lang = create_input.get("language", "")
         assert lang.lower() == expected_language.lower(), (
             f"[{label}] Expected language={expected_language}, got {lang}"
         )
-    
+
         args = _parse_args(create_input)
         run_body = create_input.get("run_body", "")
-    
+
         # 1. Has arguments
         assert args and len(args) > 0, (
             f"[{label}] No arguments — LLM hard-coded all values"
         )
-    
+
         # 2. Required argument types present
         arg_types = {a.get("type", "") for a in args}
         for t in expected_arg_types:
             assert t in arg_types, (
                 f"[{label}] Missing arg type {t}. Types found: {arg_types}"
             )
-    
+
         # 3. Choice arg has values list
         for a in args:
             if a.get("type") == "Choice":
@@ -795,7 +795,7 @@ case = {'case_id': 'thermal_zones', 'expected': ['list_thermal_zones'], 'id': 't
         tier = get_tier()
         if tier not in ("all", "1"):
             pytest.skip("Tier 1 not selected")
-    
+
         prompt = case["prompt"]
         if case.get("needs_run"):
             run_id = get_sim_run_id()
@@ -811,11 +811,11 @@ case = {'case_id': 'thermal_zones', 'expected': ['list_thermal_zones'], 'id': 't
                 pytest.skip("Baseline model not found — run test_01_setup first")
             prompt = LOAD + prompt.lower()
         prompt += SUFFIX
-    
+
         timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else 120
         result = run_claude(prompt, timeout=timeout)
         tool_names = result.tool_names
-    
+
 >       assert any(t in case["expected"] for t in tool_names), (
             f"[{case['case_id']} {case['level']}] "
             f"Expected one of {case['expected']}, got: {tool_names}"
@@ -828,7 +828,7 @@ tests\llm\test_06_progressive.py:481: AssertionError
 ============================== warnings summary ===============================
 tests/llm/test_04_workflows.py::test_workflow[systemd_fourpipebeam_e2e]
   C:\Python313\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-73 (_readerthread)
-  
+
   Traceback (most recent call last):
     File "C:\Python313\Lib\threading.py", line 1044, in _bootstrap_inner
       self.run()
@@ -843,7 +843,7 @@ tests/llm/test_04_workflows.py::test_workflow[systemd_fourpipebeam_e2e]
       return codecs.charmap_decode(input,self.errors,decoding_table)[0]
              ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   UnicodeDecodeError: 'charmap' codec can't decode byte 0x8f in position 422036: character maps to <undefined>
-  
+
   Enable tracemalloc to get traceback where the object was allocated.
   See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
     warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))

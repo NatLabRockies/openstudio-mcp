@@ -1,3 +1,5 @@
+exclude: ^tests/assets/sddc_office/floorplan\.json$
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -6,7 +8,6 @@ repos:
         args: ["--maxkb=5000"]
         files: \.(json|ya?ml)$
       - id: check-ast
-        files: \.(json|ya?ml)$
       - id: check-builtin-literals
         files: \.(json|ya?ml)$
       - id: check-case-conflict
@@ -25,22 +26,14 @@ repos:
         files: \.(json|ya?ml)$
       - id: check-xml
         files: \.(json|ya?ml)$
-      - id: check-yaml
-        files: \.(ya?ml)$
       - id: debug-statements
         files: \.(json|ya?ml)$
+      - id: check-yaml
       - id: detect-private-key
-        files: \.(json|ya?ml)$
       - id: end-of-file-fixer
-        files: \.(json|ya?ml)$
       - id: fix-byte-order-marker
-        files: \.(json|ya?ml)$
       - id: mixed-line-ending
-        files: \.(json|ya?ml)$
-      # - id: name-tests-test
-      #   args: ["--pytest-test-first"]
       - id: trailing-whitespace
-        files: \.(json|ya?ml)$
 
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.21.2
