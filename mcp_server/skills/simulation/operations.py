@@ -858,6 +858,17 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         staged_osm = stage / osm.name
         shutil.copy2(str(osm), str(staged_osm))
 
+        # Stage the model's companion files/ dir (ExternalFile resources, e.g.
+        # Python EMS plugin scripts). Workflow-time forward translation resolves
+        # an OSM's relative OS:External:File name via the OSW search paths
+        # (osw dir, then files/), so the dir must travel with the seed.
+        src_files = osm.resolve().parent / "files"
+        if src_files.is_dir():
+            sym_err = reject_escaping_symlinks(src_files)
+            if sym_err:
+                return {"ok": False, "error": sym_err}
+            shutil.copytree(str(src_files), str(stage / "files"), dirs_exist_ok=True)
+
         osw: dict[str, Any] = {
             "seed_file": osm.name,
             "file_paths": [],
