@@ -20,12 +20,6 @@ jobs:
       - name: Install project (dev dependencies)
         run: uv pip install --system -e ".[dev]"
 
-      - name: Run pre-commit (YAML/JSON files only)
+      - name: Run pre-commit (scoped files)
         run: |
-          set -euo pipefail
-          files="$(git ls-files '*.yml' '*.yaml' '*.json')"
-          if [[ -z "${files}" ]]; then
-            echo "No YAML/JSON files found."
-            exit 0
-          fi
-          uv run pre-commit run --files ${files}
+          uv run pre-commit run --all-files
