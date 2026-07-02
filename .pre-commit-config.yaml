@@ -27,7 +27,6 @@ repos:
     rev: v3.21.2
     hooks:
       - id: pyupgrade
-        files: (\.(json|ya?ml|toml|txt)$|(^|/)\.(gitignore|dockerignore)$)
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
