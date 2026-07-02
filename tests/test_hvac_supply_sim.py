@@ -118,7 +118,7 @@ async def _save_run_and_check(s, name):
 @pytest.mark.integration
 @pytest.mark.xfail(
     strict=True,
-    reason="Known defect (exposed when the vacuous err-file read was fixed): "
+    reason="Known defect #82 (exposed when the vacuous err-file read was fixed): "
            "DOAS+FanCoil wiring yields 7/10 fan-coil cooling coils with "
            "'Calculation of cooling coil design UA failed' severes (outlet CHW "
            "design enthalpy > inlet air design enthalpy; E+ falls back to a "
@@ -202,7 +202,7 @@ def test_radiant_doas_simulates():
 @pytest.mark.integration
 @pytest.mark.xfail(
     strict=True,
-    reason="Same known DOAS+FanCoil cooling-coil design-UA defect as "
+    reason="Same known DOAS+FanCoil cooling-coil design-UA defect #82 as "
            "test_doas_fancoil_simulates (district fuels variant).",
 )
 def test_doas_district_simulates():
