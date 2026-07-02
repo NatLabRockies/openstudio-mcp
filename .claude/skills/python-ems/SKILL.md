@@ -87,12 +87,12 @@ first for valid actuator triples.
 
 ## Rules of the plugin runtime
 
-- Look up handles lazily, only after `api_data_fully_ready(state)` is True; cache them.
+- Look up handles lazily, only after `self.api.exchange.api_data_fully_ready(state)` is True; cache them.
 - Handle lookups return -1 (never raise). On -1: `self.api.runtime.issue_severe(state, msg); return 1`.
 - Callback return 0 = success; nonzero is FATAL to the whole simulation.
 - Globals must be declared (create_python_plugin does this) before `get_global_handle` finds them.
 - A sensed variable needs an `Output:Variable` request to have a handle — the templates add it.
-- `hour(state)` is 0-23; `day_of_week(state)` is 1=Sunday..7=Saturday.
+- `self.api.exchange.hour(state)` is 0-23; `self.api.exchange.day_of_week(state)` is 1=Sunday..7=Saturday.
 - Plugins run inside EnergyPlus (embedded Python 3.12, stdlib by default).
   For third-party packages (numpy etc.): `install_plugin_packages(["numpy"])`
   first — wheels-only, quota-capped, wired in automatically. `pkg==version`
