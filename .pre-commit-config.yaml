@@ -1,0 +1,81 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=5000"]
+        files: \.(json|ya?ml)$
+      - id: check-ast
+        files: \.(json|ya?ml)$
+      - id: check-builtin-literals
+        files: \.(json|ya?ml)$
+      - id: check-case-conflict
+        files: \.(json|ya?ml)$
+      - id: check-docstring-first
+        files: \.(json|ya?ml)$
+      - id: check-executables-have-shebangs
+        files: \.(json|ya?ml)$
+      - id: check-illegal-windows-names
+        files: \.(json|ya?ml)$
+      - id: check-json
+        files: \.(json)$
+      - id: check-merge-conflict
+        files: \.(json|ya?ml)$
+      - id: check-toml
+        files: \.(json|ya?ml)$
+      - id: check-xml
+        files: \.(json|ya?ml)$
+      - id: check-yaml
+        files: \.(ya?ml)$
+      - id: debug-statements
+        files: \.(json|ya?ml)$
+      - id: detect-private-key
+        files: \.(json|ya?ml)$
+      - id: end-of-file-fixer
+        files: \.(json|ya?ml)$
+      - id: fix-byte-order-marker
+        files: \.(json|ya?ml)$
+      - id: mixed-line-ending
+        files: \.(json|ya?ml)$
+      # - id: name-tests-test
+      #   args: ["--pytest-test-first"]
+      - id: trailing-whitespace
+        files: \.(json|ya?ml)$
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+        files: \.(json|ya?ml)$
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.43.1
+    hooks:
+      - id: typos
+        files: \.(json|ya?ml)$
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        args: [--no-cache]
+        types_or: [json, yaml]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        files: \.(json|ya?ml)$
+        additional_dependencies:
+          - pandas-stubs
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      # Run the linter
+      - id: ruff-check
+        files: \.(json|ya?ml)$
+        args: [--fix, --verbose, --exit-non-zero-on-fix, --output-format=full]
+      # Run the formatter
+      - id: ruff-format
+        files: \.(json|ya?ml)$

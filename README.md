@@ -701,6 +701,20 @@ docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
   openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv -s tests/'
 ```
 
+## Linting and formatting (uv + pre-commit)
+
+We use uv and pre-commit pattern in CI.
+
+```bash
+# Install dev dependencies with uv
+uv pip install -e ".[dev]"
+
+# Run only YAML/JSON checks locally
+uv run pre-commit run --all-files
+```
+
+CI runs the same pre-commit check in `.github/workflows/format_and_lint.yml`.
+
 ---
 
 ## Architecture
