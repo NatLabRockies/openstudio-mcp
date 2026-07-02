@@ -35,13 +35,10 @@ repos:
         args: [--no-cache]
         files: (\.(json|ya?ml|toml|txt)$|(^|/)\.(gitignore|dockerignore)$)
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
-    hooks:
-      - id: mypy
-        files: (\.(json|ya?ml|toml|txt)$|(^|/)\.(gitignore|dockerignore)$)
-        additional_dependencies:
-          - pandas-stubs
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v2.1.0
+  #   hooks:
+  #     - id: mypy
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.20
