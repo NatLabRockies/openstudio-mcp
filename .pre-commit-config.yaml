@@ -1,4 +1,4 @@
-exclude: ^tests/assets/sddc_office/floorplan\.json$
+exclude: ^tests/assets/(sddc_office/floorplan\.json|eplusout_seb4\.sql)$
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
