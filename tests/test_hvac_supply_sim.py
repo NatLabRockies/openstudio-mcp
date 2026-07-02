@@ -84,22 +84,24 @@ async def _save_run_and_check(s, name):
         f"Check: get_run_logs(run_id='{run_id}', stream='energyplus')"
     )
 
-    # Check eplusout.err for fatal/severe
+    # Check eplusout.err for fatal/severe. read_file returns the body under
+    # "text" — reading "content" made these assertions vacuous (empty string).
     err_resp = unwrap(await s.call_tool("read_file", {
         "file_path": f"/runs/{run_id}/run/eplusout.err", "max_bytes": 100000,
     }))
-    if err_resp.get("ok"):
-        err_text = err_resp.get("content", "")
-        assert "** Fatal **" not in err_text, (
-            f"EnergyPlus fatal error:\n{err_text[-2000:]}"
-        )
-        severe_lines = [
-            line for line in err_text.splitlines()
-            if "** Severe  **" in line
-        ]
-        assert len(severe_lines) == 0, (
-            f"{len(severe_lines)} severe errors:\n" + "\n".join(severe_lines[:20])
-        )
+    assert err_resp.get("ok") is True, f"could not read eplusout.err: {err_resp}"
+    err_text = err_resp.get("text", "")
+    assert err_text, "eplusout.err came back empty"
+    assert "** Fatal **" not in err_text, (
+        f"EnergyPlus fatal error:\n{err_text[-2000:]}"
+    )
+    severe_lines = [
+        line for line in err_text.splitlines()
+        if "** Severe  **" in line
+    ]
+    assert len(severe_lines) == 0, (
+        f"{len(severe_lines)} severe errors:\n" + "\n".join(severe_lines[:20])
+    )
 
     # Verify metrics extraction works
     metrics = unwrap(await s.call_tool("extract_summary_metrics", {
@@ -114,6 +116,15 @@ async def _save_run_and_check(s, name):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known defect (exposed when the vacuous err-file read was fixed): "
+           "DOAS+FanCoil wiring yields 7/10 fan-coil cooling coils with "
+           "'Calculation of cooling coil design UA failed' severes (outlet CHW "
+           "design enthalpy > inlet air design enthalpy; E+ falls back to a "
+           "rough UA, so coil capacities are unreliable). Fix belongs in the "
+           "hvac_systems DOAS fan-coil sizing; remove this marker with it.",
+)
 def test_doas_fancoil_simulates():
     """10-zone DOAS FanCoil → EnergyPlus completes, no fatal/severe errors."""
     # Validates: DOAS+FanCoil with boiler/chiller/tower simulates without fatal/severe errors
@@ -189,6 +200,11 @@ def test_radiant_doas_simulates():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
+@pytest.mark.xfail(
+    strict=True,
+    reason="Same known DOAS+FanCoil cooling-coil design-UA defect as "
+           "test_doas_fancoil_simulates (district fuels variant).",
+)
 def test_doas_district_simulates():
     """10-zone DOAS FanCoil w/ district H+C → EnergyPlus completes."""
     # Validates: DOAS+FanCoil with district heating/cooling simulates (no condenser loop)
