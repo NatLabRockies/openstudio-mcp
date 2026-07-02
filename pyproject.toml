@@ -32,6 +32,9 @@ markers = [
     "llm: requires Claude CLI + MCP server",
 ]
 
+[tool.mypy]
+explicit_package_bases = true
+
 [build-system]
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
