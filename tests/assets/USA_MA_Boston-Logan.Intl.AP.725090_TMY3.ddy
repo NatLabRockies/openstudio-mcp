@@ -533,4 +533,3 @@
            ,      !- Diffuse Solar Day Schedule Name
       0.488,      !- ASHRAE Clear Sky Optical Depth for Beam Irradiance (taub)
       1.950;      !- ASHRAE Clear Sky Optical Depth for Diffuse Irradiance (taud)
-
