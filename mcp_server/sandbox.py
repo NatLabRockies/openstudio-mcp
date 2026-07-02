@@ -170,7 +170,8 @@ def build_env(work_dir: Path | str, *, redirect_tmp: bool = True) -> dict[str, s
 
 
 def wrap_cmd(cmd: list[str], work_dir: Path | str,
-             extra_rw: tuple[str, ...] = ()) -> list[str]:
+             extra_rw: tuple[str, ...] = (),
+             extra_ro: tuple[str, ...] = ()) -> list[str]:
     """Wrap a subprocess argv to run under the privilege-dropping exec shim.
 
     Disabled → returns the command unchanged (today's behaviour). Enabled → runs
@@ -183,6 +184,9 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str,
 
     extra_rw: additional writable Landlock roots (e.g. a private TMPDIR off the
     bind mount for tools that need unlinked tempfiles).
+    extra_ro: additional read-only Landlock roots (e.g. the caller's own
+    python_packages dir so EnergyPlus Python plugins can import from it —
+    read-only so plugin code can't persist anything into future runs' import path).
     """
     if not enabled():
         return list(cmd)
@@ -214,7 +218,7 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str,
         if value and value > 0:
             wrapped += [flag, str(value)]
     if _full():
-        for path in (*_ro_paths(), *_DEV_RO):
+        for path in (*_ro_paths(), *_DEV_RO, *extra_ro):
             wrapped += ["--landlock-ro", path]
         # rw: the run dir (+ caller extras) + the writable device FILES only — NOT
         # the whole /dev dir (which would also expose writable /dev/shm, /dev/mqueue

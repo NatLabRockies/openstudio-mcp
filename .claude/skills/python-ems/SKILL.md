@@ -60,6 +60,15 @@ create_python_plugin(name="Night Setback", template="schedule_override",
 First matching rule wins, else default_value. Works on ScheduleConstant,
 ScheduleRuleset (actuated as Schedule:Year), and ScheduleCompact schedules.
 
+**Outdoor-air setpoint reset (overrides setpoint managers):**
+```
+create_python_plugin(name="SAT Reset", template="node_setpoint_reset",
+                     air_loop_name="Packaged Rooftop Air Conditioner",
+                     oat_low=-20, oat_high=10,
+                     setpoint_at_oat_low=15.0, setpoint_at_oat_high=12.8)
+```
+Pass node_name directly, or air_loop_name to use its supply outlet node.
+
 **Custom plugin (escape hatch):** provide full source. Contract:
 ```python
 from pyenergyplus.plugin import EnergyPlusPlugin
@@ -84,7 +93,14 @@ first for valid actuator triples.
 - Globals must be declared (create_python_plugin does this) before `get_global_handle` finds them.
 - A sensed variable needs an `Output:Variable` request to have a handle — the templates add it.
 - `hour(state)` is 0-23; `day_of_week(state)` is 1=Sunday..7=Saturday.
-- Plugins run inside EnergyPlus (embedded Python 3.12, stdlib only). No third-party imports.
+- Plugins run inside EnergyPlus (embedded Python 3.12, stdlib by default).
+  For third-party packages (numpy etc.): `install_plugin_packages(["numpy"])`
+  first — wheels-only, quota-capped, wired in automatically. `pkg==version`
+  pins allowed; URLs/paths are not.
+- To revise a plugin: `edit_python_plugin(name, code)` (validated; the class
+  name must stay unchanged). `delete_object` on the instance removes it.
+- `trend_timesteps=N` on create logs the plugin global as a
+  PythonPlugin:TrendVariable for `get_trend_average/min/max` history access.
 
 ## Common actuator triples
 

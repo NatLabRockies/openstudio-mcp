@@ -16,7 +16,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import is_path_allowed
+from mcp_server.config import is_path_allowed, user_pkgs_root
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.python_ems import templates
 
@@ -94,6 +94,24 @@ def _plugin_global_by_name(model, global_name: str):
     raise _EmsError(f"Plugin global '{global_name}' not found in model.")
 
 
+def ensure_pkgs_search_path(model) -> bool:
+    """Add the caller's python_packages dir to PythonPlugin:SearchPaths.
+
+    No-op unless the dir exists and is non-empty (install_plugin_packages
+    creates it). Forward translation merges these entries with the
+    auto-generated ExternalFile search path into the one unique-object.
+    """
+    pkgs_dir = user_pkgs_root()
+    if not pkgs_dir.is_dir() or not any(pkgs_dir.iterdir()):
+        return False
+    search_paths = model.getPythonPluginSearchPaths()
+    existing = {openstudio.toString(p) for p in search_paths.searchPaths()}
+    if str(pkgs_dir) in existing:
+        return False
+    search_paths.addSearchPath(str(pkgs_dir))
+    return True
+
+
 def create_python_plugin_op(
     name: str,
     template: str = "zone_metric_aggregate",
@@ -105,9 +123,16 @@ def create_python_plugin_op(
     schedule_name: str | None = None,
     rules: list[dict[str, Any]] | str | None = None,
     default_value: float | None = None,
+    node_name: str | None = None,
+    air_loop_name: str | None = None,
+    oat_low: float | None = None,
+    oat_high: float | None = None,
+    setpoint_at_oat_low: float | None = None,
+    setpoint_at_oat_high: float | None = None,
     class_name: str | None = None,
     code: str | None = None,
     global_variables: list[str] | str | None = None,
+    trend_timesteps: int | None = None,
     run_during_warmup: bool = False,
 ) -> dict[str, Any]:
     """Scaffold a plugin script from a template and wire all model objects."""
@@ -127,7 +152,7 @@ def create_python_plugin_op(
                     f"Python plugin '{instance.nameString()}' already exists. "
                     "delete_object it first, or pick another name.")
 
-        sensor_request: tuple[str, str] | None = None
+        sensor_requests: list[tuple[str, str]] = []
         output_specs: list[dict[str, str]] = []
 
         if template == "zone_metric_aggregate":
@@ -142,7 +167,7 @@ def create_python_plugin_op(
                 plugin_class, variable_name, zones, aggregation, global_name)
             # The plugin needs the variable tracked to get handles, and the test
             # of record needs per-zone series — one Output:Variable serves both.
-            sensor_request = (variable_name, "*")
+            sensor_requests = [(variable_name, "*")]
             globals_needed = [global_name]
             output_specs = [{"name": out_name, "global": global_name, "units": units or ""}]
 
@@ -162,9 +187,43 @@ def create_python_plugin_op(
             source = templates.build_schedule_override_source(
                 plugin_class, schedule_name, component_type,
                 normalized_rules, float(default_value), global_name)
-            sensor_request = ("Schedule Value", schedule_name)
+            sensor_requests = [("Schedule Value", schedule_name)]
             globals_needed = [global_name]
             output_specs = [{"name": out_name, "global": global_name, "units": ""}]
+
+        elif template == "node_setpoint_reset":
+            if air_loop_name and not node_name:
+                loop = model.getAirLoopHVACByName(air_loop_name)
+                if not loop.is_initialized():
+                    raise _EmsError(
+                        f"Air loop '{air_loop_name}' not found. See list_air_loops.")
+                node_name = loop.get().supplyOutletNode().nameString()
+            if not node_name:
+                raise _EmsError(
+                    "node_name (or air_loop_name for its supply outlet node) is "
+                    "required for the node_setpoint_reset template")
+            if not model.getNodeByName(node_name).is_initialized():
+                raise _EmsError(f"Node '{node_name}' not found in model.")
+            if None in (oat_low, oat_high, setpoint_at_oat_low, setpoint_at_oat_high):
+                raise _EmsError(
+                    "oat_low, oat_high, setpoint_at_oat_low, and "
+                    "setpoint_at_oat_high are required for node_setpoint_reset")
+            out_name = output_variable_name or f"{name} Setpoint"
+            global_name = templates.global_name_for(out_name)
+            plugin_class = "NodeSetpointReset"
+            try:
+                source = templates.build_node_setpoint_reset_source(
+                    plugin_class, node_name, float(oat_low), float(oat_high),
+                    float(setpoint_at_oat_low), float(setpoint_at_oat_high),
+                    global_name)
+            except ValueError as e:
+                raise _EmsError(str(e)) from e
+            sensor_requests = [
+                ("Site Outdoor Air Drybulb Temperature", "Environment"),
+                ("System Node Setpoint Temperature", node_name),
+            ]
+            globals_needed = [global_name]
+            output_specs = [{"name": out_name, "global": global_name, "units": "C"}]
 
         else:  # custom
             if not code:
@@ -243,10 +302,28 @@ def create_python_plugin_op(
                                        spec["name"], "Timestep"):
                 objects_created.append(
                     f"Output:Variable (PythonPlugin:OutputVariable, key '{spec['name']}')")
-        if sensor_request and _ensure_output_variable(
-                model, sensor_request[0], sensor_request[1], "Timestep"):
+        for sensor_name, sensor_key in sensor_requests:
+            if _ensure_output_variable(model, sensor_name, sensor_key, "Timestep"):
+                objects_created.append(
+                    f"Output:Variable ({sensor_name}, key '{sensor_key}')")
+
+        if trend_timesteps is not None:
+            if int(trend_timesteps) < 1:
+                raise _EmsError("trend_timesteps must be >= 1")
+            if not globals_needed:
+                raise _EmsError(
+                    "trend_timesteps needs a plugin global to log — pass "
+                    "global_variables for the custom template.")
+            trend_global = globals_needed[0]
+            trend = openstudio.model.PythonPluginTrendVariable(
+                _plugin_global_by_name(model, trend_global))
+            trend.setName(f"{trend_global} Trend")
+            trend.setNumberofTimestepstobeLogged(int(trend_timesteps))
             objects_created.append(
-                f"Output:Variable ({sensor_request[0]}, key '{sensor_request[1]}')")
+                f"PythonPlugin:TrendVariable '{trend_global} Trend' "
+                f"({int(trend_timesteps)} timesteps)")
+
+        search_path_added = ensure_pkgs_search_path(model)
 
         return {
             "ok": True,
@@ -258,6 +335,7 @@ def create_python_plugin_op(
             "callbacks": validation["callbacks"],
             "global_variables": globals_needed,
             "output_variables": [{"name": s["name"], "units": s["units"]} for s in output_specs],
+            "packages_search_path_added": search_path_added,
             "objects_created": objects_created,
             "message": (
                 "Plugin attached. Run a simulation, then read its outputs with "
@@ -271,78 +349,4 @@ def create_python_plugin_op(
         return {"ok": False, "error": f"create_python_plugin failed: {e}"}
 
 
-def _script_path_for(file_name: str) -> str:
-    osm_path = model_manager.get_model_path()
-    if osm_path is not None:
-        candidate = osm_path.resolve().parent / "files" / file_name
-        if candidate.exists():
-            return str(candidate)
-    return file_name
-
-
-def get_python_plugin_op(name: str | None = None) -> dict[str, Any]:
-    """List Python plugin instances (no name) or detail one incl. script source."""
-    try:
-        model = model_manager.get_model_if_loaded()
-        if model is None:
-            raise _EmsError("No model loaded. Call load_osm_model first.")
-
-        instances: list[dict[str, Any]] = []
-        for instance in model.getPythonPluginInstances():
-            file_name = instance.externalFile().fileName()
-            instances.append({
-                "name": instance.nameString(),
-                "class_name": instance.pluginClassName(),
-                "module_name": Path(file_name).stem,
-                "script_path": _script_path_for(file_name),
-                "run_during_warmup": bool(instance.runDuringWarmupDays()),
-            })
-
-        globals_declared = [v.nameString() for v in model.getPythonPluginVariables()]
-        output_variables = []
-        for plugin_output in model.getPythonPluginOutputVariables():
-            units_opt = plugin_output.units()
-            output_variables.append({
-                "name": plugin_output.nameString(),
-                "global": plugin_output.pythonPluginVariable().nameString(),
-                "type_of_data": plugin_output.typeofDatainVariable(),
-                "update_frequency": plugin_output.updateFrequency(),
-                "units": units_opt.get() if units_opt.is_initialized() else "",
-            })
-        trend_variables = [
-            {"name": trend.nameString(),
-             "global": trend.pythonPluginVariable().nameString(),
-             "timesteps_logged": trend.numberofTimestepstobeLogged()}
-            for trend in model.getPythonPluginTrendVariables()
-        ]
-
-        result: dict[str, Any] = {
-            "ok": True,
-            "count": len(instances),
-            "plugins": instances,
-            "global_variables": globals_declared,
-            "output_variables": output_variables,
-            "trend_variables": trend_variables,
-        }
-
-        if name:
-            match = next(
-                (i for i in instances if i["name"].lower() == name.strip().lower()), None)
-            if match is None:
-                available = [i["name"] for i in instances]
-                return {"ok": False,
-                        "error": f"Python plugin '{name}' not found. Available: {available}"}
-            result["plugin"] = match
-            script = Path(match["script_path"])
-            if script.exists():
-                source = script.read_text(encoding="utf-8", errors="replace")
-                if len(source) > _MAX_SOURCE_CHARS:
-                    source = source[:_MAX_SOURCE_CHARS] + "\n# ... truncated ..."
-                result["source"] = source
-            else:
-                result["source"] = None
-        return result
-    except _EmsError as e:
-        return {"ok": False, "error": str(e)}
-    except Exception as e:
-        return {"ok": False, "error": f"get_python_plugin failed: {e}"}
+# get_python_plugin_op / edit_python_plugin_op live in manage.py (same skill).

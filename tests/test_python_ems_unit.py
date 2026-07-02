@@ -10,11 +10,13 @@ import pytest
 from mcp_server.skills.python_ems.edd_parser import parse_edd
 from mcp_server.skills.python_ems.templates import (
     CALLING_POINTS,
+    build_node_setpoint_reset_source,
     build_schedule_override_source,
     build_zone_metric_source,
     global_name_for,
     normalize_rules,
     safe_module_name,
+    validate_package_specs,
     validate_plugin_source,
 )
 
@@ -173,6 +175,45 @@ def test_validate_plugin_source_wrong_base_and_typo_callback():
     joined = "\n".join(result["errors"])
     assert "must inherit EnergyPlusPlugin" in joined
     assert "'on_begin_timestep' is not an EnergyPlusPlugin callback" in joined
+
+
+def test_node_setpoint_reset_source_valid():
+    # Validates: OAT-reset codegen compiles, actuates the exact System Node Setpoint
+    # triple, interpolates linearly with clamps, and uses the after-hvac-managers
+    # callback so it overrides traditional setpoint managers
+    source = build_node_setpoint_reset_source(
+        "NodeSetpointReset", "Air Loop Outlet Node", -20.0, 10.0, 15.0, 12.8, "SAT")
+    compile(source, "<generated>", "exec")
+    assert 'state, "System Node Setpoint", "Temperature Setpoint", \'Air Loop Outlet Node\')' in source
+    assert "if oat <= -20.0:" in source
+    assert "elif oat >= 10.0:" in source
+    assert "value = 15.0 + (12.8 - 15.0) * (oat - -20.0) / (10.0 - -20.0)" in source
+    result = validate_plugin_source(source, "NodeSetpointReset")
+    assert result["ok"] is True, result["errors"]
+    assert result["callbacks"] == ["on_after_predictor_after_hvac_managers"]
+
+
+def test_node_setpoint_reset_rejects_inverted_range():
+    # Validates: oat_low >= oat_high would divide by zero or invert the reset — fail fast
+    with pytest.raises(ValueError, match="oat_low < oat_high"):
+        build_node_setpoint_reset_source("C", "N", 10.0, 10.0, 15.0, 12.8, "G")
+
+
+@pytest.mark.parametrize("spec", ["numpy", "numpy==2.1.0", "pandas[performance]", "scikit-learn"])
+def test_validate_package_specs_accepts(spec):
+    # Validates: plain names, extras, and == pins pass through unchanged
+    assert validate_package_specs([spec]) == [spec]
+
+
+@pytest.mark.parametrize("bad", [
+    "-e .", "--index-url=https://evil", "https://evil.example/pkg.whl",
+    "../local", "numpy; rm -rf /", "numpy>=2", "git+https://x/y.git", "",
+])
+def test_validate_package_specs_rejects(bad):
+    # Validates: pip flags, URLs, paths, ranges, and VCS refs never reach pip —
+    # only pinned-or-bare names are allowed (wheels-only install path)
+    with pytest.raises(ValueError, match=r"Invalid package spec|packages is required"):
+        validate_package_specs([bad])
 
 
 def test_validate_plugin_source_no_callback():

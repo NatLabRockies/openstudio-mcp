@@ -27,6 +27,7 @@ from mcp_server.config import (
     OSCLI_GEMFILE,
     SIM_TIMEOUT_SECONDS,
     is_path_allowed,
+    pkgs_root_for,
     user_run_root,
 )
 from mcp_server.identity import user_key
@@ -303,8 +304,13 @@ def _launch(rec: RunRecord) -> None:
     # process owns it (order matters — see apply_measure).
     run_env = sandbox.build_env(rec.run_dir)
     sandbox.prepare_workdir(rec.run_dir)
+    # The run owner's python_packages dir (if any) is granted read-only so
+    # EnergyPlus Python plugins can import pip-installed packages from it
+    # (wired into the model via PythonPlugin:SearchPaths).
+    pkgs_dir = pkgs_root_for(rec.user_key)
+    extra_ro = (str(pkgs_dir),) if pkgs_dir.is_dir() else ()
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
-        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path), rec.run_dir),
+        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path), rec.run_dir, extra_ro=extra_ro),
         cwd=str(rec.run_dir),
         stdout=log.open("w", encoding="utf-8"),
         stderr=subprocess.STDOUT,
