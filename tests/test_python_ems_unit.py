@@ -225,3 +225,42 @@ def test_validate_plugin_source_no_callback():
         "Idle")
     assert result["ok"] is False
     assert "overrides no plugin callback" in result["errors"][0]
+
+
+def test_validate_plugin_source_rejects_async_callback():
+    # Regression: async def on_* callbacks passed validation, but EnergyPlus calls
+    # callbacks synchronously and expects an int — a coroutine return breaks at
+    # runtime (PR #84 Copilot review)
+    result = validate_plugin_source(
+        "from pyenergyplus.plugin import EnergyPlusPlugin\n"
+        "class P(EnergyPlusPlugin):\n"
+        "    async def on_begin_timestep_before_predictor(self, state) -> int:\n"
+        "        return 0\n",
+        "P")
+    assert result["ok"] is False
+    assert "must not be async" in result["errors"][0]
+    assert result["callbacks"] == []
+
+
+def test_pkgs_root_for_refuses_symlink(tmp_path, monkeypatch):
+    # Regression: pkgs_root_for resolved a symlink planted at
+    # RUN_ROOT/<key>/python_packages into a "trusted" path later granted
+    # read-only to the sandboxed E+ child and written by pip (PR #84 review)
+    from mcp_server import config
+
+    monkeypatch.setattr(config, "RUN_ROOT", tmp_path)
+    (tmp_path / "tenant_a").mkdir()
+    outside = tmp_path / "outside_target"
+    outside.mkdir()
+    try:
+        (tmp_path / "tenant_a" / "python_packages").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink creation not permitted on this host")
+
+    with pytest.raises(RuntimeError, match="symlink"):
+        config.pkgs_root_for("tenant_a")
+
+    # The honest (non-symlink) layout still resolves normally.
+    (tmp_path / "tenant_b" / "python_packages").mkdir(parents=True)
+    assert config.pkgs_root_for("tenant_b") == (
+        tmp_path / "tenant_b" / "python_packages").resolve()

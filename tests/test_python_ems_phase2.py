@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import (
@@ -99,8 +100,8 @@ class NumpyCheck(EnergyPlusPlugin):
 def test_install_plugin_packages_numpy_in_plugin():
     # Validates: wheels-only pip install into the per-user package dir reaches the
     # EnergyPlus embedded interpreter via PythonPlugin:SearchPaths + sandbox RO
-    # grant — a plugin imports numpy and np.mean equals plain-Python mean (diff
-    # series is exactly 0.0 at every timestep)
+    # grant — a plugin imports numpy and np.mean matches plain-Python mean at
+    # every timestep (within float reduction-order noise)
     name = _unique("ems_numpy")
 
     async def _run():
@@ -159,8 +160,11 @@ def test_install_plugin_packages_numpy_in_plugin():
                 assert diff["ok"] is True, diff
                 values = [d["value"] for d in diff["data"]]
                 assert len(values) >= 48, f"expected 2 days of data, got {len(values)}"
-                assert all(v == 0.0 for v in values), (
-                    f"np.mean must equal plain mean exactly, max diff {max(values)}")
+                # numpy's pairwise reduction is not guaranteed bit-identical to
+                # a sequential Python sum; 1e-12 C still proves numpy imported
+                # and computed inside E+ (PR #84 review).
+                assert all(0.0 <= v <= 1e-12 for v in values), (
+                    f"np.mean diverged from plain mean, max diff {max(values)}")
 
     asyncio.run(_run())
 
@@ -350,5 +354,163 @@ def test_trend_variable_created():
                     "global": "Trended_Avg_Temp",
                     "timesteps_logged": 12,
                 }], plugins["trend_variables"]
+
+    asyncio.run(_run())
+
+
+_TRAV_EDIT_CODE = """from pyenergyplus.plugin import EnergyPlusPlugin
+
+
+class ZoneMetricAggregate(EnergyPlusPlugin):
+
+    def on_end_of_zone_timestep_before_zone_reporting(self, state) -> int:
+        return 0
+"""
+
+
+@pytest.mark.integration
+def test_python_plugin_traversal_filename_blocked():
+    # Regression: a crafted ExternalFile fileName ("../<x>") let get_python_plugin
+    # read, and edit_python_plugin write, outside the model's files/ dir (PR #84
+    # Copilot review) — both must anchor to the basename under files/
+    name = _unique("ems_trav")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await _load_example(session, name)
+
+                # --- Arrange: plugin + saved model, then hack fileName ---
+                created = unwrap(await session.call_tool("create_python_plugin", {
+                    "name": "Trav Check",
+                }))
+                assert created["ok"] is True, created
+                save_path = f"/runs/{name}/model.osm"
+                sr = unwrap(await session.call_tool("save_osm_model",
+                                                    {"osm_path": save_path}))
+                assert sr["ok"] is True, sr
+
+                secret = Path(f"/runs/{name}_secret.txt")
+                secret.write_text("TOP_SECRET_MARKER_77", encoding="utf-8")
+
+                osm = Path(save_path)
+                hacked = osm.read_text(encoding="utf-8").replace(
+                    "trav_check.py", f"../../{name}_secret.txt")
+                assert f"../../{name}_secret.txt" in hacked, "fileName hack did not apply"
+                osm.write_text(hacked, encoding="utf-8")
+                lr = unwrap(await session.call_tool("load_osm_model",
+                                                    {"osm_path": save_path}))
+                assert lr["ok"] is True, lr
+
+                # --- Act/Assert: read side must not follow the traversal ---
+                detail = unwrap(await session.call_tool("get_python_plugin",
+                                                        {"name": "Trav Check"}))
+                assert detail["ok"] is True, detail
+                assert detail["plugin"]["script_path"] is None, detail["plugin"]
+                assert detail["source"] is None
+                assert "TOP_SECRET_MARKER_77" not in str(detail), (
+                    "get_python_plugin leaked a file outside files/")
+
+                # --- Act/Assert: write side must not touch the target ---
+                edited = unwrap(await session.call_tool("edit_python_plugin", {
+                    "name": "Trav Check", "code": _TRAV_EDIT_CODE,
+                }))
+                assert edited["ok"] is False
+                assert "not found" in edited["error"].lower(), edited
+                assert secret.read_text(encoding="utf-8") == "TOP_SECRET_MARKER_77", (
+                    "edit_python_plugin wrote through the crafted fileName")
+
+    asyncio.run(_run())
+
+
+_CAP_PLUGIN = """from pyenergyplus.plugin import EnergyPlusPlugin
+
+
+class CapCheck(EnergyPlusPlugin):
+
+    def on_begin_timestep_before_predictor(self, state) -> int:
+        return 0
+"""
+
+
+@pytest.mark.integration
+def test_python_plugin_source_size_cap():
+    # Validates: create/edit refuse plugin source over the 24k-char cap — files/
+    # writes have no quota, so unbounded source is a disk-DoS vector (PR #84 review)
+    name = _unique("ems_cap")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await _load_example(session, name)
+
+                big_code = _CAP_PLUGIN + "# " + "x" * 25_000
+
+                created = unwrap(await session.call_tool("create_python_plugin", {
+                    "name": "Cap Check", "template": "custom",
+                    "class_name": "CapCheck", "code": big_code,
+                }))
+                assert created["ok"] is False
+                assert "max 24000" in created["error"], created
+
+                created = unwrap(await session.call_tool("create_python_plugin", {
+                    "name": "Cap Check", "template": "custom",
+                    "class_name": "CapCheck", "code": _CAP_PLUGIN,
+                }))
+                assert created["ok"] is True, created
+
+                edited = unwrap(await session.call_tool("edit_python_plugin", {
+                    "name": "Cap Check", "code": big_code,
+                }))
+                assert edited["ok"] is False
+                assert "max 24000" in edited["error"], edited
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_create_plugin_tightens_existing_output_variable_frequency():
+    # Regression: an existing Hourly Output:Variable for the same (name, key) was
+    # kept as-is, so the plugin's sensor/output series reported hourly instead of
+    # the Timestep density the templates request (PR #84 Copilot review)
+    name = _unique("ems_freq")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await _load_example(session, name)
+
+                ov = unwrap(await session.call_tool("add_output_variable", {
+                    "variable_name": "Zone Mean Air Temperature",
+                    "key_value": "*",
+                    "reporting_frequency": "Hourly",
+                }))
+                assert ov["ok"] is True, ov
+
+                created = unwrap(await session.call_tool("create_python_plugin", {
+                    "name": "Freq Check",
+                }))
+                assert created["ok"] is True, created
+
+                objs = unwrap(await session.call_tool("list_model_objects", {
+                    "object_type": "OS:Output:Variable", "max_results": 0,
+                }))
+                assert objs["ok"] is True, objs
+                zone_temp_freqs = []
+                for obj in objs["objects"]:
+                    fields = unwrap(await session.call_tool("get_object_fields", {
+                        "object_type": "OutputVariable",
+                        "object_handle": obj["handle"],
+                    }))
+                    assert fields["ok"] is True, fields
+                    props = fields["properties"]
+                    if props["variableName"]["value"] == "Zone Mean Air Temperature":
+                        zone_temp_freqs.append(props["reportingFrequency"]["value"])
+                assert zone_temp_freqs == ["Timestep"], (
+                    f"expected the ONE existing request tightened to Timestep, "
+                    f"got {zone_temp_freqs}")
 
     asyncio.run(_run())

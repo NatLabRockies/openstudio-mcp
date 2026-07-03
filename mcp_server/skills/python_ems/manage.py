@@ -21,13 +21,21 @@ from mcp_server.skills.python_ems.operations import (
 )
 
 
-def _script_path_for(file_name: str) -> str:
+def _script_path_for(file_name: str) -> Path | None:
+    """The plugin's script copy under the model's files/ dir, or None.
+
+    fileName comes from the OSM, so a crafted model can smuggle path
+    separators (or an absolute path) into it — only the basename is honored,
+    anchored under files/, and never read through a symlink.
+    """
+    safe_name = Path(file_name).name
     osm_path = model_manager.get_model_path()
-    if osm_path is not None:
-        candidate = osm_path.resolve().parent / "files" / file_name
-        if candidate.exists():
-            return str(candidate)
-    return file_name
+    if not safe_name or osm_path is None:
+        return None
+    candidate = osm_path.resolve().parent / "files" / safe_name
+    if candidate.is_file() and not candidate.is_symlink():
+        return candidate
+    return None
 
 
 def _instance_by_name(model, name: str):
@@ -48,11 +56,12 @@ def get_python_plugin_op(name: str | None = None) -> dict[str, Any]:
         instances: list[dict[str, Any]] = []
         for instance in model.getPythonPluginInstances():
             file_name = instance.externalFile().fileName()
+            script = _script_path_for(file_name)
             instances.append({
                 "name": instance.nameString(),
                 "class_name": instance.pluginClassName(),
                 "module_name": Path(file_name).stem,
-                "script_path": _script_path_for(file_name),
+                "script_path": str(script) if script else None,
                 "run_during_warmup": bool(instance.runDuringWarmupDays()),
             })
 
@@ -96,9 +105,9 @@ def get_python_plugin_op(name: str | None = None) -> dict[str, Any]:
                 return {"ok": False,
                         "error": f"Python plugin '{name}' not found. Available: {available}"}
             result["plugin"] = match
-            script = Path(match["script_path"])
-            if script.exists():
-                source = script.read_text(encoding="utf-8", errors="replace")
+            if match["script_path"]:
+                source = Path(match["script_path"]).read_text(
+                    encoding="utf-8", errors="replace")
                 if len(source) > _MAX_SOURCE_CHARS:
                     source = source[:_MAX_SOURCE_CHARS] + "\n# ... truncated ..."
                 result["source"] = source
@@ -120,6 +129,10 @@ def edit_python_plugin_op(name: str, code: str) -> dict[str, Any]:
 
         if not code or not code.strip():
             raise _EmsError("code is required")
+        if len(code) > _MAX_SOURCE_CHARS:
+            raise _EmsError(
+                f"code is {len(code)} chars — max {_MAX_SOURCE_CHARS}. "
+                "Trim comments or split the logic across plugins.")
         validation = templates.validate_plugin_source(code, plugin_class)
         if not validation["ok"]:
             return {
@@ -129,12 +142,18 @@ def edit_python_plugin_op(name: str, code: str) -> dict[str, Any]:
                 "details": validation["errors"],
             }
 
-        file_name = instance.externalFile().fileName()
+        # fileName comes from the OSM: honor only its basename so a crafted
+        # value ("../x.py", absolute path) can never write outside files/.
+        file_name = Path(instance.externalFile().fileName()).name
         script_path = files_dir / file_name
-        if not script_path.exists():
+        if not file_name or not script_path.exists():
             raise _EmsError(
                 f"Plugin script not found at {script_path} — the model's files/ "
                 "dir is missing. save_osm_model, then retry.")
+        if script_path.is_symlink():
+            raise _EmsError(
+                f"Plugin script {script_path} is a symlink — refusing to "
+                "write through it.")
         script_path.write_text(code, encoding="utf-8")
 
         return {

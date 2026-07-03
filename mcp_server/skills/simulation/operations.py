@@ -307,8 +307,11 @@ def _launch(rec: RunRecord) -> None:
     # The run owner's python_packages dir (if any) is granted read-only so
     # EnergyPlus Python plugins can import pip-installed packages from it
     # (wired into the model via PythonPlugin:SearchPaths).
-    pkgs_dir = pkgs_root_for(rec.user_key)
-    extra_ro = (str(pkgs_dir),) if pkgs_dir.is_dir() else ()
+    try:
+        pkgs_dir = pkgs_root_for(rec.user_key)
+        extra_ro = (str(pkgs_dir),) if pkgs_dir.is_dir() else ()
+    except RuntimeError:  # symlinked pkgs dir — launch without the grant
+        extra_ro = ()
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
         sandbox.wrap_cmd(_build_run_cmd(rec.osw_path), rec.run_dir, extra_ro=extra_ro),
         cwd=str(rec.run_dir),

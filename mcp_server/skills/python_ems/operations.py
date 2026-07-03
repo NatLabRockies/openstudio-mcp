@@ -64,12 +64,27 @@ def _schedule_component_type(model, schedule_name: str) -> str:
         "Year/Compact. Use get_schedule_details or list_model_objects to find one.")
 
 
+# Reporting frequencies from finest to coarsest (E+ Output:Variable keys).
+_FREQ_FINE_TO_COARSE = ("detailed", "timestep", "hourly", "daily", "monthly",
+                        "runperiod", "environment", "annual")
+
+
 def _ensure_output_variable(model, variable_name: str, key_value: str,
                             frequency: str) -> bool:
-    """Add an Output:Variable request unless the same (name, key) already exists."""
+    """Add an Output:Variable request unless the same (name, key) already exists.
+
+    An existing coarser request is tightened in place — a plugin output or
+    sensor series reported Hourly starves a caller expecting Timestep data.
+    A finer existing request is left alone.
+    """
     for existing in model.getOutputVariables():
         if (existing.variableName() == variable_name
                 and existing.keyValue() == key_value):
+            order = _FREQ_FINE_TO_COARSE
+            have = existing.reportingFrequency().strip().lower()
+            want = frequency.strip().lower()
+            if have in order and want in order and order.index(want) < order.index(have):
+                existing.setReportingFrequency(frequency)
             return False
     output_variable = openstudio.model.OutputVariable(variable_name, model)
     output_variable.setKeyValue(key_value)
@@ -101,7 +116,10 @@ def ensure_pkgs_search_path(model) -> bool:
     creates it). Forward translation merges these entries with the
     auto-generated ExternalFile search path into the one unique-object.
     """
-    pkgs_dir = user_pkgs_root()
+    try:
+        pkgs_dir = user_pkgs_root()
+    except RuntimeError:
+        return False  # tampered (symlinked) pkgs dir — never wire it in
     if not pkgs_dir.is_dir() or not any(pkgs_dir.iterdir()):
         return False
     search_paths = model.getPythonPluginSearchPaths()
@@ -241,6 +259,10 @@ def create_python_plugin_op(
                 output_specs = [{"name": output_variable_name,
                                  "global": globals_needed[0], "units": units or ""}]
 
+        if len(source) > _MAX_SOURCE_CHARS:
+            raise _EmsError(
+                f"Plugin source is {len(source)} chars — max {_MAX_SOURCE_CHARS}. "
+                "Trim comments or split the logic across plugins.")
         validation = templates.validate_plugin_source(source, plugin_class)
         if not validation["ok"]:
             return {"ok": False, "error": "Plugin source failed validation",

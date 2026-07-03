@@ -250,7 +250,13 @@ def pkgs_root_for(key: str) -> Path:
     """
     from mcp_server.identity import LOCAL
     root = RUN_ROOT if key == LOCAL else RUN_ROOT / key
-    return (root / "python_packages").resolve()
+    pkgs = root / "python_packages"
+    # Belt: resolve() would launder a symlink planted here into a path later
+    # treated as trusted (pip --target write, sandbox read-only grant).
+    if pkgs.is_symlink():
+        raise RuntimeError(
+            f"python_packages dir for '{key}' is a symlink — refusing to use it")
+    return pkgs.resolve()
 
 
 def user_pkgs_root() -> Path:

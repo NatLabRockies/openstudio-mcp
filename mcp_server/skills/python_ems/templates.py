@@ -399,6 +399,12 @@ def validate_plugin_source(source: str, class_name: str) -> dict[str, Any]:
     callbacks: list[str] = []
     for item in target.body:
         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("on_"):
+            if isinstance(item, ast.AsyncFunctionDef):
+                errors.append(
+                    f"'{item.name}' must not be async — EnergyPlus calls plugin "
+                    "callbacks synchronously and expects an int return, but an "
+                    "async def returns a coroutine")
+                continue
             if item.name in CALLING_POINTS:
                 callbacks.append(item.name)
             else:

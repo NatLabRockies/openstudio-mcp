@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server import model_manager
-from mcp_server.config import OSMCP_PKGS_QUOTA_MB, user_pkgs_root
+from mcp_server.config import OSMCP_PKGS_QUOTA_MB, is_path_allowed, user_pkgs_root
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.python_ems.operations import ensure_pkgs_search_path
 from mcp_server.skills.python_ems.templates import validate_package_specs
@@ -51,7 +51,12 @@ def install_plugin_packages_op(packages: list[str] | str | None) -> dict[str, An
     except ValueError as e:
         return {"ok": False, "error": str(e)}
 
-    target = user_pkgs_root()
+    try:
+        target = user_pkgs_root()
+    except RuntimeError as e:  # symlinked pkgs dir — refuse to write through it
+        return {"ok": False, "error": str(e)}
+    if not is_path_allowed(target, write=True):
+        return {"ok": False, "error": f"Package dir is not writable here: {target}"}
     target.mkdir(parents=True, exist_ok=True)
 
     cmd = [

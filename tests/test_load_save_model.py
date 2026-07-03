@@ -1,6 +1,7 @@
 import asyncio
 import os
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import integration_enabled, server_params, unwrap
@@ -223,5 +224,57 @@ def test_list_files():
                 all_result = unwrap(all_resp)
                 dir_items = [f for f in all_result.get("items", []) if f.get("type") == "dir"]
                 assert len(dir_items) == 0, f"Expected no dir items, got {dir_items}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_save_as_refuses_escaping_symlink_in_files():
+    # Regression: save-as copied the model's companion files/ dir with copytree,
+    # which FOLLOWS symlinks — a link planted in files/ would copy arbitrary host
+    # files into the destination (PR #84 Copilot review); run_simulation already
+    # guards the identical copy with reject_escaping_symlinks
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    name = _unique_name("pytest_symlink_files")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                # --- Arrange: model with a files/ dir holding an escaping link ---
+                create_result = unwrap(await session.call_tool(
+                    "create_example_osm", {"name": name}))
+                assert create_result["ok"] is True
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": create_result["osm_path"]}))
+                assert load_result["ok"] is True, load_result
+
+                first_path = f"/runs/{name}/model.osm"
+                save_result = unwrap(await session.call_tool(
+                    "save_osm_model", {"osm_path": first_path}))
+                assert save_result["ok"] is True, save_result
+
+                files_dir = Path(f"/runs/{name}/files")
+                files_dir.mkdir(parents=True, exist_ok=True)
+                (files_dir / "leak.txt").symlink_to("/etc/hostname")
+                reload_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": first_path}))
+                assert reload_result["ok"] is True, reload_result
+
+                # --- Act: save-as must refuse to copy through the link ---
+                second_path = f"/runs/{name}_copy/model.osm"
+                copy_result = unwrap(await session.call_tool(
+                    "save_osm_model", {"osm_path": second_path}))
+
+                # --- Assert: refused, nothing copied, but the OSM was written ---
+                assert copy_result["ok"] is False, copy_result
+                assert "symlink" in copy_result["error"].lower(), copy_result
+                assert not Path(f"/runs/{name}_copy/files").exists(), (
+                    "files/ must not be copied when it contains an escaping symlink")
+                assert Path(second_path).exists(), (
+                    "the .osm itself is saved before the files/ copy is attempted")
 
     asyncio.run(_run())
