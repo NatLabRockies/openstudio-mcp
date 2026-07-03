@@ -9,6 +9,7 @@ from mcp_server.skills.hvac_systems import (
     air_terminals,
     baseline,
     catalog,
+    cleanup,
     templates,
     validation,
 )
@@ -67,6 +68,9 @@ def add_baseline_system(
             system_info = catalog.get_baseline_system_info(system_type)
             system_name = f"{system_info['system']['name']} HVAC"
 
+        # addBranchForZone steals zones from their old loops (#83)
+        loop_zones_before = cleanup.snapshot_loop_zones(model)
+
         # Route to appropriate baseline system implementation
         if system_type == 1:
             result = baseline.create_baseline_system_1(
@@ -121,6 +125,10 @@ def add_baseline_system(
             sim_control.setDoZoneSizingCalculation(True)
             sim_control.setDoSystemSizingCalculation(True)
             sim_control.setDoPlantSizingCalculation(True)
+
+            repairs = cleanup.repair_orphaned_air_loops(model, loop_zones_before)
+            if repairs:
+                result["repairs"] = repairs
 
             validation_result = validation.validate_system(model, system_name)
             result["validation"] = validation_result
@@ -292,12 +300,19 @@ def add_doas_system(
         if zone_equipment_type not in valid_types:
             return {"ok": False, "error": f"Invalid zone_equipment_type: '{zone_equipment_type}'"}
 
+        # addBranchForZone steals zones from their old loops (#83)
+        loop_zones_before = cleanup.snapshot_loop_zones(model)
+
         result = templates.create_doas_system(
             model, zones, system_name, energy_recovery,
             sensible_effectiveness, zone_equipment_type,
             heating_fuel, cooling_fuel,
         )
-        return {"ok": True, "system": result}
+        out: dict[str, Any] = {"ok": True, "system": result}
+        repairs = cleanup.repair_orphaned_air_loops(model, loop_zones_before)
+        if repairs:
+            out["repairs"] = repairs
+        return out
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -333,10 +348,17 @@ def add_vrf_system(
                 return {"ok": False, "error": f"Thermal zone '{zone_name}' not found"}
             zones.append(zone)
 
+        # addBranchForZone steals zones from their old loops (#83)
+        loop_zones_before = cleanup.snapshot_loop_zones(model)
+
         result = templates.create_vrf_system(
             model, zones, system_name, heat_recovery, outdoor_unit_capacity_w,
         )
-        return {"ok": True, "system": result}
+        out: dict[str, Any] = {"ok": True, "system": result}
+        repairs = cleanup.repair_orphaned_air_loops(model, loop_zones_before)
+        if repairs:
+            out["repairs"] = repairs
+        return out
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
@@ -386,11 +408,18 @@ def add_radiant_system(
         if ventilation_system not in valid_vent:
             return {"ok": False, "error": f"Invalid ventilation_system: '{ventilation_system}'"}
 
+        # addBranchForZone steals zones from their old loops (#83)
+        loop_zones_before = cleanup.snapshot_loop_zones(model)
+
         result = templates.create_radiant_system(
             model, zones, system_name, radiant_type, ventilation_system,
             heating_fuel, cooling_fuel,
         )
-        return {"ok": True, "system": result}
+        out: dict[str, Any] = {"ok": True, "system": result}
+        repairs = cleanup.repair_orphaned_air_loops(model, loop_zones_before)
+        if repairs:
+            out["repairs"] = repairs
+        return out
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

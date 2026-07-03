@@ -53,6 +53,33 @@ class TestValidateModel:
         # Weather file warning is expected (EPW passed via OSW)
         assert any("weather" in w.lower() for w in v["warnings"])
 
+    def test_orphaned_spm_and_empty_loop_flagged(self):
+        # Regression: #83 — stealing the example model's zone with a new air
+        # loop orphans its SPM:SingleZone:Reheat and empties the old loop; both
+        # are E+ input-processing fatals that validate_model previously missed
+        from mcp_server.model_manager import load_model
+        from mcp_server.skills.hvac.operations import add_air_loop
+        from mcp_server.skills.model_management.operations import create_example_osm
+        from mcp_server.skills.simulation.operations import validate_model_op
+
+        result = create_example_osm()
+        assert result["ok"]
+        load_model(Path(result["osm_path"]))
+
+        # Low-level add_air_loop takes over the zone; the example model's own
+        # loop ("Air Loop HVAC 1") keeps its SZR SPM but loses its only zone.
+        added = add_air_loop("Stealer Loop", ["Thermal Zone 1"])
+        assert added["ok"] is True, added
+
+        v = validate_model_op()
+        assert v["ok"] is False
+        empty_loop_errors = [e for e in v["errors"] if "serves no thermal zones" in e]
+        assert len(empty_loop_errors) == 1, v["errors"]
+        assert "Air Loop HVAC 1" in empty_loop_errors[0]
+        orphan_errors = [e for e in v["errors"] if "has no control zone" in e]
+        assert len(orphan_errors) == 1, v["errors"]
+        assert "Setpoint Manager Single Zone Reheat 1" in orphan_errors[0]
+
     def test_empty_model_fails(self, tmp_path):
         # Validates: empty model fails validation with design day error and weather warning
         import openstudio

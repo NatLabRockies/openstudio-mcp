@@ -282,6 +282,18 @@ def create_doas_system(
                     openstudio.model.CoilHeatingWater(model, model.alwaysOnDiscreteSchedule()),
                 )
                 fc.setName(f"{name} Fan Coil - {zone_name}")
+                # DOAS provides all ventilation. Left autosized, each fan coil
+                # also ingests full zone OA: double ventilation, and the
+                # OA-laden coil inlet air distorts E+ coil sizing (#82).
+                fc.setMaximumOutdoorAirFlowRate(0.0)
+                # Tell zone sizing the DOAS pre-treats ventilation air so
+                # fan-coil loads/flows exclude it (openstudio-standards
+                # model_add_doas settings).
+                sizing_zone = zone.sizingZone()
+                sizing_zone.setAccountforDedicatedOutdoorAirSystem(True)
+                sizing_zone.setDedicatedOutdoorAirSystemControlStrategy("NeutralSupplyAir")
+                sizing_zone.setDedicatedOutdoorAirLowSetpointTemperatureforDesign(15.5556)
+                sizing_zone.setDedicatedOutdoorAirHighSetpointTemperatureforDesign(21.1111)
                 fc.addToThermalZone(zone)
                 chw_loop.addDemandBranchForComponent(fc.coolingCoil())
                 hw_loop.addDemandBranchForComponent(fc.heatingCoil())

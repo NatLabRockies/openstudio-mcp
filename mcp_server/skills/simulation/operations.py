@@ -817,6 +817,33 @@ def validate_model_op() -> dict[str, Any]:
             msg += f" and {len(no_construction) - MAX_PER_CATEGORY} more"
         warnings.append(msg)
 
+    # Air loops serving zero zones and single-zone setpoint managers without a
+    # control zone are both EnergyPlus input-processing fatals. Typical cause:
+    # a system-adding tool took over the loop's zones (#83).
+    empty_loops = [
+        loop.nameString()
+        for loop in model.getAirLoopHVACs()
+        if len(loop.thermalZones()) == 0
+    ]
+    for name in empty_loops[:MAX_PER_CATEGORY]:
+        errors.append(
+            f"Air loop '{name}' serves no thermal zones — EnergyPlus fatal. "
+            "Usually left behind after another tool took over its zones; "
+            "delete_object it or reassign zones",
+        )
+
+    orphaned_spms: list = []
+    orphaned_spms.extend(model.getSetpointManagerSingleZoneReheats())
+    orphaned_spms.extend(model.getSetpointManagerSingleZoneCoolings())
+    orphaned_spms.extend(model.getSetpointManagerSingleZoneHeatings())
+    for spm in orphaned_spms:
+        if not spm.controlZone().is_initialized():
+            errors.append(
+                f"Setpoint manager '{spm.nameString()}' has no control zone — "
+                "EnergyPlus fatal. Usually a leftover from moving its zone to "
+                "another system; delete the setpoint manager or its air loop",
+            )
+
     return {
         "ok": len(errors) == 0,
         "errors": errors,
