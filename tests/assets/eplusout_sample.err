@@ -30,7 +30,7 @@ Program Version,EnergyPlus, Version 24.2.0-1b6ab9b785, YMD=2025.01.15 09:30
    ** Severe  ** GetDXCoils: Coil:Cooling:DX:TwoSpeed "COIL COOLING DX TWO SPEED" - not found
    **   ~~~   ** referenced from AirLoopHVAC:UnitarySystem "UNITARY SYSTEM 1"
    ** Severe  ** Node connection error: orphaned node "ORPHAN NODE 1"
-   ** Fatal  ** GetDXCoils: Errors found in getting Coil:Cooling:DX input. Preceding condition(s) cause termination.
+   **  Fatal  ** GetDXCoils: Errors found in getting Coil:Cooling:DX input. Preceding condition(s) cause termination.
    ************* Warning Summary found during warmup={0}, during sizing={2}, during simulation={23}
    ************* EnergyPlus Warmup Error Summary. During Warmup: 0 Warning; 0 Severe Errors.
    ************* EnergyPlus Sizing Error Summary. During Sizing: 2 Warning; 0 Severe Errors.

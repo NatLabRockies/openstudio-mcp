@@ -48,6 +48,43 @@ class TestParseErrFile:
         assert len(weather_warn) == 1
         assert "Location object" in weather_warn[0]
 
+    def test_real_fatal_prefix_two_spaces(self):
+        # Regression: E+ pads severity labels, so real files write "**  Fatal  **"
+        # (two spaces); the parser only matched the single-space form and real
+        # fatal lines were silently dropped from the fatal list
+        text = (
+            "   **  Fatal  ** Errors occurred on processing input file. "
+            "Preceding condition(s) cause termination.\n"
+        )
+        result = parse_err_file(text)
+        assert result["fatal"] == [
+            "Errors occurred on processing input file. "
+            "Preceding condition(s) cause termination.",
+        ]
+        assert result["summary"] == "1 Fatal"
+
+    def test_orphaned_spm_hint(self):
+        # Validates: #83 signature (SPM lost control zone) maps to an actionable
+        # hint naming validate_model, and the empty-loop signature maps to its own
+        text = (
+            "   ** Severe  ** <root>[SetpointManager:SingleZone:Reheat]"
+            "[Setpoint Manager Single Zone Reheat 1] - Missing required "
+            "property 'control_zone_name'.\n"
+            '   ** Severe  ** An outlet node in AirLoopHVAC="AIR LOOP HVAC 1" '
+            "is not connected to any zone\n"
+        )
+        result = parse_err_file(text)
+        assert len(result["hints"]) == 2
+        assert "lost its control zone" in result["hints"][0]
+        assert "validate_model" in result["hints"][0]
+        assert "serves no thermal zones" in result["hints"][1]
+
+    def test_no_hints_for_unrelated_errors(self, err_text):
+        # Validates: hint list stays empty when no known signature matches,
+        # so agents are not misdirected on unrelated failures
+        result = parse_err_file(err_text)
+        assert result["hints"] == []
+
     def test_warnings_capped(self, err_text):
         # Validates: max_warnings caps returned list but warning_count reflects true total
         result = parse_err_file(err_text, max_warnings=5)

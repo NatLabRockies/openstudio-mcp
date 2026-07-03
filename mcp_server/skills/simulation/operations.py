@@ -27,6 +27,7 @@ from mcp_server.config import (
     OSCLI_GEMFILE,
     SIM_TIMEOUT_SECONDS,
     is_path_allowed,
+    pkgs_root_for,
     user_run_root,
 )
 from mcp_server.identity import user_key
@@ -303,8 +304,16 @@ def _launch(rec: RunRecord) -> None:
     # process owns it (order matters — see apply_measure).
     run_env = sandbox.build_env(rec.run_dir)
     sandbox.prepare_workdir(rec.run_dir)
+    # The run owner's python_packages dir (if any) is granted read-only so
+    # EnergyPlus Python plugins can import pip-installed packages from it
+    # (wired into the model via PythonPlugin:SearchPaths).
+    try:
+        pkgs_dir = pkgs_root_for(rec.user_key)
+        extra_ro = (str(pkgs_dir),) if pkgs_dir.is_dir() else ()
+    except RuntimeError:  # symlinked pkgs dir — launch without the grant
+        extra_ro = ()
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
-        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path), rec.run_dir),
+        sandbox.wrap_cmd(_build_run_cmd(rec.osw_path), rec.run_dir, extra_ro=extra_ro),
         cwd=str(rec.run_dir),
         stdout=log.open("w", encoding="utf-8"),
         stderr=subprocess.STDOUT,
@@ -811,6 +820,33 @@ def validate_model_op() -> dict[str, Any]:
             msg += f" and {len(no_construction) - MAX_PER_CATEGORY} more"
         warnings.append(msg)
 
+    # Air loops serving zero zones and single-zone setpoint managers without a
+    # control zone are both EnergyPlus input-processing fatals. Typical cause:
+    # a system-adding tool took over the loop's zones (#83).
+    empty_loops = [
+        loop.nameString()
+        for loop in model.getAirLoopHVACs()
+        if len(loop.thermalZones()) == 0
+    ]
+    for name in empty_loops[:MAX_PER_CATEGORY]:
+        errors.append(
+            f"Air loop '{name}' serves no thermal zones — EnergyPlus fatal. "
+            "Usually left behind after another tool took over its zones; "
+            "delete_object it or reassign zones",
+        )
+
+    orphaned_spms: list = []
+    orphaned_spms.extend(model.getSetpointManagerSingleZoneReheats())
+    orphaned_spms.extend(model.getSetpointManagerSingleZoneCoolings())
+    orphaned_spms.extend(model.getSetpointManagerSingleZoneHeatings())
+    for spm in orphaned_spms:
+        if not spm.controlZone().is_initialized():
+            errors.append(
+                f"Setpoint manager '{spm.nameString()}' has no control zone — "
+                "EnergyPlus fatal. Usually a leftover from moving its zone to "
+                "another system; delete the setpoint manager or its air loop",
+            )
+
     return {
         "ok": len(errors) == 0,
         "errors": errors,
@@ -857,6 +893,17 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         stage = Path(tmp)
         staged_osm = stage / osm.name
         shutil.copy2(str(osm), str(staged_osm))
+
+        # Stage the model's companion files/ dir (ExternalFile resources, e.g.
+        # Python EMS plugin scripts). Workflow-time forward translation resolves
+        # an OSM's relative OS:External:File name via the OSW search paths
+        # (osw dir, then files/), so the dir must travel with the seed.
+        src_files = osm.resolve().parent / "files"
+        if src_files.is_dir():
+            sym_err = reject_escaping_symlinks(src_files)
+            if sym_err:
+                return {"ok": False, "error": sym_err}
+            shutil.copytree(str(src_files), str(stage / "files"), dirs_exist_ok=True)
 
         osw: dict[str, Any] = {
             "seed_file": osm.name,

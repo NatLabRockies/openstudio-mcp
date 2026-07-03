@@ -65,6 +65,18 @@ PROGRESSIVE_CASES = [
         "L3": "Show me a 3D view of the model using view_model.",
     },
     {
+        # Custom EMS control logic → Python plugin authoring (or actuator
+        # discovery first) — not a thermostat/schedule edit tool.
+        "id": "python_ems_control",
+        "needs_model": True,
+        "expected": ["create_python_plugin", "list_ems_actuators"],
+        "L1": "Add custom control logic that sets the heating setpoint back at night.",
+        "L2": "Create a Python EMS plugin that overrides the heating setpoint "
+              "schedule to 15.6 C outside 6am-6pm.",
+        "L3": "Use create_python_plugin with the schedule_override template to set "
+              "the heating schedule to 15.6 outside hours 6-18.",
+    },
+    {
         "id": "set_weather",
         "needs_model": True,
         "expected": ["change_building_location", "set_weather_file"],

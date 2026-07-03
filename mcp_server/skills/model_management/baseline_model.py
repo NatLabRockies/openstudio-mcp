@@ -330,7 +330,10 @@ class BaselineModel(openstudio.model.Model):
 
         self.getBuilding().setSpaceType(space_type)
 
-    def add_thermostats(self, heating_setpoint: float = 24.0, cooling_setpoint: float = 28.0):
+    # 21.1/23.9 C (70/75 F) typical office band. The old exampleModel-style
+    # 24/28 band starves zone cooling design loads: heating-sized fan flows
+    # vs tiny cooling water flows make E+ fan-coil design-UA sizing fail (#82).
+    def add_thermostats(self, heating_setpoint: float = 21.1, cooling_setpoint: float = 23.9):
         t24 = openstudio.Time(0, 24, 0, 0)
         clg = openstudio.model.ScheduleRuleset(self)
         clg.setName("Cooling Sch")
