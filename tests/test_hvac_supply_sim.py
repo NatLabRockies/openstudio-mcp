@@ -92,7 +92,9 @@ async def _save_run_and_check(s, name):
     assert err_resp.get("ok") is True, f"could not read eplusout.err: {err_resp}"
     err_text = err_resp.get("text", "")
     assert err_text, "eplusout.err came back empty"
-    assert "** Fatal **" not in err_text, (
+    # Real E+ pads severity labels: fatal lines read "**  Fatal  **" (two
+    # spaces). The old "** Fatal **" pattern could never match (#83 review).
+    assert "**  Fatal  **" not in err_text, (
         f"EnergyPlus fatal error:\n{err_text[-2000:]}"
     )
     severe_lines = [
