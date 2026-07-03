@@ -424,3 +424,99 @@ def test_doas_json_string_zones():
                 )
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_doas_on_example_model_repairs_and_simulates():
+    """Golden path: example model + add_doas_system -> repaired model runs E+."""
+    # Regression: #83 — add_doas_system stole the example model's zone, leaving
+    # "Air Loop HVAC 1" empty with an orphaned SPM:SingleZone:Reheat; EnergyPlus
+    # then fataled at input processing ("Missing required property
+    # 'control_zone_name'"). The tool must now remove the dead loop and the
+    # model must simulate.
+    import uuid
+
+    from conftest import EPW_PATH, poll_until_done
+
+    name = f"test_doas_repair_{uuid.uuid4().hex[:8]}"
+
+    async def _run():
+        sp = server_params()
+        async with stdio_client(sp) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                create_data = unwrap(await session.call_tool(
+                    "create_example_osm", {"name": name}))
+                assert create_data["ok"] is True, create_data
+                lr = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": create_data["osm_path"]}))
+                assert lr["ok"] is True, lr
+
+                zones_data = unwrap(await session.call_tool(
+                    "list_thermal_zones", {"max_results": 0}))
+                zone_names = [z["name"] for z in zones_data["thermal_zones"]]
+                assert zone_names == ["Thermal Zone 1"]
+
+                system_data = unwrap(await session.call_tool("add_doas_system", {
+                    "thermal_zone_names": zone_names,
+                    "system_name": "DOAS Repair Test",
+                    "zone_equipment_type": "FanCoil",
+                }))
+                assert system_data["ok"] is True, system_data
+
+                # The repair must be reported: the example model's own loop
+                # lost its only zone and was removed (SPM removed with it).
+                repairs = system_data["repairs"]
+                assert repairs == [{
+                    "action": "removed_empty_air_loop",
+                    "air_loop": "Air Loop HVAC 1",
+                    "reason": (
+                        "lost all its thermal zones to the new system; an air "
+                        "loop serving zero zones fails EnergyPlus input "
+                        "processing"
+                    ),
+                }], repairs
+
+                # validate_model must see neither #83 fatal precursor
+                v = unwrap(await session.call_tool("validate_model", {}))
+                assert not any("serves no thermal zones" in e for e in v["errors"]), v
+                assert not any("has no control zone" in e for e in v["errors"]), v
+
+                rp = unwrap(await session.call_tool("set_run_period", {
+                    "begin_month": 1, "begin_day": 1,
+                    "end_month": 1, "end_day": 7, "name": "One Week",
+                }))
+                assert rp["ok"] is True, rp
+
+                save_path = f"/runs/{name}.osm"
+                sr = unwrap(await session.call_tool(
+                    "save_osm_model", {"osm_path": save_path}))
+                assert sr["ok"] is True, sr
+
+                sim = unwrap(await session.call_tool("run_simulation", {
+                    "osm_path": save_path, "epw_path": EPW_PATH,
+                }))
+                assert sim["ok"] is True, sim
+                run_id = sim["run_id"]
+
+                status = await poll_until_done(session, run_id)
+                state = status["run"]["status"]
+                assert state == "success", (
+                    f"Simulation {state} — expected success. "
+                    f"Check get_run_logs(run_id='{run_id}')"
+                )
+
+                # The #83 signatures must be gone from the E+ error file
+                err_resp = unwrap(await session.call_tool("read_file", {
+                    "file_path": f"/runs/{run_id}/run/eplusout.err",
+                    "max_bytes": 100000,
+                }))
+                assert err_resp.get("ok") is True, err_resp
+                err_text = err_resp.get("text", "")
+                assert err_text, "eplusout.err came back empty"
+                assert "Missing required property 'control_zone_name'" not in err_text
+                assert "is not connected to any zone" not in err_text
+                assert "**  Fatal  **" not in err_text, err_text[-2000:]
+
+    asyncio.run(_run())
