@@ -102,6 +102,12 @@ async def _save_run_and_check(s, name):
     assert len(severe_lines) == 0, (
         f"{len(severe_lines)} severe errors:\n" + "\n".join(severe_lines[:20])
     )
+    # Regression: #82 — autosized fan-coil OA under DOAS made 7/10 cooling
+    # coils fail design-UA sizing (rough-UA fallback, unreliable capacities)
+    assert "Calculation of cooling coil design UA failed" not in err_text, (
+        "cooling coil design-UA sizing failed (#82 signature):\n"
+        + "\n".join(line for line in err_text.splitlines() if "UA" in line)[:2000]
+    )
 
     # Verify metrics extraction works
     metrics = unwrap(await s.call_tool("extract_summary_metrics", {
@@ -116,15 +122,6 @@ async def _save_run_and_check(s, name):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known defect #82 (exposed when the vacuous err-file read was fixed): "
-           "DOAS+FanCoil wiring yields 7/10 fan-coil cooling coils with "
-           "'Calculation of cooling coil design UA failed' severes (outlet CHW "
-           "design enthalpy > inlet air design enthalpy; E+ falls back to a "
-           "rough UA, so coil capacities are unreliable). Fix belongs in the "
-           "hvac_systems DOAS fan-coil sizing; remove this marker with it.",
-)
 def test_doas_fancoil_simulates():
     """10-zone DOAS FanCoil → EnergyPlus completes, no fatal/severe errors."""
     # Validates: DOAS+FanCoil with boiler/chiller/tower simulates without fatal/severe errors
@@ -200,11 +197,6 @@ def test_radiant_doas_simulates():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
-@pytest.mark.xfail(
-    strict=True,
-    reason="Same known DOAS+FanCoil cooling-coil design-UA defect #82 as "
-           "test_doas_fancoil_simulates (district fuels variant).",
-)
 def test_doas_district_simulates():
     """10-zone DOAS FanCoil w/ district H+C → EnergyPlus completes."""
     # Validates: DOAS+FanCoil with district heating/cooling simulates (no condenser loop)
