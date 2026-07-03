@@ -1,8 +1,8 @@
 # LLM Benchmark Report
 
-**Date:** 2026-03-28T18:32:55+00:00  
-**Model:** haiku | **Retries:** 0  
-**Result:** 160/180 passed (88.9%) in 4775s  
+**Date:** 2026-03-28T18:32:55+00:00
+**Model:** haiku | **Retries:** 0
+**Result:** 160/180 passed (88.9%) in 4775s
 **Tokens:** 8.9k in + 307.7k out + 66.6M cache | **Cost:** $11.2110 (notional API pricing)
 
 ## Summary by Tier

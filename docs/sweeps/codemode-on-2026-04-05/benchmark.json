@@ -34,10 +34,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "get_skill",
-        "list_skills"
-      ],
+      "tool_calls": ["get_skill", "list_skills"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -78,9 +75,7 @@
       "input_tokens": 10,
       "output_tokens": 2514,
       "cache_read_tokens": 100571,
-      "tool_calls": [
-        "import_floorspacejs"
-      ],
+      "tool_calls": ["import_floorspacejs"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -106,9 +101,7 @@
       "input_tokens": 16,
       "output_tokens": 4859,
       "cache_read_tokens": 134197,
-      "tool_calls": [
-        "import_floorspacejs"
-      ],
+      "tool_calls": ["import_floorspacejs"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -136,10 +129,7 @@
       "input_tokens": 16,
       "output_tokens": 3549,
       "cache_read_tokens": 156007,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "Skill",
@@ -169,10 +159,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -220,11 +207,7 @@
       "input_tokens": 15,
       "output_tokens": 1617,
       "cache_read_tokens": 235177,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -265,10 +248,7 @@
       "input_tokens": 22,
       "output_tokens": 5262,
       "cache_read_tokens": 287369,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -304,10 +284,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -355,10 +332,7 @@
       "input_tokens": 18,
       "output_tokens": 3032,
       "cache_read_tokens": 166927,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -398,9 +372,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -439,10 +411,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -522,10 +491,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -575,10 +541,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -617,9 +580,7 @@
       "input_tokens": 16,
       "output_tokens": 2950,
       "cache_read_tokens": 207727,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -652,10 +613,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "list_skills",
-        "list_weather_files"
-      ],
+      "tool_calls": ["list_skills", "list_weather_files"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -700,9 +658,7 @@
       "input_tokens": 13,
       "output_tokens": 2970,
       "cache_read_tokens": 121314,
-      "tool_calls": [
-        "create_new_building"
-      ],
+      "tool_calls": ["create_new_building"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -729,9 +685,7 @@
       "input_tokens": 14,
       "output_tokens": 4309,
       "cache_read_tokens": 168328,
-      "tool_calls": [
-        "create_bar_building"
-      ],
+      "tool_calls": ["create_bar_building"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -759,10 +713,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -801,10 +752,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -849,10 +797,7 @@
       "input_tokens": 10,
       "output_tokens": 2733,
       "cache_read_tokens": 106340,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -879,9 +824,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -922,9 +865,7 @@
       "input_tokens": 15,
       "output_tokens": 2795,
       "cache_read_tokens": 120609,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -953,10 +894,7 @@
       "input_tokens": 18,
       "output_tokens": 3890,
       "cache_read_tokens": 209214,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -987,9 +925,7 @@
       "input_tokens": 16,
       "output_tokens": 2991,
       "cache_read_tokens": 167105,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -1020,11 +956,7 @@
       "input_tokens": 19,
       "output_tokens": 4172,
       "cache_read_tokens": 197002,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "list_spaces"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "list_spaces"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -1056,10 +988,7 @@
       "input_tokens": 14,
       "output_tokens": 1316,
       "cache_read_tokens": 132892,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1097,10 +1026,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1135,10 +1061,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1251,10 +1174,7 @@
       "input_tokens": 19,
       "output_tokens": 1501,
       "cache_read_tokens": 214087,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1293,11 +1213,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -1356,10 +1272,7 @@
       "input_tokens": 18,
       "output_tokens": 4359,
       "cache_read_tokens": 264782,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1391,10 +1304,7 @@
       "input_tokens": 13,
       "output_tokens": 2481,
       "cache_read_tokens": 179893,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1519,10 +1429,7 @@
       "input_tokens": 18,
       "output_tokens": 4785,
       "cache_read_tokens": 171710,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1605,10 +1512,7 @@
       "input_tokens": 16,
       "output_tokens": 3078,
       "cache_read_tokens": 135267,
-      "tool_calls": [
-        "load_osm_model",
-        "list_model_objects"
-      ],
+      "tool_calls": ["load_osm_model", "list_model_objects"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -1637,11 +1541,7 @@
       "input_tokens": 13,
       "output_tokens": 1034,
       "cache_read_tokens": 148279,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "get_building_info"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "get_building_info"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -1693,11 +1593,7 @@
       "input_tokens": 18,
       "output_tokens": 1065,
       "cache_read_tokens": 165730,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "get_building_info"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "get_building_info"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -1740,9 +1636,7 @@
       "input_tokens": 19,
       "output_tokens": 3720,
       "cache_read_tokens": 171234,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -1772,11 +1666,7 @@
       "input_tokens": 20,
       "output_tokens": 4154,
       "cache_read_tokens": 208329,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -1811,11 +1701,7 @@
       "input_tokens": 22,
       "output_tokens": 3374,
       "cache_read_tokens": 215129,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "list_materials"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "list_materials"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -1854,9 +1740,7 @@
       "input_tokens": 20,
       "output_tokens": 5958,
       "cache_read_tokens": 182460,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -1887,11 +1771,7 @@
       "input_tokens": 21,
       "output_tokens": 3081,
       "cache_read_tokens": 193608,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "list_thermal_zones"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "list_thermal_zones"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -1922,9 +1802,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -1956,9 +1834,7 @@
       "input_tokens": 17,
       "output_tokens": 2946,
       "cache_read_tokens": 213307,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -1989,10 +1865,7 @@
       "input_tokens": 13,
       "output_tokens": 1002,
       "cache_read_tokens": 139306,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2053,10 +1926,7 @@
       "input_tokens": 20,
       "output_tokens": 3596,
       "cache_read_tokens": 180170,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2087,10 +1957,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2135,10 +2002,7 @@
       "input_tokens": 19,
       "output_tokens": 1640,
       "cache_read_tokens": 205657,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2176,11 +2040,7 @@
       "input_tokens": 20,
       "output_tokens": 2649,
       "cache_read_tokens": 236073,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -2218,9 +2078,7 @@
       "input_tokens": 14,
       "output_tokens": 4897,
       "cache_read_tokens": 140480,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -2250,10 +2108,7 @@
       "input_tokens": 24,
       "output_tokens": 4385,
       "cache_read_tokens": 288538,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2286,9 +2141,7 @@
       "input_tokens": 15,
       "output_tokens": 2412,
       "cache_read_tokens": 174398,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -2360,9 +2213,7 @@
       "input_tokens": 51,
       "output_tokens": 12779,
       "cache_read_tokens": 1295331,
-      "tool_calls": [
-        "extract_summary_metrics"
-      ],
+      "tool_calls": ["extract_summary_metrics"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -2422,10 +2273,7 @@
       "input_tokens": 22,
       "output_tokens": 3489,
       "cache_read_tokens": 233774,
-      "tool_calls": [
-        "extract_summary_metrics",
-        "extract_summary_metrics"
-      ],
+      "tool_calls": ["extract_summary_metrics", "extract_summary_metrics"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2462,10 +2310,7 @@
       "input_tokens": 12,
       "output_tokens": 719,
       "cache_read_tokens": 86919,
-      "tool_calls": [
-        "extract_end_use_breakdown",
-        "extract_end_use_breakdown"
-      ],
+      "tool_calls": ["extract_end_use_breakdown", "extract_end_use_breakdown"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2497,10 +2342,7 @@
       "input_tokens": 12,
       "output_tokens": 783,
       "cache_read_tokens": 87796,
-      "tool_calls": [
-        "extract_end_use_breakdown",
-        "extract_end_use_breakdown"
-      ],
+      "tool_calls": ["extract_end_use_breakdown", "extract_end_use_breakdown"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2536,9 +2378,7 @@
       "input_tokens": 16,
       "output_tokens": 2369,
       "cache_read_tokens": 136207,
-      "tool_calls": [
-        "extract_end_use_breakdown"
-      ],
+      "tool_calls": ["extract_end_use_breakdown"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -2566,10 +2406,7 @@
       "input_tokens": 12,
       "output_tokens": 760,
       "cache_read_tokens": 95853,
-      "tool_calls": [
-        "extract_hvac_sizing",
-        "extract_hvac_sizing"
-      ],
+      "tool_calls": ["extract_hvac_sizing", "extract_hvac_sizing"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2607,10 +2444,7 @@
       "input_tokens": 12,
       "output_tokens": 791,
       "cache_read_tokens": 95336,
-      "tool_calls": [
-        "extract_hvac_sizing",
-        "extract_hvac_sizing"
-      ],
+      "tool_calls": ["extract_hvac_sizing", "extract_hvac_sizing"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2642,9 +2476,7 @@
       "input_tokens": 29,
       "output_tokens": 7085,
       "cache_read_tokens": 443610,
-      "tool_calls": [
-        "extract_hvac_sizing"
-      ],
+      "tool_calls": ["extract_hvac_sizing"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -2683,10 +2515,7 @@
       "input_tokens": 14,
       "output_tokens": 1436,
       "cache_read_tokens": 129459,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2727,10 +2556,7 @@
       "input_tokens": 18,
       "output_tokens": 5969,
       "cache_read_tokens": 191416,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2817,10 +2643,7 @@
       "input_tokens": 13,
       "output_tokens": 5485,
       "cache_read_tokens": 230577,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2852,10 +2675,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2895,10 +2715,7 @@
       "input_tokens": 20,
       "output_tokens": 3663,
       "cache_read_tokens": 248244,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2931,10 +2748,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -2975,10 +2789,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3024,9 +2835,7 @@
       "input_tokens": 20,
       "output_tokens": 2117,
       "cache_read_tokens": 217134,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -3061,11 +2870,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -3111,11 +2916,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -3161,10 +2962,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3215,10 +3013,7 @@
       "input_tokens": 15,
       "output_tokens": 3464,
       "cache_read_tokens": 168327,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3249,11 +3044,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "list_spaces",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "list_spaces", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -3291,9 +3082,7 @@
       "input_tokens": 20,
       "output_tokens": 6125,
       "cache_read_tokens": 191339,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -3325,10 +3114,7 @@
       "input_tokens": 17,
       "output_tokens": 5905,
       "cache_read_tokens": 261681,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3361,9 +3147,7 @@
       "input_tokens": 13,
       "output_tokens": 3876,
       "cache_read_tokens": 120082,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -3391,10 +3175,7 @@
       "input_tokens": 16,
       "output_tokens": 4330,
       "cache_read_tokens": 136649,
-      "tool_calls": [
-        "load_osm_model",
-        "create_plant_loop"
-      ],
+      "tool_calls": ["load_osm_model", "create_plant_loop"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3423,9 +3204,7 @@
       "input_tokens": 21,
       "output_tokens": 4666,
       "cache_read_tokens": 199808,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -3460,11 +3239,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -3507,10 +3282,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3543,10 +3315,7 @@
       "input_tokens": 18,
       "output_tokens": 4127,
       "cache_read_tokens": 253506,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3578,11 +3347,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "list_model_objects"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "list_model_objects"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -3619,9 +3384,7 @@
       "input_tokens": 16,
       "output_tokens": 3600,
       "cache_read_tokens": 137665,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -3749,9 +3512,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -3829,10 +3590,7 @@
       "input_tokens": 13,
       "output_tokens": 2677,
       "cache_read_tokens": 186886,
-      "tool_calls": [
-        "load_osm_model",
-        "enable_ideal_air_loads"
-      ],
+      "tool_calls": ["load_osm_model", "enable_ideal_air_loads"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3860,10 +3618,7 @@
       "input_tokens": 17,
       "output_tokens": 2625,
       "cache_read_tokens": 198457,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3904,9 +3659,7 @@
       "input_tokens": 18,
       "output_tokens": 3266,
       "cache_read_tokens": 219090,
-      "tool_calls": [
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -3938,10 +3691,7 @@
       "input_tokens": 16,
       "output_tokens": 2941,
       "cache_read_tokens": 213080,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -3972,11 +3722,7 @@
       "input_tokens": 24,
       "output_tokens": 4407,
       "cache_read_tokens": 285391,
-      "tool_calls": [
-        "load_osm_model",
-        "save_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "save_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -4010,11 +3756,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -4055,11 +3797,7 @@
       "input_tokens": 13,
       "output_tokens": 4210,
       "cache_read_tokens": 173660,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model", "load_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "ToolSearch",
@@ -4091,10 +3829,7 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
-      "tool_calls": [
-        "load_osm_model",
-        "load_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "load_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -4145,10 +3880,7 @@
       "input_tokens": 14,
       "output_tokens": 2300,
       "cache_read_tokens": 172552,
-      "tool_calls": [
-        "list_custom_measures",
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures", "list_custom_measures"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "ToolSearch",
@@ -4176,9 +3908,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4209,9 +3939,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4243,9 +3971,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4277,9 +4003,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4311,9 +4035,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4345,9 +4067,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4379,9 +4099,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4413,9 +4131,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4447,9 +4163,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4481,9 +4195,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4515,9 +4227,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4549,9 +4259,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4583,9 +4291,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4617,9 +4323,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4651,9 +4355,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4685,9 +4387,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4719,9 +4419,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4753,9 +4451,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4787,9 +4483,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4821,9 +4515,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4855,9 +4547,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4889,9 +4579,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4923,9 +4611,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4957,9 +4643,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -4991,9 +4675,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",
@@ -5025,9 +4707,7 @@
       "input_tokens": 19,
       "output_tokens": 2778,
       "cache_read_tokens": 268143,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
       "all_tool_calls": [
         "ToolSearch",

@@ -66,7 +66,7 @@ async def _call_tool(session: ClientSession, name: str, args: dict, timeout: flo
 # --- run bookkeeping ---------------------------------------------------------
 # Helper functions for interpreting run_osw responses.
 
-def _pick_run_id(run_res: Any) -> Optional[str]:
+def _pick_run_id(run_res: Any) -> str | None:
     """Extract the run_id from a run_osw response (best-effort)."""
     if isinstance(run_res, dict):
         return run_res.get("run_id") or run_res.get("id")

@@ -6,7 +6,7 @@ name: ci
 on:
   push:
     branches: [main, develop]
-    tags: ['*']
+    tags: ["*"]
   pull_request:
 
 # Cancel superseded in-progress runs on rapid re-push (saves runner minutes).

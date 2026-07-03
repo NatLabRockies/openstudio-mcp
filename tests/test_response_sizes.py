@@ -664,4 +664,3 @@ class TestResponseSizes:
             for item in st[key]:
                 if isinstance(item, dict) and "_truncated" not in item:
                     assert "name" in item, f"{key} item missing 'name'"
-

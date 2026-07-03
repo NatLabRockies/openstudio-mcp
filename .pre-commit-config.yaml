@@ -1,0 +1,52 @@
+exclude: ^tests/assets/(sddc_office/floorplan\.json|eplusout_seb4\.sql)$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=25000"]
+      - id: check-ast
+      - id: check-builtin-literals
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-executables-have-shebangs
+      - id: debug-statements
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-xml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        args: [--no-cache]
+        files: (\.(json|ya?ml|toml|txt)$|(^|/)\.(gitignore|dockerignore)$)
+
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v2.1.0
+  #   hooks:
+  #     - id: mypy
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      # Run the linter
+      - id: ruff-check
+        files: (\.(json|ya?ml|toml|txt)$|(^|/)\.(gitignore|dockerignore)$)
+        args: [--fix, --verbose, --exit-non-zero-on-fix, --output-format=full]
+      # Run the formatter
+      - id: ruff-format
+        files: (\.(json|ya?ml|toml|txt)$|(^|/)\.(gitignore|dockerignore)$)
