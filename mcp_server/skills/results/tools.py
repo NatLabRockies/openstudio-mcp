@@ -164,11 +164,14 @@ def register(mcp):
         end_day: int | None = None,
         frequency: str | None = None,
         max_points: int = 2000,
+        environment: str = "run_period",
     ):
         """Query time-series output variable data for a date range.
 
         Default 2000 points. Use start_month/end_month to narrow time range,
-        or increase max_points for finer resolution.
+        or increase max_points for finer resolution. Returns weather run-period
+        data only by default — sizing design days share calendar dates with the
+        run period, so environment="all" may return duplicate timestamps.
 
         Args:
             run_id: Run identifier
@@ -180,10 +183,13 @@ def register(mcp):
             end_day: End day (1-31)
             frequency: "Zone Timestep", "Hourly", "Daily", "Monthly"
             max_points: Cap on returned data points (default 2000)
+            environment: "run_period" (default), "design_day" (sizing periods),
+                or "all" (every environment)
         """
         return query_timeseries_op(
             run_id=run_id, variable_name=variable_name, key_value=key_value,
             start_month=start_month, start_day=start_day,
             end_month=end_month, end_day=end_day,
             frequency=frequency, max_points=int(max_points or 2000),
+            environment=environment,
         )

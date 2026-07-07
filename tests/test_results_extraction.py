@@ -543,6 +543,132 @@ class TestCompareRuns:
         assert gt["delta"] == 0.0
 
 
+# ---------------------------------------------------------------------------
+# Regression #87: query_timeseries must not blend sizing design-day rows into
+# run-period results (Boston design days fall on 7/21 and share calendar dates)
+# ---------------------------------------------------------------------------
+
+def _make_env_sql(path: Path, include_environment_periods: bool = True,
+                  include_run_period: bool = True) -> Path:
+    """Minimal replica of the E+ SQL schema with a cooling design day on 7/21
+    overlapping a 7/20-7/22 run period (mirrors Boston TMY3 .ddy dates)."""
+    conn = sqlite3.connect(str(path))
+    conn.execute(
+        "CREATE TABLE Time (TimeIndex INTEGER PRIMARY KEY, Month INTEGER, "
+        "Day INTEGER, Hour INTEGER, Minute INTEGER, DayType TEXT, "
+        "EnvironmentPeriodIndex INTEGER, WarmupFlag INTEGER)")
+    conn.execute(
+        "CREATE TABLE ReportDataDictionary (ReportDataDictionaryIndex INTEGER "
+        "PRIMARY KEY, Name TEXT, KeyValue TEXT, Units TEXT, ReportingFrequency TEXT)")
+    conn.execute(
+        "CREATE TABLE ReportData (ReportDataIndex INTEGER PRIMARY KEY, "
+        "TimeIndex INTEGER, ReportDataDictionaryIndex INTEGER, Value REAL)")
+    if include_environment_periods:
+        conn.execute(
+            "CREATE TABLE EnvironmentPeriods (EnvironmentPeriodIndex INTEGER "
+            "PRIMARY KEY, EnvironmentName TEXT, EnvironmentType INTEGER)")
+        conn.execute("INSERT INTO EnvironmentPeriods VALUES (1, 'ANN CLG .4% DB=>MWB', 1)")
+        if include_run_period:
+            conn.execute("INSERT INTO EnvironmentPeriods VALUES (2, 'RUN PERIOD 1', 3)")
+    conn.execute(
+        "INSERT INTO ReportDataDictionary VALUES "
+        "(1, 'Zone Mean Air Temperature', 'CORE ZONE', 'C', 'Hourly')")
+    time_idx = 0
+    # Design day env 1: 7/21, hourly, constant sentinel value 999.0
+    for hour in range(1, 25):
+        time_idx += 1
+        conn.execute("INSERT INTO Time VALUES (?, 7, 21, ?, 0, 'SummerDesignDay', 1, 0)",
+                     (time_idx, hour))
+        conn.execute("INSERT INTO ReportData VALUES (?, ?, 1, 999.0)",
+                     (time_idx, time_idx))
+    # Run period env 2: 7/20-7/22, hourly, value = day*100 + hour
+    if include_run_period:
+        for day in (20, 21, 22):
+            for hour in range(1, 25):
+                time_idx += 1
+                conn.execute(
+                    "INSERT INTO Time VALUES (?, 7, ?, ?, 0, 'Monday', 2, 0)",
+                    (time_idx, day, hour))
+                conn.execute("INSERT INTO ReportData VALUES (?, ?, 1, ?)",
+                             (time_idx, time_idx, float(day * 100 + hour)))
+    conn.commit()
+    conn.close()
+    return path
+
+
+class TestQueryTimeseriesEnvironment:
+    def test_default_excludes_design_days(self, tmp_path):
+        # Regression: #87 — sizing design-day rows (sharing calendar dates with the
+        # run period) leaked into results as duplicate-timestamp phantom data
+        from mcp_server.skills.results.sql_extract import query_timeseries
+        sql = _make_env_sql(tmp_path / "env.sql")
+        result = query_timeseries(sql, "Zone Mean Air Temperature")
+        assert result["ok"] is True
+        assert result["count"] == 72, f"3 run-period days x 24 h, got {result['count']}"
+        assert result["total_available"] == 72
+        stamps = [(d["month"], d["day"], d["hour"], d["minute"]) for d in result["data"]]
+        assert len(set(stamps)) == len(stamps), "duplicate timestamps = blended environments"
+        assert all(d["value"] != 999.0 for d in result["data"]), \
+            "design-day sentinel value leaked into run-period results"
+        noon_21 = next(d for d in result["data"]
+                       if (d["day"], d["hour"]) == (21, 12))
+        assert noon_21["value"] == pytest.approx(2112.0), \
+            "7/21 12:00 must be the run-period row, not the design-day row"
+
+    def test_environment_design_day(self, tmp_path):
+        # Validates: environment="design_day" returns only sizing-period rows
+        from mcp_server.skills.results.sql_extract import query_timeseries
+        sql = _make_env_sql(tmp_path / "env.sql")
+        result = query_timeseries(sql, "Zone Mean Air Temperature",
+                                  environment="design_day")
+        assert result["ok"] is True
+        assert result["count"] == 24, f"one design day x 24 h, got {result['count']}"
+        assert all(d["value"] == pytest.approx(999.0) for d in result["data"])
+
+    def test_environment_all(self, tmp_path):
+        # Validates: environment="all" preserves pre-#87 behavior (every environment)
+        from mcp_server.skills.results.sql_extract import query_timeseries
+        sql = _make_env_sql(tmp_path / "env.sql")
+        result = query_timeseries(sql, "Zone Mean Air Temperature", environment="all")
+        assert result["ok"] is True
+        assert result["count"] == 96, f"72 run-period + 24 design-day rows, got {result['count']}"
+        dd21 = [d for d in result["data"] if d["day"] == 21]
+        assert len(dd21) == 48, "7/21 must carry both environments under environment='all'"
+
+    def test_invalid_environment_value(self, tmp_path):
+        # Validates: unknown environment value returns ok=False with usable message
+        from mcp_server.skills.results.sql_extract import query_timeseries
+        sql = _make_env_sql(tmp_path / "env.sql")
+        result = query_timeseries(sql, "Zone Mean Air Temperature",
+                                  environment="bogus")
+        assert result["ok"] is False
+        assert "environment" in result["error"].lower()
+
+    def test_missing_environment_periods_table_falls_back(self, sql_path):
+        # Regression: #87 — trimmed fixtures (e.g. SEB4) lack EnvironmentPeriods;
+        # the filter must degrade to old behavior with a warning, not error out
+        from mcp_server.skills.results.sql_extract import query_timeseries
+        filtered = query_timeseries(sql_path, "Electricity:Facility", frequency="Daily")
+        unfiltered = query_timeseries(sql_path, "Electricity:Facility",
+                                      frequency="Daily", environment="all")
+        assert filtered["ok"] is True
+        assert filtered["count"] == unfiltered["count"] > 0, \
+            "missing EnvironmentPeriods table must not drop rows"
+        assert "EnvironmentPeriods" in filtered.get("warning", ""), \
+            "fallback must be flagged with a warning"
+        assert "warning" not in unfiltered, "environment='all' needs no fallback warning"
+
+    def test_design_day_only_sql_hints_environment(self, tmp_path):
+        # Validates: DD-only results (no weather run period) return an actionable hint
+        from mcp_server.skills.results.sql_extract import query_timeseries
+        sql = _make_env_sql(tmp_path / "ddonly.sql", include_run_period=False)
+        result = query_timeseries(sql, "Zone Mean Air Temperature")
+        assert result["ok"] is True
+        assert result["count"] == 0
+        assert "design_day" in result.get("message", ""), \
+            "empty run-period result must hint at environment='design_day'"
+
+
 class TestMissingSql:
     def test_end_use_bad_path(self):
         # Validates: extract_end_use_breakdown raises on nonexistent SQL path

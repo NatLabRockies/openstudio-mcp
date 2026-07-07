@@ -196,3 +196,83 @@ def test_add_multiple_output_variables():
                     "Two output variables should have distinct handles"
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_query_timeseries_excludes_design_day_rows():
+    """Sizing design-day rows must not blend into run-period query results."""
+    # Regression: #87 — Boston's cooling design days fall on 7/21; query_timeseries
+    # returned their rows interleaved with run-period rows (duplicate timestamps,
+    # phantom peaks identical across runs)
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    from conftest import EPW_PATH, poll_until_done
+
+    name = _unique_name("pytest_qts_dd")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                # --- Arrange: 10-zone baseline, Boston weather (DDs on 7/21),
+                # run period spanning the design-day date ---
+                create_result = unwrap(await session.call_tool(
+                    "create_baseline_osm", {"name": name}))
+                assert create_result["ok"] is True, create_result
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": create_result["osm_path"]}))
+                assert load_result["ok"] is True, load_result
+                loc_result = unwrap(await session.call_tool(
+                    "change_building_location", {"weather_file": EPW_PATH}))
+                assert loc_result["ok"] is True, loc_result
+                rp_result = unwrap(await session.call_tool("set_run_period", {
+                    "begin_month": 7, "begin_day": 20, "end_month": 7, "end_day": 22,
+                }))
+                assert rp_result["ok"] is True, rp_result
+                var_result = unwrap(await session.call_tool("add_output_variable", {
+                    "variable_name": "Zone Mean Air Temperature",
+                    "key_value": "*", "reporting_frequency": "Hourly",
+                }))
+                assert var_result["ok"] is True, var_result
+                save_result = unwrap(await session.call_tool(
+                    "save_osm_model", {"osm_path": f"/runs/{name}/model.osm"}))
+                assert save_result["ok"] is True, save_result
+
+                # --- Act: simulate, query one zone across the DD-overlapping window ---
+                sim_result = unwrap(await session.call_tool("run_simulation", {
+                    "osm_path": f"/runs/{name}/model.osm", "epw_path": EPW_PATH,
+                }))
+                assert sim_result["ok"] is True, sim_result
+                status = await poll_until_done(session, sim_result["run_id"])
+                assert status["run"]["status"] == "success", status
+                query_args = {
+                    "run_id": sim_result["run_id"],
+                    "variable_name": "Zone Mean Air Temperature",
+                    "key_value": "Story 1 Core Thermal Zone",
+                    "start_month": 7, "start_day": 20,
+                    "end_month": 7, "end_day": 22, "max_points": 2000,
+                }
+                result = unwrap(await session.call_tool("query_timeseries", query_args))
+
+                # --- Assert: exactly 3 days x 24 hourly rows, no duplicates ---
+                assert result["ok"] is True, result
+                assert result["count"] == 72, (
+                    f"3 run-period days x 24 hourly rows expected, got "
+                    f"{result['count']} — design-day rows blended in")
+                stamps = [(d["month"], d["day"], d["hour"], d["minute"])
+                          for d in result["data"]]
+                assert len(set(stamps)) == len(stamps), (
+                    "duplicate timestamps = sizing environments in results")
+
+                # environment='all' must expose the DD rows on 7/21 (proves the
+                # sizing data existed and the default filter did the work)
+                all_result = unwrap(await session.call_tool(
+                    "query_timeseries", {**query_args, "environment": "all"}))
+                assert all_result["ok"] is True, all_result
+                assert all_result["count"] > 72, (
+                    f"environment='all' should include design-day rows on 7/21, "
+                    f"got {all_result['count']}")
+
+    asyncio.run(_run())

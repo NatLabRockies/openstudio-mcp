@@ -405,6 +405,16 @@ def extract_component_sizing(
 # Tier 2: Time-series extractor
 # ---------------------------------------------------------------------------
 
+# EnergyPlus SQL EnvironmentPeriods.EnvironmentType values per environment filter.
+# Sizing design days share calendar dates with the run period (e.g. Boston DDs
+# fall on 7/21), so unfiltered queries interleave their rows with weather data.
+_ENVIRONMENT_TYPES: dict[str, tuple[int, ...] | None] = {
+    "run_period": (3,),    # WeatherRunPeriod
+    "design_day": (1, 2),  # DesignDay, DesignRunPeriod
+    "all": None,
+}
+
+
 def query_timeseries(
     sql_path: Path,
     variable_name: str,
@@ -415,8 +425,15 @@ def query_timeseries(
     end_day: int | None = None,
     frequency: str | None = None,
     max_points: int = 2000,
+    environment: str = "run_period",
 ) -> dict:
     """Query time-series data from ReportData/ReportDataDictionary/Time tables."""
+    if environment not in _ENVIRONMENT_TYPES:
+        return {
+            "ok": False,
+            "error": (f"Invalid environment '{environment}'. "
+                      "Use 'run_period' (default), 'design_day', or 'all'."),
+        }
     conn = sqlite3.connect(str(sql_path))
     try:
         # Check if ReportData has any rows
@@ -447,8 +464,33 @@ def query_timeseries(
             where_clauses.append("(t.Month < ? OR (t.Month = ? AND t.Day <= ?))")
             params.extend([end_month, end_month, end_day or 31])
 
-        # Only run-period data (skip design days / warmup)
+        # Skip warmup rows (WarmupFlag does NOT exclude sizing environments)
         where_clauses.append("t.WarmupFlag = 0")
+
+        # Environment filter — sizing rows carry WarmupFlag=0 too, so run-period
+        # isolation needs the EnvironmentPeriods join. Trimmed/legacy SQL files
+        # may lack that table; degrade to unfiltered with a warning.
+        base_where_sql = " AND ".join(where_clauses)
+        base_params = tuple(params)
+        env_types = _ENVIRONMENT_TYPES[environment]
+        env_join = ""
+        warning = None
+        if env_types is not None:
+            has_env_table = bool(_q(
+                conn,
+                "SELECT name FROM sqlite_master "
+                "WHERE type IN ('table', 'view') AND name = 'EnvironmentPeriods'",
+            ))
+            if has_env_table:
+                env_join = ("JOIN EnvironmentPeriods ep "
+                            "ON t.EnvironmentPeriodIndex = ep.EnvironmentPeriodIndex")
+                placeholders = ", ".join("?" * len(env_types))
+                where_clauses.append(f"ep.EnvironmentType IN ({placeholders})")
+                params.extend(env_types)
+            else:
+                warning = ("EnvironmentPeriods table missing from this SQL output; "
+                           "returning all environments (sizing design-day rows may "
+                           "be included).")
 
         where_sql = " AND ".join(where_clauses)
 
@@ -458,6 +500,7 @@ def query_timeseries(
             FROM ReportData rd
             JOIN ReportDataDictionary rdd ON rd.ReportDataDictionaryIndex = rdd.ReportDataDictionaryIndex
             JOIN Time t ON rd.TimeIndex = t.TimeIndex
+            {env_join}
             WHERE {where_sql}
         """
         total_available = _q(conn, count_sql, tuple(params))[0]["c"]
@@ -469,6 +512,7 @@ def query_timeseries(
             FROM ReportData rd
             JOIN ReportDataDictionary rdd ON rd.ReportDataDictionaryIndex = rdd.ReportDataDictionaryIndex
             JOIN Time t ON rd.TimeIndex = t.TimeIndex
+            {env_join}
             WHERE {where_sql}
             ORDER BY t.Month, t.Day, t.Hour, t.Minute
             LIMIT ?
@@ -476,11 +520,33 @@ def query_timeseries(
         rows = _q(conn, data_sql, (*params, max_points))
 
         if not rows:
-            return {
+            message = f"No data found for variable '{variable_name}'."
+            if env_join:
+                # Rows may exist only in the environments the filter excluded
+                # (e.g. a design-day-only simulation queried with the default).
+                unfiltered_sql = f"""
+                    SELECT COUNT(*) as c
+                    FROM ReportData rd
+                    JOIN ReportDataDictionary rdd ON rd.ReportDataDictionaryIndex = rdd.ReportDataDictionaryIndex
+                    JOIN Time t ON rd.TimeIndex = t.TimeIndex
+                    WHERE {base_where_sql}
+                """
+                other_env_count = _q(conn, unfiltered_sql, base_params)[0]["c"]
+                if other_env_count > 0:
+                    message = (
+                        f"No '{environment}' data found for variable "
+                        f"'{variable_name}', but {other_env_count} rows exist in "
+                        'other environments. Pass environment="design_day" for '
+                        'sizing-period data or environment="all" for everything.'
+                    )
+            out = {
                 "ok": True, "variable": variable_name, "key": key_value,
-                "data": [], "count": 0,
-                "message": f"No data found for variable '{variable_name}'.",
+                "environment": environment, "data": [], "count": 0,
+                "message": message,
             }
+            if warning:
+                out["warning"] = warning
+            return out
 
         data = []
         for r in rows:
@@ -490,17 +556,21 @@ def query_timeseries(
                 "value": r["Value"],
             })
 
-        return {
+        out = {
             "ok": True,
             "variable": rows[0]["Name"],
             "key": rows[0]["KeyValue"] or "*",
             "frequency": rows[0]["ReportingFrequency"],
             "units": rows[0]["Units"],
+            "environment": environment,
             "data": data,
             "count": len(data),
             "total_available": total_available,
             "truncated": len(data) < total_available,
         }
+        if warning:
+            out["warning"] = warning
+        return out
     finally:
         conn.close()
 
