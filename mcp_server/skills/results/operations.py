@@ -336,6 +336,7 @@ def query_timeseries_op(
     end_day: int | None = None,
     frequency: str | None = None,
     max_points: int = 2000,
+    environment: str = "run_period",
 ) -> dict[str, Any]:
     """Query time-series data for a specific variable."""
     from mcp_server.skills.results.sql_extract import query_timeseries
@@ -345,7 +346,7 @@ def query_timeseries_op(
     return query_timeseries(
         sql_path, variable_name, key_value,
         start_month, start_day, end_month, end_day,
-        frequency, max_points,
+        frequency, max_points, environment=environment,
     )
 
 
