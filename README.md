@@ -1,4 +1,4 @@
-# openstudio-mcp
+# OpenStudio®-MCP SWR 26-035
 
 [![MCP Badge](https://lobehub.com/badge/mcp/natlabrockies-openstudio-mcp?style=for-the-badge)](https://lobehub.com/mcp/natlabrockies-openstudio-mcp)
 
