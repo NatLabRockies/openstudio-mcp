@@ -54,5 +54,7 @@ the three-revision iteration story in [`study.md`](study.md).
 `query_timeseries` on this testbed returned sizing design-day rows blended with
 run-period rows (Boston design days fall on 7/21). The drivers dedupe by keeping
 the last row per timestamp. Fixed in the tool as of
-[#87](https://github.com/NatLabRockies/openstudio-mcp/issues/87)
-(`environment="run_period"` is now the default).
+[#88](https://github.com/NatLabRockies/openstudio-mcp/pull/88)
+(closes [#87](https://github.com/NatLabRockies/openstudio-mcp/issues/87);
+`environment="run_period"` is now the default), so fresh queries no longer need
+the dedupe — the drivers keep it for reproducibility against the original runs.

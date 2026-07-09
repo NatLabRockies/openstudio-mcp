@@ -137,8 +137,10 @@ traces.
 
 - **Design-day rows in `query_timeseries`:** sizing design days share calendar dates with
   the run period (Boston: 7/21, 1/21) and are returned blended with run-period rows.
-  Workaround: keep the last row per timestamp (run period simulates last). Tool fix filed
-  as [#87](https://github.com/NatLabRockies/openstudio-mcp/issues/87).
+  Workaround at study time: keep the last row per timestamp (run period simulates last).
+  Since fixed in [#88](https://github.com/NatLabRockies/openstudio-mcp/pull/88)
+  (closes [#87](https://github.com/NatLabRockies/openstudio-mcp/issues/87)):
+  `environment="run_period"` is now the default.
 - **`kind_of_sim` guard is mandatory** for any plugin that actuates thermostats/setpoints —
   otherwise sizing runs see the overrides and the plant autosizes smaller.
 - "Billing peak" = max 30-minute rolling average of 10-min instantaneous demand.

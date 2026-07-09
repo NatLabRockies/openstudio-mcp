@@ -85,7 +85,7 @@ Each revision was driven by simulated evidence, not guesswork:
 ## Common Pitfalls
 
 - **The `kind_of_sim` guard is mandatory** for any plugin that actuates thermostats/setpoints. Actuation must be gated to the weather run period (`kind_of_sim == 3`) — otherwise the raised setpoints reach the sizing design days, the plant autosizes smaller, and the baseline-vs-controlled comparison is corrupted.
-- **Design-day rows in `query_timeseries`:** sizing design days share calendar dates with the run period (Boston: 7/21) and, before the fix, came back blended with run-period rows. Fixed in [#87](https://github.com/NatLabRockies/openstudio-mcp/issues/87) — `environment="run_period"` is now the default. (This demo is where that bug was found.)
+- **Design-day rows in `query_timeseries`:** sizing design days share calendar dates with the run period (Boston: 7/21) and, before the fix, came back blended with run-period rows. Fixed in [#88](https://github.com/NatLabRockies/openstudio-mcp/pull/88) (closes [#87](https://github.com/NatLabRockies/openstudio-mcp/issues/87)) — `environment="run_period"` is now the default. (This demo is where that bug was found.)
 - **One output variable per plugin:** `create_python_plugin` reports one output variable (the first global). Design controllers so a single state variable plus standard E+ outputs tell the story.
 - **Feedback-only control can't preempt step changes:** the metered interval that trips the controller is itself the residual peak. Forecast or schedule-aware feed-forward is the fix.
 - **Shed capacity is finite:** the stage-3 floor is ~285–295 kW. Deeper cuts need pre-cooling, chiller demand limiting, or lighting/plug DR — all expressible as more plugin logic.
