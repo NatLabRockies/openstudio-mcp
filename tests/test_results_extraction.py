@@ -606,6 +606,9 @@ class TestQueryTimeseriesEnvironment:
         assert result["ok"] is True
         assert result["count"] == 72, f"3 run-period days x 24 h, got {result['count']}"
         assert result["total_available"] == 72
+        assert result["environment"] == "run_period"
+        assert result["effective_environment"] == "run_period", \
+            "filter applied, so effective == requested"
         stamps = [(d["month"], d["day"], d["hour"], d["minute"]) for d in result["data"]]
         assert len(set(stamps)) == len(stamps), "duplicate timestamps = blended environments"
         assert all(d["value"] != 999.0 for d in result["data"]), \
@@ -657,6 +660,12 @@ class TestQueryTimeseriesEnvironment:
         assert "EnvironmentPeriods" in filtered.get("warning", ""), \
             "fallback must be flagged with a warning"
         assert "warning" not in unfiltered, "environment='all' needs no fallback warning"
+        # Regression: fallback echoed the requested environment but returned all
+        # rows — effective_environment must reveal the filter was not applied.
+        assert filtered["environment"] == "run_period", "echoes what was requested"
+        assert filtered["effective_environment"] == "all", \
+            "fallback returned every environment; effective must say so"
+        assert unfiltered["effective_environment"] == "all"
 
     def test_design_day_only_sql_hints_environment(self, tmp_path):
         # Validates: DD-only results (no weather run period) return an actionable hint
@@ -667,6 +676,8 @@ class TestQueryTimeseriesEnvironment:
         assert result["count"] == 0
         assert "design_day" in result.get("message", ""), \
             "empty run-period result must hint at environment='design_day'"
+        # Table present, filter honored (just no matching rows) — effective stays "run_period"
+        assert result["effective_environment"] == "run_period"
 
 
 class TestMissingSql:

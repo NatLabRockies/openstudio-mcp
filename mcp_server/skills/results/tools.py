@@ -185,6 +185,11 @@ def register(mcp):
             max_points: Cap on returned data points (default 2000)
             environment: "run_period" (default), "design_day" (sizing periods),
                 or "all" (every environment)
+
+        The response echoes the requested `environment` and reports
+        `effective_environment` — what was actually applied. They differ only
+        when the SQL file lacks an EnvironmentPeriods table: the filter can't
+        run, `effective_environment` is "all", and a `warning` is set.
         """
         return query_timeseries_op(
             run_id=run_id, variable_name=variable_name, key_value=key_value,

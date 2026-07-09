@@ -475,6 +475,10 @@ def query_timeseries(
         env_types = _ENVIRONMENT_TYPES[environment]
         env_join = ""
         warning = None
+        # What was actually applied — diverges from the requested `environment`
+        # only when the filter cannot be honored (missing EnvironmentPeriods),
+        # so clients can trust one field instead of parsing the warning string.
+        effective_environment = environment
         if env_types is not None:
             has_env_table = bool(_q(
                 conn,
@@ -488,6 +492,8 @@ def query_timeseries(
                 where_clauses.append(f"ep.EnvironmentType IN ({placeholders})")
                 params.extend(env_types)
             else:
+                # No filter applied — every environment came back.
+                effective_environment = "all"
                 warning = ("EnvironmentPeriods table missing from this SQL output; "
                            "returning all environments (sizing design-day rows may "
                            "be included).")
@@ -541,7 +547,9 @@ def query_timeseries(
                     )
             out = {
                 "ok": True, "variable": variable_name, "key": key_value,
-                "environment": environment, "data": [], "count": 0,
+                "environment": environment,
+                "effective_environment": effective_environment,
+                "data": [], "count": 0,
                 "message": message,
             }
             if warning:
@@ -563,6 +571,7 @@ def query_timeseries(
             "frequency": rows[0]["ReportingFrequency"],
             "units": rows[0]["Units"],
             "environment": environment,
+            "effective_environment": effective_environment,
             "data": data,
             "count": len(data),
             "total_available": total_available,
