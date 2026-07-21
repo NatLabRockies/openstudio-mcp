@@ -44,7 +44,7 @@ Files: `tests/llm/test_06_progressive.py`, `tests/llm/test_04_workflows.py`, `te
 
 - `PROGRESSIVE_CASES` gain optional `expected_args`: `{tool: {arg: value | (value, rel_tol)}}`. Assert on first call to that tool when it is the matched expected tool. Start with ~10 cases with unambiguous args: thermostat (`cooling_offset == 2`), set_wwr (`ratio == pytest.approx(0.4)`), create_loads (0.05 people/sqft), create_plant_loop (loop_type heating), replace_terminals (terminal_type CooledBeam/FourPipeBeam), run_period (1/1-12/31), modify_component (0.92 efficiency).
 - Assert `tool_ok(expected_matched_tool) is not False` — right tool called AND call succeeded. Applies to all progressive cases (cheap, uses Phase 0 runner support).
-- Workflow outcome asserts: for the 4 `measure_*_full_chain` + fourpipe e2e, assert reported EUI within `rel=0.05` of pinned references (SystemD baseline ~28.21, retrofit ~28.44 kBtu/ft2, unmet 58.5 -> 34.5). One measurement run to pin baseline-model references first. Re-pin policy: on OpenStudio version bump only, noted in benchmark doc.
+- Workflow outcome asserts: for the 4 `measure_*_full_chain` + fourpipe e2e, assert reported EUI within `rel=0.05` (decided) of pinned references (SystemD baseline ~28.21, retrofit ~28.44 kBtu/ft2, unmet 58.5 -> 34.5). One measurement run to pin baseline-model references first. Re-pin policy: on OpenStudio version bump only, noted in benchmark doc.
 - Verify: targeted runs `-k "thermostat or set_wwr"` etc.
 
 ### Phase 2 — L3 trim
@@ -82,17 +82,17 @@ New cases (L1+L2; L3 per Phase 2 rule). ~15 cases:
 | shift_schedule | shift_schedule_time | "Occupancy starts at 7 now, not 9." |
 | bcl_search | search_bcl_measures, find_measure, list_comstock_measures | "Is there an existing measure that adds daylighting controls?" |
 | run_lifecycle | cancel_run, cleanup_runs, pin_run | "Clean up old runs but keep the baseline." |
-| ems_edit | get_python_plugin, edit_python_plugin | "My Python plugin crashed at line 12. Fix it." (fixture: seed a plugin via create_python_plugin in setup) |
+| ems_edit | get_python_plugin, edit_python_plugin | "My Python plugin crashed at line 12. Fix it." (seeded in test_01_setup via create_python_plugin schedule_override template — existing seed chain, no lazy in-test path) |
 
 - Confusion pair added to test_10: `search_bcl_measures` vs `create_measure` ("I need a measure that does X" should search before authoring).
-- Fixture needs: `sim_errors`/`compare_runs` reuse existing sim + retrofit run_ids; `ems_edit` needs setup step.
+- Fixture needs: `sim_errors`/`compare_runs` reuse existing sim + retrofit run_ids; `ems_edit` seeded in existing test_01_setup step.
 - Verify: targeted per-case runs; new cases start in `FLAKY_TESTS` quarantine until 3 stable runs.
 
 ### Phase 4 — L0 goal tier (outcome-graded)
 
 Files: new `tests/llm/test_11_goal_outcomes.py`
 
-- ~12 cases. Outcome-first prompts, operation NOT named, multiple valid tool paths. Grade = (a) any tool from accept-set called with `ok` true, (b) arg direction correct where checkable (LPD decreased, setpoint moved right way), (c) final text contains quantitative evidence (number + unit). NOT tool-identity.
+- ~12 cases. Outcome-first prompts, operation NOT named, multiple valid tool paths. Grade = (a) any tool from accept-set called with `ok` true, (b) arg direction correct where checkable (LPD decreased, setpoint moved right way), (c) final text contains quantitative evidence — v1 check is number+unit regex (decided; admittedly weak, revisit against Run 17 NDJSON logs). NOT tool-identity.
 - Case sketches: "Cut lighting energy about 20%" / "The building is too cold on winter mornings" / "Reduce summer peak demand" / "Windows are leaking energy, improve them" / "Is the HVAC oversized?" / "Make this building use less energy overall" (accept top-N retrofit paths) / "Why is heating the biggest end use?" / "Get this closer to code minimum lighting".
 - Marker `goal`. All start quarantined flaky.
 - Verify: 2 targeted runs per case during authoring; expect lower pass rate than L1 — that is the point, restores discrimination.
@@ -122,7 +122,7 @@ Files: new `tests/llm/test_13_error_recovery.py`, fixture using `tests/assets/ep
 Files: `tests/llm/test_06_progressive.py` (variant lists), markers `units`, `persona`
 
 - Units (~8 prompts): IP-unit phrasing, assert SI/native-converted args via Phase 1 `expected_args`: "raise cooling 2F", "R-30 roof" (RSI ~5.28), "55F supply air" (12.8C), "1 W/ft2 plug loads" (10.76 W/m2), "0.4 WWR as 40%". PRE-STEP: audit each target tool signature for native units (e.g. adjust_thermostat_setpoints offset unit) — traps must assert the correct converted value, not assume.
-- Personas (~10 cases x 2 variants = 20 prompts): modeler jargon ("Sys 7 VAV w/ HW reheat", "RTU", "econo", "LPD") + owner/layman ("the AC bill is huge", "rooms feel stuffy"). Same expected sets as the base case. Marker `persona`, EXCLUDED from default full run (opt-in) to cap runtime; run monthly or pre-release.
+- Personas (~10 cases x 2 variants = 20 prompts): modeler jargon ("Sys 7 VAV w/ HW reheat", "RTU", "econo", "LPD") + owner/layman ("the AC bill is huge", "rooms feel stuffy"). Same expected sets as the base case. Marker `persona`, EXCLUDED from default full run; run on demand only (decided).
 
 ### Phase 8 — Unscaffolded guardrail run (report-only)
 
@@ -142,7 +142,7 @@ Files: new `tests/llm/test_15_analysis_server.py`, `tests/llm/runner.py` (mcp co
 - ~4 cases, long timeouts (600-900s), marker `analysis`:
   1. "Check the analysis server is reachable" -> openstudio_analysis_test_server_config.
   2. "Set up a parametric study varying WWR 20-50% on this model" -> create_project/create_osa_json(_from_measures) + validate.
-  3. "Run a small 4-sample study and download results" -> submit_wait_download or start_sampled_run + wait + download_data (assert results file exists in /runs).
+  3. "Run a small 2-sample study and download results" (decided: 2 samples for speed) -> submit_wait_download or start_sampled_run + wait + download_data (assert results file exists in /runs).
   4. "Which sample had the lowest EUI?" -> results_json (+ final text names a sample).
 - Excluded from default full run (server dependency); run explicitly with `-m analysis`.
 
@@ -181,10 +181,14 @@ Files: `tests/llm/conftest.py` (marker), `docs/testing/llm-test-benchmark.md`, `
 - CI integration (LLM suite stays manual).
 - Gating on bypass rate (measure first).
 
+## Resolved decisions (2026-07-21)
+
+1. EUI refs: rel=0.05.
+2. Persona tier: on demand only.
+3. ems_edit plugin: seeded in existing test_01_setup chain.
+4. Analysis study: 2 samples.
+5. Goal-tier evidence: number+unit regex as v1, revisit after Run 17.
+
 ## Unresolved questions
 
-1. Pin workflow EUI refs at rel=0.05 or 0.02? (weather/OS-version drift vs sensitivity)
-2. Persona tier cadence: monthly, or pre-release only?
-3. `ems_edit` fixture: seed plugin in test_01_setup (adds ~1 min) or lazy-create in the test itself?
-4. Analysis Phase 9 sample count: 4 samples ok, or smaller (2) for speed?
-5. Goal-tier "quantitative evidence" check: regex number+unit enough, or too weak?
+None.
