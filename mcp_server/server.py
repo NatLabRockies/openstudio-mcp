@@ -6,6 +6,7 @@ from fastmcp import FastMCP
 
 from mcp_server.audit import AuditMiddleware
 from mcp_server.config import ENABLE_CODE_MODE
+from mcp_server.response_guard import ResponseSizeGuard
 from mcp_server.skills import register_all_skills
 from mcp_server.stdout_suppression import (
     redirect_c_stdout_to_stderr,
@@ -96,6 +97,9 @@ mcp = FastMCP(
 
 register_all_skills(mcp)
 mcp.add_middleware(AuditMiddleware())
+# Inner of the two (added later = closer to the tool): audit logs the small
+# replacement response, never the oversized original
+mcp.add_middleware(ResponseSizeGuard())
 
 if ENABLE_CODE_MODE:
     from fastmcp.experimental.transforms.code_mode import CodeMode

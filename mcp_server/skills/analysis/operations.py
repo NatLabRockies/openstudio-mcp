@@ -44,11 +44,41 @@ FOUNDATIONAL_ANALYSIS_MEASURES: tuple[dict[str, Any], ...] = (
     },
     {
         "measure_name": "generic_qaqc",
-        "arguments": {"template": "90.1-2019"},
+        # All checks off by default (#96): with checks on, generic_qaqc emits
+        # ~19MB of warnings per real multi-zone datapoint, blowing the server's
+        # 16MB BSON document cap after a successful simulation. Seed-level
+        # QA/QC already validates the package; add an explicit generic_qaqc
+        # step to the workflow to re-enable checks for an analysis.
+        "arguments": {
+            "template": "90.1-2019",
+            "check_mech_sys_part_load_eff": False,
+            "check_mech_sys_capacity": False,
+            "check_simultaneous_heating_and_cooling": False,
+            "check_internal_loads": False,
+            "check_schedules": False,
+            "check_envelope_conductance": False,
+            "check_domestic_hot_water": False,
+            "check_mech_sys_efficiency": False,
+            "check_mech_sys_type": False,
+            "check_supply_air_and_thermostat_temp_difference": False,
+        },
         "instance_name": "generic_qaqc",
         "display_name": "Generic QAQC",
     },
 )
+# Applied to every generated OSA unless the caller overrides (#96): when these
+# keys are absent, openstudio-analysis/OS-server defaults enable --debug and
+# --verbose CLI logging plus per-datapoint artifact downloads, which pushed
+# successful datapoints over Mongo's 16MB BSON cap and corrupted R-driven
+# analyses.
+SAFE_ANALYSIS_FIELD_DEFAULTS: dict[str, Any] = {
+    "cli_debug": "",
+    "cli_verbose": "",
+    "download_reports": False,
+    "download_osw": False,
+    "download_osm": False,
+    "download_zip": False,
+}
 END_USE_CATEGORIES: tuple[str, ...] = (
     "cooling",
     "exterior_equipment",
@@ -1138,8 +1168,10 @@ def create_osa_json(
         normalized_weather = _normalize_weather_file(weather_file)
         if normalized_weather is not None:
             analysis["weather_file"] = normalized_weather
+        analysis_fields = dict(SAFE_ANALYSIS_FIELD_DEFAULTS)
         if extra_analysis_fields:
-            analysis.update(extra_analysis_fields)
+            analysis_fields.update(extra_analysis_fields)
+        analysis.update(analysis_fields)
 
         path = _write_json(output_path, {"analysis": analysis})
         result = {"ok": True, "osa_json_path": path, "analysis_id": analysis_uuid, "analysis": analysis}
