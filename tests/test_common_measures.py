@@ -6,6 +6,7 @@ add_rooftop_pv, add_ev_load, set_lifecycle_cost_params, add_cost_per_floor_area,
 set_adiabatic_boundaries, etc.).
 """
 import asyncio
+import json
 import uuid
 
 import pytest
@@ -856,6 +857,15 @@ def test_qaqc_post_sim():
                     "run_id": run_id,
                 }))
                 assert qaqc["ok"] is True, f"run_qaqc_checks failed: {qaqc}"
+                # Regression: #98 — response must point at the report file and
+                # stay bounded; a 27-zone run once returned ~19MB of
+                # runner_messages and killed the stdio session
+                assert qaqc["report_path"].endswith("reports/generic_qaqc_report.html")
+                assert qaqc["report_size_bytes"] > 0
+                rm = qaqc["runner_messages"]
+                assert rm["result"] == "Success"
+                assert len(rm.get("warnings", [])) <= 20, "warnings list must be capped"
+                assert len(json.dumps(qaqc)) < 100_000, "qaqc response must stay bounded (#98)"
 
                 # view_simulation_data (reporting measure — needs SQL)
                 view = unwrap(await s.call_tool("view_simulation_data", {
@@ -875,8 +885,6 @@ def test_qaqc_json_string_checks():
     we'd get a validation error instead.
     """
     # Regression: MCP clients sent checks as JSON string, caused Pydantic validation error
-    import json
-
     if not integration_enabled():
         pytest.skip("integration disabled")
 

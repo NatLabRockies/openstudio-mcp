@@ -132,6 +132,83 @@ def test_create_osa_json_uses_foundational_output_variables_by_default(tmp_path)
     assert all(not name.startswith("feature_reports.default_scenario_report") for name in names)
 
 
+def test_create_osa_json_applies_safe_analysis_field_defaults(tmp_path):
+    # Regression: #96 — absent cli_debug/cli_verbose/download_* keys made
+    # openstudio-analysis/OS-server default to --debug/--verbose logging and
+    # per-datapoint downloads, pushing successful datapoints over the 16MB
+    # BSON cap and corrupting R-driven analyses
+    path = tmp_path / "osa.json"
+    created = operations.create_osa_json(
+        output_path=str(path),
+        analysis_name="Safe Defaults",
+        analysis_type="single_run",
+        seed="./seed.osm",
+        weather_file="./weather/USA.epw",
+    )
+    assert created["ok"] is True
+
+    analysis = json.loads(path.read_text())["analysis"]
+    assert analysis["cli_debug"] == ""
+    assert analysis["cli_verbose"] == ""
+    assert analysis["download_reports"] is False
+    assert analysis["download_osw"] is False
+    assert analysis["download_osm"] is False
+    assert analysis["download_zip"] is False
+
+
+def test_create_osa_json_extra_fields_override_safe_defaults(tmp_path):
+    # Validates: callers can still opt back into debug logging / downloads
+    path = tmp_path / "osa.json"
+    created = operations.create_osa_json(
+        output_path=str(path),
+        analysis_name="Debug Override",
+        analysis_type="single_run",
+        extra_analysis_fields={"cli_debug": "--debug", "download_zip": True},
+        seed="./seed.osm",
+        weather_file="./weather/USA.epw",
+    )
+    assert created["ok"] is True
+
+    analysis = json.loads(path.read_text())["analysis"]
+    assert analysis["cli_debug"] == "--debug"
+    assert analysis["download_zip"] is True
+    assert analysis["cli_verbose"] == ""
+    assert analysis["download_reports"] is False
+
+
+def test_foundational_generic_qaqc_checks_disabled_by_default(tmp_path):
+    # Regression: #96 — generic_qaqc with all checks on emits ~19MB of
+    # warnings per real multi-zone datapoint, blowing the server's BSON cap;
+    # the foundational workflow step must ship with every check_* off
+    path = tmp_path / "osa.json"
+    created = operations.create_osa_json(
+        output_path=str(path),
+        analysis_name="QAQC Checks Off",
+        analysis_type="single_run",
+        seed="./seed.osm",
+        weather_file="./weather/USA.epw",
+    )
+    assert created["ok"] is True
+
+    workflow = json.loads(path.read_text())["analysis"]["problem"]["workflow"]
+    qaqc_step = next(s for s in workflow if s["measure_definition_name"] == "generic_qaqc")
+    arg_values = {arg["name"]: arg["value"] for arg in qaqc_step["arguments"]}
+    check_args = [
+        "check_mech_sys_part_load_eff",
+        "check_mech_sys_capacity",
+        "check_simultaneous_heating_and_cooling",
+        "check_internal_loads",
+        "check_schedules",
+        "check_envelope_conductance",
+        "check_domestic_hot_water",
+        "check_mech_sys_efficiency",
+        "check_mech_sys_type",
+        "check_supply_air_and_thermostat_temp_difference",
+    ]
+    for name in check_args:
+        assert arg_values[name] is False, f"{name} must default to False in analyses (#96)"
+
+
 def test_foundational_analysis_measures_tool_reports_common_measure_set():
     payload = operations.get_foundational_analysis_measures()
 

@@ -1,0 +1,29 @@
+{
+  "seed_file": "/runs/bson-repro/files/benchmark-typical-901-2019.osm",
+  "weather_file": "/runs/bson-repro/files/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw",
+  "file_paths": [
+    "/runs/bson-repro/files"
+  ],
+  "measure_paths": [
+    "/opt/common-measures"
+  ],
+  "steps": [
+    {
+      "measure_dir_name": "generic_qaqc",
+      "name": "generic_qaqc",
+      "arguments": {
+        "template": "90.1-2019",
+        "check_mech_sys_part_load_eff": true,
+        "check_mech_sys_capacity": true,
+        "check_simultaneous_heating_and_cooling": true,
+        "check_internal_loads": true,
+        "check_schedules": true,
+        "check_envelope_conductance": true,
+        "check_domestic_hot_water": true,
+        "check_mech_sys_efficiency": true,
+        "check_mech_sys_type": true,
+        "check_supply_air_and_thermostat_temp_difference": true
+      }
+    }
+  ]
+}
