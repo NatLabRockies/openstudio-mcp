@@ -10,6 +10,7 @@ file under the caller's run area and replaced with a small pointer response.
 from __future__ import annotations
 
 import json
+import math
 import os
 from typing import Any
 
@@ -23,11 +24,19 @@ _PREVIEW_CHARS = 2000
 
 
 def max_response_bytes() -> int:
-    """Response cap in bytes (OSMCP_MAX_TOOL_RESPONSE_MB, default 1MB)."""
+    """Response cap in bytes (OSMCP_MAX_TOOL_RESPONSE_MB, default 1MB).
+
+    Invalid, non-finite, or non-positive values clamp to the default — this
+    runs on every tool call, so a bad env value must never raise (nan/inf
+    parse as floats but crash int()) or flag every response as oversized.
+    """
+    default = 1024 * 1024
     try:
         mb = float(os.environ.get("OSMCP_MAX_TOOL_RESPONSE_MB", "1"))
     except ValueError:
-        mb = 1.0
+        return default
+    if not math.isfinite(mb) or mb <= 0:
+        return default
     return int(mb * 1024 * 1024)
 
 

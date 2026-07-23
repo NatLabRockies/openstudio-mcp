@@ -46,6 +46,12 @@ def test_cap_from_env(monkeypatch):
     assert max_response_bytes() == 524288
     monkeypatch.setenv("OSMCP_MAX_TOOL_RESPONSE_MB", "junk")
     assert max_response_bytes() == 1024 * 1024
+    # Regression: Copilot PR#100 review — nan raised ValueError (int(nan)) and
+    # inf raised OverflowError on EVERY tool call; non-positive caps flagged
+    # every response as oversized. All must clamp to the default.
+    for bad in ("nan", "inf", "-inf", "-1", "0"):
+        monkeypatch.setenv("OSMCP_MAX_TOOL_RESPONSE_MB", bad)
+        assert max_response_bytes() == 1024 * 1024, f"cap must clamp to default for {bad!r}"
 
 
 @pytest.mark.unit
