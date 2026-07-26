@@ -59,6 +59,11 @@ OSCLI_GEM_PATH = os.environ.get("OSCLI_GEM_PATH", "/var/oscli/gems")
 
 COMSTOCK_MEASURES_DIR = Path(os.environ.get("COMSTOCK_MEASURES_DIR", "/opt/comstock-measures"))
 COMMON_MEASURES_DIR = Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures"))
+# gbXML-to-OpenStudio measures (Revit gbXML -> OSM translation) + their empty seed
+# model. Baked in at a pinned release tag (see GBXML_TO_OS_TAG in docker/Dockerfile) —
+# bumping to a newer measures release is a one-line Dockerfile ARG change + rebuild.
+GBXML_MEASURES_DIR = Path(os.environ.get("GBXML_MEASURES_DIR", "/opt/gbxml-to-openstudio-measures"))
+GBXML_SEED_OSM = Path(os.environ.get("GBXML_SEED_OSM", "/opt/gbxml-to-openstudio-seed_empty.osm"))
 # Mount root for per-user measures. Each principal is scoped to MEASURES_DIR/<key>
 # (see user_measures_root); custom + bcl live under that, never at the bare root.
 # No per-subdir env overrides: a flat override would silently break tenant scoping.
@@ -206,6 +211,7 @@ _SHARED_READ_ROOTS = [
     INPUT_ROOT,
     COMSTOCK_MEASURES_DIR.resolve(),
     COMMON_MEASURES_DIR.resolve(),
+    GBXML_MEASURES_DIR.resolve(),
     SKILLS_DIR.resolve(),
 ]
 

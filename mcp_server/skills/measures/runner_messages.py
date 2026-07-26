@@ -25,12 +25,51 @@ def _clip(msg: Any) -> str:
     return text[:MAX_MESSAGE_CHARS] + f"... [truncated, {len(text)} chars total]"
 
 
+def _step_messages(step: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Extract one OSW step's runner messages, bounded by the caps.
+
+    Returns (msgs, truncated) — msgs has no "truncated"/"note" fields yet;
+    callers add those once, scoped to whatever they're reporting (a single
+    step vs. a whole multi-step run).
+    """
+    result = step.get("result", {}) or {}
+    msgs: dict[str, Any] = {
+        "result": result.get("step_result", ""),
+    }
+    truncated = False
+    for key in ("step_initial_condition", "step_final_condition"):
+        val = result.get(key)
+        if val:
+            clipped = _clip(val)
+            truncated = truncated or clipped != str(val)
+            # Strip "step_" prefix for cleaner output
+            msgs[key.replace("step_", "")] = clipped
+    for key, osw_key, count_key in (
+        ("info", "step_info", "info_count"),
+        ("warnings", "step_warnings", "warning_count"),
+        ("errors", "step_errors", "error_count"),
+    ):
+        items = result.get(osw_key, [])
+        if not items:
+            continue
+        limit = MESSAGE_LIMITS[key]
+        kept = [_clip(m) for m in items[:limit]]
+        if len(items) > limit or any(len(str(m)) > MAX_MESSAGE_CHARS for m in items[:limit]):
+            truncated = True
+        msgs[key] = kept
+        msgs[count_key] = len(items)
+    return msgs, truncated
+
+
 def parse_runner_messages(out_osw_path: Path) -> dict[str, Any] | None:
     """Extract runner messages from out.osw step results, bounded by the caps.
 
     Returns dict with result, initial_condition, final_condition, clipped
     info/warnings/errors lists plus *_count totals (and truncated + a note
     pointing at out.osw when anything was cut) — or None on parse failure.
+
+    Only looks at the FIRST step — correct for apply_measure's single-measure
+    OSW. For a multi-step workflow, use parse_all_step_messages instead.
     """
     try:
         if not out_osw_path.is_file():
@@ -39,36 +78,52 @@ def parse_runner_messages(out_osw_path: Path) -> dict[str, Any] | None:
         steps = osw.get("steps", [])
         if not steps:
             return None
-        step = steps[0]
-        result = step.get("result", {})
-        msgs: dict[str, Any] = {
-            "result": result.get("step_result", ""),
-        }
-        truncated = False
-        for key in ("step_initial_condition", "step_final_condition"):
-            val = result.get(key)
-            if val:
-                clipped = _clip(val)
-                truncated = truncated or clipped != str(val)
-                # Strip "step_" prefix for cleaner output
-                msgs[key.replace("step_", "")] = clipped
-        for key, osw_key, count_key in (
-            ("info", "step_info", "info_count"),
-            ("warnings", "step_warnings", "warning_count"),
-            ("errors", "step_errors", "error_count"),
-        ):
-            items = result.get(osw_key, [])
-            if not items:
-                continue
-            limit = MESSAGE_LIMITS[key]
-            kept = [_clip(m) for m in items[:limit]]
-            if len(items) > limit or any(len(str(m)) > MAX_MESSAGE_CHARS for m in items[:limit]):
-                truncated = True
-            msgs[key] = kept
-            msgs[count_key] = len(items)
+        msgs, truncated = _step_messages(steps[0])
         if truncated:
             msgs["truncated"] = True
             msgs["note"] = f"Messages clipped to keep the response small; full log in {out_osw_path}"
         return msgs
+    except Exception:
+        return None
+
+
+def parse_all_step_messages(out_osw_path: Path) -> dict[str, Any] | None:
+    """Per-step runner messages across every step of a multi-step OSW run.
+
+    A multi-step workflow (e.g. gbxml_import's ChangeBuildingLocation ->
+    gbxml_import -> gbxml_import_advanced -> gbxml_import_hvac ->
+    set_simulation_control -> gbxml_postprocess chain) can raise errors or
+    warnings from ANY step, not just the first — so every step needs its own
+    attribution. Applies the same per-step MAX_MESSAGE_CHARS/MESSAGE_LIMITS
+    caps as parse_runner_messages, so a 6-step run's response stays as small
+    as a single-step one (see #98 in the module docstring above).
+    """
+    try:
+        if not out_osw_path.is_file():
+            return None
+        osw = json.loads(out_osw_path.read_text(encoding="utf-8", errors="replace"))
+        steps = osw.get("steps", [])
+        if not steps:
+            return None
+        step_results = []
+        total_errors = 0
+        total_warnings = 0
+        truncated = False
+        for step in steps:
+            msgs, step_truncated = _step_messages(step)
+            msgs["measure"] = step.get("measure_dir_name", "")
+            step_results.append(msgs)
+            total_errors += msgs.get("error_count", 0)
+            total_warnings += msgs.get("warning_count", 0)
+            truncated = truncated or step_truncated
+        out: dict[str, Any] = {
+            "steps": step_results,
+            "total_errors": total_errors,
+            "total_warnings": total_warnings,
+        }
+        if truncated:
+            out["truncated"] = True
+            out["note"] = f"Messages clipped to keep the response small; full log in {out_osw_path}"
+        return out
     except Exception:
         return None
