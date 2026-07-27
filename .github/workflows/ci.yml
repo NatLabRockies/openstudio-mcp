@@ -5,7 +5,7 @@ name: ci
 # an open PR fires BOTH push and pull_request → every job runs twice.
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "ci-dryrun/**"]
     tags: ["*"]
   pull_request:
 

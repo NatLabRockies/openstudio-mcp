@@ -2,7 +2,7 @@ name: format-and-lint
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "ci-dryrun/**"]
   pull_request:
 
 jobs:
