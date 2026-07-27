@@ -1,6 +1,6 @@
 [project]
 name = "openstudio-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "Thin MCP server around OpenStudio CLI with async runs and testable outputs."
 requires-python = ">=3.11"
 dependencies = [
@@ -17,6 +17,8 @@ dev = [
   "pytest-timeout>=2.3.1",
   "mcp",
   "pyyaml>=6.0",
+  "pre-commit>=4.0",
+  "ruff>=0.6",
 ]
 
 [project.scripts]
@@ -29,6 +31,9 @@ markers = [
     "integration: requires Docker + OpenStudio + MCP server",
     "llm: requires Claude CLI + MCP server",
 ]
+
+[tool.mypy]
+explicit_package_bases = true
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]

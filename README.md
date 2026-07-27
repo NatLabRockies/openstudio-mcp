@@ -1,4 +1,4 @@
-# openstudio-mcp
+# OpenStudio®-MCP SWR 26-035
 
 [![MCP Badge](https://lobehub.com/badge/mcp/natlabrockies-openstudio-mcp?style=for-the-badge)](https://lobehub.com/mcp/natlabrockies-openstudio-mcp)
 
@@ -669,7 +669,7 @@ The component-properties tools query/modify these 15 types:
 
 ## Examples
 
-19 worked examples with full tool-call sequences:
+20 worked examples with full tool-call sequences:
 
 | # | Example | # | Example |
 |---|---------|---|---------|
@@ -682,7 +682,7 @@ The component-properties tools query/modify these 15 types:
 | 7 | [Full Building Model](docs/examples/07_full_building.md) | 17 | [`/retrofit`](docs/examples/17_retrofit.md) |
 | 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | 18 | [`/view`](docs/examples/18_view.md) |
 | 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | 19 | [Four-Pipe Beam Retrofit (E2E)](docs/examples/19_systemd_fourpipebeam_retrofit.md) |
-| 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | | |
+| 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | 20 | [Demand Response with Python EMS](docs/examples/20_python_ems_demand_response.md) |
 
 ---
 
@@ -700,6 +700,20 @@ docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
   -e RUN_OPENSTUDIO_INTEGRATION=1 -e MCP_SERVER_CMD=openstudio-mcp \
   openstudio-mcp:dev bash -lc 'cd /repo && pytest -vv -s tests/'
 ```
+
+## Linting and formatting (uv + pre-commit)
+
+We use uv and pre-commit pattern in CI.
+
+```bash
+# Install dev dependencies with uv
+uv pip install -e ".[dev]"
+
+# Run only YAML/JSON checks locally
+uv run pre-commit run --all-files
+```
+
+CI runs the same pre-commit check in `.github/workflows/format_and_lint.yml`.
 
 ---
 

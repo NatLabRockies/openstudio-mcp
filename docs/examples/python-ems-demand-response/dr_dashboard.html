@@ -1,0 +1,495 @@
+<title>Python EMS Demand-Limiting Study — openstudio-mcp</title>
+<style>
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --base: #2a78d6; --ctrl: #1baf7a; --cmd: #4a3aa7;
+  --good: #006300; --band: rgba(42,120,214,0.06);
+  --code-bg: #f3f2ee;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --base: #3987e5; --ctrl: #199e70; --cmd: #9085e9;
+    --good: #0ca30c; --band: rgba(57,135,229,0.10);
+    --code-bg: #111110;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0d0d0d; --surface: #1a1a19;
+  --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --base: #3987e5; --ctrl: #199e70; --cmd: #9085e9;
+  --good: #0ca30c; --band: rgba(57,135,229,0.10);
+  --code-bg: #111110;
+}
+:root[data-theme="light"] {
+  --page: #f9f9f7; --surface: #fcfcfb;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --base: #2a78d6; --ctrl: #1baf7a; --cmd: #4a3aa7;
+  --good: #006300; --band: rgba(42,120,214,0.06);
+  --code-bg: #f3f2ee;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1060px; margin: 0 auto; padding: 40px 24px 72px; }
+.eyebrow {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 10px;
+}
+h1 { font-size: 30px; line-height: 1.2; margin: 0 0 10px; text-wrap: balance; font-weight: 650; }
+.dek { color: var(--ink-2); max-width: 66ch; margin: 0 0 28px; }
+.dek strong { color: var(--ink); }
+h2 { font-size: 19px; margin: 44px 0 6px; font-weight: 650; text-wrap: balance; }
+h2 + p.sub { color: var(--ink-2); margin: 0 0 14px; max-width: 74ch; font-size: 14px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.tile {
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+  padding: 14px 16px 12px;
+}
+.tile .lbl { font-size: 12.5px; color: var(--muted); }
+.tile .val { font-size: 27px; font-weight: 650; margin: 2px 0 0; letter-spacing: -0.01em; }
+.tile .val small { font-size: 15px; font-weight: 500; color: var(--ink-2); }
+.tile .delta { font-size: 12.5px; margin-top: 2px; color: var(--ink-2);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.tile .delta.pos { color: var(--good); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+  padding: 18px 18px 10px; margin-top: 14px; position: relative;
+}
+.card h3 { margin: 0 0 2px; font-size: 15.5px; font-weight: 650; }
+.card p.note { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); max-width: 80ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12.5px; color: var(--ink-2); margin: 4px 0 2px; }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.legend .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.legend .swatch.dash { background: none; border-top: 2px dashed var(--muted); height: 0; }
+.chart-box { position: relative; }
+.chart-box svg { display: block; width: 100%; height: auto; }
+.tip {
+  position: absolute; pointer-events: none; display: none; z-index: 3;
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 6px;
+  padding: 6px 9px; font-size: 12px; line-height: 1.45; color: var(--ink-2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10); white-space: nowrap;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.tip b { color: var(--ink); font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+
+details { margin: 8px 0 0; }
+details summary { cursor: pointer; font-size: 13px; color: var(--ink-2); }
+details summary:focus-visible { outline: 2px solid var(--base); outline-offset: 2px; }
+.tblwrap { overflow-x: auto; margin-top: 8px; }
+table.data {
+  border-collapse: collapse; font-size: 12.5px; min-width: 380px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+table.data th, table.data td { padding: 4px 12px 4px 0; text-align: right; border-bottom: 1px solid var(--grid); }
+table.data th { color: var(--muted); font-weight: 500; }
+table.data td:first-child, table.data th:first-child { text-align: left; }
+
+ol.steps { margin: 10px 0 0; padding-left: 22px; color: var(--ink-2); font-size: 14px; }
+ol.steps li { margin: 5px 0; }
+ol.steps code, p code, li code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px;
+  background: var(--code-bg); border: 1px solid var(--ring); border-radius: 4px; padding: 1px 5px;
+  color: var(--ink);
+}
+pre.code {
+  background: var(--code-bg); border: 1px solid var(--ring); border-radius: 8px;
+  padding: 14px 16px; overflow-x: auto; font-size: 12px; line-height: 1.5;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--ink);
+  margin: 10px 0 0;
+}
+table.iter { border-collapse: collapse; font-size: 13.5px; width: 100%; margin-top: 10px; }
+table.iter th, table.iter td { padding: 8px 14px 8px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--grid); }
+table.iter th { color: var(--muted); font-weight: 550; font-size: 12.5px; }
+table.iter td:first-child { white-space: nowrap; font-weight: 600; }
+ul.foot { color: var(--ink-2); font-size: 13px; padding-left: 20px; }
+ul.foot li { margin: 5px 0; }
+.svglabel { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">openstudio-mcp · EnergyPlus Python Plugin (Python EMS) demo</p>
+  <h1>A supervisory demand-limiting controller, authored as Python EMS and tuned in three simulated iterations</h1>
+  <p class="dek">
+    A staged load-shed controller — written in Python, injected into EnergyPlus with
+    <code>create_python_plugin</code>, revised twice with <code>edit_python_plugin</code> — watches
+    whole-building electric demand every 10 minutes and ratchets zone cooling setpoints up
+    (+1 / +2 / +3&nbsp;K) whenever demand crosses a shed threshold. On a 10-zone office with a
+    VAV + chiller plant in Boston, the final controller cut the summer <strong>billing peak by 7.2%</strong>
+    and <strong>threshold exceedances by 73%</strong> while <em>saving</em> 3.9% energy.
+  </p>
+
+  <div class="tiles">
+    <div class="tile"><div class="lbl">Summer billing peak (30-min)</div>
+      <div class="val" id="t-peak"></div><div class="delta pos" id="t-peak-d"></div></div>
+    <div class="tile"><div class="lbl">Intervals over 276.9 kW threshold</div>
+      <div class="val" id="t-exceed"></div><div class="delta pos" id="t-exceed-d"></div></div>
+    <div class="tile"><div class="lbl">Summer electricity (Jun–Aug)</div>
+      <div class="val" id="t-energy"></div><div class="delta pos" id="t-energy-d"></div></div>
+    <div class="tile"><div class="lbl">Demand-charge value @ $15/kW·mo</div>
+      <div class="val" id="t-dollar"></div><div class="delta" id="t-dollar-d"></div></div>
+  </div>
+
+  <h2>Peak weekday: the demand curve gets clipped</h2>
+  <p class="sub">June 27 set the baseline summer peak (337.7 kW instantaneous at 08:30). The controller
+    jump-starts two stages on the morning spike, holds ~290 kW through the afternoon, then releases one
+    stage per 30 minutes after the 08:00–19:00 window — no rebound spike.</p>
+  <div class="card">
+    <h3>Whole-building electric demand — June 27</h3>
+    <p class="note">10-minute simulation timesteps. Shaded band = demand-limiting window (08:00–19:00).</p>
+    <div class="legend" id="lg-peakday"></div>
+    <div class="chart-box" id="ch-peakday"></div>
+    <details><summary>Data table (hourly)</summary><div class="tblwrap" id="tb-peakday"></div></details>
+  </div>
+
+  <h2>Inside the controller: sensor → stage → actuation → response</h2>
+  <p class="sub">The plugin's own reported output (<code>PythonPlugin:OutputVariable "DR Shed Stage"</code>)
+    against the thermostat it actuates. As the stage steps 0→3, the cooling setpoint steps
+    23.9→26.9&nbsp;°C and the zone floats up with it; the baseline zone hugs 23.9&nbsp;°C all day.</p>
+  <div class="card">
+    <h3>Controller state and zone response — June 27, Story 2 South Perimeter zone</h3>
+    <div class="legend" id="lg-anatomy"></div>
+    <div class="chart-box" id="ch-stage"></div>
+    <div class="chart-box" id="ch-temps" style="margin-top:6px"></div>
+    <details><summary>Data table (hourly)</summary><div class="tblwrap" id="tb-anatomy"></div></details>
+  </div>
+
+  <h2>The iteration that mattered: weekends</h2>
+  <p class="sub">Revision 2 limited shedding to weekdays — and the seasonal peak simply moved to Saturday
+    June 26 (329 kW), because this building runs 7-day schedules. Revision 3 applies the window every day.</p>
+  <div class="card">
+    <h3>Whole-building electric demand — Saturday June 26</h3>
+    <div class="legend" id="lg-weekend"></div>
+    <div class="chart-box" id="ch-weekend"></div>
+    <details><summary>Data table (hourly)</summary><div class="tblwrap" id="tb-weekend"></div></details>
+  </div>
+
+  <h2>Monthly outcomes</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>Billing peak demand (30-min basis), kW</h3>
+      <div class="legend" id="lg-mpeak"></div>
+      <div class="chart-box" id="ch-mpeak"></div>
+    </div>
+    <div class="card">
+      <h3>Facility electricity, MWh</h3>
+      <div class="legend" id="lg-menergy"></div>
+      <div class="chart-box" id="ch-menergy"></div>
+    </div>
+  </div>
+  <details><summary>Monthly data table</summary><div class="tblwrap" id="tb-monthly"></div></details>
+
+  <h2>How it was built — every step through MCP tools</h2>
+  <ol class="steps">
+    <li><code>create_baseline_osm</code> → <code>add_baseline_system(system_type=7)</code> — 10-zone, 2-story office; VAV with reheat, chiller + boiler plant.</li>
+    <li><code>change_building_location(Boston TMY3)</code> → <code>set_run_period(Jun 1 – Aug 31)</code>.</li>
+    <li><code>add_output_variable</code> (facility demand, zone temps, thermostat setpoints, OAT at timestep) + <code>add_output_meter</code> (facility / cooling / fans electricity).</li>
+    <li><code>run_simulation</code> — baseline characterization; true peak 337.7 kW → shed threshold set at 82% (276.9 kW).</li>
+    <li><code>list_ems_actuators(component_type="Zone Temperature Control")</code> — confirms a <em>Cooling Setpoint</em> actuator per zone from the EnergyPlus .edd dictionary.</li>
+    <li><code>create_python_plugin(template="custom", class_name="DemandLimiter", global_variables=["dr_stage"])</code> — full controller source below; the tool wires PythonPlugin:Instance/Variables/OutputVariable and validates the code against the plugin contract.</li>
+    <li><code>save_osm_model</code> → <code>run_simulation</code> → <code>extract_simulation_errors</code> (verifies <code>PythonPlugin: Class DemandLimiter imported</code>, zero severe errors).</li>
+    <li><code>edit_python_plugin</code> ×2 — controller revisions from simulated evidence (see table below).</li>
+    <li><code>query_timeseries</code> — demand, plugin stage output, setpoints, zone temps for every figure on this page; <code>extract_summary_metrics</code> / <code>extract_end_use_breakdown</code> for totals.</li>
+  </ol>
+
+  <table class="iter">
+    <tr><th>Revision</th><th>Controller</th><th>What the simulation said</th></tr>
+    <tr><td>v1</td><td>Weekday 13:00–18:00 window, 3 stages, 30-min dwell</td>
+      <td>Sheds 37–52 kW in-window, but the building peaks at 08:30 (morning pulldown) — seasonal peak untouched. Also surfaced an analysis trap: Boston's cooling design days fall on July 21, and sizing-period rows share calendar dates with run-period rows in the SQL output.</td></tr>
+    <tr><td>v2</td><td>Weekday 08:00–19:00, 4 stages, 20-min dwell</td>
+      <td>Weekday peaks clipped to ~290 kW, but the seasonal peak moved to Saturday (329 kW) — the model runs 7-day schedules. 20-min staging also let the 08:30 spike through at 320 kW.</td></tr>
+    <tr><td>v3</td><td>Every day 08:00–19:00, 10-min dwell, 2-stage jump-start above 115% of threshold</td>
+      <td>Billing peak −7.2% (−8.7 / −10.1 / −7.2% by month), exceedances −73%, energy −3.9%. Residual instantaneous spikes are single-timestep chiller-staging transients — feedback control can't preempt a step change it hasn't metered yet.</td></tr>
+  </table>
+
+  <details>
+    <summary>Controller source (as stored in the model by <code>get_python_plugin</code>)</summary>
+    <pre class="code" id="plugin-code"></pre>
+  </details>
+
+  <h2>Findings a researcher would chase next</h2>
+  <ul class="foot">
+    <li><strong>Shed capacity is finite:</strong> at stage 3 (+3 K) the floor is ~285–295 kW; deeper cuts need pre-cooling, chiller demand limiting, or lighting/plug DR — all writable as further plugin logic.</li>
+    <li><strong>Chiller-staging transients:</strong> demand limiting induced brief plant cycling spikes (up to +19 kW over baseline for one timestep). On a 30-min billing basis they wash out; sub-metered plant control would remove them.</li>
+    <li><strong>Comfort trade:</strong> zones float to 26.9 °C during events. Reported unmet cooling hours <em>improve</em> (152.5 → 24.7 h) only because EnergyPlus scores comfort against the actuated setpoint — an artifact worth knowing about, not a comfort gain.</li>
+    <li><strong>The baseline plant is capacity-limited:</strong> baseline zones already float ~0.5–1.5 K above setpoint on peak afternoons, which is why the sizing-day demand plateau (351 kW) never appears in the run period.</li>
+  </ul>
+
+  <ul class="foot" style="margin-top:20px">
+    <li>Model: openstudio-mcp 10-zone baseline (100 m × 50 m × 2 stories, ~10,000 m²), ASHRAE baseline System 7 (VAV, chiller + boiler), Boston-Logan TMY3, Jun 1 – Aug 31, 10-min timesteps.</li>
+    <li>"Billing peak" = maximum 30-minute rolling average demand, the basis most demand charges use; instantaneous curves shown in the figures.</li>
+    <li>Design-day rows returned by <code>query_timeseries</code> were removed by keeping the last row per timestamp (the run-period environment simulates last).</li>
+  </ul>
+</div>
+
+<script>
+const DATA = {"peakday":{"label":"Jun 27 (baseline peak weekday)","base_kw":[[0.167,50.99],[0.333,54.02],[0.5,53.95],[0.667,53.89],[0.833,53.97],[1.0,54.0],[1.167,54.04],[1.333,54.08],[1.5,54.12],[1.667,54.17],[1.833,54.22],[2.0,54.27],[2.167,54.28],[2.333,54.29],[2.5,54.33],[2.667,54.44],[2.833,54.52],[3.0,54.58],[3.167,54.63],[3.333,54.67],[3.5,54.69],[3.667,54.7],[3.833,54.7],[4.0,54.69],[4.167,54.72],[4.333,54.77],[4.5,54.86],[4.667,54.99],[4.833,55.14],[5.0,55.31],[5.167,55.48],[5.333,55.63],[5.5,55.77],[5.667,55.9],[5.833,56.01],[6.0,56.11],[6.167,74.64],[6.333,74.8],[6.5,74.66],[6.667,74.55],[6.833,80.16],[7.0,75.06],[7.167,109.75],[7.333,95.93],[7.5,135.78],[7.667,95.53],[7.833,104.18],[8.0,104.25],[8.167,307.67],[8.333,318.3],[8.5,337.65],[8.667,334.07],[8.833,333.95],[9.0,329.38],[9.167,327.51],[9.333,326.05],[9.5,325.18],[9.667,324.69],[9.833,324.42],[10.0,324.31],[10.167,324.62],[10.333,325.03],[10.5,325.49],[10.667,325.96],[10.833,326.38],[11.0,326.8],[11.167,326.8],[11.333,326.75],[11.5,326.6],[11.667,326.42],[11.833,326.22],[12.0,326.01],[12.167,207.94],[12.333,178.83],[12.5,183.15],[12.667,189.85],[12.833,176.25],[13.0,193.77],[13.167,325.03],[13.333,324.48],[13.5,324.46],[13.667,324.49],[13.833,324.51],[14.0,324.58],[14.167,324.64],[14.333,324.67],[14.5,324.66],[14.667,324.61],[14.833,323.31],[15.0,323.49],[15.167,323.58],[15.333,323.68],[15.5,323.76],[15.667,323.83],[15.833,323.9],[16.0,323.97],[16.167,324.09],[16.333,324.26],[16.5,324.48],[16.667,324.74],[16.833,325.02],[17.0,325.31],[17.167,269.59],[17.333,257.87],[17.5,233.94],[17.667,240.51],[17.833,235.08],[18.0,230.73],[18.167,142.27],[18.333,143.07],[18.5,143.71],[18.667,144.35],[18.833,144.96],[19.0,145.52],[19.167,145.54],[19.333,145.47],[19.5,145.29],[19.667,145.0],[19.833,144.64],[20.0,144.23],[20.167,72.34],[20.333,72.35],[20.5,72.36],[20.667,72.37],[20.833,72.38],[21.0,72.39],[21.167,72.36],[21.333,72.33],[21.5,72.3],[21.667,72.27],[21.833,72.25],[22.0,72.24],[22.167,61.47],[22.333,61.47],[22.5,61.47],[22.667,61.47],[22.833,61.48],[23.0,64.58],[23.167,64.58],[23.333,64.58],[23.5,64.59],[23.667,64.59],[23.833,64.59],[24.0,64.59]],"shed_kw":[[0.167,51.53],[0.333,51.45],[0.5,54.48],[0.667,54.41],[0.833,54.34],[1.0,54.28],[1.167,54.3],[1.333,54.32],[1.5,54.52],[1.667,54.76],[1.833,54.99],[2.0,55.23],[2.167,55.16],[2.333,55.09],[2.5,55.0],[2.667,54.9],[2.833,54.79],[3.0,54.67],[3.167,54.57],[3.333,54.46],[3.5,54.35],[3.667,54.22],[3.833,54.46],[4.0,54.51],[4.167,54.61],[4.333,54.72],[4.5,54.86],[4.667,55.03],[4.833,55.21],[5.0,55.41],[5.167,55.61],[5.333,55.8],[5.5,56.0],[5.667,55.5],[5.833,55.66],[6.0,55.82],[6.167,75.98],[6.333,76.3],[6.5,76.62],[6.667,76.92],[6.833,78.89],[7.0,87.34],[7.167,95.59],[7.333,135.06],[7.5,130.74],[7.667,98.6],[7.833,102.87],[8.0,108.09],[8.167,303.24],[8.333,290.73],[8.5,274.2],[8.667,265.07],[8.833,273.83],[9.0,275.67],[9.167,278.54],[9.333,281.84],[9.5,280.61],[9.667,282.47],[9.833,283.29],[10.0,283.98],[10.167,285.13],[10.333,286.18],[10.5,287.16],[10.667,288.05],[10.833,288.87],[11.0,289.66],[11.167,289.63],[11.333,289.57],[11.5,289.52],[11.667,289.46],[11.833,289.41],[12.0,289.35],[12.167,170.81],[12.333,175.7],[12.5,173.33],[12.667,174.5],[12.833,174.44],[13.0,162.78],[13.167,293.47],[13.333,292.81],[13.5,297.39],[13.667,292.22],[13.833,293.55],[14.0,293.7],[14.167,293.67],[14.333,293.72],[14.5,293.74],[14.667,293.78],[14.833,293.06],[15.0,293.38],[15.167,293.09],[15.333,292.89],[15.5,292.74],[15.667,292.58],[15.833,292.46],[16.0,292.36],[16.167,292.51],[16.333,292.7],[16.5,292.9],[16.667,293.11],[16.833,293.34],[17.0,293.58],[17.167,218.54],[17.333,217.74],[17.5,216.08],[17.667,214.69],[17.833,213.41],[18.0,212.08],[18.167,138.17],[18.333,138.64],[18.5,139.0],[18.667,139.32],[18.833,139.64],[19.0,140.04],[19.167,159.64],[19.333,137.53],[19.5,143.2],[19.667,165.11],[19.833,140.36],[20.0,148.93],[20.167,108.78],[20.333,78.53],[20.5,77.44],[20.667,78.6],[20.833,77.15],[21.0,76.84],[21.167,76.05],[21.333,75.36],[21.5,74.76],[21.667,74.24],[21.833,73.78],[22.0,73.37],[22.167,61.86],[22.333,61.84],[22.5,61.82],[22.667,61.79],[22.833,61.77],[23.0,61.75],[23.167,61.71],[23.333,61.67],[23.5,61.64],[23.667,61.6],[23.833,64.66],[24.0,64.63]],"stage":[[0.167,0.0],[0.333,0.0],[0.5,0.0],[0.667,0.0],[0.833,0.0],[1.0,0.0],[1.167,0.0],[1.333,0.0],[1.5,0.0],[1.667,0.0],[1.833,0.0],[2.0,0.0],[2.167,0.0],[2.333,0.0],[2.5,0.0],[2.667,0.0],[2.833,0.0],[3.0,0.0],[3.167,0.0],[3.333,0.0],[3.5,0.0],[3.667,0.0],[3.833,0.0],[4.0,0.0],[4.167,0.0],[4.333,0.0],[4.5,0.0],[4.667,0.0],[4.833,0.0],[5.0,0.0],[5.167,0.0],[5.333,0.0],[5.5,0.0],[5.667,0.0],[5.833,0.0],[6.0,0.0],[6.167,0.0],[6.333,0.0],[6.5,0.0],[6.667,0.0],[6.833,0.0],[7.0,0.0],[7.167,0.0],[7.333,0.0],[7.5,0.0],[7.667,0.0],[7.833,0.0],[8.0,0.0],[8.167,0.0],[8.333,1.0],[8.5,2.0],[8.667,3.0],[8.833,3.0],[9.0,3.0],[9.167,3.0],[9.333,3.0],[9.5,3.0],[9.667,3.0],[9.833,3.0],[10.0,3.0],[10.167,3.0],[10.333,3.0],[10.5,3.0],[10.667,3.0],[10.833,3.0],[11.0,3.0],[11.167,3.0],[11.333,3.0],[11.5,3.0],[11.667,3.0],[11.833,3.0],[12.0,3.0],[12.167,3.0],[12.333,3.0],[12.5,3.0],[12.667,3.0],[12.833,3.0],[13.0,3.0],[13.167,3.0],[13.333,3.0],[13.5,3.0],[13.667,3.0],[13.833,3.0],[14.0,3.0],[14.167,3.0],[14.333,3.0],[14.5,3.0],[14.667,3.0],[14.833,3.0],[15.0,3.0],[15.167,3.0],[15.333,3.0],[15.5,3.0],[15.667,3.0],[15.833,3.0],[16.0,3.0],[16.167,3.0],[16.333,3.0],[16.5,3.0],[16.667,3.0],[16.833,3.0],[17.0,3.0],[17.167,3.0],[17.333,3.0],[17.5,3.0],[17.667,3.0],[17.833,3.0],[18.0,3.0],[18.167,3.0],[18.333,3.0],[18.5,3.0],[18.667,3.0],[18.833,3.0],[19.0,3.0],[19.167,2.0],[19.333,2.0],[19.5,2.0],[19.667,1.0],[19.833,1.0],[20.0,1.0],[20.167,0.0],[20.333,0.0],[20.5,0.0],[20.667,0.0],[20.833,0.0],[21.0,0.0],[21.167,0.0],[21.333,0.0],[21.5,0.0],[21.667,0.0],[21.833,0.0],[22.0,0.0],[22.167,0.0],[22.333,0.0],[22.5,0.0],[22.667,0.0],[22.833,0.0],[23.0,0.0],[23.167,0.0],[23.333,0.0],[23.5,0.0],[23.667,0.0],[23.833,0.0],[24.0,0.0]],"sp_shed":[[0.167,23.9],[0.333,23.9],[0.5,23.9],[0.667,23.9],[0.833,23.9],[1.0,23.9],[1.167,23.9],[1.333,23.9],[1.5,23.9],[1.667,23.9],[1.833,23.9],[2.0,23.9],[2.167,23.9],[2.333,23.9],[2.5,23.9],[2.667,23.9],[2.833,23.9],[3.0,23.9],[3.167,23.9],[3.333,23.9],[3.5,23.9],[3.667,23.9],[3.833,23.9],[4.0,23.9],[4.167,23.9],[4.333,23.9],[4.5,23.9],[4.667,23.9],[4.833,23.9],[5.0,23.9],[5.167,23.9],[5.333,23.9],[5.5,23.9],[5.667,23.9],[5.833,23.9],[6.0,23.9],[6.167,23.9],[6.333,23.9],[6.5,23.9],[6.667,23.9],[6.833,23.9],[7.0,23.9],[7.167,23.9],[7.333,23.9],[7.5,23.9],[7.667,23.9],[7.833,23.9],[8.0,23.9],[8.167,23.9],[8.333,24.9],[8.5,25.9],[8.667,26.9],[8.833,26.9],[9.0,26.9],[9.167,26.9],[9.333,26.9],[9.5,26.9],[9.667,26.9],[9.833,26.9],[10.0,26.9],[10.167,26.9],[10.333,26.9],[10.5,26.9],[10.667,26.9],[10.833,26.9],[11.0,26.9],[11.167,26.9],[11.333,26.9],[11.5,26.9],[11.667,26.9],[11.833,26.9],[12.0,26.9],[12.167,26.9],[12.333,26.9],[12.5,26.9],[12.667,26.9],[12.833,26.9],[13.0,26.9],[13.167,26.9],[13.333,26.9],[13.5,26.9],[13.667,26.9],[13.833,26.9],[14.0,26.9],[14.167,26.9],[14.333,26.9],[14.5,26.9],[14.667,26.9],[14.833,26.9],[15.0,26.9],[15.167,26.9],[15.333,26.9],[15.5,26.9],[15.667,26.9],[15.833,26.9],[16.0,26.9],[16.167,26.9],[16.333,26.9],[16.5,26.9],[16.667,26.9],[16.833,26.9],[17.0,26.9],[17.167,26.9],[17.333,26.9],[17.5,26.9],[17.667,26.9],[17.833,26.9],[18.0,26.9],[18.167,26.9],[18.333,26.9],[18.5,26.9],[18.667,26.9],[18.833,26.9],[19.0,26.9],[19.167,25.9],[19.333,25.9],[19.5,25.9],[19.667,24.9],[19.833,24.9],[20.0,24.9],[20.167,23.9],[20.333,23.9],[20.5,23.9],[20.667,23.9],[20.833,23.9],[21.0,23.9],[21.167,23.9],[21.333,23.9],[21.5,23.9],[21.667,23.9],[21.833,23.9],[22.0,23.9],[22.167,23.9],[22.333,23.9],[22.5,23.9],[22.667,23.9],[22.833,23.9],[23.0,23.9],[23.167,23.9],[23.333,23.9],[23.5,23.9],[23.667,23.9],[23.833,23.9],[24.0,23.9]],"tz_shed":[[0.167,23.9],[0.333,23.9],[0.5,23.9],[0.667,23.9],[0.833,23.9],[1.0,23.9],[1.167,23.9],[1.333,23.9],[1.5,23.9],[1.667,23.9],[1.833,23.9],[2.0,23.9],[2.167,23.9],[2.333,23.9],[2.5,23.9],[2.667,23.9],[2.833,23.9],[3.0,23.9],[3.167,23.9],[3.333,23.9],[3.5,23.9],[3.667,23.9],[3.833,23.9],[4.0,23.88],[4.167,23.87],[4.333,23.86],[4.5,23.86],[4.667,23.87],[4.833,23.87],[5.0,23.87],[5.167,23.88],[5.333,23.88],[5.5,23.89],[5.667,23.9],[5.833,23.9],[6.0,23.9],[6.167,23.9],[6.333,23.9],[6.5,23.9],[6.667,23.9],[6.833,23.89],[7.0,23.58],[7.167,23.84],[7.333,23.89],[7.5,23.89],[7.667,24.07],[7.833,23.96],[8.0,24.03],[8.167,24.01],[8.333,24.8],[8.5,25.63],[8.667,26.32],[8.833,26.55],[9.0,26.62],[9.167,26.68],[9.333,26.74],[9.5,26.83],[9.667,26.9],[9.833,26.9],[10.0,26.9],[10.167,26.9],[10.333,26.9],[10.5,26.9],[10.667,26.9],[10.833,26.9],[11.0,26.9],[11.167,26.9],[11.333,26.9],[11.5,26.9],[11.667,26.9],[11.833,26.9],[12.0,26.9],[12.167,26.54],[12.333,26.57],[12.5,26.86],[12.667,26.93],[12.833,27.02],[13.0,26.98],[13.167,26.9],[13.333,26.9],[13.5,26.9],[13.667,26.9],[13.833,26.9],[14.0,26.9],[14.167,26.9],[14.333,26.9],[14.5,26.9],[14.667,26.9],[14.833,26.9],[15.0,26.9],[15.167,26.9],[15.333,26.9],[15.5,26.9],[15.667,26.9],[15.833,26.9],[16.0,26.9],[16.167,26.9],[16.333,26.9],[16.5,26.9],[16.667,26.9],[16.833,26.9],[17.0,26.9],[17.167,26.9],[17.333,26.9],[17.5,26.9],[17.667,26.9],[17.833,26.9],[18.0,26.9],[18.167,26.9],[18.333,26.9],[18.5,26.9],[18.667,26.9],[18.833,26.9],[19.0,26.9],[19.167,25.95],[19.333,25.83],[19.5,25.89],[19.667,25.06],[19.833,24.9],[20.0,24.9],[20.167,24.08],[20.333,23.9],[20.5,23.9],[20.667,23.9],[20.833,23.9],[21.0,23.9],[21.167,23.9],[21.333,23.9],[21.5,23.9],[21.667,23.9],[21.833,23.9],[22.0,23.9],[22.167,23.9],[22.333,23.9],[22.5,23.9],[22.667,23.9],[22.833,23.9],[23.0,23.9],[23.167,23.9],[23.333,23.9],[23.5,23.9],[23.667,23.9],[23.833,23.9],[24.0,23.9]],"tz_base":[[0.167,23.9],[0.333,23.9],[0.5,23.9],[0.667,23.9],[0.833,23.89],[1.0,23.85],[1.167,23.82],[1.333,23.82],[1.5,23.83],[1.667,23.84],[1.833,23.85],[2.0,23.87],[2.167,23.86],[2.333,23.84],[2.5,23.81],[2.667,23.77],[2.833,23.73],[3.0,23.7],[3.167,23.66],[3.333,23.63],[3.5,23.59],[3.667,23.56],[3.833,23.52],[4.0,23.49],[4.167,23.47],[4.333,23.46],[4.5,23.46],[4.667,23.47],[4.833,23.47],[5.0,23.48],[5.167,23.48],[5.333,23.49],[5.5,23.5],[5.667,23.52],[5.833,23.53],[6.0,23.55],[6.167,23.65],[6.333,23.79],[6.5,23.89],[6.667,23.9],[6.833,23.71],[7.0,23.75],[7.167,23.62],[7.333,23.87],[7.5,23.9],[7.667,24.16],[7.833,24.26],[8.0,24.25],[8.167,24.07],[8.333,23.95],[8.5,23.9],[8.667,23.9],[8.833,23.9],[9.0,23.9],[9.167,23.9],[9.333,23.9],[9.5,23.9],[9.667,23.9],[9.833,23.9],[10.0,23.9],[10.167,23.9],[10.333,23.9],[10.5,23.9],[10.667,23.9],[10.833,23.9],[11.0,23.9],[11.167,23.9],[11.333,23.9],[11.5,23.9],[11.667,23.9],[11.833,23.9],[12.0,23.9],[12.167,23.9],[12.333,23.9],[12.5,23.9],[12.667,23.9],[12.833,23.9],[13.0,23.9],[13.167,23.98],[13.333,24.07],[13.5,24.14],[13.667,24.18],[13.833,24.2],[14.0,24.23],[14.167,24.25],[14.333,24.27],[14.5,24.29],[14.667,24.3],[14.833,24.32],[15.0,24.33],[15.167,24.34],[15.333,24.34],[15.5,24.33],[15.667,24.32],[15.833,24.31],[16.0,24.3],[16.167,24.3],[16.333,24.3],[16.5,24.3],[16.667,24.3],[16.833,24.3],[17.0,24.29],[17.167,24.01],[17.333,23.9],[17.5,23.9],[17.667,23.9],[17.833,23.9],[18.0,23.9],[18.167,23.9],[18.333,23.9],[18.5,23.9],[18.667,23.9],[18.833,23.9],[19.0,23.9],[19.167,23.9],[19.333,23.9],[19.5,23.9],[19.667,23.9],[19.833,23.9],[20.0,23.9],[20.167,23.9],[20.333,23.9],[20.5,23.9],[20.667,23.9],[20.833,23.9],[21.0,23.9],[21.167,23.9],[21.333,23.9],[21.5,23.9],[21.667,23.9],[21.833,23.9],[22.0,23.89],[22.167,23.77],[22.333,23.64],[22.5,23.57],[22.667,23.54],[22.833,23.53],[23.0,23.51],[23.167,23.48],[23.333,23.44],[23.5,23.4],[23.667,23.36],[23.833,23.32],[24.0,23.28]],"sp_base":[[0.167,23.9],[0.333,23.9],[0.5,23.9],[0.667,23.9],[0.833,23.9],[1.0,23.9],[1.167,23.9],[1.333,23.9],[1.5,23.9],[1.667,23.9],[1.833,23.9],[2.0,23.9],[2.167,23.9],[2.333,23.9],[2.5,23.9],[2.667,23.9],[2.833,23.9],[3.0,23.9],[3.167,23.9],[3.333,23.9],[3.5,23.9],[3.667,23.9],[3.833,23.9],[4.0,23.9],[4.167,23.9],[4.333,23.9],[4.5,23.9],[4.667,23.9],[4.833,23.9],[5.0,23.9],[5.167,23.9],[5.333,23.9],[5.5,23.9],[5.667,23.9],[5.833,23.9],[6.0,23.9],[6.167,23.9],[6.333,23.9],[6.5,23.9],[6.667,23.9],[6.833,23.9],[7.0,23.9],[7.167,23.9],[7.333,23.9],[7.5,23.9],[7.667,23.9],[7.833,23.9],[8.0,23.9],[8.167,23.9],[8.333,23.9],[8.5,23.9],[8.667,23.9],[8.833,23.9],[9.0,23.9],[9.167,23.9],[9.333,23.9],[9.5,23.9],[9.667,23.9],[9.833,23.9],[10.0,23.9],[10.167,23.9],[10.333,23.9],[10.5,23.9],[10.667,23.9],[10.833,23.9],[11.0,23.9],[11.167,23.9],[11.333,23.9],[11.5,23.9],[11.667,23.9],[11.833,23.9],[12.0,23.9],[12.167,23.9],[12.333,23.9],[12.5,23.9],[12.667,23.9],[12.833,23.9],[13.0,23.9],[13.167,23.9],[13.333,23.9],[13.5,23.9],[13.667,23.9],[13.833,23.9],[14.0,23.9],[14.167,23.9],[14.333,23.9],[14.5,23.9],[14.667,23.9],[14.833,23.9],[15.0,23.9],[15.167,23.9],[15.333,23.9],[15.5,23.9],[15.667,23.9],[15.833,23.9],[16.0,23.9],[16.167,23.9],[16.333,23.9],[16.5,23.9],[16.667,23.9],[16.833,23.9],[17.0,23.9],[17.167,23.9],[17.333,23.9],[17.5,23.9],[17.667,23.9],[17.833,23.9],[18.0,23.9],[18.167,23.9],[18.333,23.9],[18.5,23.9],[18.667,23.9],[18.833,23.9],[19.0,23.9],[19.167,23.9],[19.333,23.9],[19.5,23.9],[19.667,23.9],[19.833,23.9],[20.0,23.9],[20.167,23.9],[20.333,23.9],[20.5,23.9],[20.667,23.9],[20.833,23.9],[21.0,23.9],[21.167,23.9],[21.333,23.9],[21.5,23.9],[21.667,23.9],[21.833,23.9],[22.0,23.9],[22.167,23.9],[22.333,23.9],[22.5,23.9],[22.667,23.9],[22.833,23.9],[23.0,23.9],[23.167,23.9],[23.333,23.9],[23.5,23.9],[23.667,23.9],[23.833,23.9],[24.0,23.9]],"oat":[[0.167,25.4],[0.333,25.2],[0.5,25.0],[0.667,24.8],[0.833,24.6],[1.0,24.4],[1.167,24.5],[1.333,24.6],[1.5,24.7],[1.667,24.8],[1.833,24.9],[2.0,25.0],[2.167,24.9],[2.333,24.8],[2.5,24.7],[2.667,24.6],[2.833,24.5],[3.0,24.4],[3.167,24.32],[3.333,24.23],[3.5,24.15],[3.667,24.07],[3.833,23.98],[4.0,23.9],[4.167,23.98],[4.333,24.07],[4.5,24.15],[4.667,24.23],[4.833,24.32],[5.0,24.4],[5.167,24.5],[5.333,24.6],[5.5,24.7],[5.667,24.8],[5.833,24.9],[6.0,25.0],[6.167,25.28],[6.333,25.57],[6.5,25.85],[6.667,26.13],[6.833,26.42],[7.0,26.7],[7.167,26.97],[7.333,27.23],[7.5,27.5],[7.667,27.77],[7.833,28.03],[8.0,28.3],[8.167,28.4],[8.333,28.5],[8.5,28.6],[8.667,28.7],[8.833,28.8],[9.0,28.9],[9.167,28.98],[9.333,29.07],[9.5,29.15],[9.667,29.23],[9.833,29.32],[10.0,29.4],[10.167,29.68],[10.333,29.97],[10.5,30.25],[10.667,30.53],[10.833,30.82],[11.0,31.1],[11.167,31.1],[11.333,31.1],[11.5,31.1],[11.667,31.1],[11.833,31.1],[12.0,31.1],[12.167,31.28],[12.333,31.47],[12.5,31.65],[12.667,31.83],[12.833,32.02],[13.0,32.2],[13.167,32.3],[13.333,32.4],[13.5,32.5],[13.667,32.6],[13.833,32.7],[14.0,32.8],[14.167,32.8],[14.333,32.8],[14.5,32.8],[14.667,32.8],[14.833,32.8],[15.0,32.8],[15.167,32.62],[15.333,32.43],[15.5,32.25],[15.667,32.07],[15.833,31.88],[16.0,31.7],[16.167,31.6],[16.333,31.5],[16.5,31.4],[16.667,31.3],[16.833,31.2],[17.0,31.1],[17.167,29.9],[17.333,28.7],[17.5,27.5],[17.667,26.3],[17.833,25.1],[18.0,23.9],[18.167,23.9],[18.333,23.9],[18.5,23.9],[18.667,23.9],[18.833,23.9],[19.0,23.9],[19.167,23.62],[19.333,23.33],[19.5,23.05],[19.667,22.77],[19.833,22.48],[20.0,22.2],[20.167,22.33],[20.333,22.47],[20.5,22.6],[20.667,22.73],[20.833,22.87],[21.0,23.0],[21.167,22.87],[21.333,22.73],[21.5,22.6],[21.667,22.47],[21.833,22.33],[22.0,22.2],[22.167,22.2],[22.333,22.2],[22.5,22.2],[22.667,22.2],[22.833,22.2],[23.0,22.2],[23.167,22.12],[23.333,22.03],[23.5,21.95],[23.667,21.87],[23.833,21.78],[24.0,21.7]]},"weekend":{"base_kw":[[0.167,47.36],[0.333,47.29],[0.5,47.26],[0.667,47.23],[0.833,47.22],[1.0,47.2],[1.167,47.19],[1.333,47.19],[1.5,47.2],[1.667,47.22],[1.833,47.24],[2.0,47.26],[2.167,47.27],[2.333,47.28],[2.5,47.28],[2.667,47.26],[2.833,47.25],[3.0,47.24],[3.167,47.23],[3.333,47.2],[3.5,47.13],[3.667,47.05],[3.833,46.97],[4.0,46.89],[4.167,46.82],[4.333,46.75],[4.5,46.68],[4.667,46.61],[4.833,46.55],[5.0,47.84],[5.167,49.07],[5.333,50.27],[5.5,51.43],[5.667,52.57],[5.833,53.34],[6.0,53.37],[6.167,74.92],[6.333,74.95],[6.5,74.97],[6.667,75.0],[6.833,75.02],[7.0,75.04],[7.167,93.48],[7.333,93.51],[7.5,93.53],[7.667,93.56],[7.833,93.58],[8.0,93.6],[8.167,269.05],[8.333,284.34],[8.5,295.94],[8.667,291.33],[8.833,293.68],[9.0,297.79],[9.167,298.75],[9.333,299.98],[9.5,301.96],[9.667,303.9],[9.833,306.03],[10.0,308.17],[10.167,310.03],[10.333,311.91],[10.5,313.83],[10.667,315.35],[10.833,316.42],[11.0,317.55],[11.167,318.65],[11.333,319.67],[11.5,320.59],[11.667,321.43],[11.833,322.18],[12.0,322.83],[12.167,214.21],[12.333,180.59],[12.5,170.54],[12.667,191.09],[12.833,190.92],[13.0,202.32],[13.167,325.12],[13.333,324.74],[13.5,324.07],[13.667,323.45],[13.833,322.82],[14.0,322.28],[14.167,321.89],[14.333,321.68],[14.5,321.62],[14.667,321.66],[14.833,321.79],[15.0,321.97],[15.167,322.21],[15.333,322.49],[15.5,322.8],[15.667,323.13],[15.833,323.46],[16.0,323.81],[16.167,324.22],[16.333,324.73],[16.5,325.35],[16.667,326.04],[16.833,326.79],[17.0,327.55],[17.167,269.48],[17.333,261.86],[17.5,246.74],[17.667,258.29],[17.833,256.56],[18.0,256.13],[18.167,149.12],[18.333,177.61],[18.5,173.94],[18.667,168.72],[18.833,147.2],[19.0,153.03],[19.167,171.64],[19.333,150.7],[19.5,171.21],[19.667,169.28],[19.833,144.41],[20.0,172.42],[20.167,74.11],[20.333,75.2],[20.5,72.64],[20.667,76.14],[20.833,74.49],[21.0,75.05],[21.167,74.51],[21.333,74.42],[21.5,73.96],[21.667,73.72],[21.833,73.29],[22.0,72.98],[22.167,61.9],[22.333,61.83],[22.5,62.55],[22.667,61.92],[22.833,62.0],[23.0,61.86],[23.167,61.87],[23.333,61.89],[23.5,61.91],[23.667,61.94],[23.833,61.97],[24.0,62.0]],"shed_kw":[[0.167,47.38],[0.333,47.31],[0.5,47.26],[0.667,47.24],[0.833,47.22],[1.0,47.21],[1.167,47.19],[1.333,47.19],[1.5,47.21],[1.667,47.22],[1.833,47.24],[2.0,47.26],[2.167,47.28],[2.333,47.28],[2.5,47.28],[2.667,47.27],[2.833,47.26],[3.0,47.24],[3.167,47.24],[3.333,47.2],[3.5,47.13],[3.667,47.05],[3.833,46.97],[4.0,46.89],[4.167,46.82],[4.333,46.75],[4.5,46.68],[4.667,46.62],[4.833,46.56],[5.0,47.84],[5.167,49.07],[5.333,50.27],[5.5,51.43],[5.667,52.57],[5.833,53.34],[6.0,53.37],[6.167,74.92],[6.333,74.95],[6.5,74.97],[6.667,75.0],[6.833,75.02],[7.0,75.04],[7.167,93.49],[7.333,93.51],[7.5,93.53],[7.667,93.56],[7.833,93.58],[8.0,93.6],[8.167,269.14],[8.333,262.0],[8.5,255.2],[8.667,260.36],[8.833,269.46],[9.0,269.27],[9.167,269.89],[9.333,272.38],[9.5,274.11],[9.667,275.66],[9.833,277.15],[10.0,255.64],[10.167,274.04],[10.333,269.72],[10.5,283.23],[10.667,277.66],[10.833,264.59],[11.0,277.24],[11.167,283.06],[11.333,283.71],[11.5,286.07],[11.667,288.29],[11.833,262.29],[12.0,294.46],[12.167,160.0],[12.333,160.52],[12.5,160.82],[12.667,174.5],[12.833,160.38],[13.0,160.38],[13.167,297.48],[13.333,296.75],[13.5,293.57],[13.667,309.34],[13.833,310.91],[14.0,297.72],[14.167,286.57],[14.333,286.3],[14.5,285.95],[14.667,286.02],[14.833,286.2],[15.0,286.45],[15.167,287.13],[15.333,287.84],[15.5,288.55],[15.667,289.33],[15.833,290.08],[16.0,290.82],[16.167,290.51],[16.333,290.34],[16.5,290.39],[16.667,290.49],[16.833,290.68],[17.0,290.91],[17.167,237.54],[17.333,215.77],[17.5,212.1],[17.667,236.13],[17.833,220.5],[18.0,223.59],[18.167,151.37],[18.333,139.3],[18.5,151.85],[18.667,139.49],[18.833,152.8],[19.0,139.94],[19.167,168.12],[19.333,155.08],[19.5,150.91],[19.667,202.64],[19.833,137.54],[20.0,170.29],[20.167,117.91],[20.333,84.06],[20.5,85.4],[20.667,84.79],[20.833,79.78],[21.0,83.92],[21.167,78.48],[21.333,82.55],[21.5,93.38],[21.667,72.72],[21.833,89.43],[22.0,83.52],[22.167,64.1],[22.333,62.98],[22.5,64.18],[22.667,63.31],[22.833,66.07],[23.0,64.53],[23.167,64.51],[23.333,62.17],[23.5,67.97],[23.667,62.39],[23.833,73.91],[24.0,62.79]],"stage":[[0.167,0.0],[0.333,0.0],[0.5,0.0],[0.667,0.0],[0.833,0.0],[1.0,0.0],[1.167,0.0],[1.333,0.0],[1.5,0.0],[1.667,0.0],[1.833,0.0],[2.0,0.0],[2.167,0.0],[2.333,0.0],[2.5,0.0],[2.667,0.0],[2.833,0.0],[3.0,0.0],[3.167,0.0],[3.333,0.0],[3.5,0.0],[3.667,0.0],[3.833,0.0],[4.0,0.0],[4.167,0.0],[4.333,0.0],[4.5,0.0],[4.667,0.0],[4.833,0.0],[5.0,0.0],[5.167,0.0],[5.333,0.0],[5.5,0.0],[5.667,0.0],[5.833,0.0],[6.0,0.0],[6.167,0.0],[6.333,0.0],[6.5,0.0],[6.667,0.0],[6.833,0.0],[7.0,0.0],[7.167,0.0],[7.333,0.0],[7.5,0.0],[7.667,0.0],[7.833,0.0],[8.0,0.0],[8.167,0.0],[8.333,1.0],[8.5,2.0],[8.667,2.0],[8.833,2.0],[9.0,2.0],[9.167,2.0],[9.333,2.0],[9.5,2.0],[9.667,2.0],[9.833,2.0],[10.0,3.0],[10.167,3.0],[10.333,3.0],[10.5,3.0],[10.667,3.0],[10.833,3.0],[11.0,3.0],[11.167,3.0],[11.333,3.0],[11.5,3.0],[11.667,3.0],[11.833,3.0],[12.0,3.0],[12.167,3.0],[12.333,3.0],[12.5,3.0],[12.667,3.0],[12.833,3.0],[13.0,3.0],[13.167,3.0],[13.333,3.0],[13.5,3.0],[13.667,3.0],[13.833,3.0],[14.0,3.0],[14.167,3.0],[14.333,3.0],[14.5,3.0],[14.667,3.0],[14.833,3.0],[15.0,3.0],[15.167,3.0],[15.333,3.0],[15.5,3.0],[15.667,3.0],[15.833,3.0],[16.0,3.0],[16.167,3.0],[16.333,3.0],[16.5,3.0],[16.667,3.0],[16.833,3.0],[17.0,3.0],[17.167,3.0],[17.333,3.0],[17.5,3.0],[17.667,3.0],[17.833,3.0],[18.0,3.0],[18.167,3.0],[18.333,3.0],[18.5,3.0],[18.667,3.0],[18.833,3.0],[19.0,3.0],[19.167,2.0],[19.333,2.0],[19.5,2.0],[19.667,1.0],[19.833,1.0],[20.0,1.0],[20.167,0.0],[20.333,0.0],[20.5,0.0],[20.667,0.0],[20.833,0.0],[21.0,0.0],[21.167,0.0],[21.333,0.0],[21.5,0.0],[21.667,0.0],[21.833,0.0],[22.0,0.0],[22.167,0.0],[22.333,0.0],[22.5,0.0],[22.667,0.0],[22.833,0.0],[23.0,0.0],[23.167,0.0],[23.333,0.0],[23.5,0.0],[23.667,0.0],[23.833,0.0],[24.0,0.0]]},"monthly":{"labels":["Jun","Jul","Aug"],"peak_base":[335.2,333.8,335.1],"peak_shed":[306.0,300.2,311.1],"energy_base":[258.5,272.6,280.5],"energy_shed":[251.6,259.1,269.0]},"threshold_kw":276.9,"stats":{"billing_peak_base":335.2,"billing_peak_shed":311.1,"exceed_base":2276,"exceed_shed":610,"energy_base":811.7,"energy_shed":779.8,"unmet_clg_base":152.5,"unmet_clg_shed":24.67,"dc_savings":1302},"zone_label":"Story 2 South Perimeter zone","code":"\nfrom pyenergyplus.plugin import EnergyPlusPlugin\n\nZONES = [\"Story 1 Core Thermal Zone\", \"Story 1 East Perimeter Thermal Zone\", \"Story 1 North Perimeter Thermal Zone\", \"Story 1 South Perimeter Thermal Zone\", \"Story 1 West Perimeter Thermal Zone\", \"Story 2 Core Thermal Zone\", \"Story 2 East Perimeter Thermal Zone\", \"Story 2 North Perimeter Thermal Zone\", \"Story 2 South Perimeter Thermal Zone\", \"Story 2 West Perimeter Thermal Zone\"]\nTHRESHOLD_W = 276900.0     # shed target: clip demand to this level\nOFFSETS_K = [0.0, 1.0, 2.0, 3.0]  # cooling setpoint offset per shed stage\nWINDOW_START_HOUR = 8             # on-peak window 08:00-19:00, every day\nWINDOW_END_HOUR = 19              # (this building runs 7-day schedules)\nDWELL_MINUTES = 10.0              # min time between stage moves\nJUMP_RATIO = 1.15                 # >115% of threshold from idle -> jump 2 stages\nRELEASE_MINUTES = 30.0            # staggered post-event release (anti-rebound)\nFALLBACK_BASE_C = 23.9\n\n\nclass DemandLimiter(EnergyPlusPlugin):\n    \"\"\"Staged demand-limiting supervisory controller (revision 3).\n\n    Each zone timestep: read last timestep's whole-facility electric demand;\n    inside the daily on-peak window, ratchet the shed stage up (never down)\n    whenever demand exceeds THRESHOLD_W -- jumping two stages from idle on\n    large excursions -- raising every zone's cooling setpoint by\n    OFFSETS_K[stage]. After the window, release one stage per RELEASE_MINUTES\n    so recovery load returns gradually (no rebound spike).\n    \"\"\"\n\n    def __init__(self):\n        super().__init__()\n        self.handles_ready = False\n        self.h_demand = -1\n        self.h_stage = -1\n        self.h_clg_act = {}\n        self.h_clg_sens = {}\n        self.base_clg = {}\n        self.stage = 0\n        self.minutes_since_change = 1.0e9\n\n    def _lookup_handles(self, state):\n        ex = self.api.exchange\n        self.h_demand = ex.get_variable_handle(\n            state, \"Facility Total Electricity Demand Rate\", \"Whole Building\")\n        self.h_stage = ex.get_global_handle(state, \"dr_stage\")\n        for zone in ZONES:\n            self.h_clg_act[zone] = ex.get_actuator_handle(\n                state, \"Zone Temperature Control\", \"Cooling Setpoint\", zone)\n            self.h_clg_sens[zone] = ex.get_variable_handle(\n                state, \"Zone Thermostat Cooling Setpoint Temperature\", zone)\n        bad = []\n        if self.h_demand == -1:\n            bad.append(\"facility demand sensor\")\n        if self.h_stage == -1:\n            bad.append(\"dr_stage global\")\n        bad += [\"actuator \" + z for z, h in self.h_clg_act.items() if h == -1]\n        bad += [\"setpoint sensor \" + z for z, h in self.h_clg_sens.items() if h == -1]\n        return bad\n\n    def _weather_run(self, state):\n        # Only actuate during the weather-file run period -- overriding\n        # setpoints during sizing design days would shrink the cooling plant\n        # and corrupt the baseline-vs-controlled comparison.\n        try:\n            return int(self.api.exchange.kind_of_sim(state)) == 3\n        except Exception:\n            return True\n\n    def on_begin_timestep_before_predictor(self, state) -> int:\n        ex = self.api.exchange\n        if not ex.api_data_fully_ready(state):\n            return 0\n        if not self.handles_ready:\n            bad = self._lookup_handles(state)\n            if bad:\n                self.api.runtime.issue_severe(\n                    state, \"DemandLimiter handle lookup failed: \" + \", \".join(bad))\n                return 1\n            self.handles_ready = True\n        if not self._weather_run(state):\n            ex.set_global_value(state, self.h_stage, 0.0)\n            return 0\n\n        dt_minutes = 60.0 * ex.zone_time_step(state)\n        self.minutes_since_change += dt_minutes\n        hour = ex.hour(state)              # 0-23\n        demand_w = ex.get_variable_value(state, self.h_demand)\n        in_window = WINDOW_START_HOUR <= hour < WINDOW_END_HOUR\n\n        if not in_window and self.stage == 0:\n            # Unoverridden: remember each zone's scheduled cooling setpoint so\n            # shed offsets stack on the schedule, not on our own override.\n            for zone in ZONES:\n                self.base_clg[zone] = ex.get_variable_value(\n                    state, self.h_clg_sens[zone])\n\n        max_stage = len(OFFSETS_K) - 1\n        if in_window:\n            if (demand_w > THRESHOLD_W and self.stage < max_stage\n                    and self.minutes_since_change >= DWELL_MINUTES):\n                step = 2 if (self.stage == 0\n                             and demand_w > JUMP_RATIO * THRESHOLD_W) else 1\n                self.stage = min(self.stage + step, max_stage)\n                self.minutes_since_change = 0.0\n        elif self.stage > 0 and self.minutes_since_change >= RELEASE_MINUTES:\n            self.stage -= 1\n            self.minutes_since_change = 0.0\n\n        for zone in ZONES:\n            if self.stage == 0:\n                ex.reset_actuator(state, self.h_clg_act[zone])\n            else:\n                base = self.base_clg.get(zone, FALLBACK_BASE_C)\n                ex.set_actuator_value(\n                    state, self.h_clg_act[zone], base + OFFSETS_K[self.stage])\n        ex.set_global_value(state, self.h_stage, float(self.stage))\n        return 0\n"};
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const FMT = new Intl.NumberFormat("en-US");
+function hhmm(t){ const h = Math.floor(t), m = Math.round((t-h)*60); return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0"); }
+
+/* ---- stat tiles ---- */
+(function(){
+  const s = DATA.stats;
+  const set = (id, html) => document.getElementById(id).innerHTML = html;
+  set("t-peak", `${s.billing_peak_shed} <small>kW</small>`);
+  set("t-peak-d", `−${(100*(s.billing_peak_base-s.billing_peak_shed)/s.billing_peak_base).toFixed(1)}% vs ${s.billing_peak_base} kW baseline`);
+  set("t-exceed", FMT.format(s.exceed_shed));
+  set("t-exceed-d", `−${Math.round(100*(s.exceed_base-s.exceed_shed)/s.exceed_base)}% vs ${FMT.format(s.exceed_base)} baseline`);
+  set("t-energy", `${s.energy_shed} <small>MWh</small>`);
+  set("t-energy-d", `−${(100*(s.energy_base-s.energy_shed)/s.energy_base).toFixed(1)}% vs ${s.energy_base} MWh baseline`);
+  set("t-dollar", `$${FMT.format(s.dc_savings)}`);
+  set("t-dollar-d", "3 summer months, this building");
+})();
+
+/* ---- chart helpers ---- */
+const M = {l:52, r:14, t:10, b:26};
+function mkSvg(w, h){
+  const s = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  s.setAttribute("viewBox",`0 0 ${w} ${h}`);
+  return s;
+}
+function el(name, attrs, text){
+  const e = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+function niceTicks(max, n){
+  const raw = max/n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=raw);
+  const out = []; for (let v=0; v<=max+1e-9; v+=step) out.push(v);
+  return out;
+}
+
+/* Time-series line chart. cfg: {series:[{pts,color,name,width,dash}], yMax, yLabel,
+   band:[h0,h1], ref:{y,label}, stepped:bool, yTicks, h} */
+function lineChart(boxId, cfg){
+  const box = document.getElementById(boxId);
+  const W = 980, H = cfg.h || 300;
+  const svg = mkSvg(W, H);
+  const x = t => M.l + (t/24)*(W-M.l-M.r);
+  const yMax = cfg.yMax, yMin = cfg.yMin || 0;
+  const y = v => H-M.b - ((v-yMin)/(yMax-yMin))*(H-M.b-M.t);
+
+  if (cfg.band){
+    svg.appendChild(el("rect",{x:x(cfg.band[0]), y:M.t, width:x(cfg.band[1])-x(cfg.band[0]),
+      height:H-M.b-M.t, fill:"var(--band)"}));
+    svg.appendChild(el("text",{x:x(cfg.band[0])+6, y:M.t+13, "font-size":10.5,
+      fill:"var(--muted)", class:"svglabel"}, cfg.bandLabel||""));
+  }
+  const ticks = cfg.yTicks || niceTicks(yMax, 4);
+  for (const tv of ticks){
+    if (tv < yMin) continue;
+    svg.appendChild(el("line",{x1:M.l, x2:W-M.r, y1:y(tv), y2:y(tv), stroke:"var(--grid)","stroke-width":1}));
+    svg.appendChild(el("text",{x:M.l-8, y:y(tv)+3.5, "text-anchor":"end","font-size":10.5,
+      fill:"var(--muted)", class:"svglabel"}, FMT.format(tv)));
+  }
+  for (let h=0; h<=24; h+=3){
+    svg.appendChild(el("text",{x:x(h), y:H-M.b+16, "text-anchor":"middle","font-size":10.5,
+      fill:"var(--muted)", class:"svglabel"}, hhmm(h)));
+  }
+  svg.appendChild(el("line",{x1:M.l, x2:W-M.r, y1:y(yMin), y2:y(yMin), stroke:"var(--axis)","stroke-width":1}));
+  if (cfg.yLabel) svg.appendChild(el("text",{x:M.l-8, y:M.t+2, "text-anchor":"end","font-size":10.5,
+      fill:"var(--muted)", class:"svglabel"}, cfg.yLabel));
+
+  if (cfg.ref){
+    svg.appendChild(el("line",{x1:M.l, x2:W-M.r, y1:y(cfg.ref.y), y2:y(cfg.ref.y),
+      stroke:"var(--muted)","stroke-width":1.5,"stroke-dasharray":"5 4"}));
+    svg.appendChild(el("text",{x:W-M.r-4, y:y(cfg.ref.y)-5, "text-anchor":"end","font-size":10.5,
+      fill:"var(--ink-2)", class:"svglabel"}, cfg.ref.label));
+  }
+  for (const s of cfg.series){
+    let d = "";
+    s.pts.forEach((p,i)=>{
+      const X = x(p[0]).toFixed(1), Y = y(p[1]).toFixed(1);
+      if (i===0) d += `M${X} ${Y}`;
+      else if (cfg.stepped || s.stepped) d += `H${X}V${Y}`;
+      else d += `L${X} ${Y}`;
+    });
+    svg.appendChild(el("path",{d, fill:"none", stroke:s.color,
+      "stroke-width":s.width||2, "stroke-linejoin":"round","stroke-linecap":"round",
+      ...(s.dash?{"stroke-dasharray":s.dash}:{})}));
+  }
+  for (const a of (cfg.annot||[])){
+    svg.appendChild(el("text",{x:x(a.t), y:y(a.v)-8, "text-anchor":a.anchor||"middle",
+      "font-size":11, fill:"var(--ink-2)", class:"svglabel"}, a.text));
+  }
+  box.appendChild(svg);
+
+  /* hover crosshair + tooltip */
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  const cross = el("line",{y1:M.t, y2:H-M.b, stroke:"var(--axis)","stroke-width":1, visibility:"hidden"});
+  svg.appendChild(cross);
+  svg.addEventListener("mousemove", ev => {
+    const r = svg.getBoundingClientRect();
+    const t = ((ev.clientX-r.left)/r.width*W - M.l)/(W-M.l-M.r)*24;
+    if (t < 0 || t > 24){ tip.style.display="none"; cross.setAttribute("visibility","hidden"); return; }
+    cross.setAttribute("x1", x(t)); cross.setAttribute("x2", x(t));
+    cross.setAttribute("visibility","visible");
+    let html = `<b>${hhmm(Math.min(t,23.99))}</b>`;
+    for (const s of cfg.series){
+      let best = s.pts[0];
+      for (const p of s.pts) if (Math.abs(p[0]-t) < Math.abs(best[0]-t)) best = p;
+      html += `<br><span style="color:${s.color}">●</span> ${s.name}: <b>${best[1]}${cfg.unit||""}</b>`;
+    }
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const bx = box.getBoundingClientRect();
+    let left = ev.clientX-bx.left+14;
+    if (left + tip.offsetWidth > bx.width-8) left = ev.clientX-bx.left-tip.offsetWidth-14;
+    tip.style.left = left+"px";
+    tip.style.top = (ev.clientY-bx.top+8)+"px";
+  });
+  svg.addEventListener("mouseleave", ()=>{ tip.style.display="none"; cross.setAttribute("visibility","hidden"); });
+}
+
+function legend(id, items){
+  document.getElementById(id).innerHTML = items.map(i =>
+    `<span class="key"><span class="swatch${i.dash?" dash":""}" style="${i.dash?"":`background:${i.color}`}"></span>${i.name}</span>`).join("");
+}
+
+/* grouped bars: cfg {labels, groups:[{name,color,vals}], unit, h, yMin} */
+function barChart(boxId, cfg){
+  const box = document.getElementById(boxId);
+  const W = 470, H = cfg.h || 260, Mb = {l:46, r:8, t:22, b:24};
+  const svg = mkSvg(W, H);
+  const vmax = Math.max(...cfg.groups.flatMap(g=>g.vals));
+  const yMax = vmax*1.12;
+  const y = v => H-Mb.b - (v/yMax)*(H-Mb.b-Mb.t);
+  for (const tv of niceTicks(yMax,4)){
+    svg.appendChild(el("line",{x1:Mb.l, x2:W-Mb.r, y1:y(tv), y2:y(tv), stroke:"var(--grid)","stroke-width":1}));
+    svg.appendChild(el("text",{x:Mb.l-7, y:y(tv)+3.5,"text-anchor":"end","font-size":10.5,
+      fill:"var(--muted)", class:"svglabel"}, FMT.format(tv)));
+  }
+  const n = cfg.labels.length, gN = cfg.groups.length;
+  const slot = (W-Mb.l-Mb.r)/n, bw = 24, gap = 6;
+  cfg.labels.forEach((lb,i)=>{
+    const cx = Mb.l + slot*(i+0.5);
+    const total = gN*bw + (gN-1)*gap;
+    cfg.groups.forEach((g,j)=>{
+      const bx = cx - total/2 + j*(bw+gap);
+      const top = y(g.vals[i]), bh = (H-Mb.b)-top;
+      svg.appendChild(el("path",{d:
+        `M${bx} ${H-Mb.b}V${top+4}Q${bx} ${top} ${bx+4} ${top}H${bx+bw-4}Q${bx+bw} ${top} ${bx+bw} ${top+4}V${H-Mb.b}Z`,
+        fill:g.color}));
+      svg.appendChild(el("text",{x:bx+bw/2, y:top-5,"text-anchor":"middle","font-size":10,
+        fill:"var(--ink-2)", class:"svglabel"}, g.vals[i]));
+    });
+    svg.appendChild(el("text",{x:cx, y:H-Mb.b+16,"text-anchor":"middle","font-size":11,
+      fill:"var(--ink-2)"}, lb));
+  });
+  svg.appendChild(el("line",{x1:Mb.l, x2:W-Mb.r, y1:H-Mb.b, y2:H-Mb.b, stroke:"var(--axis)","stroke-width":1}));
+  box.appendChild(svg);
+}
+
+/* ---- build ---- */
+const C_BASE = "var(--base)", C_CTRL = "var(--ctrl)", C_CMD = "var(--cmd)";
+const P = DATA.peakday, WK = DATA.weekend, TH = DATA.threshold_kw;
+
+legend("lg-peakday", [
+  {name:"Baseline", color:"var(--base)"},
+  {name:"Demand-limited (v3)", color:"var(--ctrl)"},
+  {name:`Shed threshold ${TH} kW`, dash:true},
+]);
+lineChart("ch-peakday", {
+  series: [
+    {pts:P.base_kw, color:C_BASE, name:"Baseline"},
+    {pts:P.shed_kw, color:C_CTRL, name:"Demand-limited"},
+  ],
+  yMax: 360, yTicks:[0,100,200,300], yLabel:"kW", unit:" kW",
+  band: [8,19], bandLabel:"DR window 08:00–19:00",
+  ref: {y: TH, label:`threshold ${TH} kW`}, h: 320,
+});
+
+legend("lg-anatomy", [
+  {name:"Shed stage (plugin output)", color:"var(--cmd)"},
+  {name:"Cooling setpoint (actuated)", color:"var(--cmd)"},
+  {name:"Zone temp — demand-limited", color:"var(--ctrl)"},
+  {name:"Zone temp — baseline", color:"var(--base)"},
+]);
+lineChart("ch-stage", {
+  series: [{pts:P.stage, color:C_CMD, name:"Shed stage", stepped:true}],
+  yMax: 3.4, yTicks:[0,1,2,3], yLabel:"stage", h: 130, band:[8,19],
+});
+lineChart("ch-temps", {
+  series: [
+    {pts:P.sp_shed, color:C_CMD, name:"Cooling setpoint (actuated)", width:1.6},
+    {pts:P.tz_shed, color:C_CTRL, name:"Zone temp — demand-limited"},
+    {pts:P.tz_base, color:C_BASE, name:"Zone temp — baseline"},
+  ],
+  yMax: 28, yMin: 20, yTicks:[20,22,24,26,28], yLabel:"°C", unit:" °C",
+  h: 210, band:[8,19],
+});
+
+legend("lg-weekend", [
+  {name:"Baseline", color:"var(--base)"},
+  {name:"Demand-limited (v3)", color:"var(--ctrl)"},
+  {name:`Shed threshold ${TH} kW`, dash:true},
+]);
+lineChart("ch-weekend", {
+  series: [
+    {pts:WK.base_kw, color:C_BASE, name:"Baseline"},
+    {pts:WK.shed_kw, color:C_CTRL, name:"Demand-limited"},
+  ],
+  yMax: 360, yTicks:[0,100,200,300], yLabel:"kW", unit:" kW",
+  band: [8,19], bandLabel:"DR window 08:00–19:00",
+  ref: {y: TH, label:`threshold ${TH} kW`}, h: 280,
+});
+
+const MO = DATA.monthly;
+legend("lg-mpeak", [
+  {name:"Baseline", color:"var(--base)"},
+  {name:"Demand-limited", color:"var(--ctrl)"},
+]);
+barChart("ch-mpeak", {labels: MO.labels, groups: [
+  {name:"Baseline", color:C_BASE, vals:MO.peak_base},
+  {name:"Demand-limited", color:C_CTRL, vals:MO.peak_shed},
+]});
+legend("lg-menergy", [
+  {name:"Baseline", color:"var(--base)"},
+  {name:"Demand-limited", color:"var(--ctrl)"},
+]);
+barChart("ch-menergy", {labels: MO.labels, groups: [
+  {name:"Baseline", color:C_BASE, vals:MO.energy_base},
+  {name:"Demand-limited", color:C_CTRL, vals:MO.energy_shed},
+]});
+
+/* ---- tables ---- */
+function hourly(pts){ return pts.filter(p => Math.abs(p[0]-Math.round(p[0])) < 1e-6); }
+function tbl(id, heads, rows){
+  document.getElementById(id).innerHTML =
+    `<table class="data"><tr>${heads.map(h=>`<th>${h}</th>`).join("")}</tr>` +
+    rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("") + "</table>";
+}
+(function(){
+  const b = hourly(P.base_kw), s = hourly(P.shed_kw);
+  tbl("tb-peakday", ["Hour","Baseline kW","Demand-limited kW"],
+    b.map((p,i)=>[hhmm(p[0]), p[1], s[i]?s[i][1]:""]));
+  const st = hourly(P.stage), sp = hourly(P.sp_shed), tz = hourly(P.tz_shed), tb0 = hourly(P.tz_base);
+  tbl("tb-anatomy", ["Hour","Stage","Setpoint °C","Zone °C (DL)","Zone °C (base)"],
+    st.map((p,i)=>[hhmm(p[0]), p[1], sp[i]?sp[i][1]:"", tz[i]?tz[i][1]:"", tb0[i]?tb0[i][1]:""]));
+  const wb = hourly(WK.base_kw), ws = hourly(WK.shed_kw);
+  tbl("tb-weekend", ["Hour","Baseline kW","Demand-limited kW"],
+    wb.map((p,i)=>[hhmm(p[0]), p[1], ws[i]?ws[i][1]:""]));
+  tbl("tb-monthly", ["Month","Peak base kW","Peak DL kW","Energy base MWh","Energy DL MWh"],
+    MO.labels.map((m,i)=>[m, MO.peak_base[i], MO.peak_shed[i], MO.energy_base[i], MO.energy_shed[i]]));
+})();
+
+document.getElementById("plugin-code").textContent = DATA.code;
+</script>

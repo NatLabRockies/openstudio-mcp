@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ import openstudio
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
 from mcp_server.skills.model_management.baseline_model import create_baseline_model
+from mcp_server.util import reject_escaping_symlinks
 
 
 def _safe_name(s: str) -> str:
@@ -217,11 +219,35 @@ def save_osm_model(osm_path: str | None = None) -> dict[str, Any]:
         if not p.exists():
             return {"ok": False, "error": f"Save appeared to succeed but file not found: {p}"}
 
-        return {
+        result: dict[str, Any] = {
             "ok": True,
             "osm_path": str(saved_path),
             "message": f"Model saved successfully to {saved_path}",
         }
+
+        # Carry the model's companion files/ dir (ExternalFile resources, e.g.
+        # Python EMS plugin scripts) so a save-as stays runnable from its new
+        # location — the OSM stores only bare file names resolved via files/.
+        current_path = model_manager.get_model_path()
+        if current_path is not None:
+            src_files = current_path.resolve().parent / "files"
+            dst_files = p.parent / "files"
+            if src_files.is_dir() and src_files != dst_files.resolve():
+                # Same guard as run_simulation staging: copytree FOLLOWS
+                # symlinks, so a link planted in files/ would copy arbitrary
+                # host files into the new location.
+                sym_err = reject_escaping_symlinks(src_files)
+                if sym_err:
+                    return {
+                        "ok": False,
+                        "error": f"Model saved to {saved_path}, but its files/ "
+                                 f"dir was NOT copied: {sym_err}",
+                        "osm_path": str(saved_path),
+                    }
+                shutil.copytree(str(src_files), str(dst_files), dirs_exist_ok=True)
+                result["files_dir"] = str(dst_files)
+
+        return result
     except Exception as e:
         return {"ok": False, "error": f"Failed to save model: {e}", "osm_path": str(p)}
 

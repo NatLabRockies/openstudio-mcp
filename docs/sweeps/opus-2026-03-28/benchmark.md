@@ -1,8 +1,8 @@
 # LLM Benchmark Report
 
-**Date:** 2026-03-28T21:44:31+00:00  
-**Model:** opus | **Retries:** 0  
-**Result:** 170/180 passed (94.4%) in 11078s  
+**Date:** 2026-03-28T21:44:31+00:00
+**Model:** opus | **Retries:** 0
+**Result:** 170/180 passed (94.4%) in 11078s
 **Tokens:** 2.0k in + 164.4k out + 22.6M cache | **Cost:** $32.2343 (notional API pricing)
 
 ## Summary by Tier

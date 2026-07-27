@@ -31,8 +31,6 @@
       }
     }
   },
-  "required": [
-    "ok"
-  ],
+  "required": ["ok"],
   "additionalProperties": true
 }

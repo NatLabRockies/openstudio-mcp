@@ -62,13 +62,9 @@
       "input_tokens": 18,
       "output_tokens": 699,
       "cache_read_tokens": 67618,
-      "tool_calls": [
-        "create_baseline_osm"
-      ],
+      "tool_calls": ["create_baseline_osm"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_baseline_osm"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_baseline_osm"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -84,13 +80,9 @@
       "input_tokens": 18,
       "output_tokens": 790,
       "cache_read_tokens": 111158,
-      "tool_calls": [
-        "create_baseline_osm"
-      ],
+      "tool_calls": ["create_baseline_osm"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_baseline_osm"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_baseline_osm"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -106,13 +98,9 @@
       "input_tokens": 18,
       "output_tokens": 442,
       "cache_read_tokens": 111146,
-      "tool_calls": [
-        "create_example_osm"
-      ],
+      "tool_calls": ["create_example_osm"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_example_osm"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_example_osm"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -128,10 +116,7 @@
       "input_tokens": 26,
       "output_tokens": 453,
       "cache_read_tokens": 162699,
-      "tool_calls": [
-        "load_osm_model",
-        "list_thermal_zones"
-      ],
+      "tool_calls": ["load_osm_model", "list_thermal_zones"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -222,13 +207,9 @@
       "input_tokens": 18,
       "output_tokens": 196,
       "cache_read_tokens": 111124,
-      "tool_calls": [
-        "get_server_status"
-      ],
+      "tool_calls": ["get_server_status"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__get_server_status"
-      ],
+      "all_tool_calls": ["mcp__openstudio__get_server_status"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -244,18 +225,14 @@
       "input_tokens": 18,
       "output_tokens": 418,
       "cache_read_tokens": 103070,
-      "tool_calls": [
-        "list_skills"
-      ],
+      "tool_calls": ["list_skills"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__list_skills"
-      ],
+      "all_tool_calls": ["mcp__openstudio__list_skills"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
     {
-      "test_id": "tests/llm/test_02_tool_selection.py::test_tool_selection_no_model[Create a small office building usin]",
+      "test_id": "tests/llm/test_02_tool_selection.py::test_tool_selection_no_model[Create a small office building using]",
       "passed": true,
       "duration_s": 45.2,
       "tier": "tier1",
@@ -294,13 +271,9 @@
       "input_tokens": 18,
       "output_tokens": 1266,
       "cache_read_tokens": 111131,
-      "tool_calls": [
-        "create_bar_building"
-      ],
+      "tool_calls": ["create_bar_building"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_bar_building"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_bar_building"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -586,13 +559,9 @@
       "input_tokens": 18,
       "output_tokens": 1054,
       "cache_read_tokens": 111132,
-      "tool_calls": [
-        "create_bar_building"
-      ],
+      "tool_calls": ["create_bar_building"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_bar_building"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_bar_building"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -648,10 +617,7 @@
       "input_tokens": 26,
       "output_tokens": 454,
       "cache_read_tokens": 170783,
-      "tool_calls": [
-        "load_osm_model",
-        "validate_model"
-      ],
+      "tool_calls": ["load_osm_model", "validate_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -673,10 +639,7 @@
       "input_tokens": 26,
       "output_tokens": 644,
       "cache_read_tokens": 171221,
-      "tool_calls": [
-        "load_osm_model",
-        "validate_model"
-      ],
+      "tool_calls": ["load_osm_model", "validate_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -1568,10 +1531,7 @@
       "input_tokens": 18,
       "output_tokens": 500,
       "cache_read_tokens": 111160,
-      "tool_calls": [
-        "load_osm_model",
-        "view_model"
-      ],
+      "tool_calls": ["load_osm_model", "view_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -1592,10 +1552,7 @@
       "input_tokens": 18,
       "output_tokens": 393,
       "cache_read_tokens": 111160,
-      "tool_calls": [
-        "load_osm_model",
-        "view_model"
-      ],
+      "tool_calls": ["load_osm_model", "view_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -1775,10 +1732,7 @@
       "input_tokens": 26,
       "output_tokens": 822,
       "cache_read_tokens": 171395,
-      "tool_calls": [
-        "load_osm_model",
-        "change_building_location"
-      ],
+      "tool_calls": ["load_osm_model", "change_building_location"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -1799,10 +1753,7 @@
       "input_tokens": 26,
       "output_tokens": 523,
       "cache_read_tokens": 171180,
-      "tool_calls": [
-        "load_osm_model",
-        "add_rooftop_pv"
-      ],
+      "tool_calls": ["load_osm_model", "add_rooftop_pv"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -1823,10 +1774,7 @@
       "input_tokens": 26,
       "output_tokens": 702,
       "cache_read_tokens": 171280,
-      "tool_calls": [
-        "load_osm_model",
-        "adjust_thermostat_setpoints"
-      ],
+      "tool_calls": ["load_osm_model", "adjust_thermostat_setpoints"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -1847,11 +1795,7 @@
       "input_tokens": 34,
       "output_tokens": 570,
       "cache_read_tokens": 231073,
-      "tool_calls": [
-        "load_osm_model",
-        "list_spaces",
-        "delete_object"
-      ],
+      "tool_calls": ["load_osm_model", "list_spaces", "delete_object"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -1904,10 +1848,7 @@
       "input_tokens": 26,
       "output_tokens": 993,
       "cache_read_tokens": 172945,
-      "tool_calls": [
-        "create_bar_building",
-        "list_spaces"
-      ],
+      "tool_calls": ["create_bar_building", "list_spaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__create_bar_building",
@@ -1928,13 +1869,9 @@
       "input_tokens": 18,
       "output_tokens": 1512,
       "cache_read_tokens": 111197,
-      "tool_calls": [
-        "create_new_building"
-      ],
+      "tool_calls": ["create_new_building"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_new_building"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_new_building"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -2000,13 +1937,9 @@
       "input_tokens": 18,
       "output_tokens": 821,
       "cache_read_tokens": 111272,
-      "tool_calls": [
-        "import_floorspacejs"
-      ],
+      "tool_calls": ["import_floorspacejs"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__import_floorspacejs"
-      ],
+      "all_tool_calls": ["mcp__openstudio__import_floorspacejs"],
       "toolsearch_count": 0,
       "is_timeout": false,
       "failure_mode": "wrong_tool"
@@ -2057,11 +1990,7 @@
       "input_tokens": 18,
       "output_tokens": 1017,
       "cache_read_tokens": 111193,
-      "tool_calls": [
-        "load_osm_model",
-        "list_surfaces",
-        "list_materials"
-      ],
+      "tool_calls": ["load_osm_model", "list_surfaces", "list_materials"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -2084,10 +2013,7 @@
       "input_tokens": 18,
       "output_tokens": 1212,
       "cache_read_tokens": 111215,
-      "tool_calls": [
-        "load_osm_model",
-        "list_spaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_spaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -2943,13 +2869,9 @@
       "input_tokens": 18,
       "output_tokens": 8894,
       "cache_read_tokens": 111241,
-      "tool_calls": [
-        "create_measure"
-      ],
+      "tool_calls": ["create_measure"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_measure"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_measure"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -2965,13 +2887,9 @@
       "input_tokens": 18,
       "output_tokens": 4332,
       "cache_read_tokens": 111241,
-      "tool_calls": [
-        "create_measure"
-      ],
+      "tool_calls": ["create_measure"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_measure"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_measure"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -2987,13 +2905,9 @@
       "input_tokens": 18,
       "output_tokens": 4424,
       "cache_read_tokens": 111257,
-      "tool_calls": [
-        "create_measure"
-      ],
+      "tool_calls": ["create_measure"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_measure"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_measure"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -3009,13 +2923,9 @@
       "input_tokens": 18,
       "output_tokens": 3120,
       "cache_read_tokens": 111257,
-      "tool_calls": [
-        "create_measure"
-      ],
+      "tool_calls": ["create_measure"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_measure"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_measure"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -3067,13 +2977,9 @@
       "input_tokens": 18,
       "output_tokens": 430,
       "cache_read_tokens": 111155,
-      "tool_calls": [
-        "extract_summary_metrics"
-      ],
+      "tool_calls": ["extract_summary_metrics"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__extract_summary_metrics"
-      ],
+      "all_tool_calls": ["mcp__openstudio__extract_summary_metrics"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -3281,10 +3187,7 @@
       "input_tokens": 18,
       "output_tokens": 391,
       "cache_read_tokens": 111160,
-      "tool_calls": [
-        "load_osm_model",
-        "view_model"
-      ],
+      "tool_calls": ["load_osm_model", "view_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3305,10 +3208,7 @@
       "input_tokens": 26,
       "output_tokens": 552,
       "cache_read_tokens": 171150,
-      "tool_calls": [
-        "load_osm_model",
-        "view_model"
-      ],
+      "tool_calls": ["load_osm_model", "view_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3329,10 +3229,7 @@
       "input_tokens": 26,
       "output_tokens": 512,
       "cache_read_tokens": 171136,
-      "tool_calls": [
-        "load_osm_model",
-        "view_model"
-      ],
+      "tool_calls": ["load_osm_model", "view_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3463,11 +3360,7 @@
       "input_tokens": 26,
       "output_tokens": 750,
       "cache_read_tokens": 171302,
-      "tool_calls": [
-        "load_osm_model",
-        "validate_model",
-        "get_model_summary"
-      ],
+      "tool_calls": ["load_osm_model", "validate_model", "get_model_summary"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3489,11 +3382,7 @@
       "input_tokens": 26,
       "output_tokens": 899,
       "cache_read_tokens": 171097,
-      "tool_calls": [
-        "load_osm_model",
-        "validate_model",
-        "get_model_summary"
-      ],
+      "tool_calls": ["load_osm_model", "validate_model", "get_model_summary"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3560,13 +3449,9 @@
       "input_tokens": 18,
       "output_tokens": 1035,
       "cache_read_tokens": 111151,
-      "tool_calls": [
-        "create_bar_building"
-      ],
+      "tool_calls": ["create_bar_building"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__create_bar_building"
-      ],
+      "all_tool_calls": ["mcp__openstudio__create_bar_building"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -3582,11 +3467,7 @@
       "input_tokens": 34,
       "output_tokens": 899,
       "cache_read_tokens": 231664,
-      "tool_calls": [
-        "load_osm_model",
-        "add_rooftop_pv",
-        "save_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "add_rooftop_pv", "save_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3608,11 +3489,7 @@
       "input_tokens": 34,
       "output_tokens": 821,
       "cache_read_tokens": 231748,
-      "tool_calls": [
-        "load_osm_model",
-        "add_rooftop_pv",
-        "save_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "add_rooftop_pv", "save_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3634,10 +3511,7 @@
       "input_tokens": 26,
       "output_tokens": 625,
       "cache_read_tokens": 179268,
-      "tool_calls": [
-        "load_osm_model",
-        "add_rooftop_pv"
-      ],
+      "tool_calls": ["load_osm_model", "add_rooftop_pv"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3710,10 +3584,7 @@
       "input_tokens": 18,
       "output_tokens": 476,
       "cache_read_tokens": 111179,
-      "tool_calls": [
-        "load_osm_model",
-        "adjust_thermostat_setpoints"
-      ],
+      "tool_calls": ["load_osm_model", "adjust_thermostat_setpoints"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3734,10 +3605,7 @@
       "input_tokens": 26,
       "output_tokens": 504,
       "cache_read_tokens": 162968,
-      "tool_calls": [
-        "load_osm_model",
-        "list_spaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_spaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3758,10 +3626,7 @@
       "input_tokens": 26,
       "output_tokens": 618,
       "cache_read_tokens": 171061,
-      "tool_calls": [
-        "load_osm_model",
-        "list_spaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_spaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3782,10 +3647,7 @@
       "input_tokens": 18,
       "output_tokens": 674,
       "cache_read_tokens": 111163,
-      "tool_calls": [
-        "load_osm_model",
-        "list_spaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_spaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3806,10 +3668,7 @@
       "input_tokens": 26,
       "output_tokens": 750,
       "cache_read_tokens": 171060,
-      "tool_calls": [
-        "load_osm_model",
-        "list_model_objects"
-      ],
+      "tool_calls": ["load_osm_model", "list_model_objects"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3830,10 +3689,7 @@
       "input_tokens": 26,
       "output_tokens": 596,
       "cache_read_tokens": 171084,
-      "tool_calls": [
-        "load_osm_model",
-        "list_model_objects"
-      ],
+      "tool_calls": ["load_osm_model", "list_model_objects"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -3854,10 +3710,7 @@
       "input_tokens": 18,
       "output_tokens": 437,
       "cache_read_tokens": 111174,
-      "tool_calls": [
-        "load_osm_model",
-        "list_model_objects"
-      ],
+      "tool_calls": ["load_osm_model", "list_model_objects"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4110,10 +3963,7 @@
       "input_tokens": 18,
       "output_tokens": 578,
       "cache_read_tokens": 111168,
-      "tool_calls": [
-        "load_osm_model",
-        "list_model_objects"
-      ],
+      "tool_calls": ["load_osm_model", "list_model_objects"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4160,10 +4010,7 @@
       "input_tokens": 26,
       "output_tokens": 576,
       "cache_read_tokens": 171081,
-      "tool_calls": [
-        "load_osm_model",
-        "get_building_info"
-      ],
+      "tool_calls": ["load_osm_model", "get_building_info"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4184,10 +4031,7 @@
       "input_tokens": 26,
       "output_tokens": 356,
       "cache_read_tokens": 170793,
-      "tool_calls": [
-        "load_osm_model",
-        "get_building_info"
-      ],
+      "tool_calls": ["load_osm_model", "get_building_info"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4208,10 +4052,7 @@
       "input_tokens": 26,
       "output_tokens": 367,
       "cache_read_tokens": 170799,
-      "tool_calls": [
-        "load_osm_model",
-        "get_building_info"
-      ],
+      "tool_calls": ["load_osm_model", "get_building_info"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4232,10 +4073,7 @@
       "input_tokens": 26,
       "output_tokens": 673,
       "cache_read_tokens": 162950,
-      "tool_calls": [
-        "load_osm_model",
-        "list_materials"
-      ],
+      "tool_calls": ["load_osm_model", "list_materials"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4256,10 +4094,7 @@
       "input_tokens": 26,
       "output_tokens": 619,
       "cache_read_tokens": 171104,
-      "tool_calls": [
-        "load_osm_model",
-        "list_materials"
-      ],
+      "tool_calls": ["load_osm_model", "list_materials"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4280,10 +4115,7 @@
       "input_tokens": 26,
       "output_tokens": 493,
       "cache_read_tokens": 171066,
-      "tool_calls": [
-        "load_osm_model",
-        "list_materials"
-      ],
+      "tool_calls": ["load_osm_model", "list_materials"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4304,10 +4136,7 @@
       "input_tokens": 26,
       "output_tokens": 403,
       "cache_read_tokens": 171075,
-      "tool_calls": [
-        "load_osm_model",
-        "get_model_summary"
-      ],
+      "tool_calls": ["load_osm_model", "get_model_summary"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4329,10 +4158,7 @@
       "input_tokens": 26,
       "output_tokens": 933,
       "cache_read_tokens": 170791,
-      "tool_calls": [
-        "load_osm_model",
-        "list_thermal_zones"
-      ],
+      "tool_calls": ["load_osm_model", "list_thermal_zones"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4353,10 +4179,7 @@
       "input_tokens": 26,
       "output_tokens": 430,
       "cache_read_tokens": 170797,
-      "tool_calls": [
-        "load_osm_model",
-        "list_thermal_zones"
-      ],
+      "tool_calls": ["load_osm_model", "list_thermal_zones"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4405,10 +4228,7 @@
       "input_tokens": 26,
       "output_tokens": 496,
       "cache_read_tokens": 171126,
-      "tool_calls": [
-        "load_osm_model",
-        "list_subsurfaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_subsurfaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4429,10 +4249,7 @@
       "input_tokens": 26,
       "output_tokens": 401,
       "cache_read_tokens": 171096,
-      "tool_calls": [
-        "load_osm_model",
-        "list_subsurfaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_subsurfaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4481,11 +4298,7 @@
       "input_tokens": 34,
       "output_tokens": 741,
       "cache_read_tokens": 231351,
-      "tool_calls": [
-        "load_osm_model",
-        "list_surfaces",
-        "get_surface_details"
-      ],
+      "tool_calls": ["load_osm_model", "list_surfaces", "get_surface_details"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4507,10 +4320,7 @@
       "input_tokens": 18,
       "output_tokens": 651,
       "cache_read_tokens": 111169,
-      "tool_calls": [
-        "load_osm_model",
-        "list_surfaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_surfaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4623,10 +4433,7 @@
       "input_tokens": 26,
       "output_tokens": 566,
       "cache_read_tokens": 171107,
-      "tool_calls": [
-        "load_osm_model",
-        "run_simulation"
-      ],
+      "tool_calls": ["load_osm_model", "run_simulation"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -4647,10 +4454,7 @@
       "input_tokens": 26,
       "output_tokens": 536,
       "cache_read_tokens": 171174,
-      "tool_calls": [
-        "extract_summary_metrics",
-        "get_run_status"
-      ],
+      "tool_calls": ["extract_summary_metrics", "get_run_status"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__extract_summary_metrics",
@@ -4671,10 +4475,7 @@
       "input_tokens": 26,
       "output_tokens": 606,
       "cache_read_tokens": 170773,
-      "tool_calls": [
-        "extract_summary_metrics",
-        "get_run_status"
-      ],
+      "tool_calls": ["extract_summary_metrics", "get_run_status"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__extract_summary_metrics",
@@ -4860,13 +4661,9 @@
       "input_tokens": 18,
       "output_tokens": 413,
       "cache_read_tokens": 111158,
-      "tool_calls": [
-        "extract_hvac_sizing"
-      ],
+      "tool_calls": ["extract_hvac_sizing"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__extract_hvac_sizing"
-      ],
+      "all_tool_calls": ["mcp__openstudio__extract_hvac_sizing"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -5108,10 +4905,7 @@
       "input_tokens": 26,
       "output_tokens": 826,
       "cache_read_tokens": 170799,
-      "tool_calls": [
-        "load_osm_model",
-        "list_model_objects"
-      ],
+      "tool_calls": ["load_osm_model", "list_model_objects"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5405,10 +5199,7 @@
       "input_tokens": 26,
       "output_tokens": 1200,
       "cache_read_tokens": 170821,
-      "tool_calls": [
-        "load_osm_model",
-        "list_spaces"
-      ],
+      "tool_calls": ["load_osm_model", "list_spaces"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5430,11 +5221,7 @@
       "input_tokens": 34,
       "output_tokens": 590,
       "cache_read_tokens": 231142,
-      "tool_calls": [
-        "load_osm_model",
-        "create_plant_loop",
-        "save_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "create_plant_loop", "save_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5456,10 +5243,7 @@
       "input_tokens": 18,
       "output_tokens": 512,
       "cache_read_tokens": 111171,
-      "tool_calls": [
-        "load_osm_model",
-        "create_plant_loop"
-      ],
+      "tool_calls": ["load_osm_model", "create_plant_loop"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5480,10 +5264,7 @@
       "input_tokens": 18,
       "output_tokens": 371,
       "cache_read_tokens": 111171,
-      "tool_calls": [
-        "load_osm_model",
-        "create_plant_loop"
-      ],
+      "tool_calls": ["load_osm_model", "create_plant_loop"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5718,10 +5499,7 @@
       "input_tokens": 18,
       "output_tokens": 459,
       "cache_read_tokens": 111165,
-      "tool_calls": [
-        "load_osm_model",
-        "set_run_period"
-      ],
+      "tool_calls": ["load_osm_model", "set_run_period"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5742,10 +5520,7 @@
       "input_tokens": 18,
       "output_tokens": 426,
       "cache_read_tokens": 111169,
-      "tool_calls": [
-        "load_osm_model",
-        "set_run_period"
-      ],
+      "tool_calls": ["load_osm_model", "set_run_period"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5766,10 +5541,7 @@
       "input_tokens": 26,
       "output_tokens": 539,
       "cache_read_tokens": 171163,
-      "tool_calls": [
-        "load_osm_model",
-        "set_run_period"
-      ],
+      "tool_calls": ["load_osm_model", "set_run_period"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5818,10 +5590,7 @@
       "input_tokens": 18,
       "output_tokens": 472,
       "cache_read_tokens": 111166,
-      "tool_calls": [
-        "load_osm_model",
-        "enable_ideal_air_loads"
-      ],
+      "tool_calls": ["load_osm_model", "enable_ideal_air_loads"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5868,10 +5637,7 @@
       "input_tokens": 26,
       "output_tokens": 399,
       "cache_read_tokens": 170783,
-      "tool_calls": [
-        "load_osm_model",
-        "save_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "save_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5892,10 +5658,7 @@
       "input_tokens": 18,
       "output_tokens": 404,
       "cache_read_tokens": 111169,
-      "tool_calls": [
-        "load_osm_model",
-        "save_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "save_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5916,10 +5679,7 @@
       "input_tokens": 26,
       "output_tokens": 469,
       "cache_read_tokens": 170817,
-      "tool_calls": [
-        "load_osm_model",
-        "save_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "save_osm_model"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5940,11 +5700,7 @@
       "input_tokens": 26,
       "output_tokens": 900,
       "cache_read_tokens": 172568,
-      "tool_calls": [
-        "load_osm_model",
-        "add_ev_load",
-        "save_osm_model"
-      ],
+      "tool_calls": ["load_osm_model", "add_ev_load", "save_osm_model"],
       "num_tool_calls": 3,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -5994,10 +5750,7 @@
       "input_tokens": 18,
       "output_tokens": 559,
       "cache_read_tokens": 111165,
-      "tool_calls": [
-        "load_osm_model",
-        "add_ev_load"
-      ],
+      "tool_calls": ["load_osm_model", "add_ev_load"],
       "num_tool_calls": 2,
       "all_tool_calls": [
         "mcp__openstudio__load_osm_model",
@@ -6018,13 +5771,9 @@
       "input_tokens": 18,
       "output_tokens": 345,
       "cache_read_tokens": 103070,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__list_custom_measures"
-      ],
+      "all_tool_calls": ["mcp__openstudio__list_custom_measures"],
       "toolsearch_count": 0,
       "is_timeout": false
     },
@@ -6040,13 +5789,9 @@
       "input_tokens": 18,
       "output_tokens": 609,
       "cache_read_tokens": 103070,
-      "tool_calls": [
-        "list_custom_measures"
-      ],
+      "tool_calls": ["list_custom_measures"],
       "num_tool_calls": 1,
-      "all_tool_calls": [
-        "mcp__openstudio__list_custom_measures"
-      ],
+      "all_tool_calls": ["mcp__openstudio__list_custom_measures"],
       "toolsearch_count": 0,
       "is_timeout": false
     }

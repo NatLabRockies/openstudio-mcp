@@ -194,6 +194,12 @@ EXPECTED_TOOLS = {
     "set_lifecycle_cost_params",
     "add_cost_per_floor_area",
     "set_adiabatic_boundaries",
+    # Python EMS (EnergyPlus Python Plugins)
+    "create_python_plugin",
+    "get_python_plugin",
+    "edit_python_plugin",
+    "list_ems_actuators",
+    "install_plugin_packages",
     # Skill Discovery
     "list_skills",
     "get_skill",

@@ -5,8 +5,9 @@ __pycache__/
 dist/
 build/
 *.egg
+.python-version
 
-# Virtual environments
+# Virtual environment
 .venv/
 venv/
 analyses/
@@ -33,6 +34,11 @@ Thumbs.db
 
 # Pytest
 .pytest_cache/
+
+# Issue #98/#96 repro fixture — only the gzipped out.osw + workflow.osw are
+# committed; the raw 20MB out.osw and seed/EPW support files stay local
+tests/assets/bson-repro/out.osw
+tests/assets/bson-repro/files/
 
 # Code review artifacts
 docs/review/

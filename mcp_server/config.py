@@ -191,6 +191,10 @@ OSMCP_MAX_ARCHIVE_ENTRIES = _safe_int(os.environ.get("OSMCP_MAX_ARCHIVE_ENTRIES"
 # returns a relative path and the client prepends the same host it uses for /mcp.
 OSMCP_PUBLIC_BASE_URL = os.environ.get("OSMCP_PUBLIC_BASE_URL", "").rstrip("/")
 
+# Per-user quota for pip-installed Python plugin packages (install_plugin_packages).
+# Hard cap: an install that lands over this clears the dir and errors. 0 = unlimited.
+OSMCP_PKGS_QUOTA_MB = _safe_int(os.environ.get("OSMCP_PKGS_QUOTA_MB", "250"), 250)
+
 # Shared roots are read-only for everyone; the only per-user writable areas are
 # RUN_ROOT/<user_key> (runs) and MEASURES_DIR/<user_key> (measures) — see
 # user_run_root / user_measures_root. Writes elsewhere are denied. The measures tree
@@ -233,6 +237,32 @@ def run_root_for(key: str) -> Path:
     root = (RUN_ROOT if key == LOCAL else RUN_ROOT / key).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def pkgs_root_for(key: str) -> Path:
+    """Python-plugin site-packages dir for an EXPLICIT user key (not auto-created).
+
+    Lives inside the user's run root, so is_path_allowed already scopes it per
+    tenant. The sim dispatcher (which has the run's user key but no request
+    identity) uses this to grant the dir read-only to the sandboxed EnergyPlus
+    child — plugins import third-party packages from here via
+    PythonPlugin:SearchPaths.
+    """
+    from mcp_server.identity import LOCAL
+    root = RUN_ROOT if key == LOCAL else RUN_ROOT / key
+    pkgs = root / "python_packages"
+    # Belt: resolve() would launder a symlink planted here into a path later
+    # treated as trusted (pip --target write, sandbox read-only grant).
+    if pkgs.is_symlink():
+        raise RuntimeError(
+            f"python_packages dir for '{key}' is a symlink — refusing to use it")
+    return pkgs.resolve()
+
+
+def user_pkgs_root() -> Path:
+    """The caller's Python-plugin site-packages dir (not auto-created)."""
+    from mcp_server.identity import user_key
+    return pkgs_root_for(user_key())
 
 
 def user_measures_root() -> Path:

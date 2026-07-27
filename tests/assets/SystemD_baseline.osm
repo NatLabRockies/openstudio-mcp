@@ -41949,4 +41949,3 @@ OS:SizingPeriod:DesignDay,
   ,                                       !- Diffuse Solar Day Schedule Name
   0.552,                                  !- ASHRAE Clear Sky Optical Depth for Beam Irradiance {dimensionless}
   1.769;                                  !- ASHRAE Clear Sky Optical Depth for Diffuse Irradiance {dimensionless}
-

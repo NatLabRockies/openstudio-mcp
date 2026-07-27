@@ -205,7 +205,17 @@ def run_qaqc_checks_op(
         for check_name in all_checks:
             args[check_name] = "true"
     _ensure_climate_zone()
-    return _run("generic_qaqc", args, run_id=run_id)
+    result = _run("generic_qaqc", args, run_id=run_id)
+    if result.get("ok") and result.get("run_dir"):
+        report = Path(result["run_dir"]) / "reports" / "generic_qaqc_report.html"
+        if report.is_file():
+            result["report_path"] = str(report)
+            result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = (
+                "Report generated. Use copy_file to export, "
+                "then find it on the host at runs/exports/generic_qaqc_report.html"
+            )
+    return result
 
 
 # --- 5. adjust_thermostat_setpoints ---
