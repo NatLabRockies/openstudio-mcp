@@ -1,7 +1,10 @@
 """MCP tools for translating gbXML files (e.g. Revit exports) into OSM models."""
 from __future__ import annotations
 
-from mcp_server.skills.gbxml_import.operations import import_gbxml_op
+from mcp_server.skills.gbxml_import.operations import (
+    import_gbxml_op,
+    validate_gbxml_geometry_op,
+)
 
 
 def register(mcp):
@@ -37,3 +40,17 @@ def register(mcp):
             osm_path=osm_path,
             run_name=run_name,
         )
+
+    @mcp.tool(tags={"geometry", "core"}, name="validate_gbxml_geometry")
+    def validate_gbxml_geometry_tool():
+        """Check the loaded model for surface overlaps and non-enclosed space volumes.
+
+        Runs match_surfaces() first (fixes shared walls between adjacent
+        spaces — the common case), then reports same-space duplicate/
+        overlapping surfaces and spaces whose volume can't be computed as a
+        closed manifold (usually a missing Floor or RoofCeiling surface) —
+        problems match_surfaces() cannot fix. One call replaces the manual
+        list_surfaces/get_surface_details/list_spaces/get_space_details
+        diagnostic chain.
+        """
+        return validate_gbxml_geometry_op()

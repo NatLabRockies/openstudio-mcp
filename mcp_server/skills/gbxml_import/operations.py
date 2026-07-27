@@ -11,6 +11,7 @@ never produces, so including them would just be dead weight in the OSW.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import shutil
 import subprocess
@@ -28,6 +29,8 @@ from mcp_server.config import (
     is_path_allowed,
     user_run_root,
 )
+from mcp_server.model_manager import get_model
+from mcp_server.skills.geometry.operations import match_surfaces
 from mcp_server.skills.measures.runner_messages import parse_all_step_messages
 from mcp_server.util import create_run_dir, reject_escaping_symlinks
 
@@ -277,3 +280,140 @@ def import_gbxml_op(
         return {"ok": False, "error": "gbXML import timed out (5 min)"}
     except Exception as e:
         return {"ok": False, "error": f"Failed to import gbXML: {e}"}
+
+
+# ---- Geometry validation ----
+
+# gbXML/Revit exports commonly carry sub-millimeter float noise on otherwise-identical
+# vertices; 1cm is tight enough to catch real duplicate geometry, loose enough to tolerate it.
+PLANE_TOLERANCE = 0.01
+# Minimum true overlap area to report — filters out coplanar surfaces that merely share
+# an edge (e.g. adjacent wall segments split at a window), not actual duplicate geometry.
+MIN_OVERLAP_AREA_M2 = 0.01
+# Keep the response small — same cap style as runner_messages.py's MESSAGE_LIMITS.
+MAX_REPORTED_ISSUES = 20
+
+
+def _clockwise(points: openstudio.Point3dVector) -> openstudio.Point3dVector:
+    """Normalize a planar polygon (z~0, as produced by Transformation.alignFace) to the
+    winding order openstudio.intersects()/intersect() require — they silently return
+    False/empty for correctly-overlapping polygons given the "wrong" (counterclockwise,
+    by this SDK's convention) winding, with no error raised. Same reverse-if-z>0 pattern
+    already used for floor-print orientation in create_space_from_floor_print above."""
+    normal = openstudio.getOutwardNormal(points)
+    if normal.is_initialized() and normal.get().z() > 0:
+        return openstudio.reverse(points)
+    return points
+
+
+def _overlap_area_m2(face1: openstudio.Point3dVector, face2: openstudio.Point3dVector) -> float:
+    """True overlap area between two same-plane, clockwise-normalized polygons.
+
+    openstudio.intersects() alone is too loose for this purpose — it returns True even
+    for polygons that merely share an edge (touching, zero actual overlap area), which
+    would false-positive on legitimate adjacent same-plane wall segments (e.g. split at
+    a window). openstudio.intersect() is the authoritative check: it returns an
+    uninitialized result when there's no true overlap area; otherwise IntersectionResult
+    .area1()/.area2() are just the two input polygons' own total areas (not the overlap),
+    so the actual overlap area is polygon1's area minus the summed area of its
+    newPolygons1() remainder (the part of polygon1 left over after removing the overlap).
+    """
+    opt = openstudio.intersect(face1, face2, PLANE_TOLERANCE)
+    if not opt.is_initialized():
+        return 0.0
+    orig_area = openstudio.getArea(face1)
+    if not orig_area.is_initialized():
+        return 0.0
+    remainder = 0.0
+    for poly_points in opt.get().newPolygons1():
+        pv = openstudio.Point3dVector()
+        for pt in poly_points:
+            pv.append(pt)
+        area = openstudio.getArea(pv)
+        remainder += area.get() if area.is_initialized() else 0.0
+    return max(orig_area.get() - remainder, 0.0)
+
+
+def _surface_overlaps(space: openstudio.model.Space) -> list[dict[str, Any]]:
+    """Same-space coincident-plane surfaces that also have true 2D overlap area.
+
+    These are true duplicate/overlapping geometry — match_surfaces() cannot fix
+    them, since OpenStudio's own intersectSurfaces()/matchSurfaces() explicitly
+    skip surface pairs within the same space (they only reconcile shared walls
+    between adjacent spaces).
+    """
+    surfaces = list(space.surfaces())
+    planes: list[Any] = []
+    for s in surfaces:
+        try:
+            planes.append(s.plane())
+        except Exception:
+            planes.append(None)  # degenerate surface; caught separately by isEnclosedVolume
+
+    issues: list[dict[str, Any]] = []
+    for (i, s1), (j, s2) in itertools.combinations(enumerate(surfaces), 2):
+        p1, p2 = planes[i], planes[j]
+        if p1 is None or p2 is None:
+            continue
+        same = p1.equal(p2, PLANE_TOLERANCE)
+        mirrored = p1.reverseEqual(p2, PLANE_TOLERANCE)
+        if not (same or mirrored):
+            continue
+        transform = openstudio.Transformation.alignFace(s1.vertices()).inverse()
+        face1 = _clockwise(transform * s1.vertices())
+        face2 = _clockwise(transform * s2.vertices())
+        overlap_area = _overlap_area_m2(face1, face2)
+        if overlap_area <= MIN_OVERLAP_AREA_M2:
+            continue
+        issues.append({
+            "surface_1": s1.nameString(),
+            "surface_2": s2.nameString(),
+            "overlap_area_m2": round(overlap_area, 4),
+            "same_orientation": bool(same),
+        })
+    return issues
+
+
+def validate_gbxml_geometry_op() -> dict[str, Any]:
+    """Fix cross-space shared walls, then report same-space overlaps + non-enclosed spaces."""
+    try:
+        model = get_model()
+        match_result = match_surfaces()  # mutates: fixes the common cross-space case first
+        if not match_result.get("ok"):
+            return {"ok": False, "error": "match_surfaces() failed before geometry validation"}
+
+        overlaps: list[dict[str, Any]] = []
+        non_enclosed: list[dict[str, Any]] = []
+        for space in model.getSpaces():
+            name = space.nameString()
+            for issue in _surface_overlaps(space):
+                issue["space"] = name
+                overlaps.append(issue)
+            if not space.isEnclosedVolume():
+                surfaces = space.surfaces()
+                non_enclosed.append({
+                    "space": name,
+                    "floor_area_m2": float(space.floorArea()),
+                    "has_floor": any(s.surfaceType() == "Floor" for s in surfaces),
+                    "has_roofceiling": any(s.surfaceType() == "RoofCeiling" for s in surfaces),
+                })
+
+        result = {
+            "ok": not overlaps and not non_enclosed,
+            "cross_space_surfaces_matched": match_result["matched_surfaces"],
+            "space_count": len(model.getSpaces()),
+            "surface_count": len(model.getSurfaces()),
+            "overlapping_surfaces_count": len(overlaps),
+            "overlapping_surfaces": overlaps[:MAX_REPORTED_ISSUES],
+            "non_enclosed_spaces_count": len(non_enclosed),
+            "non_enclosed_spaces": non_enclosed[:MAX_REPORTED_ISSUES],
+        }
+        if len(overlaps) > MAX_REPORTED_ISSUES:
+            result["overlapping_surfaces_truncated"] = True
+        if len(non_enclosed) > MAX_REPORTED_ISSUES:
+            result["non_enclosed_spaces_truncated"] = True
+        return result
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to validate geometry: {e}"}
