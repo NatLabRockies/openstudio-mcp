@@ -162,6 +162,27 @@ def test_validate_osw_denied_file_paths_hit_flagged(allowed_root, tmp_path):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("bad_file_paths", [5, True, {"a": 1}, "not-a-list"])
+def test_validate_osw_malformed_file_paths_no_crash(allowed_root, bad_file_paths):
+    # Regression: PR #107 review — non-list file_paths (caller-supplied OSW
+    # JSON) crashed _resolve_osw_file with TypeError instead of returning
+    # ok: False; a JSON string would be iterated char-by-char as junk dirs
+    from mcp_server.skills.simulation.operations import validate_osw
+
+    wf_dir = allowed_root / "wf"
+    wf_dir.mkdir()
+    osw = wf_dir / "workflow.osw"
+    osw.write_text(json.dumps({
+        "seed_file": "nope.osm",
+        "file_paths": bad_file_paths,
+        "steps": [],
+    }))
+    result = validate_osw(str(osw))
+    assert result["ok"] is False
+    assert "nope.osm" in " ".join(result["issues"])
+
+
+@pytest.mark.unit
 def test_validate_osw_relative_escape_seed_denied(allowed_root, tmp_path):
     # Validates: a seed_file escaping the OSW dir via ../ to a path outside
     # allowed roots is rejected — previously it validated (exists-check only)
@@ -245,6 +266,60 @@ def test_run_osw_stages_file_paths_seed_and_weather():
                 status = await poll_until_done(s, res["run_id"])
                 assert status["run"]["status"] == "success", \
                     f"staged file_paths workflow should simulate: {status}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_run_osw_stages_absolute_weather_file():
+    """OSW weather_file given as an absolute external path runs to success."""
+    # Regression: PR #107 review — an absolute weather_file validated but was
+    # never staged (staging only covered file_paths-search hits), so the
+    # Landlocked CLI child couldn't read it and the sim failed at runtime
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                assets = Path(f"/runs/{_unique('osw99_abs')}")
+                assets.mkdir(parents=True)
+                cr = unwrap(await s.call_tool("create_example_osm", {"name": _unique()}))
+                assert cr["ok"] is True, cr
+                lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
+                assert lr["ok"] is True, lr
+                wr = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
+                }))
+                assert wr["ok"] is True, wr.get("error")
+                rp = unwrap(await s.call_tool("set_run_period", {
+                    "begin_month": 7, "begin_day": 20, "end_month": 7, "end_day": 22,
+                }))
+                assert rp["ok"] is True, rp
+                sv = unwrap(await s.call_tool("save_osm_model", {
+                    "osm_path": str(assets / "seed_model.osm"),
+                }))
+                assert sv["ok"] is True, sv
+                shutil.copy2(EPW_PATH, str(assets / EPW_NAME))
+
+                wf_dir = Path(f"/runs/{_unique('osw99_abs_wf')}")
+                wf_dir.mkdir(parents=True)
+                osw_path = wf_dir / "workflow.osw"
+                osw_path.write_text(json.dumps({
+                    "seed_file": str(assets / "seed_model.osm"),
+                    "weather_file": str(assets / EPW_NAME),
+                    "steps": [],
+                }))
+
+                res = unwrap(await s.call_tool("run_osw", {"osw_path": str(osw_path)}))
+                assert res["ok"] is True, \
+                    f"run_osw rejected absolute-ref OSW: {res.get('error')} {res.get('issues')}"
+                run_dir = Path(res["run_dir"])
+                assert (run_dir / "files" / EPW_NAME).is_file(), \
+                    "absolute weather_file not staged into run files/"
+                status = await poll_until_done(s, res["run_id"])
+                assert status["run"]["status"] == "success", \
+                    f"absolute weather_file workflow should simulate: {status}"
     asyncio.run(_run())
 
 

@@ -199,6 +199,17 @@ def _dump_json(path: Path, obj: dict[str, Any]) -> None:
 _OSW_DEFAULT_FILE_DIRS = ("files", "weather", ".")
 
 
+def _osw_file_paths(osw: dict) -> list:
+    """The OSW's file_paths as a list.
+
+    Caller-supplied JSON may put any type here — an int/bool would crash the
+    starred unpack, and a string would be iterated char-by-char into junk
+    search dirs. Non-lists are treated as absent.
+    """
+    fps = osw.get("file_paths")
+    return fps if isinstance(fps, list) else []
+
+
 def _resolve_osw_file(name: str, base: Path, osw: dict,
                       *, gated: bool = True) -> tuple[Path | None, Path | None]:
     """Resolve an OSW file reference the way the CLI's WorkflowJSON::findFile
@@ -220,8 +231,8 @@ def _resolve_osw_file(name: str, base: Path, osw: dict,
         candidates = [n]
     else:
         dirs = [base]
-        for fp in (*(osw.get("file_paths") or []), *_OSW_DEFAULT_FILE_DIRS):
-            fpp = Path(fp)
+        for fp in (*_osw_file_paths(osw), *_OSW_DEFAULT_FILE_DIRS):
+            fpp = Path(str(fp))  # entries may be non-strings in caller JSON
             dirs.append(fpp if fpp.is_absolute() else base / fpp)
         candidates = [d / name for d in dirs]
     denied: Path | None = None
@@ -241,7 +252,7 @@ def _osw_ref_issue(kind: str, name: str, denied: Path | None, osw: dict) -> str:
     if denied is not None:
         return (f"{kind} '{name}' resolves to {denied}, which is outside the "
                 "caller's allowed roots")
-    searched = list(osw.get("file_paths") or [])
+    searched = _osw_file_paths(osw)
     return f"{kind} '{name}' not found (searched OSW dir + file_paths {searched})"
 
 
@@ -271,6 +282,14 @@ def validate_osw(osw_path: str, epw_path: str | None = None,
     weather = osw.get("weather_file")
 
     issues: list[str] = []
+
+    # Caller-supplied JSON: non-string refs would crash Path() below
+    if seed is not None and not isinstance(seed, str):
+        issues.append(f"seed_file must be a string, got {type(seed).__name__}")
+        seed = None
+    if weather is not None and not isinstance(weather, str):
+        issues.append(f"weather_file must be a string, got {type(weather).__name__}")
+        weather = None
 
     # If an EPW override is provided, it must exist. When present, the OSW's
     # `weather_file` reference becomes optional (we may still report it as an
@@ -580,12 +599,24 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                 osw["seed_file"] = str(seed_dst)
                 _dump_json(staged_osw, osw)
 
-    # Same treatment for a weather_file resolved via file_paths (only when no
-    # EPW override — the override staging below wins and rewrites weather_file)
+    # Stage a weather_file the sandboxed child couldn't read in place: refs
+    # resolving OUTSIDE the OSW dir (absolute path or ../ escape — _copy_tree
+    # mirrors only the OSW dir itself) plus refs that only resolve via the
+    # file_paths search. Staged copy gets an absolute rewrite. (PR #107
+    # review: the absolute-ref case validated but was never staged.) Skipped
+    # when an EPW override is present — the override staging below wins.
     weather_rel = osw.get("weather_file")
-    if weather_rel and not epw_src and not (src_dir / weather_rel).resolve().exists():
-        found, _denied = _resolve_osw_file(weather_rel, src_dir, osw,
-                                           gated=not _internal)
+    if weather_rel and isinstance(weather_rel, str) and not epw_src:
+        found: Path | None = None
+        w_direct = (src_dir / weather_rel).resolve()
+        if w_direct.exists():
+            inside_src = w_direct == src_dir or \
+                str(w_direct).startswith(str(src_dir) + os.sep)
+            if not inside_src and (_internal or is_path_allowed(w_direct)):
+                found = w_direct
+        else:
+            found, _denied = _resolve_osw_file(weather_rel, src_dir, osw,
+                                               gated=not _internal)
         if found is not None:
             files_dir = run_dir / "files"
             files_dir.mkdir(parents=True, exist_ok=True)
