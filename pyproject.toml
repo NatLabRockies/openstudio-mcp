@@ -1,6 +1,6 @@
 [project]
 name = "openstudio-mcp"
-version = "1.1.0"
+version = "1.1.1"
 description = "Thin MCP server around OpenStudio CLI with async runs and testable outputs."
 requires-python = ">=3.11"
 dependencies = [
