@@ -192,13 +192,70 @@ def _dump_json(path: Path, obj: dict[str, Any]) -> None:
     path.write_text(json.dumps(obj, indent=2, sort_keys=False) + "\n", encoding="utf-8")
 
 
-def validate_osw(osw_path: str, epw_path: str | None = None) -> dict[str, Any]:
+# Search dirs WorkflowJSON::findFile consults when the OSW declares no
+# file_paths (relative to the OSW dir). Explicit file_paths are searched too —
+# union rather than replacement, so the validator never rejects a workflow the
+# CLI would run (issue #99: false rejection is the bug being fixed here).
+_OSW_DEFAULT_FILE_DIRS = ("files", "weather", ".")
+
+
+def _resolve_osw_file(name: str, base: Path, osw: dict,
+                      *, gated: bool = True) -> tuple[Path | None, Path | None]:
+    """Resolve an OSW file reference the way the CLI's WorkflowJSON::findFile
+    does: absolute as-is, else the WHOLE relative reference appended to the OSW
+    dir, each file_paths entry (relative entries resolved against the OSW dir),
+    and the default search dirs.
+
+    When `gated`, candidates outside the caller's allowed roots are skipped:
+    file_paths is caller-controlled OSW content and a hit is later staged into
+    the run dir by the root server (run_osw) — ungated that is an arbitrary
+    host-file read primitive (same class as issue #104's companion staging).
+    Internal callers (run_simulation's private temp stage) pass gated=False.
+
+    Returns (hit, denied_hit) — denied_hit is the first candidate that exists
+    but failed the gate, kept for a precise error message.
+    """
+    n = Path(name)
+    if n.is_absolute():
+        candidates = [n]
+    else:
+        dirs = [base]
+        for fp in (*(osw.get("file_paths") or []), *_OSW_DEFAULT_FILE_DIRS):
+            fpp = Path(fp)
+            dirs.append(fpp if fpp.is_absolute() else base / fpp)
+        candidates = [d / name for d in dirs]
+    denied: Path | None = None
+    for c in candidates:
+        if not c.exists():
+            continue
+        if gated and not is_path_allowed(c):
+            if denied is None:
+                denied = c.resolve()
+            continue
+        return c.resolve(), None
+    return None, denied
+
+
+def _osw_ref_issue(kind: str, name: str, denied: Path | None, osw: dict) -> str:
+    """Error text for an unresolvable OSW file reference."""
+    if denied is not None:
+        return (f"{kind} '{name}' resolves to {denied}, which is outside the "
+                "caller's allowed roots")
+    searched = list(osw.get("file_paths") or [])
+    return f"{kind} '{name}' not found (searched OSW dir + file_paths {searched})"
+
+
+def validate_osw(osw_path: str, epw_path: str | None = None,
+                 *, _gated: bool = True) -> dict[str, Any]:
     """
     Best-effort validation:
       - JSON parses
       - file exists
-      - seed_file (if relative) resolves
-      - weather_file (if relative) resolves
+      - seed_file resolves (OSW dir + file_paths search, like the CLI)
+      - weather_file resolves (same search)
+
+    `_gated=False` is the trusted internal path (run_simulation's server-built
+    temp OSW lives outside the caller's roots); not exposed via the MCP tool.
     """
     p = Path(osw_path)
     if not p.exists():
@@ -225,14 +282,14 @@ def validate_osw(osw_path: str, epw_path: str | None = None) -> dict[str, Any]:
             return {"ok": False, "error": f"EPW not found: {epw_path}"}
 
     if seed:
-        seed_path = (base / seed).resolve()
-        if not seed_path.exists():
-            issues.append(f"seed_file not found at {seed} (resolved: {seed_path})")
+        seed_hit, seed_denied = _resolve_osw_file(seed, base, osw, gated=_gated)
+        if seed_hit is None:
+            issues.append(_osw_ref_issue("seed_file", seed, seed_denied, osw))
 
     if weather:
-        weather_path = (base / weather).resolve()
-        if not weather_path.exists():
-            msg = f"weather_file not found at {weather} (resolved: {weather_path})"
+        weather_hit, weather_denied = _resolve_osw_file(weather, base, osw, gated=_gated)
+        if weather_hit is None:
+            msg = _osw_ref_issue("weather_file", weather, weather_denied, osw)
             if epw_override is None:
                 issues.append(msg)
             else:
@@ -462,7 +519,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         return {"ok": False, "error": sym_err}
 
     # Fail fast on invalid OSW (before staging any run dir)
-    v = validate_osw(str(src_osw), epw_path=epw_path)
+    v = validate_osw(str(src_osw), epw_path=epw_path, _gated=not _internal)
     if not v.get("ok", False):
         return {
             "ok": False,
@@ -507,6 +564,36 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             if seed_rel != Path(seed_rel).name:
                 osw["seed_file"] = Path(seed_rel).name
                 _dump_json(staged_osw, osw)
+        else:
+            # Not next to the OSW: resolve via the OSW file_paths search like
+            # the CLI does (issue #99), then stage into the run dir — the
+            # sandboxed CLI child can only read its own run dir, so leaving
+            # the external reference in place would fail under Landlock
+            # (issue #104 class). Absolute rewrite sidesteps search-path
+            # semantics in the staged workflow.
+            found, _denied = _resolve_osw_file(seed_rel, src_dir, osw,
+                                               gated=not _internal)
+            if found is not None:
+                seed_dst = run_dir / found.name
+                if not seed_dst.exists():
+                    shutil.copy2(found, seed_dst)
+                osw["seed_file"] = str(seed_dst)
+                _dump_json(staged_osw, osw)
+
+    # Same treatment for a weather_file resolved via file_paths (only when no
+    # EPW override — the override staging below wins and rewrites weather_file)
+    weather_rel = osw.get("weather_file")
+    if weather_rel and not epw_src and not (src_dir / weather_rel).resolve().exists():
+        found, _denied = _resolve_osw_file(weather_rel, src_dir, osw,
+                                           gated=not _internal)
+        if found is not None:
+            files_dir = run_dir / "files"
+            files_dir.mkdir(parents=True, exist_ok=True)
+            weather_dst = files_dir / found.name
+            if not weather_dst.exists():
+                shutil.copy2(found, weather_dst)
+            osw["weather_file"] = str(weather_dst)
+            _dump_json(staged_osw, osw)
 
     # If an EPW is provided, stage it into files/ and rewrite weather_file to match
     staged_epw: Path | None = None
