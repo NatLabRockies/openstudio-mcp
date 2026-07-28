@@ -111,7 +111,29 @@ _TYPICAL_ARG_MAP = {
     "add_swh": "add_swh",
     "add_exterior_lights": "add_exterior_lights",
     "add_thermostat": "add_thermostat",
+    "add_elevators": "add_elevators",
+    "add_internal_mass": "add_internal_mass",
+    "add_exhaust": "add_exhaust",
+    "add_refrigeration": "add_refrigeration",
     "remove_objects": "remove_objects",
+}
+
+# The measure's remove_objects is per-section ("Only removes objects of type
+# that are selected to be added"), so pinning every section off except HVAC
+# yields a standards-tuned HVAC swap that leaves loads, constructions,
+# schedules, and thermostats untouched (issue #97 — fair system sweeps).
+_HVAC_ONLY_PINS = {
+    "add_constructions": False,
+    "add_space_type_loads": False,
+    "add_swh": False,
+    "add_exterior_lights": False,
+    "add_thermostat": False,
+    "add_elevators": False,
+    "add_internal_mass": False,
+    "add_exhaust": False,
+    "add_refrigeration": False,
+    "add_hvac": True,
+    "remove_objects": True,
 }
 
 
@@ -129,7 +151,12 @@ def create_typical_building(
     add_swh: bool = True,
     add_exterior_lights: bool = True,
     add_thermostat: bool = True,
+    add_elevators: bool = True,
+    add_internal_mass: bool = True,
+    add_exhaust: bool = True,
+    add_refrigeration: bool = True,
     remove_objects: bool = True,
+    hvac_only: bool = False,
 ) -> dict[str, Any]:
     """Create a typical building from the loaded model using ComStock measure.
 
@@ -156,7 +183,15 @@ def create_typical_building(
         add_swh: Add service water heating
         add_exterior_lights: Add exterior lighting
         add_thermostat: Add thermostat schedules
-        remove_objects: Remove existing objects before adding new ones
+        add_elevators: Add elevators
+        add_internal_mass: Add internal mass
+        add_exhaust: Add exhaust fans
+        add_refrigeration: Add refrigeration
+        remove_objects: Remove existing objects of the types being added
+        hvac_only: Replace ONLY the HVAC system (standards-tuned), preserving
+            loads, constructions, schedules, and thermostats — for fair system
+            comparisons on an already-configured model. Overrides the add_*
+            toggles and remove_objects.
     """
     measures_dir = Path(os.environ.get("COMSTOCK_MEASURES_DIR", "/opt/comstock-measures"))
     measure_path = measures_dir / "create_typical_building_from_model"
@@ -211,8 +246,14 @@ def create_typical_building(
         "add_swh": add_swh,
         "add_exterior_lights": add_exterior_lights,
         "add_thermostat": add_thermostat,
+        "add_elevators": add_elevators,
+        "add_internal_mass": add_internal_mass,
+        "add_exhaust": add_exhaust,
+        "add_refrigeration": add_refrigeration,
         "remove_objects": remove_objects,
     }
+    if hvac_only:
+        local_vars.update(_HVAC_ONLY_PINS)
     arguments = {}
     for py_name, measure_name in _TYPICAL_ARG_MAP.items():
         val = local_vars[py_name]
@@ -233,6 +274,8 @@ def create_typical_building(
         result["template"] = template
         result["system_type"] = system_type
         result["climate_zone"] = climate_zone
+        if hvac_only:
+            result["hvac_only"] = True
 
     return result
 
