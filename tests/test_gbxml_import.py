@@ -197,7 +197,7 @@ def test_validate_gbxml_geometry_on_real_import():
                     "aim2156", "aim0426", "aim1583", "aim1895", "aim0513", "aim1634",
                     "aim0635", "aim0845",
                 }, flagged
-                assert flagged["aim2860"]["floor_area_m2"] == pytest.approx(7.456443749999997), flagged
+                assert flagged["aim2860"]["floor_area_m2"] == pytest.approx(7.456443749999997, rel=1e-9), flagged
                 assert flagged["aim2860"]["has_floor"] is True, flagged
                 assert flagged["aim2860"]["has_roofceiling"] is True, flagged
 
