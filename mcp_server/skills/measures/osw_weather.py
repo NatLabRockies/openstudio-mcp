@@ -79,8 +79,13 @@ def stage_epw_into_run(epw_src: Path, run_dir: Path) -> str:
     shutil.copy2(str(epw_src), str(files_dir / epw_src.name))
     for ext in (".ddy", ".stat"):
         companion = epw_src.with_suffix(ext)
-        if companion.is_file():
-            shutil.copy2(str(companion), str(files_dir / companion.name))
+        # Companions are derived paths that never went through is_path_allowed
+        # (the EPW itself did, resolved). A tenant can write its own run dir,
+        # so a planted leaf symlink (x.ddy -> /etc/shadow) would make the root
+        # server copy the target into the tenant-readable run dir — skip links.
+        if companion.is_symlink() or not companion.is_file():
+            continue
+        shutil.copy2(str(companion), str(files_dir / companion.name))
     return f"files/{epw_src.name}"
 
 

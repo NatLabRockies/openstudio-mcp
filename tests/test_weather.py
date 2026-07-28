@@ -268,6 +268,39 @@ def test_run_simulation_resolves_portable_weather_url():
     asyncio.run(_run())
 
 
+def test_stage_epw_skips_symlinked_companions(tmp_path):
+    """A symlinked .ddy/.stat next to the EPW must not be staged."""
+    # Regression: PR #106 review — companions were copied ungated; a tenant can
+    # write its own run dir (sandboxed measures), so x.ddy -> /etc/shadow made
+    # the root server copy the target into the tenant-readable run dir
+    from mcp_server.skills.measures.osw_weather import stage_epw_into_run
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    epw = src_dir / "leak_test.epw"
+    epw.write_text("LOCATION,fake,,,,,,,0,0,0,0\n")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("root:hunter2\n")
+    try:
+        (src_dir / "leak_test.ddy").symlink_to(secret)
+    except OSError:
+        pytest.skip("symlink creation not permitted (Windows without dev mode)")
+    stat = src_dir / "leak_test.stat"
+    stat.write_text("legit stat content\n")
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    rel = stage_epw_into_run(epw, run_dir)
+
+    assert rel == "files/leak_test.epw"
+    files_dir = run_dir / "files"
+    assert (files_dir / "leak_test.epw").is_file()
+    assert (files_dir / "leak_test.stat").read_text() == "legit stat content\n", \
+        "regular companion should still be staged"
+    assert not (files_dir / "leak_test.ddy").exists(), \
+        "symlinked companion was staged — root server leaked the link target into the run dir"
+
+
 # ---- Design day tests ----
 
 @pytest.mark.integration
