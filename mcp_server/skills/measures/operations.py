@@ -37,7 +37,7 @@ from mcp_server.config import (
 from mcp_server.model_manager import get_model, load_model
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
-from mcp_server.skills.weather.operations import find_epw_by_name
+from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
 from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_run_dir
 
 
@@ -684,6 +684,22 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list measure arguments: {e}"}
 
 
+def _attach_portable_weather_url(result: dict[str, Any]) -> None:
+    """Post-reload step: record a portable weather url on the result.
+
+    Never raises: the measure already succeeded and the model reloaded — a
+    failure in this cleanup (OpenStudio API RuntimeError) must not flip the
+    tool result to ok=False (PR #108 review). Failures are surfaced as
+    `weather_url_error` instead.
+    """
+    try:
+        portable = make_weather_url_portable(get_model())
+        if portable is not None:
+            result["weather_url"] = portable
+    except Exception as e:
+        result["weather_url_error"] = str(e)
+
+
 def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
@@ -915,6 +931,14 @@ def apply_measure(
                     "model weather reference was unresolvable; removed for the "
                     "measures_only run and restored afterward"
                 )
+
+        # Make the weather reference portable when recoverable: the runner
+        # writes the staged absolute EPW path (this run's files/) into the
+        # output model, which points later tools at a container path that a
+        # future confined run can't read (issue #104 class). Custom EPWs with
+        # unfindable basenames keep the absolute url — tier 1 staging above
+        # handles those per-run instead.
+        _attach_portable_weather_url(result)
 
         if runner_messages:
             result["runner_messages"] = runner_messages

@@ -20,6 +20,7 @@ from typing import Any
 
 import openstudio
 
+from mcp_server.config import is_path_allowed
 from mcp_server.skills.weather.operations import find_epw_by_name
 
 
@@ -41,11 +42,15 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
     epw = Path(str(url.get()))
 
     # Tier 1: url already resolves (absolute path still valid on this
-    # machine). resolve() so a url relative to the server cwd doesn't
-    # produce a relative file_paths entry — the runner executes with
-    # cwd=run_dir and would resolve it against the wrong base
-    if epw.is_file():
-        out["file_paths"].append(str(epw.resolve().parent))
+    # machine). Stage it into the run dir instead of granting the parent via
+    # file_paths: the confined subprocess reads only its own run dir, so an
+    # absolute url into another run's files/ or /inputs is unreadable there
+    # even though the server resolves it (issue #104 class; surfaced again in
+    # issue #97 as a bogus "Windows path length" error from the standards
+    # sizing-run rescue). Gated: the url is caller-controlled model content —
+    # never point the root server's copy at a path outside allowed roots.
+    if epw.is_file() and is_path_allowed(epw):
+        out["weather_file"] = stage_epw_into_run(epw.resolve(), run_dir)
         return out
 
     # Tier 2: bare/stale name — look in known weather dirs, stage like run_osw
