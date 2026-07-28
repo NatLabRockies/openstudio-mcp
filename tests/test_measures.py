@@ -234,6 +234,110 @@ def test_apply_measure_weather_setting_measure_not_clobbered():
 
 
 @pytest.mark.integration
+def test_apply_measure_staged_url_portable_and_rerunnable():
+    """After a weather-setting measure, url is portable and measures re-run."""
+    # Regression: issue #97 investigation — the runner writes the staged
+    # absolute EPW path into the output model; the next apply_measure passed
+    # that other-run-dir path via OSW file_paths unstaged, and the confined
+    # subprocess EACCESed (surfaced as a bogus "Windows path length" error
+    # from the standards sizing-run rescue)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": "/opt/common-measures/ChangeBuildingLocation",
+                    "arguments": {
+                        "weather_file_name":
+                            "/opt/comstock-measures/ChangeBuildingLocation"
+                            "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw",
+                    },
+                }))
+                assert res["ok"] is True, f"CBL failed: {res.get('error')}"
+                weather = unwrap(await s.call_tool("get_weather_info", {}))
+                assert weather["weather_file"]["url"] == \
+                    "USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw", (
+                    "known EPW should be relativized to the portable bare name, "
+                    f"got {weather['weather_file']['url']}"
+                )
+                # Re-running any measure on this model must work
+                res2 = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": MEASURE_DIR,
+                    "arguments": {"building_name": "Rerun OK"},
+                }))
+                assert res2["ok"] is True, \
+                    f"second measure failed after weather set: {res2.get('error')}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_apply_measure_custom_epw_stays_absolute_and_rerunnable():
+    """Custom EPW (basename in no search dir) keeps absolute url; re-runs work."""
+    # Regression: issue #97 investigation — resolve_osw_weather tier 1 passed
+    # an absolute own-run url via file_paths without staging (sandbox denies
+    # other run dirs); and relativizing an unfindable basename would strand
+    # the model's weather reference entirely
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                import shutil
+                custom = f"MyCustom_{uuid.uuid4().hex[:8]}"
+                wdir = Path(f"/runs/{_unique('custom_epw')}")
+                wdir.mkdir(parents=True)
+                src = Path("/opt/comstock-measures/ChangeBuildingLocation"
+                           "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3")
+                for ext in (".epw", ".ddy", ".stat"):
+                    shutil.copy2(f"{src}{ext}", str(wdir / f"{custom}{ext}"))
+
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": "/opt/common-measures/ChangeBuildingLocation",
+                    "arguments": {"weather_file_name": str(wdir / f"{custom}.epw")},
+                }))
+                assert res["ok"] is True, f"CBL failed: {res.get('error')}"
+                weather = unwrap(await s.call_tool("get_weather_info", {}))
+                url = weather["weather_file"]["url"]
+                assert url.endswith(f"files/{custom}.epw") and url.startswith("/"), (
+                    "unfindable custom EPW must keep a resolvable absolute url, "
+                    f"got {url}"
+                )
+                res2 = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": MEASURE_DIR,
+                    "arguments": {"building_name": "Custom EPW Rerun"},
+                }))
+                assert res2["ok"] is True, \
+                    f"second measure failed with custom EPW url: {res2.get('error')}"
+    asyncio.run(_run())
+
+
+def test_portable_url_failure_never_fails_measure(monkeypatch):
+    """A raise in the portable-url post-step must not flip ok to False."""
+    # Regression: PR #108 review — apply_measure's outer except would catch a
+    # RuntimeError from the portable-url cleanup and report the whole
+    # (successful, reloaded) measure run as failed
+    from mcp_server.skills.measures import operations as ops
+
+    def _boom(model):
+        raise RuntimeError("weatherFile exploded")
+
+    monkeypatch.setattr(ops, "make_weather_url_portable", _boom)
+    monkeypatch.setattr(ops, "get_model", object)
+    result = {"ok": True}
+    ops._attach_portable_weather_url(result)
+    assert result["ok"] is True
+    assert result["weather_url_error"] == "weatherFile exploded"
+    assert "weather_url" not in result
+
+
+@pytest.mark.integration
 def test_apply_measure_verify_model_changed():
     """Verify model state changed after measure application."""
     # Validates: apply_measure mutates in-memory model (building name changes)

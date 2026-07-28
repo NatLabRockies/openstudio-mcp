@@ -97,13 +97,23 @@ def register(mcp):
         add_swh: bool = True,
         add_exterior_lights: bool = True,
         add_thermostat: bool = True,
+        add_elevators: bool = True,
+        add_internal_mass: bool = True,
+        add_exhaust: bool = True,
+        add_refrigeration: bool = True,
         remove_objects: bool = True,
+        hvac_only: bool = False,
     ):
         """Apply 90.1 template: constructions, loads, HVAC, SWH to model with geometry.
 
         Adds constructions, loads, HVAC, schedules, and service water heating
         to a model that already has geometry and space types assigned.
         Wraps the ComStock create_typical_building_from_model measure.
+
+        For fair HVAC system comparisons on an already-configured model, use
+        hvac_only=True with an explicit system_type — replaces just the HVAC
+        (standards-tuned equipment, efficiencies, and controls) and preserves
+        loads, constructions, schedules, and thermostats.
 
         Args:
             template: ASHRAE standard — "90.1-2019", "90.1-2016", "90.1-2013", etc.
@@ -121,7 +131,13 @@ def register(mcp):
             add_swh: Add service water heating
             add_exterior_lights: Add exterior lighting
             add_thermostat: Add thermostat schedules
-            remove_objects: Remove existing HVAC/loads before adding new ones
+            add_elevators: Add elevators
+            add_internal_mass: Add internal mass
+            add_exhaust: Add exhaust fans
+            add_refrigeration: Add refrigeration
+            remove_objects: Remove existing objects of the types being added
+            hvac_only: Replace ONLY the HVAC system; overrides every add_*
+                toggle AND forces remove_objects=True (existing HVAC removed)
 
         """
         return create_typical_building(
@@ -138,7 +154,12 @@ def register(mcp):
             add_swh=add_swh,
             add_exterior_lights=add_exterior_lights,
             add_thermostat=add_thermostat,
+            add_elevators=add_elevators,
+            add_internal_mass=add_internal_mass,
+            add_exhaust=add_exhaust,
+            add_refrigeration=add_refrigeration,
             remove_objects=remove_objects,
+            hvac_only=hvac_only,
         )
 
     @mcp.tool(tags={"core"}, name="create_new_building")
