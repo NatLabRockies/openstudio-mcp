@@ -885,6 +885,18 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         if not is_path_allowed(epw):
             return {"ok": False, "error": f"EPW path not allowed: {epw_path}"}
         epw_abs = str(epw.resolve())
+    else:
+        # No override: resolve the model's own OS:WeatherFile url so run_osw
+        # stages it into the run's files/ dir. A bare-filename url (the
+        # portable form change_building_location writes — issue #104) is
+        # unresolvable by the CLI alone, and a container-absolute /inputs url
+        # is unreadable by the sandboxed sim child; staging fixes both.
+        # Unresolvable stays None — the CLI then fails with its own weather
+        # error, unchanged from before.
+        from mcp_server.skills.weather.operations import resolve_model_weather_epw
+        resolved = resolve_model_weather_epw(osm)
+        if resolved is not None:
+            epw_abs = str(resolved)
 
     # Stage the minimal OSW in a throwaway temp dir. run_osw() copies the staged
     # files into the real per-user run dir before it returns, so nothing here
