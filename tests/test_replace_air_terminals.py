@@ -1,5 +1,6 @@
 """Integration tests for replace_air_terminals."""
 import asyncio
+from pathlib import Path
 
 import pytest
 from conftest import integration_enabled, server_params, unwrap
@@ -615,4 +616,56 @@ def test_replace_four_pipe_beam_no_loops():
                 assert replace_data["ok"] is False
                 assert "chilled water" in replace_data["error"].lower() or "hot water" in replace_data["error"].lower()
 
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_vav_reheat_replacement_sets_reverse_damper():
+    """Replacement VAV reheat terminals get DamperHeatingAction=Reverse."""
+    # Regression: issue #97 follow-up — _create_vav_reheat_terminal left the
+    # damper action at Normal (heating capped at minimum airflow), quietly
+    # reintroducing the underheating bug fixed in baseline systems 5/7
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                name = "test_replace_vav_damper"
+                create_resp = unwrap(await session.call_tool(
+                    "create_example_osm", {"name": name}))
+                assert create_resp["ok"] is True, create_resp
+                load_resp = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": create_resp["osm_path"]}))
+                assert load_resp["ok"] is True, load_resp
+                zones_resp = unwrap(await session.call_tool(
+                    "list_thermal_zones", {"max_results": 0}))
+                zone_names = [z["name"] for z in zones_resp["thermal_zones"]]
+
+                sys_resp = unwrap(await session.call_tool("add_baseline_system", {
+                    "system_type": 7, "thermal_zone_names": zone_names,
+                    "system_name": "VAV Damper Test",
+                }))
+                assert sys_resp["ok"] is True, sys_resp.get("error")
+
+                replace_resp = unwrap(await session.call_tool("replace_air_terminals", {
+                    "air_loop_name": "VAV Damper Test",
+                    "terminal_type": "VAV_Reheat",
+                }))
+                assert replace_resp["ok"] is True, replace_resp.get("error")
+
+                osm_path = f"/runs/{name}_damper.osm"
+                save_resp = unwrap(await session.call_tool(
+                    "save_osm_model", {"osm_path": osm_path}))
+                assert save_resp["ok"] is True, save_resp
+                text = Path(osm_path).read_text(encoding="utf-8")
+                blocks = text.split("OS:AirTerminal:SingleDuct:VAV:Reheat,")[1:]
+                assert blocks, "no VAV reheat terminals found after replacement"
+                for block in blocks:
+                    body = block.split(";")[0]
+                    assert "Reverse" in body, (
+                        "replacement VAV reheat terminal left DamperHeatingAction "
+                        f"at Normal:\n{body[:600]}"
+                    )
     asyncio.run(_run())

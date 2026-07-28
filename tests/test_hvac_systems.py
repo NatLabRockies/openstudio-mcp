@@ -382,9 +382,10 @@ def test_add_baseline_system_4_psz_hp():
     asyncio.run(_run())
 
 
-def test_system_4_multi_zone_rejection():
-    """Test System 4 rejects multiple zones."""
-    # Validates: PSZ systems (single-zone) reject multi-zone input with clear error
+def test_system_4_multi_zone_fanout():
+    """System 4 with a zone list fans out to one PSZ-HP per zone."""
+    # Regression: issue #97 — systems 1-4 rejected multi-zone input, forcing
+    # 27 calls for 27 zones; now one call creates one air loop per zone
     name = "test_sys4_multi_zone"
 
     async def _run():
@@ -410,15 +411,25 @@ def test_system_4_multi_zone_rejection():
                 # Ensure we have at least 2 zones
                 assert len(zone_names) >= 2
 
-                # Try to add PSZ-HP with 2 zones (should fail)
                 system_resp = await session.call_tool("add_baseline_system", {
                     "system_type": 4,
                     "thermal_zone_names": zone_names[:2],
                 })
                 system_data = unwrap(system_resp)
 
-                assert system_data["ok"] is False
-                assert "requires exactly 1 zone" in system_data["error"]
+                assert system_data["ok"] is True, f"fan-out failed: {system_data.get('error')}"
+                sys_info = system_data["system"]
+                assert sys_info["zones_served"] == 2
+                assert len(sys_info["per_zone_systems"]) == 2, \
+                    "expected one PSZ-HP per zone from a single call"
+                # One air loop per zone actually exists in the model
+                loops = unwrap(await session.call_tool("list_air_loops", {}))
+                loop_names = [al["name"] for al in loops["air_loops"]]
+                for per_zone in sys_info["per_zone_systems"]:
+                    assert per_zone["air_loop"] in loop_names, \
+                        f"per-zone air loop {per_zone['air_loop']} missing from model"
+                # Night cycle on each fanned-out loop
+                assert len(sys_info["night_cycle_managers"]) == 2
 
     asyncio.run(_run())
 

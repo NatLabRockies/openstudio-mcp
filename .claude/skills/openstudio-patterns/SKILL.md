@@ -40,7 +40,9 @@ Weather (EPW + design days, needed before simulation)
 6. **Glazing** — `set_window_to_wall_ratio` or `create_subsurface`
 7. **Schedules** — `create_schedule_ruleset` (needed by loads)
 8. **Loads** — `create_people_definition`, `create_lights_definition`, `create_electric_equipment`
-9. **HVAC** — `add_baseline_system` / `add_doas_system` / `add_vrf_system`
+9. **HVAC** — `create_typical_building(system_type=..., hvac_only=True)` for
+   standards-tuned systems (decision-grade results); `add_baseline_system` /
+   `add_doas_system` / `add_vrf_system` for explicit generic wiring control
 10. **Weather** — `change_building_location` (sets EPW + design days + climate zone in one call)
 11. **Simulation control** — `set_run_period`, `set_simulation_control`
 12. **Save & simulate** — `save_osm_model` → `run_simulation`

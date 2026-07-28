@@ -82,6 +82,14 @@ When user provides multiple zones:
 | System details | `get_baseline_system_info` | `system_type` |
 | Modern alternatives | `add_doas_system`, `add_vrf_system`, `add_radiant_system` | `thermal_zone_names` |
 
+**Two paths, know which you need:** the tools above are generic wiring
+templates (explicit topology control, no standards equipment efficiencies).
+Use them to SELECT and WIRE a system type. For comparing systems or any
+decision-grade EUI/comfort numbers, build each candidate through
+openstudio-standards instead:
+`create_typical_building(system_type=..., hvac_only=True)` — replaces only
+the HVAC (standards-tuned), preserving loads/schedules/thermostats.
+
 ## When to Recommend Modern Templates Instead
 
 | Scenario | Recommendation |

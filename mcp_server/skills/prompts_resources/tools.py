@@ -24,26 +24,38 @@ def register(mcp):
     @mcp.prompt(
         name="baseline_comparison",
         description=(
-            "Compare two ASHRAE 90.1 baseline HVAC systems on the same "
-            "building geometry. Returns a step-by-step tool sequence."
+            "Compare two HVAC systems on the same building with "
+            "standards-tuned equipment (decision-grade results). Returns a "
+            "step-by-step tool sequence."
         ),
     )
     def baseline_comparison_prompt(
-        system_a: str = "03",
-        system_b: str = "07",
+        system_a: str = "PSZ-AC with gas coil",
+        system_b: str = "VAV chiller with gas boiler reheat",
         climate_city: str = "Chicago",
     ) -> str:
+        # hvac_only swaps preserve loads/schedules between candidates, and the
+        # standards path applies real equipment efficiencies and controls —
+        # generic add_baseline_system templates are for wiring, not comparisons
+        # (issue #97: they produced misleading EUI/comfort numbers)
         return (
-            f"Compare ASHRAE baseline System {system_a} vs System {system_b} "
-            f"for a 10-zone office in {climate_city}.\n\n"
+            f"Compare HVAC system '{system_a}' vs '{system_b}' "
+            f"for an office in {climate_city}, with decision-grade results.\n\n"
             "Steps:\n"
             f'1. create_new_building(building_type="SmallOffice", '
-            f'weather_file="/inputs/{climate_city}.epw")\n'
-            f'2. add_baseline_system(system_type="{system_a}")\n'
-            "3. save_osm_model() and run_simulation()\n"
-            "4. extract_summary_metrics() — note EUI and unmet hours\n"
-            f'5. Repeat steps 1-4 with system_type="{system_b}"\n'
-            "6. Compare EUI, heating/cooling energy, and unmet hours"
+            f'weather_file="/inputs/{climate_city}.epw")  # builds typical model\n'
+            f'2. create_typical_building(system_type="{system_a}", '
+            'hvac_only=True)  # standards-tuned swap, loads untouched\n'
+            '3. save_osm_model() and run_simulation()\n'
+            "4. get_run_status() until complete\n"
+            f'5. create_typical_building(system_type="{system_b}", '
+            'hvac_only=True)  # swap to candidate B on the SAME model\n'
+            "6. save_osm_model() and run_simulation()\n"
+            "7. compare_runs(run_id_a, run_id_b) — EUI, end uses, unmet hours\n\n"
+            "Note: system_type takes openstudio-standards names — call "
+            "create_typical_building's docs or list them via the tool schema. "
+            "Do NOT use add_baseline_system for comparisons; it is a generic "
+            "wiring template without standards efficiencies."
         )
 
     @mcp.prompt(
