@@ -31,8 +31,12 @@ from mcp_server.config import (
 )
 from mcp_server.model_manager import get_model
 from mcp_server.skills.geometry.operations import match_surfaces
-from mcp_server.skills.measures.runner_messages import parse_all_step_messages
-from mcp_server.util import create_run_dir, reject_escaping_symlinks
+from mcp_server.skills.measures.runner_messages import OSW_MAX_BYTES, parse_all_step_messages
+from mcp_server.util import create_run_dir, read_file_bounded, read_tail_bounded, reject_escaping_symlinks
+
+# Failure-path log tail: 50 lines fit comfortably in 200KB; read_tail_bounded
+# seeks to the end so a giant log is never loaded whole (PR #105).
+LOG_TAIL_MAX_BYTES = 200_000
 
 # Same measure set the upstream "Annual Building Energy Simulation.osw" uses
 # for model building, minus the two ReportingMeasure steps at the end (see
@@ -213,8 +217,13 @@ def import_gbxml_op(
             )
 
         if proc.returncode != 0:
-            log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            tail = "\n".join(log_lines[-50:])
+            # log_tail goes back to the client verbatim — the log is written by the
+            # sandboxed subprocess, so the read must refuse a symlink swap (PR #105).
+            try:
+                log_text = read_tail_bounded(log_path, LOG_TAIL_MAX_BYTES).decode("utf-8", errors="replace")
+                tail = "\n".join(log_text.splitlines()[-50:])
+            except ValueError as e:
+                tail = f"(log unreadable: {e})"
             return {
                 "ok": False,
                 "error": f"gbXML import failed (exit code {proc.returncode})",
@@ -229,7 +238,7 @@ def import_gbxml_op(
         any_step_failed = False
         if out_osw_path.is_file():
             try:
-                out_osw = json.loads(out_osw_path.read_text(encoding="utf-8", errors="replace"))
+                out_osw = json.loads(read_file_bounded(out_osw_path, OSW_MAX_BYTES).decode("utf-8", errors="replace"))
                 completed_status = out_osw.get("completed_status")
                 any_step_failed = any(
                     (s.get("result") or {}).get("step_result") == "Fail"
@@ -351,6 +360,14 @@ def _surface_overlaps(space: openstudio.model.Space) -> list[dict[str, Any]]:
             planes.append(None)  # degenerate surface; caught separately by isEnclosedVolume
 
     issues: list[dict[str, Any]] = []
+    # O(n^2) pairwise plane comparison — left alone deliberately (PR #105 Copilot).
+    # The expensive alignFace/intersect work already runs only on coplanar candidate
+    # pairs; the quadratic part is cheap plane.equal calls, per-space (typical Revit
+    # space: tens of surfaces), in a once-per-import validation tool. Bucketing planes
+    # by quantized float coefficients risks tolerance false NEGATIVES at bucket
+    # boundaries — worse for a validator than extra comparisons. If profiling ever
+    # shows a real bottleneck, use representative grouping (compare each plane to one
+    # representative per group via equal/reverseEqual), not float-keyed hashing.
     for (i, s1), (j, s2) in itertools.combinations(enumerate(surfaces), 2):
         p1, p2 = planes[i], planes[j]
         if p1 is None or p2 is None:

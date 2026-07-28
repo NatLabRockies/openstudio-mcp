@@ -72,7 +72,12 @@ def _extract_total_site_energy_from_sql(sql_path: Path) -> dict[str, Any]:
 
 def _extract_total_site_energy_from_html(html_path: Path) -> dict[str, Any]:
     """Extract total site energy from EnergyPlus HTML tabular report."""
-    txt = safe_read_text(html_path, max_bytes=800_000)
+    try:
+        # safe_read_text refuses symlinks (ValueError) — the HTML is written by the
+        # simulation subprocess, same swap exposure as out.osw (PR #105).
+        txt = safe_read_text(html_path, max_bytes=800_000)
+    except ValueError:
+        return {"ok": False, "reason": "unreadable"}
     m = re.search(
         r"Total\s*Site\s*Energy[^\d]{0,200}([-+]?\d[\d,]*(?:\.\d+)?)\s*([A-Za-z/\^0-9]+)?",
         txt,

@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mcp_server.util import read_file_bounded
+
 # Caps keep runner_messages small enough that a tool response can never
 # approach JSON-RPC framing limits: generic_qaqc on a 27-zone model emitted
 # 18.9MB of step_warnings (one message alone 9.45MB), which killed the stdio
@@ -16,6 +18,13 @@ from typing import Any
 # mostly progress noise.
 MAX_MESSAGE_CHARS = 500
 MESSAGE_LIMITS = {"info": 10, "warnings": 20, "errors": 20}
+
+# out.osw is written by the confined-but-untrusted measure subprocess; the
+# unconfined server reads it back with read_file_bounded (O_NOFOLLOW — a
+# symlink swap must not redirect the read; PR #105). Cap well above the
+# largest real out.osw seen (#98 bson-repro fixture: 20.7MB) — the message
+# caps below do the response-size work, this only bounds server memory.
+OSW_MAX_BYTES = 50_000_000
 
 
 def _clip(msg: Any) -> str:
@@ -74,7 +83,7 @@ def parse_runner_messages(out_osw_path: Path) -> dict[str, Any] | None:
     try:
         if not out_osw_path.is_file():
             return None
-        osw = json.loads(out_osw_path.read_text(encoding="utf-8", errors="replace"))
+        osw = json.loads(read_file_bounded(out_osw_path, OSW_MAX_BYTES).decode("utf-8", errors="replace"))
         steps = osw.get("steps", [])
         if not steps:
             return None
@@ -101,7 +110,7 @@ def parse_all_step_messages(out_osw_path: Path) -> dict[str, Any] | None:
     try:
         if not out_osw_path.is_file():
             return None
-        osw = json.loads(out_osw_path.read_text(encoding="utf-8", errors="replace"))
+        osw = json.loads(read_file_bounded(out_osw_path, OSW_MAX_BYTES).decode("utf-8", errors="replace"))
         steps = osw.get("steps", [])
         if not steps:
             return None

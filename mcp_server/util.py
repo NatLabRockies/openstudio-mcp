@@ -78,6 +78,44 @@ def read_file_bounded(path: Path, max_bytes: int) -> bytes:
         os.close(fd)
 
 
+def read_tail_bounded(path: Path, max_bytes: int) -> bytes:
+    """Read the LAST ``max_bytes`` of a regular file WITHOUT following a
+    final-component symlink.
+
+    Same threat model as read_file_bounded (confined-but-untrusted subprocess
+    output read back by the unconfined server), but for tail-style reads: a
+    failure log can legitimately exceed any sane whole-file cap, so instead of
+    rejecting oversize files this seeks to end-minus-max_bytes and returns only
+    the tail — the whole file is never loaded into memory.
+
+    Raises ``ValueError`` on a symlink, a non-regular file, or an unreadable
+    path (same degradation notes as read_file_bounded on non-POSIX platforms).
+    """
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        fd = os.open(path, flags)
+    except OSError as e:
+        raise ValueError(f"cannot read {path} (symlink or unreadable): {e}") from e
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError(f"not a regular file: {path}")
+        if st.st_size > max_bytes:
+            os.lseek(fd, st.st_size - max_bytes, os.SEEK_SET)
+        chunks: list[bytes] = []
+        remaining = max_bytes
+        while remaining > 0:
+            chunk = os.read(fd, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
 def safe_read_text(path: Path, max_bytes: int = 200_000) -> str:
     data = safe_read_bytes(path, max_bytes=max_bytes)
     return data.decode("utf-8", errors="replace")
@@ -133,7 +171,7 @@ def resolve_run_dir(run_root: Path, run_id: str) -> Path:
 
 
 def safe_read_bytes(path: Path, max_bytes: int = 2_000_000) -> bytes:
-    data = path.read_bytes()
-    if len(data) > max_bytes:
-        data = data[-max_bytes:]
-    return data
+    # Tail-truncating by contract (callers read simulation-produced HTML whose
+    # useful tables sit at the end); read_tail_bounded adds the no-follow +
+    # never-slurp-the-whole-file hardening (PR #105).
+    return read_tail_bounded(path, max_bytes)
