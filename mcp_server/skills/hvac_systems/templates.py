@@ -97,6 +97,34 @@ def _apply_radiant_construction(model, zone, radiant_type, construction):
                 surface.setConstruction(construction)
 
 
+def _derive_occupancy_availability(zones: list):
+    """Most common People number-of-people schedule across the served zones.
+
+    Checks space-level People and space-type People (create_typical assigns
+    at the space type). Returns a Schedule usable as loop availability
+    (fractional occupancy works: availability semantics are 0=off, >0=on),
+    or None when no People schedules exist.
+    """
+    counts: dict[str, int] = {}
+    schedules: dict[str, Any] = {}
+    for zone in zones:
+        for space in zone.spaces():
+            people_objs = list(space.people())
+            space_type = space.spaceType()
+            if space_type.is_initialized():
+                people_objs.extend(space_type.get().people())
+            for people in people_objs:
+                sched = people.numberofPeopleSchedule()
+                if sched.is_initialized():
+                    sched_name = sched.get().nameString()
+                    counts[sched_name] = counts.get(sched_name, 0) + 1
+                    schedules[sched_name] = sched.get()
+    if not counts:
+        return None
+    winner = max(counts, key=lambda k: counts[k])
+    return schedules[winner]
+
+
 def create_doas_system(
     model,
     zones: list,
@@ -106,6 +134,7 @@ def create_doas_system(
     zone_equipment_type: str,
     heating_fuel: str = "NaturalGas",
     cooling_fuel: str = "Electricity",
+    availability_schedule=None,
 ) -> dict[str, Any]:
     """Create Dedicated Outdoor Air System with zone equipment.
 
@@ -135,6 +164,21 @@ def create_doas_system(
     oa_controller = openstudio.model.ControllerOutdoorAir(model)
     oa_controller.setName(f"{name} OA Controller")
     oa_controller.autosizeMinimumOutdoorAirFlowRate()
+
+    # DCV intent flag (correct signal for any recirculating retrofit of this
+    # loop; inert on a pure 100% OA constant-volume loop — the fan drives flow)
+    oa_controller.controllerMechanicalVentilation().setDemandControlledVentilation(True)
+
+    # Loop availability: without a schedule the DOAS conditions its full
+    # design OA flow around the clock — issue #97 measured ~2x EUI. Default
+    # derives from the served zones' own People schedules (availability
+    # treats any value >0 as ON): offices get office hours, 24/7 buildings
+    # stay always-on, models without People keep today's always-on. The zone
+    # equipment stays always-available to hold setback temperatures.
+    if availability_schedule is None:
+        availability_schedule = _derive_occupancy_availability(zones)
+    if availability_schedule is not None:
+        doas_loop.setAvailabilitySchedule(availability_schedule)
 
     oa_system = openstudio.model.AirLoopHVACOutdoorAirSystem(model, oa_controller)
     oa_system.setName(f"{name} OA System")
@@ -286,6 +330,9 @@ def create_doas_system(
                 # also ingests full zone OA: double ventilation, and the
                 # OA-laden coil inlet air distorts E+ coil sizing (#82).
                 fc.setMaximumOutdoorAirFlowRate(0.0)
+                # Cycle the fan with load (default ConstantFanVariableFlow
+                # runs it 24/7 — issue #97 EUI penalty; standards default)
+                fc.setCapacityControlMethod("CyclingFan")
                 # Tell zone sizing the DOAS pre-treats ventilation air so
                 # fan-coil loads/flows exclude it (openstudio-standards
                 # model_add_doas settings).
@@ -346,6 +393,9 @@ def create_doas_system(
         "cooling_fuel": cooling_fuel,
         "num_zones": len(zones),
         "zone_equipment": zone_equipment_list,
+        "availability_schedule": (
+            availability_schedule.nameString() if availability_schedule else None
+        ),
     }
 
 

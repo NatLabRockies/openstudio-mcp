@@ -12,7 +12,36 @@ from mcp_server.skills.hvac_systems import (
     cleanup,
     templates,
     validation,
+    wiring,
 )
+
+# 90.1 Appendix G sizing factors (matches openstudio-standards'
+# model_apply_prm_sizing_parameters). Autosizing to the exact design load
+# leaves no setback-recovery capacity — issue #97: ~2h of unmet heating every
+# winter morning on models with thermostat setback.
+_HEATING_SIZING_FACTOR = 1.25
+_COOLING_SIZING_FACTOR = 1.15
+
+
+def _apply_comfort_defaults(model, system_dicts: list[dict[str, Any]]) -> list[str]:
+    """Apply sizing factors + night-cycle managers after system creation.
+
+    Returns the names of night-cycle managers added (one per air loop; zone
+    equipment systems have none — they already cycle on thermostat demand).
+    """
+    sizing = model.getSizingParameters()
+    sizing.setHeatingSizingFactor(_HEATING_SIZING_FACTOR)
+    sizing.setCoolingSizingFactor(_COOLING_SIZING_FACTOR)
+    night_cycles: list[str] = []
+    for sd in system_dicts:
+        air_loop_name = sd.get("air_loop")
+        if not air_loop_name:
+            continue
+        loop = fetch_object(model, "AirLoopHVAC", name=air_loop_name)
+        if loop is not None:
+            night_cycles.append(
+                wiring.add_night_cycle_manager(model, loop).nameString())
+    return night_cycles
 
 
 def add_baseline_system(
@@ -71,6 +100,16 @@ def add_baseline_system(
         # addBranchForZone steals zones from their old loops (#83)
         loop_zones_before = cleanup.snapshot_loop_zones(model)
 
+        def _create_single_zone_system(zone_list: list, name: str) -> dict[str, Any]:
+            """Single-zone system types (one air loop per zone)."""
+            if system_type == 3:
+                return baseline.create_baseline_system_3(
+                    model, zone_list, heating_fuel, cooling_fuel, economizer, name,
+                )
+            return baseline.create_baseline_system_4(
+                model, zone_list, heating_fuel, cooling_fuel, economizer, name,
+            )
+
         # Route to appropriate baseline system implementation
         if system_type == 1:
             result = baseline.create_baseline_system_1(
@@ -80,14 +119,34 @@ def add_baseline_system(
             result = baseline.create_baseline_system_2(
                 model, zones, heating_fuel, cooling_fuel, economizer, system_name,
             )
-        elif system_type == 3:
-            result = baseline.create_baseline_system_3(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
-        elif system_type == 4:
-            result = baseline.create_baseline_system_4(
-                model, zones, heating_fuel, cooling_fuel, economizer, system_name,
-            )
+        elif system_type in (3, 4):
+            # Systems 3/4 are one-air-loop-per-zone: fan out over the zone
+            # list instead of forcing 27 calls for 27 zones (issue #97)
+            if len(zones) == 1:
+                result = _create_single_zone_system(zones, system_name)
+            else:
+                created = []
+                for zone in zones:
+                    r = _create_single_zone_system(
+                        [zone], f"{system_name} - {zone.nameString()}")
+                    if not r.get("ok"):
+                        r["error"] = (
+                            f"zone '{zone.nameString()}': {r.get('error')}"
+                            f" ({len(created)} systems created before failure)"
+                        )
+                        return r
+                    created.append(r["system"])
+                result = {
+                    "ok": True,
+                    "system": {
+                        "name": system_name,
+                        "type": created[0]["type"],
+                        "category": "baseline",
+                        "system_number": system_type,
+                        "zones_served": len(created),
+                        "per_zone_systems": created,
+                    },
+                }
         elif system_type == 5:
             result = baseline.create_baseline_system_5(
                 model, zones, heating_fuel, cooling_fuel, economizer, system_name,
@@ -126,12 +185,27 @@ def add_baseline_system(
             sim_control.setDoSystemSizingCalculation(True)
             sim_control.setDoPlantSizingCalculation(True)
 
+            # Comfort defaults: App G sizing factors + night cycle (issue #97)
+            per_zone = result["system"].get("per_zone_systems")
+            night_cycles = _apply_comfort_defaults(
+                model, per_zone if per_zone else [result["system"]])
+            if night_cycles:
+                result["system"]["night_cycle_managers"] = night_cycles
+
             repairs = cleanup.repair_orphaned_air_loops(model, loop_zones_before)
             if repairs:
                 result["repairs"] = repairs
 
-            validation_result = validation.validate_system(model, system_name)
-            result["validation"] = validation_result
+            if per_zone:
+                validations = [
+                    validation.validate_system(model, s["name"]) for s in per_zone
+                ]
+                result["validation"] = {
+                    "per_zone_systems": len(validations),
+                    "results": validations,
+                }
+            else:
+                result["validation"] = validation.validate_system(model, system_name)
 
         return result
 
@@ -269,8 +343,12 @@ def add_doas_system(
     zone_equipment_type: str = "FanCoil",
     heating_fuel: str = "NaturalGas",
     cooling_fuel: str = "Electricity",
+    availability_schedule_name: str | None = None,
 ) -> dict[str, Any]:
     """Add Dedicated Outdoor Air System with zone equipment.
+
+    Ventilation is demand-controlled (follows zone People schedules); pass
+    availability_schedule_name to also shut the DOAS fan off when unoccupied.
 
     Args:
         thermal_zone_names: Zones to serve
@@ -280,6 +358,8 @@ def add_doas_system(
         zone_equipment_type: FanCoil | Radiant | ChilledBeams | FourPipeBeam
         heating_fuel: NaturalGas | Electricity | DistrictHeating
         cooling_fuel: Electricity | DistrictCooling
+        availability_schedule_name: Optional schedule for DOAS loop
+            availability (e.g. an occupancy schedule name from list_schedules)
 
     Returns:
         dict with ok status and system details
@@ -300,6 +380,17 @@ def add_doas_system(
         if zone_equipment_type not in valid_types:
             return {"ok": False, "error": f"Invalid zone_equipment_type: '{zone_equipment_type}'"}
 
+        availability_schedule = None
+        if availability_schedule_name:
+            availability_schedule = fetch_object(
+                model, "ScheduleRuleset", name=availability_schedule_name)
+            if availability_schedule is None:
+                availability_schedule = fetch_object(
+                    model, "ScheduleConstant", name=availability_schedule_name)
+            if availability_schedule is None:
+                return {"ok": False, "error":
+                        f"Schedule '{availability_schedule_name}' not found"}
+
         # addBranchForZone steals zones from their old loops (#83)
         loop_zones_before = cleanup.snapshot_loop_zones(model)
 
@@ -307,8 +398,15 @@ def add_doas_system(
             model, zones, system_name, energy_recovery,
             sensible_effectiveness, zone_equipment_type,
             heating_fuel, cooling_fuel,
+            availability_schedule=availability_schedule,
         )
         out: dict[str, Any] = {"ok": True, "system": result}
+        # App G sizing factors — zone equipment must recover from setback
+        # (issue #97); DOAS loop itself gets no night cycle: ventilation is
+        # not needed unoccupied and the zone equipment holds temperature
+        sizing = model.getSizingParameters()
+        sizing.setHeatingSizingFactor(_HEATING_SIZING_FACTOR)
+        sizing.setCoolingSizingFactor(_COOLING_SIZING_FACTOR)
         repairs = cleanup.repair_orphaned_air_loops(model, loop_zones_before)
         if repairs:
             out["repairs"] = repairs

@@ -29,6 +29,13 @@ def register(mcp: FastMCP) -> None:
         ASHRAE 90.1 Appendix G baseline systems 1-10: PTAC, PTHP, PSZ-AC,
         PSZ-HP, packaged VAV reheat, PFP boxes, VAV reheat/PFP, unit heater,
         DOAS, VRF, radiant. Call list_baseline_systems() for all options.
+        Systems 3-4 are one air loop per zone — pass the full zone list and
+        the tool fans out automatically.
+
+        Generic wiring template (App G sizing factors + night cycle included,
+        but no standards equipment efficiencies). For comparative studies or
+        decision-grade EUI/comfort numbers use
+        create_typical_building(system_type=..., hvac_only=True) instead.
 
         Args:
             system_type: ASHRAE baseline system type (1-10). Call list_baseline_systems() to see options.
@@ -115,10 +122,16 @@ def register(mcp: FastMCP) -> None:
         zone_equipment_type: str = "FanCoil",
         heating_fuel: str = "NaturalGas",
         cooling_fuel: str = "Electricity",
+        availability_schedule_name: str | None = None,
     ) -> str:
         """Add dedicated outdoor air system (DOAS) with zone equipment.
         Ventilation-only air loop with optional ERV, paired with fan coil, radiant,
-        or chilled beam zone conditioning. Plant loops auto-wired.
+        or chilled beam zone conditioning. Plant loops auto-wired. Ventilation is
+        demand-controlled (follows zone People schedules).
+
+        Generic wiring template — for comparative studies or decision-grade
+        EUI/comfort numbers use create_typical_building(system_type="DOAS with
+        fan coil chiller with boiler", hvac_only=True) instead.
 
         Args:
             thermal_zone_names: List of thermal zone names to serve
@@ -127,6 +140,8 @@ def register(mcp: FastMCP) -> None:
             zone_equipment_type: FanCoil | Radiant | ChilledBeams | FourPipeBeam
             heating_fuel: NaturalGas | Electricity | DistrictHeating
             cooling_fuel: Electricity | DistrictCooling
+            availability_schedule_name: Optional schedule name — shuts the DOAS
+                fan off when unoccupied (zone equipment still holds setback)
         """
         result = operations.add_doas_system(
             thermal_zone_names=parse_str_list(thermal_zone_names),
@@ -136,6 +151,7 @@ def register(mcp: FastMCP) -> None:
             zone_equipment_type=zone_equipment_type,
             heating_fuel=heating_fuel,
             cooling_fuel=cooling_fuel,
+            availability_schedule_name=availability_schedule_name,
         )
         return json.dumps(result, indent=2)
 
@@ -149,6 +165,10 @@ def register(mcp: FastMCP) -> None:
         """Add variable refrigerant flow (VRF) multi-zone heat pump system.
         Creates single outdoor unit with individual zone terminals. Heat recovery enables
         simultaneous heating/cooling across zones.
+
+        Generic wiring template — for comparative studies or decision-grade
+        EUI/comfort numbers use create_typical_building(system_type="DOAS with
+        VRF", hvac_only=True) instead.
 
         Args:
             thermal_zone_names: List of thermal zone names to serve (max ~20 per outdoor unit)

@@ -455,6 +455,10 @@ def create_baseline_system_5(
             model, always_on, reheat_coil,
         )
         terminal.setName(f"{name} VAV Terminal - {zone.nameString()}")
+        # Reverse damper action: the default (Normal) caps heating at minimum
+        # airflow, chronically underheating perimeter zones (issue #97 — 1807
+        # unmet heating hrs on the benchmark). Matches openstudio-standards.
+        terminal.setDamperHeatingAction("Reverse")
         air_loop.addBranchForZone(zone, terminal)
         terminals.append(terminal.nameString())
 
@@ -668,6 +672,8 @@ def create_baseline_system_7(
             model, always_on, reheat_coil,
         )
         terminal.setName(f"{name} VAV Terminal - {zone.nameString()}")
+        # Reverse damper action — see system 5 (issue #97 unmet heating)
+        terminal.setDamperHeatingAction("Reverse")
         air_loop.addBranchForZone(zone, terminal)
         terminals.append(terminal.nameString())
 
