@@ -98,12 +98,13 @@ def _apply_radiant_construction(model, zone, radiant_type, construction):
 
 
 def _derive_occupancy_availability(zones: list):
-    """Most common People number-of-people schedule across the served zones.
-
-    Checks space-level People and space-type People (create_typical assigns
-    at the space type). Returns a Schedule usable as loop availability
-    (fractional occupancy works: availability semantics are 0=off, >0=on),
-    or None when no People schedules exist.
+    """The People schedule appearing most often among the served zones'
+    People OBJECTS (space-level and space-type-level — create_typical assigns
+    at the space type). Zones holding more People objects weight the vote;
+    the goal is a representative occupied-hours pattern, not per-zone
+    fairness. Returns a Schedule usable as loop availability (fractional
+    occupancy works: availability semantics are 0=off, >0=on), or None when
+    no People schedules exist.
     """
     counts: dict[str, int] = {}
     schedules: dict[str, Any] = {}

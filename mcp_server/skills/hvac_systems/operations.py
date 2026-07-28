@@ -347,8 +347,13 @@ def add_doas_system(
 ) -> dict[str, Any]:
     """Add Dedicated Outdoor Air System with zone equipment.
 
-    Ventilation is demand-controlled (follows zone People schedules); pass
-    availability_schedule_name to also shut the DOAS fan off when unoccupied.
+    The DOAS loop's availability defaults to the served zones' People
+    schedule (occupied hours; 24/7 buildings stay always-on; models without
+    People keep always-on) — pass availability_schedule_name to override.
+    Appendix G sizing factors (1.25 htg / 1.15 clg) are applied model-wide so
+    zone equipment can recover from thermostat setback. The OA controller's
+    DCV flag is set as intent but is inert on this constant-volume 100% OA
+    loop (the fan drives the flow).
 
     Args:
         thermal_zone_names: Zones to serve

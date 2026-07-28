@@ -126,8 +126,9 @@ def register(mcp: FastMCP) -> None:
     ) -> str:
         """Add dedicated outdoor air system (DOAS) with zone equipment.
         Ventilation-only air loop with optional ERV, paired with fan coil, radiant,
-        or chilled beam zone conditioning. Plant loops auto-wired. Ventilation is
-        demand-controlled (follows zone People schedules).
+        or chilled beam zone conditioning. Plant loops auto-wired. The DOAS loop
+        runs on the served zones' occupancy (People) schedule by default —
+        override with availability_schedule_name.
 
         Generic wiring template — for comparative studies or decision-grade
         EUI/comfort numbers use create_typical_building(system_type="DOAS with
