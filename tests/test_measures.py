@@ -318,6 +318,25 @@ def test_apply_measure_custom_epw_stays_absolute_and_rerunnable():
     asyncio.run(_run())
 
 
+def test_portable_url_failure_never_fails_measure(monkeypatch):
+    """A raise in the portable-url post-step must not flip ok to False."""
+    # Regression: PR #108 review — apply_measure's outer except would catch a
+    # RuntimeError from the portable-url cleanup and report the whole
+    # (successful, reloaded) measure run as failed
+    from mcp_server.skills.measures import operations as ops
+
+    def _boom(model):
+        raise RuntimeError("weatherFile exploded")
+
+    monkeypatch.setattr(ops, "make_weather_url_portable", _boom)
+    monkeypatch.setattr(ops, "get_model", object)
+    result = {"ok": True}
+    ops._attach_portable_weather_url(result)
+    assert result["ok"] is True
+    assert result["weather_url_error"] == "weatherFile exploded"
+    assert "weather_url" not in result
+
+
 @pytest.mark.integration
 def test_apply_measure_verify_model_changed():
     """Verify model state changed after measure application."""

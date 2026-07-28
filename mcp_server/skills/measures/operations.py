@@ -684,6 +684,22 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list measure arguments: {e}"}
 
 
+def _attach_portable_weather_url(result: dict[str, Any]) -> None:
+    """Post-reload step: record a portable weather url on the result.
+
+    Never raises: the measure already succeeded and the model reloaded — a
+    failure in this cleanup (OpenStudio API RuntimeError) must not flip the
+    tool result to ok=False (PR #108 review). Failures are surfaced as
+    `weather_url_error` instead.
+    """
+    try:
+        portable = make_weather_url_portable(get_model())
+        if portable is not None:
+            result["weather_url"] = portable
+    except Exception as e:
+        result["weather_url_error"] = str(e)
+
+
 def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
@@ -922,9 +938,7 @@ def apply_measure(
         # future confined run can't read (issue #104 class). Custom EPWs with
         # unfindable basenames keep the absolute url — tier 1 staging above
         # handles those per-run instead.
-        portable = make_weather_url_portable(get_model())
-        if portable is not None:
-            result["weather_url"] = portable
+        _attach_portable_weather_url(result)
 
         if runner_messages:
             result["runner_messages"] = runner_messages

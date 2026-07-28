@@ -190,8 +190,9 @@ def create_typical_building(
         remove_objects: Remove existing objects of the types being added
         hvac_only: Replace ONLY the HVAC system (standards-tuned), preserving
             loads, constructions, schedules, and thermostats — for fair system
-            comparisons on an already-configured model. Overrides the add_*
-            toggles and remove_objects.
+            comparisons on an already-configured model. Overrides every add_*
+            toggle AND forces remove_objects=True (the existing HVAC is
+            removed before the new system is added).
     """
     measures_dir = Path(os.environ.get("COMSTOCK_MEASURES_DIR", "/opt/comstock-measures"))
     measure_path = measures_dir / "create_typical_building_from_model"

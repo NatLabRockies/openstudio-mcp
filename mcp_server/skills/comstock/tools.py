@@ -136,7 +136,8 @@ def register(mcp):
             add_exhaust: Add exhaust fans
             add_refrigeration: Add refrigeration
             remove_objects: Remove existing objects of the types being added
-            hvac_only: Replace ONLY the HVAC system; overrides add_* toggles
+            hvac_only: Replace ONLY the HVAC system; overrides every add_*
+                toggle AND forces remove_objects=True (existing HVAC removed)
 
         """
         return create_typical_building(
