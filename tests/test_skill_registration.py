@@ -217,6 +217,15 @@ EXPECTED_TOOLS = {
     # gbXML Import (Revit gbXML -> OSM via gbxml-to-openstudio measures)
     "import_gbxml",
     "repair_and_validate_gbxml_geometry",
+    # Space Type Assignment (post-gbXML standards attribution)
+    "assign_space_type_simple",
+    "start_space_type_wizard",
+    "choose_space_type_templates",
+    "choose_space_type_building_types",
+    "get_space_type_wizard_status",
+    "assign_space_type_batch",
+    "finish_space_type_wizard",
+    "cancel_space_type_wizard",
 }
 
 

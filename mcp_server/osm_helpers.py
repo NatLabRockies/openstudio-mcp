@@ -26,6 +26,16 @@ def parse_str_list(value: list | str | None) -> list[str] | None:
     return list(value)
 
 
+def is_conditioned_zone(zone) -> bool:
+    """True if the zone has a dual-setpoint thermostat.
+
+    This project's definition of "conditioned" (heated and cooled), reused
+    everywhere a conditioned/unconditioned split matters: floor-area
+    rollups, HVAC validation, and space-type assignment.
+    """
+    return zone.thermostatSetpointDualSetpoint().is_initialized()
+
+
 def optional_name(os_optional) -> str | None:
     """Extract name string from an OpenStudio Optional, or None.
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from mcp_server.osm_helpers import is_conditioned_zone
+
 
 def validate_air_loop(air_loop) -> dict[str, Any]:
     """Validate air loop HVAC topology and connections.
@@ -104,7 +106,7 @@ def validate_zone_equipment(thermal_zone) -> dict[str, Any]:
         warnings.append("Zone has no equipment and no air terminal")
 
     # Check for thermostat
-    if not thermal_zone.thermostatSetpointDualSetpoint().is_initialized():
+    if not is_conditioned_zone(thermal_zone):
         warnings.append("Zone has no thermostat")
 
     return {

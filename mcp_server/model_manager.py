@@ -17,8 +17,9 @@ import atexit
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import openstudio
 
@@ -37,6 +38,11 @@ class _SessionState:
     model: openstudio.model.Model | None = None
     path: Path | None = None
     last_access: float = 0.0  # time.monotonic() of last touch
+    # Generic scratch space for skills that need session-scoped state beyond
+    # the model itself (e.g. a multi-turn wizard). Keyed by skill name so
+    # unrelated skills can't collide. Shares this session's TTL/LRU eviction,
+    # so wizard state and its model are always dropped together.
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 _lock = threading.RLock()
@@ -145,6 +151,23 @@ def get_model_if_loaded() -> openstudio.model.Model | None:
             return None
         _touch(st)
         return st.model
+
+
+def get_session_extra() -> dict[str, Any]:
+    """Return this session's generic scratch dict, creating it if needed.
+
+    For skills that need session-scoped non-model state (e.g. a multi-turn
+    wizard) without model_manager knowing anything about that skill's data
+    shape. Shares the same TTL/LRU sweep as the model, so wizard-style state
+    is always evicted together with the model it references.
+    """
+    key = session_key()
+    with _lock:
+        _sweep_idle()
+        _evict_if_needed(keep=key)
+        st = _sessions.setdefault(key, _SessionState())
+        _touch(st)
+        return st.extra
 
 
 def clear_model() -> None:
