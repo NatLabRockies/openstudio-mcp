@@ -62,6 +62,29 @@ def _extract_detailed_supply_components(air_loop) -> dict[str, Any]:
             coil_info = {"type": comp_type, "name": component.nameString() if hasattr(component, "nameString") else "Unnamed"}
             result["cooling_coils"].append(coil_info)
 
+        # Unwrap composite unitary systems so their fan/coils report like
+        # loose-component loops (baseline system 4 uses the unitary heat pump
+        # composite since the issue #97 rework — without unwrapping, agents
+        # and validation would see an air loop with "no coils")
+        elif component.to_AirLoopHVACUnitaryHeatPumpAirToAir().is_initialized():
+            unitary = component.to_AirLoopHVACUnitaryHeatPumpAirToAir().get()
+            fan = unitary.supplyAirFan()
+            result["fans"].append({
+                "type": fan.iddObjectType().valueName(),
+                "name": fan.nameString(),
+            })
+            for coil in (unitary.heatingCoil(), unitary.supplementalHeatingCoil()):
+                result["heating_coils"].append({
+                    "type": coil.iddObjectType().valueName(),
+                    "name": coil.nameString(),
+                })
+            clg = unitary.coolingCoil()
+            result["cooling_coils"].append({
+                "type": clg.iddObjectType().valueName(),
+                "name": clg.nameString(),
+            })
+            result["other"].append({"type": comp_type, "name": unitary.nameString()})
+
         else:
             result["other"].append({"type": comp_type})
 

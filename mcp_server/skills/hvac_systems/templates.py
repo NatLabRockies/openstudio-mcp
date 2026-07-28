@@ -425,31 +425,32 @@ def create_vrf_system(
     Returns:
         dict with VRF outdoor unit and terminal details
     """
-    # Create VRF outdoor unit
+    # Create VRF outdoor unit — always the standard family. The former
+    # heat_recovery branch used AirConditionerVariableRefrigerantFlowFluid-
+    # TemperatureControlHR, a DIFFERENT VRF family whose terminals need FTC
+    # coils; pairing it with standard terminal units made the forward
+    # translator drop the condenser entirely, orphaning every terminal and
+    # killing EnergyPlus with "Terminal unit not found on any
+    # ZoneTerminalUnitList" (issue #97 investigation — the tool had never
+    # produced a runnable simulation). The standard object supports heat
+    # recovery natively.
+    vrf_system = openstudio.model.AirConditionerVariableRefrigerantFlow(model)
+    vrf_system.setName(f"{name} VRF Outdoor Unit")
     if heat_recovery:
-        vrf_system = openstudio.model.AirConditionerVariableRefrigerantFlowFluidTemperatureControlHR(model)
-        vrf_system.setName(f"{name} VRF Outdoor Unit HR")
-    else:
-        vrf_system = openstudio.model.AirConditionerVariableRefrigerantFlow(model)
-        vrf_system.setName(f"{name} VRF Outdoor Unit")
+        vrf_system.setHeatPumpWasteHeatRecovery(True)
+    # The constructor's default EIR low-PLR curves have minimum x = 0.5 while
+    # the minimum PLR field defaults to 0.25 — E+ rejects the inconsistency
+    # with a fatal GetVRFInput error. Match the shipped curves.
+    vrf_system.setMinimumHeatPumpPartLoadRatio(0.5)
 
-    # Set capacity or autosize (HR model uses different API)
-    if heat_recovery:
-        if capacity_w is not None:
-            vrf_system.setRatedEvaporativeCapacity(capacity_w)
-            autosized = False
-        else:
-            vrf_system.autosizeRatedEvaporativeCapacity()
-            autosized = True
+    if capacity_w is not None:
+        vrf_system.setGrossRatedTotalCoolingCapacity(capacity_w)
+        vrf_system.setGrossRatedHeatingCapacity(capacity_w)
+        autosized = False
     else:
-        if capacity_w is not None:
-            vrf_system.setGrossRatedTotalCoolingCapacity(capacity_w)
-            vrf_system.setGrossRatedHeatingCapacity(capacity_w)
-            autosized = False
-        else:
-            vrf_system.autosizeGrossRatedTotalCoolingCapacity()
-            vrf_system.autosizeGrossRatedHeatingCapacity()
-            autosized = True
+        vrf_system.autosizeGrossRatedTotalCoolingCapacity()
+        vrf_system.autosizeGrossRatedHeatingCapacity()
+        autosized = True
 
     # Create VRF terminals for each zone
     terminals = []
@@ -457,8 +458,13 @@ def create_vrf_system(
         terminal = openstudio.model.ZoneHVACTerminalUnitVariableRefrigerantFlow(model)
         terminal.setName(f"{name} VRF Terminal - {zone.nameString()}")
 
-        # Connect terminal to VRF system via outdoor unit
-        vrf_system.addTerminal(terminal)
+        # Connect terminal to VRF system via outdoor unit; a False return
+        # means an incompatible pairing that would orphan the terminal
+        if not vrf_system.addTerminal(terminal):
+            terminal.remove()
+            raise RuntimeError(
+                f"VRF outdoor unit rejected terminal for zone "
+                f"'{zone.nameString()}' (incompatible terminal type)")
 
         # Add to thermal zone
         terminal.addToThermalZone(zone)
