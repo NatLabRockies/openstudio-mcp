@@ -79,6 +79,7 @@ compare_runs(run_id_a, run_id_b)           # EUI + unmet-hours deltas
 ## Notes
 
 - Get all zone names from `list_thermal_zones()` — names must match exactly
-- Systems 3-4 create one air loop per zone (single-zone systems)
+- Systems 3-4 create one air loop per zone — pass the full zone list in one
+  call, the tool fans out automatically
 - Systems 5-8 create one shared air loop for all zones (multi-zone VAV)
 - Systems 1-2, 9-10 create zone equipment only (no air loops)
