@@ -1,4 +1,4 @@
-# Example 22: Validating gbXML-Imported Geometry
+# Example 22: Repairing & Validating gbXML-Imported Geometry
 
 Catch overlapping surfaces and non-enclosed spaces from a gbXML import in one call, instead of a long manual diagnostic chain.
 
@@ -8,7 +8,7 @@ After `import_gbxml` (Example 21), a modeler wants to know whether the geometry 
 actually clean before doing anything else with it. The manual way to check this — `get_model_summary`,
 `validate_model`, `list_surfaces`, `get_surface_details` per surface, `list_spaces(detailed=true)`,
 `get_space_details` per space — is a long chain of separate tool calls, each a full round trip.
-`validate_gbxml_geometry` moves that whole diagnostic into one server-side call.
+`repair_and_validate_gbxml_geometry` moves that whole diagnostic into one server-side call.
 
 ## Prompt
 
@@ -20,7 +20,7 @@ actually clean before doing anything else with it. The manual way to check this 
 ```
 1. import_gbxml(gbxml_path="/inputs/25_SpacesOneZE.xml",
                  epw_path="/inputs/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw")
-2. validate_gbxml_geometry()
+2. repair_and_validate_gbxml_geometry()
    → runs match_surfaces() internally first (fixes cross-space shared walls —
      156 surfaces matched on this model), then reports what that can't fix:
    { ok: false,
@@ -40,7 +40,7 @@ Two calls total, replacing what would otherwise be dozens.
 | Tool | Purpose |
 |------|---------|
 | `import_gbxml` | Translate gbXML -> OSM (Example 21) |
-| `validate_gbxml_geometry` | Fix cross-space shared walls (`match_surfaces()`, internal), then report same-space overlaps and non-enclosed spaces in one call |
+| `repair_and_validate_gbxml_geometry` | Fix cross-space shared walls (`match_surfaces()`, internal), then report same-space overlaps and non-enclosed spaces in one call |
 | `get_surface_details` | Only needed afterward, for a specific flagged surface pair, if the summary isn't enough to act on |
 
 ## Why Two Separate Checks
@@ -64,7 +64,7 @@ Two calls total, replacing what would otherwise be dozens.
 
 - **`overlapping_surfaces_count == 0` doesn't mean the geometry is perfect** — it means no *same-space*
   duplicate overlaps were found. `non_enclosed_spaces_count` is a separate, independent signal.
-- **The response has a side effect**: `validate_gbxml_geometry()` mutates the model via
+- **The response has a side effect**: `repair_and_validate_gbxml_geometry()` mutates the model via
   `match_surfaces()` before reporting (by design — the majority "shared wall left as Outdoors" case
   gets fixed for free). If you need to inspect the model *before* any matching runs, call
   `match_surfaces()` yourself only after checking, or save a copy of the model first.
@@ -75,6 +75,6 @@ Two calls total, replacing what would otherwise be dozens.
 
 ## Integration Test
 
-See `tests/test_gbxml_import.py::test_validate_gbxml_geometry_on_real_import`,
-`::test_validate_gbxml_geometry_detects_same_space_overlap`, and
-`::test_validate_gbxml_geometry_detects_non_enclosed_space`.
+See `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_on_real_import`,
+`::test_repair_and_validate_gbxml_geometry_detects_same_space_overlap`, and
+`::test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space`.

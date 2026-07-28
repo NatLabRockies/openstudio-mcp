@@ -155,9 +155,9 @@ def test_import_gbxml_missing_epw_companion():
 
 
 @pytest.mark.integration
-def test_validate_gbxml_geometry_on_real_import():
-    """Test validate_gbxml_geometry's exact, reproducible output on the real fixture."""
-    # Validates: validate_gbxml_geometry runs match_surfaces() (156 cross-space
+def test_repair_and_validate_gbxml_geometry_on_real_import():
+    """Test repair_and_validate_gbxml_geometry's exact, reproducible output on the real fixture."""
+    # Validates: repair_and_validate_gbxml_geometry runs match_surfaces() (156 cross-space
     # surfaces matched), finds zero same-space overlaps (confirming the
     # openstudio.intersects()-alone approach's false positives on edge-touching
     # coplanar surfaces, e.g. adjacent wall segments split at a window, are
@@ -183,7 +183,7 @@ def test_validate_gbxml_geometry_on_real_import():
                 ))
                 assert import_result["ok"] is True, import_result
 
-                result = unwrap(await session.call_tool("validate_gbxml_geometry", {}))
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert result["ok"] is False, result
                 assert result["space_count"] == 25, result
                 assert result["surface_count"] == 228, result
@@ -205,7 +205,7 @@ def test_validate_gbxml_geometry_on_real_import():
 
 
 @pytest.mark.integration
-def test_validate_gbxml_geometry_detects_same_space_overlap():
+def test_repair_and_validate_gbxml_geometry_detects_same_space_overlap():
     """Test that a deliberately injected duplicate Floor surface is flagged."""
     # Validates: a second Floor surface covering the same footprint in the same
     # space is detected as a same-space overlap (match_surfaces() cannot fix
@@ -248,7 +248,7 @@ def test_validate_gbxml_geometry_detects_same_space_overlap():
                 ))
                 assert dup_result["ok"] is True, dup_result
 
-                result = unwrap(await session.call_tool("validate_gbxml_geometry", {}))
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert result["ok"] is False, result
                 assert result["overlapping_surfaces_count"] == 1, result
                 issue = result["overlapping_surfaces"][0]
@@ -261,7 +261,7 @@ def test_validate_gbxml_geometry_detects_same_space_overlap():
 
 
 @pytest.mark.integration
-def test_validate_gbxml_geometry_detects_non_enclosed_space():
+def test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space():
     """Test that removing a space's Floor surface is detected as a non-enclosed volume."""
     # Validates: a space missing its Floor surface fails Space.isEnclosedVolume()
     # and is reported with has_floor=False
@@ -304,7 +304,7 @@ def test_validate_gbxml_geometry_detects_non_enclosed_space():
                 ))
                 assert delete_result["ok"] is True, delete_result
 
-                result = unwrap(await session.call_tool("validate_gbxml_geometry", {}))
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert result["ok"] is False, result
                 assert result["non_enclosed_spaces_count"] >= 1, result
                 flagged = [s for s in result["non_enclosed_spaces"] if s["space"] == "NonEnclosedTestSpace"]

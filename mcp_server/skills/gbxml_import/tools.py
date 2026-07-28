@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from mcp_server.skills.gbxml_import.operations import (
     import_gbxml_op,
-    validate_gbxml_geometry_op,
+    repair_and_validate_gbxml_geometry_op,
 )
 
 
@@ -41,8 +41,8 @@ def register(mcp):
             run_name=run_name,
         )
 
-    @mcp.tool(tags={"geometry", "core"}, name="validate_gbxml_geometry")
-    def validate_gbxml_geometry_tool():
+    @mcp.tool(tags={"geometry", "core"}, name="repair_and_validate_gbxml_geometry")
+    def repair_and_validate_gbxml_geometry_tool():
         """Check the loaded model for surface overlaps and non-enclosed space volumes.
 
         Runs match_surfaces() first (fixes shared walls between adjacent
@@ -53,4 +53,4 @@ def register(mcp):
         list_surfaces/get_surface_details/list_spaces/get_space_details
         diagnostic chain.
         """
-        return validate_gbxml_geometry_op()
+        return repair_and_validate_gbxml_geometry_op()

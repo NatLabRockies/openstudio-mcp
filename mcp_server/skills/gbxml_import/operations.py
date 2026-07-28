@@ -374,7 +374,7 @@ def _surface_overlaps(space: openstudio.model.Space) -> list[dict[str, Any]]:
     return issues
 
 
-def validate_gbxml_geometry_op() -> dict[str, Any]:
+def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
     """Fix cross-space shared walls, then report same-space overlaps + non-enclosed spaces."""
     try:
         model = get_model()

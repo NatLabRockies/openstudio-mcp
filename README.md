@@ -683,7 +683,7 @@ The component-properties tools query/modify these 15 types:
 | 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | 18 | [`/view`](docs/examples/18_view.md) |
 | 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | 19 | [Four-Pipe Beam Retrofit (E2E)](docs/examples/19_systemd_fourpipebeam_retrofit.md) |
 | 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | 20 | [Demand Response with Python EMS](docs/examples/20_python_ems_demand_response.md) |
-| 21 | [gbXML Import from Revit](docs/examples/21_gbxml_import.md) | 22 | [Validating gbXML Geometry](docs/examples/22_validate_gbxml_geometry.md) |
+| 21 | [gbXML Import from Revit](docs/examples/21_gbxml_import.md) | 22 | [Repairing & Validating gbXML Geometry](docs/examples/22_repair_and_validate_gbxml_geometry.md) |
 
 ---
 
