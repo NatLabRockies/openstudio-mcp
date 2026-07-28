@@ -320,10 +320,34 @@ def change_building_location_op(
         weather_file: Absolute path to .epw file (must have .stat + .ddy alongside)
         climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto-detect
     """
-    return _run("ChangeBuildingLocation", {
+    result = _run("ChangeBuildingLocation", {
         "weather_file_name": weather_file,
         "climate_zone": climate_zone,
     })
+    if result.get("ok"):
+        _make_weather_url_portable(result)
+    return result
+
+
+def _make_weather_url_portable(result: dict[str, Any]) -> None:
+    """Rewrite the model's OS:WeatherFile url to the bare EPW filename.
+
+    The measure records the staged run-dir path, which resolves only inside
+    this container (issue #104, secondary). The bare filename is the portable
+    OSM convention: a host OpenStudio App resolves it via the model's
+    companion files/ dir, and run_simulation re-resolves it against known
+    weather dirs at sim time.
+    """
+    from mcp_server.model_manager import get_model
+    try:
+        model = get_model()
+        wf = model.weatherFile()
+        if wf.is_initialized() and wf.get().makeUrlRelative():
+            url = wf.get().url()
+            if url.is_initialized():
+                result["weather_url"] = str(url.get())
+    except Exception as e:  # measure succeeded — don't fail the tool on cleanup
+        result["weather_url_error"] = str(e)
 
 
 # ===================================================================

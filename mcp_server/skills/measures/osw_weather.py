@@ -63,6 +63,32 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
     return out
 
 
+def stage_epw_into_run(epw_src: Path, run_dir: Path) -> str:
+    """Copy an EPW plus companion .ddy/.stat into run_dir/files.
+
+    The confined measure subprocess can read only its own run dir — the
+    sandbox deliberately denies shared roots like /inputs (issue #104) — so
+    a referenced weather file must be staged, never passed by original path.
+    Companions travel too: ChangeBuildingLocation reads the .ddy (design
+    days) and .stat (climate zone) from the EPW's directory.
+
+    Returns the OSW-relative reference ('files/<name>').
+    """
+    files_dir = run_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(epw_src), str(files_dir / epw_src.name))
+    for ext in (".ddy", ".stat"):
+        companion = epw_src.with_suffix(ext)
+        # Companions are derived paths that never went through is_path_allowed
+        # (the EPW itself did, resolved). A tenant can write its own run dir,
+        # so a planted leaf symlink (x.ddy -> /etc/shadow) would make the root
+        # server copy the target into the tenant-readable run dir — skip links.
+        if companion.is_symlink() or not companion.is_file():
+            continue
+        shutil.copy2(str(companion), str(files_dir / companion.name))
+    return f"files/{epw_src.name}"
+
+
 def strip_weather_from_seed(temp_osm: Path) -> Any | None:
     """Remove OS:WeatherFile from a saved seed OSM; return its IdfObject.
 
