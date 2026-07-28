@@ -56,6 +56,76 @@ class TestReadFileBounded:
             read_file_bounded(d, 1000)
 
 
+class TestReadTailBounded:
+    """read_tail_bounded — symlink-refusing tail read for subprocess-produced
+    logs (PR #105 Copilot): log_tail goes back to the client verbatim, so a
+    confined subprocess swapping openstudio.log for a symlink would otherwise
+    turn the tail read into arbitrary host-file disclosure."""
+
+    def test_small_file_returned_whole(self, tmp_path):
+        # Validates: a log under the cap comes back verbatim.
+        from mcp_server.util import read_tail_bounded
+        f = tmp_path / "openstudio.log"
+        f.write_bytes(b"line1\nline2\n")
+        assert read_tail_bounded(f, 1000) == b"line1\nline2\n"
+
+    def test_oversize_returns_last_bytes_only(self, tmp_path):
+        # Validates: only the LAST max_bytes are read (seek, not slurp) — a giant
+        # failure log is never loaded wholesale just to show a 50-line tail.
+        from mcp_server.util import read_tail_bounded
+        f = tmp_path / "openstudio.log"
+        f.write_bytes(b"A" * 500 + b"TAIL")
+        assert read_tail_bounded(f, 100) == (b"A" * 500 + b"TAIL")[-100:]
+
+    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW is POSIX-only")
+    def test_refuses_to_follow_symlink(self, tmp_path):
+        # Regression: PR #105 — the sandboxed openstudio subprocess can delete
+        # openstudio.log mid-run and recreate it as a symlink to a host file; the
+        # unconfined server's tail read must refuse the link, not return the
+        # target's content as log_tail.
+        from mcp_server.util import read_tail_bounded
+        secret = tmp_path / "secret"
+        secret.write_bytes(b"TOPSECRET")
+        link = tmp_path / "openstudio.log"
+        link.symlink_to(secret)
+        with pytest.raises(ValueError, match="symlink"):
+            read_tail_bounded(link, 1000)
+
+    def test_refuses_non_regular_file(self, tmp_path):
+        # Validates: a dir masquerading as the log is rejected, not read as junk.
+        from mcp_server.util import read_tail_bounded
+        d = tmp_path / "openstudio.log"
+        d.mkdir()
+        with pytest.raises(ValueError, match="not a regular file"):
+            read_tail_bounded(d, 1000)
+
+
+class TestSafeReadBytesNoFollow:
+    """safe_read_bytes — refactored onto read_tail_bounded so its caller
+    (results HTML via safe_read_text) inherits the no-follow bounded read."""
+
+    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW is POSIX-only")
+    def test_refuses_symlink(self, tmp_path):
+        # Regression: PR #105 — safe_read_bytes followed symlinks and slurped the
+        # whole file before truncating; simulation-produced eplustbl.htm read via
+        # safe_read_text had the same swap exposure as out.osw/openstudio.log.
+        from mcp_server.util import safe_read_bytes
+        secret = tmp_path / "secret"
+        secret.write_bytes(b"TOPSECRET")
+        link = tmp_path / "eplustbl.htm"
+        link.symlink_to(secret)
+        with pytest.raises(ValueError, match="symlink"):
+            safe_read_bytes(link)
+
+    def test_tail_truncation_semantics_kept(self, tmp_path):
+        # Validates: the existing keep-the-LAST-max_bytes contract survives the
+        # refactor (results HTML reads tail-truncate, callers rely on it).
+        from mcp_server.util import safe_read_bytes
+        f = tmp_path / "big.htm"
+        f.write_bytes(b"HEAD" + b"B" * 300)
+        assert safe_read_bytes(f, max_bytes=100) == (b"HEAD" + b"B" * 300)[-100:]
+
+
 class TestPerTenantSandboxUid:
     """Per-tenant sandbox uid derivation (M1/M2). Each remote tenant gets its own
     uid so RLIMIT_NPROC (per-uid) is a private budget and DAC isolates run dirs

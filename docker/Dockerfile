@@ -31,6 +31,18 @@ RUN curl -sL https://github.com/NatLabRockies/openstudio-common-measures-gem/arc
     rm -rf /tmp/openstudio-common-measures-gem-*
 
 ENV COMMON_MEASURES_DIR=/opt/common-measures
+
+# gbXML-to-OpenStudio measures + seed model (Revit gbXML -> OSM translation pipeline)
+ARG GBXML_TO_OS_TAG=v1.2.4
+RUN curl -sL https://github.com/NatLabRockies/gbxml-to-openstudio/archive/refs/tags/${GBXML_TO_OS_TAG}.tar.gz | \
+    tar xz -C /tmp && \
+    mv /tmp/gbxml-to-openstudio-*/measures /opt/gbxml-to-openstudio-measures && \
+    mv /tmp/gbxml-to-openstudio-*/seeds/seed_empty.osm /opt/gbxml-to-openstudio-seed_empty.osm && \
+    rm -rf /tmp/gbxml-to-openstudio-*
+
+ENV GBXML_MEASURES_DIR=/opt/gbxml-to-openstudio-measures
+ENV GBXML_SEED_OSM=/opt/gbxml-to-openstudio-seed_empty.osm
+
 # Per-user measures mount root. Subdirs are MEASURES_DIR/<user_key>/{custom,bcl},
 # created per-user at runtime (see config.user_measures_root). Mount writable +
 # chownable like /runs.

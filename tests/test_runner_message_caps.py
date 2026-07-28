@@ -9,6 +9,7 @@ Boston EPW + generic_qaqc with all 10 check_* true).
 """
 import gzip
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ import pytest
 from mcp_server.skills.measures.runner_messages import (
     MAX_MESSAGE_CHARS,
     MESSAGE_LIMITS,
+    parse_all_step_messages,
     parse_runner_messages,
 )
 
@@ -88,6 +90,23 @@ def test_single_oversized_message_is_clipped(tmp_path):
     assert len(msgs["errors"][0]) <= MAX_MESSAGE_CHARS + 40
     assert "1000000 chars" in msgs["errors"][0], "clip suffix should state original size"
     assert msgs["truncated"] is True
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW is POSIX-only")
+def test_symlinked_out_osw_refused(tmp_path):
+    # Regression: PR #105 Copilot — a confined measure can swap out.osw for a
+    # symlink (e.g. to another tenant's out.osw, which IS valid JSON with steps);
+    # the unconfined server must refuse the link and return None, not parse the
+    # target and leak its runner messages into this tenant's response.
+    target = tmp_path / "other_tenant_out.osw"
+    target.write_text(json.dumps({
+        "steps": [{"result": {"step_result": "Success", "step_errors": ["SECRET"]}}],
+    }), encoding="utf-8")
+    link = tmp_path / "out.osw"
+    link.symlink_to(target)
+    assert parse_runner_messages(link) is None
+    assert parse_all_step_messages(link) is None
 
 
 @pytest.mark.unit

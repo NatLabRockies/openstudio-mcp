@@ -214,6 +214,9 @@ EXPECTED_TOOLS = {
     "list_uploads",
     "delete_upload",
     "request_download",
+    # gbXML Import (Revit gbXML -> OSM via gbxml-to-openstudio measures)
+    "import_gbxml",
+    "repair_and_validate_gbxml_geometry",
 }
 
 
