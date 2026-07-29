@@ -58,8 +58,12 @@ Residual risk only if someone installs `mcp` standalone outside the project extr
 4. Retire `session_key()` or delegate it to handle resolution. Prefer middleware/default
    resolution so per-tool churn stays near zero.
 5. Refresh `docs/security-stdio-vs-http.md`: isolation analysis assumes `Mcp-Session-Id`.
-6. Check `feat/jwt-dynamic-users` against new auth doc (DCR deprecated, Client ID
-   Metadata Documents; enterprise IdP direct) BEFORE that branch ships.
+6. Auth: RESOLVED, no work. JWT auth already shipped (PR #77, merged; `MCP_AUTH=jwt` +
+   `scripts/mint_token.py`). It is resource-server bearer validation only; the spec's
+   auth changes (DCR deprecated for Client ID Metadata Documents, RFC 9207 `iss`
+   validation, credential-issuer binding) all concern the client/authorization-server
+   OAuth flow we do not implement. New-spec auth work arises only if we later add
+   interactive SSO (clients OAuth against Entra/Okta directly) — optional new scope.
 7. Opportunity, separate PR: Tasks extension for `run_simulation`; `tasks/get` polling
    replaces `get_run_status` + "wait 1-2 min" instruction.
 8. Verify `tools/list` deterministic ordering post-upgrade (151 tools, prompt cache).
