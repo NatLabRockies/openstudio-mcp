@@ -410,3 +410,70 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
                 assert flagged["sp-0basement"]["has_roofceiling"] is True, flagged
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_repair_missing_roof_ceiling_on_11jay_fixture():
+    """Test repair_missing_roof_ceiling's exact output on the 11 Jay St residential fixture."""
+    # Regression: of the 3 spaces flagged has_floor=True/has_roofceiling=False on this
+    # fixture, only sp-9diningroomcloset actually gets an auto-repaired flat ceiling.
+    # sp-11mastercloset is correctly skipped for uneven wall heights and
+    # sp-4masterbedroom for having 3 Floor surfaces instead of 1 — both symptomatic of
+    # the same wall-duplication defect documented in
+    # test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps, not something this
+    # targeted repair should guess its way through. The repaired ceiling gets
+    # "Adiabatic" (no adjacent-space match found), and non_enclosed_spaces_count drops
+    # from 14 to 13 — the overlap count (9) and cross_space_surfaces_matched (128) are
+    # unaffected, confirming this repair is orthogonal to the overlap defect.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH_11JAY, "epw_path": EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": import_result["osm_path"]},
+                ))
+                assert load_result["ok"] is True, load_result
+
+                result = unwrap(await session.call_tool("repair_missing_roof_ceiling", {}))
+                assert result["ok"] is True, result
+                assert result["repaired_count"] == 1, result
+                repaired = result["repaired"][0]
+                assert repaired["space"] == "sp-9diningroomcloset", repaired
+                assert repaired["area_m2"] == pytest.approx(0.6068, abs=1e-4), repaired
+                assert repaired["ceiling_z"] == pytest.approx(9.4488, abs=1e-4), repaired
+                assert repaired["final_boundary_condition"] == "Adiabatic", repaired
+
+                skipped = {s["space"]: s["reason"] for s in result["skipped"]}
+                assert skipped == {
+                    "sp-11mastercloset": "uneven wall heights, cannot auto-repair a flat ceiling",
+                    "sp-4masterbedroom": "expected exactly 1 Floor surface, found 3",
+                }, skipped
+
+                revalidate = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert revalidate["ok"] is False, revalidate
+                assert revalidate["surface_count"] == 293, revalidate
+                assert revalidate["cross_space_surfaces_matched"] == 128, revalidate
+                assert revalidate["overlapping_surfaces_count"] == 9, revalidate
+                assert revalidate["non_enclosed_spaces_count"] == 13, revalidate
+                remaining = {s["space"] for s in revalidate["non_enclosed_spaces"]}
+                assert "sp-9diningroomcloset" not in remaining, remaining
+                assert remaining == {
+                    "sp-8hallway", "sp-6bathroom", "sp-5kitchen", "sp-0basement",
+                    "sp-1firstfloor", "sp-11mastercloset", "sp-12mastercabinet",
+                    "sp-4masterbedroom", "sp-13backstairwell", "sp-16bedroom",
+                    "sp-14livingroom", "sp-2secondfloor", "sp-3diningroom",
+                }, remaining
+
+    asyncio.run(_run())

@@ -50,6 +50,14 @@ overlaps (via coincident-plane + 2D polygon-intersection checks) and non-enclose
 replaces what would otherwise be a long chain of `list_surfaces`/`get_surface_details`/
 `list_spaces`/`get_space_details` calls.
 
+For non-enclosed spaces that have a Floor but no RoofCeiling at all (common for small
+closets/cabinets nested under a bigger room's ceiling in the source Revit model), follow up with
+`repair_missing_roof_ceiling()` (geometry skill) to synthesize the missing surface, then call
+`repair_and_validate_gbxml_geometry()` again to confirm. It only repairs spaces with a level floor
+and uniformly level wall tops — anything sloped or ambiguous is reported as skipped rather than
+guessed at, and it does not touch same-space overlaps (still a manual fix).
+
 ## Tools
 
-`import_gbxml`, `repair_and_validate_gbxml_geometry`.
+`import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `repair_missing_roof_ceiling`
+(geometry skill).

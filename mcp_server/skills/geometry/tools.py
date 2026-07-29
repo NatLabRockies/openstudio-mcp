@@ -12,6 +12,7 @@ from mcp_server.skills.geometry.operations import (
     match_surfaces,
     set_window_to_wall_ratio,
 )
+from mcp_server.skills.geometry.repair import repair_missing_roof_ceiling
 
 
 def register(mcp):
@@ -155,6 +156,19 @@ def register(mcp):
     def match_surfaces_tool():
         """Intersect and match surfaces across all spaces, setting shared walls as interior boundaries."""
         return match_surfaces()
+
+    @mcp.tool(tags={"geometry"}, name="repair_missing_roof_ceiling")
+    def repair_missing_roof_ceiling_tool():
+        """Synthesize a RoofCeiling surface for spaces that have a Floor but no ceiling.
+
+        Run repair_and_validate_gbxml_geometry() first to find spaces with
+        has_floor=True/has_roofceiling=False in non_enclosed_spaces, then this
+        to fix them, then repair_and_validate_gbxml_geometry() again to
+        confirm. Only synthesizes a flat ceiling when the space's floor is
+        level and its wall tops are uniformly level — anything sloped or
+        ambiguous is reported as skipped, not guessed at.
+        """
+        return repair_missing_roof_ceiling()
 
     @mcp.tool(tags={"geometry"}, name="set_window_to_wall_ratio")
     def set_window_to_wall_ratio_tool(
