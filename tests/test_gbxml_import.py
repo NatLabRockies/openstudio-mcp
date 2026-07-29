@@ -21,6 +21,7 @@ from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
 GBXML_PATH = "/repo/tests/assets/gbxml/25_SpacesOneZE.xml"
+GBXML_PATH_11JAY = "/repo/tests/assets/2026_11Ja_path1.xml"
 RUN_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs")))
 
 
@@ -311,5 +312,101 @@ def test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space():
                 assert len(flagged) == 1, result
                 assert flagged[0]["has_floor"] is False, flagged[0]
                 assert flagged[0]["has_roofceiling"] is True, flagged[0]
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
+    """Test repair_and_validate_gbxml_geometry's exact output on the 11 Jay St residential fixture."""
+    # Regression: 2026_11Ja_path1.xml (a Revit-exported residential floor plan)
+    # produces 9 real same-space surface overlaps that match_surfaces() cannot
+    # fix — walls that border more than one neighboring room along their run
+    # (e.g. a closet wall bordering both the second-floor envelope and the
+    # backstairwell) are exported as one full-length surface per neighbor
+    # instead of being split at the point where the neighbor changes, so the
+    # shared segment is duplicated (fully or partially) inside whichever space
+    # is common to both copies. Confirmed via get_surface_details: e.g.
+    # su-e-2-11-i-w-99 (gross area 1.2936 m^2) sits entirely inside the
+    # larger, coplanar su-w-11-13-i-w-209 (6.7005 m^2), both in
+    # sp-11mastercloset. This is upstream/source-geometry behavior the
+    # detector correctly flags, not a bug in _surface_overlaps() itself.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH_11JAY, "epw_path": EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+                assert import_result["total_errors"] == 0, import_result
+                assert import_result["total_warnings"] == 0, import_result
+
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": import_result["osm_path"]},
+                ))
+                assert load_result["ok"] is True, load_result
+                assert load_result["building_name"] == "11 Jay St", load_result
+                assert load_result["spaces"] == 18, load_result
+                assert load_result["thermal_zones"] == 18, load_result
+
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert result["ok"] is False, result
+                assert result["space_count"] == 18, result
+                assert result["surface_count"] == 292, result
+                assert result["cross_space_surfaces_matched"] == 128, result
+
+                overlaps = {(o["surface_1"], o["surface_2"]): o for o in result["overlapping_surfaces"]}
+                assert result["overlapping_surfaces_count"] == 9, result
+                assert len(overlaps) == 9, result
+                expected = {
+                    ("su-n-2-5-i-w-94 Reversed", "su-s-5-13-i-w-155"):
+                        ("sp-5kitchen", 1.6548, True),
+                    ("su-e-11-12-i-w-208", "su-w-2-11-i-w-100 Reversed"):
+                        ("sp-11mastercloset", 0.3019, True),
+                    ("su-e-2-11-i-w-99 Reversed", "su-w-11-13-i-w-209"):
+                        ("sp-11mastercloset", 1.2936, True),
+                    ("su-e-11-12-i-w-208 Reversed", "su-w-2-12-i-w-104 Reversed"):
+                        ("sp-12mastercabinet", 0.3019, False),
+                    ("su-e-2-13-i-w-105 Reversed", "su-w-11-13-i-w-209 Reversed"):
+                        ("sp-13backstairwell", 1.2936, False),
+                    ("su-n-2-13-i-w-107 Reversed", "su-s-5-13-i-w-155 Reversed"):
+                        ("sp-13backstairwell", 1.6725, False),
+                    ("su-e-2-11-i-w-99", "su-e-2-13-i-w-105"):
+                        ("sp-2secondfloor", 1.2936, True),
+                    ("su-n-2-13-i-w-107", "su-n-2-5-i-w-94"):
+                        ("sp-2secondfloor", 1.6725, True),
+                    ("su-w-2-11-i-w-100", "su-w-2-12-i-w-104"):
+                        ("sp-2secondfloor", 0.2942, True),
+                }
+                assert set(overlaps) == set(expected), overlaps
+                for key, (space, area, same_orientation) in expected.items():
+                    issue = overlaps[key]
+                    assert issue["space"] == space, issue
+                    assert issue["overlap_area_m2"] == pytest.approx(area, abs=1e-4), issue
+                    assert issue["same_orientation"] is same_orientation, issue
+
+                assert result["non_enclosed_spaces_count"] == 14, result
+                flagged = {s["space"]: s for s in result["non_enclosed_spaces"]}
+                assert set(flagged) == {
+                    "sp-9diningroomcloset", "sp-8hallway", "sp-6bathroom", "sp-5kitchen",
+                    "sp-0basement", "sp-1firstfloor", "sp-11mastercloset", "sp-12mastercabinet",
+                    "sp-4masterbedroom", "sp-13backstairwell", "sp-16bedroom", "sp-14livingroom",
+                    "sp-2secondfloor", "sp-3diningroom",
+                }, flagged
+                assert flagged["sp-9diningroomcloset"]["floor_area_m2"] == pytest.approx(
+                    0.6067729799999994, rel=1e-9), flagged
+                assert flagged["sp-9diningroomcloset"]["has_floor"] is True, flagged
+                assert flagged["sp-9diningroomcloset"]["has_roofceiling"] is False, flagged
+                assert flagged["sp-0basement"]["floor_area_m2"] == pytest.approx(
+                    90.72543765430825, rel=1e-9), flagged
+                assert flagged["sp-0basement"]["has_roofceiling"] is True, flagged
 
     asyncio.run(_run())
