@@ -20,7 +20,7 @@ An engineer wants to start from a baseline model with ASHRAE System 5 (packaged 
       space_name=<first_space>, people_per_area=0.059)
  5. create_lights_definition(name="Office Lights",
       space_name=<first_space>, watts_per_area=10.76)
- 6. set_weather_file(epw_path="/inputs/Chicago.epw")
+ 6. change_building_location(weather_file="/inputs/Chicago.epw")
  7. add_design_day(name="Chicago Heating 99.6%",
       day_type="WinterDesignDay", month=1, day=21,
       dry_bulb_max_c=-20.6, dry_bulb_range_c=0.0)
@@ -56,7 +56,7 @@ Save the model, run EnergyPlus, poll for completion, and extract key metrics.
 | `create_baseline_osm` | Multi-zone model with geometry + HVAC |
 | `create_people_definition` | Occupancy loads |
 | `create_lights_definition` | Lighting loads |
-| `set_weather_file` | Attach EPW to model |
+| `change_building_location` | Attach EPW, load DDY design days, and set ASHRAE climate zone in one step |
 | `add_design_day` | Heating/cooling design conditions |
 | `run_simulation` | Run EnergyPlus from OSM + EPW |
 | `extract_summary_metrics` | EUI, energy, unmet hours |

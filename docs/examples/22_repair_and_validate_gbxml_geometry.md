@@ -35,13 +35,47 @@ actually clean before doing anything else with it. The manual way to check this 
 
 Two calls total, replacing what would otherwise be dozens.
 
+On a messier real-world Revit export (`tests/assets/2026_11Ja_path1.xml`, a residential floor
+plan — a second fixture, imported the same way as Example 21 but not covered there), the same call
+also finds 9 same-space surface overlaps — a genuine source-geometry defect, not a false positive
+(see `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`).
+Of that fixture's 14 non-enclosed spaces, 3 are missing a RoofCeiling surface entirely rather than
+having a subtler non-manifold gap — see "Follow-up" below.
+
 ## Key Tools Used
 
 | Tool | Purpose |
 |------|---------|
 | `import_gbxml` | Translate gbXML -> OSM (Example 21) |
 | `repair_and_validate_gbxml_geometry` | Fix cross-space shared walls (`match_surfaces()`, internal), then report same-space overlaps and non-enclosed spaces in one call |
+| `repair_missing_roof_ceiling` | Follow-up fix for non-enclosed spaces that have a Floor but no RoofCeiling at all (see "Follow-up" below) |
 | `get_surface_details` | Only needed afterward, for a specific flagged surface pair, if the summary isn't enough to act on |
+
+## Follow-up: `repair_missing_roof_ceiling`
+
+Not every non-enclosed space has the same defect. Some have both a Floor and a RoofCeiling but
+still fail `isEnclosedVolume()` (small non-manifold gaps between walls — see "Why Two Separate
+Checks" below); others are missing a RoofCeiling entirely — common for small closets/cabinets
+nested under a bigger room's ceiling in the source Revit model. `repair_missing_roof_ceiling()`
+targets only the second case: it synthesizes a flat ceiling from the space's Floor + wall-top
+geometry, but only when the floor is level and every wall reaches the same height — anything
+sloped, stepped, or ambiguous (e.g. more than one Floor surface in a space) is reported as skipped,
+not guessed at.
+
+```
+3. repair_missing_roof_ceiling()
+   → { ok: true, repaired_count: 1,
+       repaired: [{"space": "sp-9diningroomcloset", "area_m2": 0.6068,
+                   "final_boundary_condition": "Adiabatic"}],
+       skipped: [
+         {"space": "sp-11mastercloset", "reason": "uneven wall heights, cannot auto-repair a flat ceiling"},
+         {"space": "sp-4masterbedroom", "reason": "expected exactly 1 Floor surface, found 3"}] }
+4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 14 -> 13
+```
+
+On the 11 Jay St fixture, only 1 of the 3 has-Floor/no-RoofCeiling spaces was actually safe to
+auto-repair — the other 2 are symptoms of the same wall-duplication defect that causes the 9
+surface overlaps above, not something a flat-ceiling repair should paper over.
 
 ## Why Two Separate Checks
 
@@ -76,5 +110,10 @@ Two calls total, replacing what would otherwise be dozens.
 ## Integration Test
 
 See `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_on_real_import`,
-`::test_repair_and_validate_gbxml_geometry_detects_same_space_overlap`, and
-`::test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space`.
+`::test_repair_and_validate_gbxml_geometry_detects_same_space_overlap`,
+`::test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space`,
+`::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`, and
+`::test_repair_missing_roof_ceiling_on_11jay_fixture`. `repair_missing_roof_ceiling` itself also has
+synthetic-geometry tests in `tests/test_geometry.py`
+(`test_repair_missing_roof_ceiling_synthesizes_flat_ceiling`,
+`test_repair_missing_roof_ceiling_skips_uneven_walls`).

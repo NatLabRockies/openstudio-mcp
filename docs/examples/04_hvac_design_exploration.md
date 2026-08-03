@@ -28,7 +28,7 @@ A mechanical engineer is designing a DOAS + fan coil system for an office. They 
 ### Follow-up: Tune Cooling Tower
 
 ```
-9.  list_hvac_components()
+9.  list_model_objects(object_type="CoolingTowerSingleSpeed")
 10. get_component_properties(component_name="Cooling Tower...")
 11. set_component_properties(component_name="Cooling Tower...",
       properties={"design_water_flow_rate_m3_per_s": 0.005})
@@ -40,7 +40,7 @@ A mechanical engineer is designing a DOAS + fan coil system for an office. They 
 |------|---------|
 | `add_doas_system` | Creates DOAS air loop + zone fan coils |
 | `set_sizing_properties` | Adjusts plant loop temperatures |
-| `list_hvac_components` | Discovers all HVAC components |
+| `list_model_objects` | Discovers HVAC components of a given type (e.g. `CoolingTowerSingleSpeed`) |
 | `get/set_component_properties` | Read and modify equipment |
 
 ## Supported Zone Equipment Types
