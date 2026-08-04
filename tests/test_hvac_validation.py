@@ -256,14 +256,14 @@ class TestSystem4:
                     )
                     result.update(main)
 
-                    # Single-zone-only test: create second zone, try 2 zones
+                    # Multi-zone fan-out: create second zone, add with 2 zones
                     await s.call_tool("create_thermal_zone", {"name": "Zone 2"})
-                    err_resp = unwrap(await s.call_tool("add_baseline_system", {
+                    fanout_resp = unwrap(await s.call_tool("add_baseline_system", {
                         "system_type": 4,
                         "thermal_zone_names": [zone_name, "Zone 2"],
                         "system_name": "PSZ HP 2",
                     }))
-                    result["multi_zone_error"] = err_resp
+                    result["multi_zone_fanout"] = fanout_resp
 
         asyncio.run(_go())
         return result
@@ -301,10 +301,13 @@ class TestSystem4:
         # Validates: System 4 uses heat pump DX cooling
         assert data["system"]["system"]["cooling"] == "Heat Pump"
 
-    def test_single_zone_only(self, data):
-        # Validates: System 4 rejects multi-zone requests (single-zone only)
-        assert data["multi_zone_error"]["ok"] is False
-        assert "exactly 1 zone" in data["multi_zone_error"]["error"].lower()
+    def test_multi_zone_fanout(self, data):
+        # Regression: issue #97 — System 4 rejected multi-zone requests
+        # (27 calls for 27 zones); now fans out to one PSZ-HP per zone
+        fanout = data["multi_zone_fanout"]
+        assert fanout["ok"] is True, f"fan-out failed: {fanout.get('error')}"
+        assert fanout["system"]["zones_served"] == 2
+        assert len(fanout["system"]["per_zone_systems"]) == 2
 
 
 @pytest.mark.integration

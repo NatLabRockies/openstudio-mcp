@@ -20,6 +20,7 @@ from typing import Any
 
 import openstudio
 
+from mcp_server.config import is_path_allowed
 from mcp_server.skills.weather.operations import find_epw_by_name
 
 
@@ -41,11 +42,15 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
     epw = Path(str(url.get()))
 
     # Tier 1: url already resolves (absolute path still valid on this
-    # machine). resolve() so a url relative to the server cwd doesn't
-    # produce a relative file_paths entry — the runner executes with
-    # cwd=run_dir and would resolve it against the wrong base
-    if epw.is_file():
-        out["file_paths"].append(str(epw.resolve().parent))
+    # machine). Stage it into the run dir instead of granting the parent via
+    # file_paths: the confined subprocess reads only its own run dir, so an
+    # absolute url into another run's files/ or /inputs is unreadable there
+    # even though the server resolves it (issue #104 class; surfaced again in
+    # issue #97 as a bogus "Windows path length" error from the standards
+    # sizing-run rescue). Gated: the url is caller-controlled model content —
+    # never point the root server's copy at a path outside allowed roots.
+    if epw.is_file() and is_path_allowed(epw):
+        out["weather_file"] = stage_epw_into_run(epw.resolve(), run_dir)
         return out
 
     # Tier 2: bare/stale name — look in known weather dirs, stage like run_osw
@@ -61,6 +66,32 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
     # so drop the reference from the seed and let the caller restore it
     out["stripped_idf"] = strip_weather_from_seed(temp_osm)
     return out
+
+
+def stage_epw_into_run(epw_src: Path, run_dir: Path) -> str:
+    """Copy an EPW plus companion .ddy/.stat into run_dir/files.
+
+    The confined measure subprocess can read only its own run dir — the
+    sandbox deliberately denies shared roots like /inputs (issue #104) — so
+    a referenced weather file must be staged, never passed by original path.
+    Companions travel too: ChangeBuildingLocation reads the .ddy (design
+    days) and .stat (climate zone) from the EPW's directory.
+
+    Returns the OSW-relative reference ('files/<name>').
+    """
+    files_dir = run_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(epw_src), str(files_dir / epw_src.name))
+    for ext in (".ddy", ".stat"):
+        companion = epw_src.with_suffix(ext)
+        # Companions are derived paths that never went through is_path_allowed
+        # (the EPW itself did, resolved). A tenant can write its own run dir,
+        # so a planted leaf symlink (x.ddy -> /etc/shadow) would make the root
+        # server copy the target into the tenant-readable run dir — skip links.
+        if companion.is_symlink() or not companion.is_file():
+            continue
+        shutil.copy2(str(companion), str(files_dir / companion.name))
+    return f"files/{epw_src.name}"
 
 
 def strip_weather_from_seed(temp_osm: Path) -> Any | None:

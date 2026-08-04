@@ -6,47 +6,37 @@ System-level HVAC templates and ASHRAE 90.1 Appendix G baseline systems.
 
 The `hvac_systems` skill provides high-level HVAC system creation tools that abstract away component-level wiring complexity. Instead of manually creating and connecting individual coils, fans, loops, and terminals, use these tools to create complete, validated HVAC systems in a single step.
 
-## Current Implementation Status
+## Scope and Role (read this first)
 
-**Phase 4B: ALL 10 ASHRAE Baseline Systems** ✅ COMPLETE
+These are GENERIC WIRING TEMPLATES: explicit topology control via direct SDK
+calls, no standards equipment efficiencies. For comparative studies or
+decision-grade EUI/comfort numbers, use the openstudio-standards path
+instead: `create_typical_building(system_type=..., hvac_only=True)` replaces
+only the HVAC and preserves loads/schedules/thermostats (issue #97).
 
-All ASHRAE 90.1 Appendix G baseline system types fully implemented:
+All 10 ASHRAE 90.1 Appendix G baseline system types are implemented, plus
+modern templates (DOAS, VRF, Radiant) and terminal replacement tools.
 
-**Zone Equipment Systems:**
-- ✅ System 1: PTAC (Packaged Terminal Air Conditioner)
-- ✅ System 2: PTHP (Packaged Terminal Heat Pump)
-- ✅ System 9: Heating & Ventilation (Gas Unit Heaters)
-- ✅ System 10: Heating & Ventilation (Electric Unit Heaters)
+- Systems 1-2, 9-10: zone equipment (PTAC, PTHP, gas/electric unit heaters)
+- Systems 3-4: packaged single-zone (PSZ-AC gas/electric; PSZ-HP as a
+  unitary heat pump composite with full-size staged supplemental heat) —
+  one air loop per zone; pass the full zone list, the tool fans out
+- Systems 5-6: packaged VAV (HW reheat / PFP boxes), one shared air loop
+- Systems 7-8: central plant VAV (chiller/boiler/tower)
 
-**Packaged Rooftop Systems:**
-- ✅ System 3: PSZ-AC (Single Zone Air Conditioner)
-- ✅ System 4: PSZ-HP (Single Zone Heat Pump)
-- ✅ System 5: Packaged VAV w/ Reheat (HW loop, boiler, VAV terminals)
-- ✅ System 6: Packaged VAV w/ PFP (Parallel fan-powered boxes)
+## Comfort defaults (issue #97, benchmark-verified)
 
-**Central Plant Systems:**
-- ✅ System 7: VAV w/ Reheat (Chiller/Boiler/Tower, HW reheat)
-- ✅ System 8: VAV w/ PFP (Chiller/Boiler/Tower, electric reheat)
-
-**Testing:** 73 validation tests + 18 system integration tests
-- All 10 systems tested with success + error cases
-- Multi-zone validation (PSZ rejection)
-- Plant loop verification (Systems 5, 7-8)
-- Terminal verification (VAV vs PFP)
-- Economizer on/off for systems 3-8
-- Edge case handling
-
-**Implementation Timeline:**
-- Phase 4A: Systems 1-3 (1 week)
-- Phase 4B Batch 1: Systems 4-6 (2 days)
-- Phase 4B Batch 2: Systems 7-8 (2 days)
-- Phase 4B Batch 3: Systems 9-10 (1 day)
-
-**Next Phases:**
-- Phase 4C: Air terminal replacement tool
-- Phase 4D: Component-level validation tests (detailed ASHRAE compliance)
-- Phase 4E: Modern templates (DOAS, VRF, Radiant)
-- Additional introspection tools
+Applied automatically so generic systems are viable out of the box:
+- App G sizing factors (1.25 heating / 1.15 cooling) + night-cycle
+  availability managers on air-loop systems
+- VAV reheat terminals use DamperHeatingAction=Reverse (Normal caps heating
+  at minimum airflow — was 1807 unmet heating hrs on the benchmark)
+- System 4 heat pump: -12.2C compressor lockout, cycling Fan:OnOff, 40C max
+  supplemental supply temp (autosized 16.7C could not heat a 21C zone)
+- DOAS loop availability defaults to the served zones' People schedule
+  (24/7 buildings stay always-on); override via availability_schedule_name
+- VRF uses the standard outdoor-unit family with waste-heat recovery
+  (the FluidTemperatureControl family needs different terminal coils)
 
 ## Tools
 

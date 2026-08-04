@@ -320,6 +320,9 @@ def change_building_location_op(
         weather_file: Absolute path to .epw file (must have .stat + .ddy alongside)
         climate_zone: ASHRAE climate zone or "Lookup From Stat File" for auto-detect
     """
+    # Portable weather url (bare filename) is applied generally by
+    # apply_measure's post-reload step — the result carries `weather_url`
+    # when the reference is portable (see weather.make_weather_url_portable).
     return _run("ChangeBuildingLocation", {
         "weather_file_name": weather_file,
         "climate_zone": climate_zone,

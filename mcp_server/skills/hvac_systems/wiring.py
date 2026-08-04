@@ -34,6 +34,32 @@ def add_outdoor_air_system(
     return oa_system
 
 
+def add_night_cycle_manager(
+    model,
+    air_loop,
+) -> openstudio.model.AvailabilityManagerNightCycle:
+    """Add a night-cycle availability manager to an air loop.
+
+    Cycles the system on when any zone drifts past its thermostat setpoints
+    outside the fan schedule. Without it, a system that is scheduled off (or
+    holding setback) cannot recover the zones by occupancy — issue #97's
+    mass unmet-heating hours every winter morning. CycleOnAny matches the
+    openstudio-standards default.
+
+    Args:
+        model: OpenStudio model
+        air_loop: AirLoopHVAC object
+
+    Returns:
+        AvailabilityManagerNightCycle
+    """
+    night_cycle = openstudio.model.AvailabilityManagerNightCycle(model)
+    night_cycle.setName(f"{air_loop.nameString()} Night Cycle")
+    night_cycle.setControlType("CycleOnAny")
+    air_loop.addAvailabilityManager(night_cycle)
+    return night_cycle
+
+
 def create_setpoint_manager_single_zone_reheat(
     model,
     zone,

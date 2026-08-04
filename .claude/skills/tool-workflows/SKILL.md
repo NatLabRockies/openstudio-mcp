@@ -61,6 +61,31 @@ list_files()                              # find available weather files
 change_building_location(weather_file="/inputs/Chicago.epw")
 ```
 
+## Fair HVAC System Sweep (decision-grade comparison)
+
+Compare candidate systems on the SAME configured model — standards-tuned
+equipment/controls each time, loads and schedules never touched:
+
+```
+# One-time setup: geometry + weather + typical build + any load customizations
+create_bar_building(...); change_building_location(...)
+create_typical_building(template="90.1-2019", climate_zone="ASHRAE 169-2013-5A")
+# ... apply load reductions, setbacks, etc. ...
+
+# Per candidate: swap ONLY the HVAC, simulate, compare
+create_typical_building(system_type="PVAV with gas boiler reheat",
+    template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
+save_osm_model(osm_path="/runs/sweep_pvav.osm"); run_simulation(...)
+
+create_typical_building(system_type="PSZ-HP", ..., hvac_only=True)
+save_osm_model(osm_path="/runs/sweep_pszhp.osm"); run_simulation(...)
+
+compare_runs(run_id_a, run_id_b)          # EUI + unmet-hours deltas
+```
+
+Do NOT use add_baseline_system/add_doas_system for comparative studies — they
+are generic wiring templates without standards tuning (see add-hvac skill).
+
 ## Tune Component Properties
 
 ```

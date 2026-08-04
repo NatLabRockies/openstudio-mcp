@@ -35,8 +35,9 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.model_manager import get_model, load_model
-from mcp_server.skills.measures.osw_weather import resolve_osw_weather
+from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
+from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
 from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_run_dir
 
 
@@ -683,6 +684,22 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to list measure arguments: {e}"}
 
 
+def _attach_portable_weather_url(result: dict[str, Any]) -> None:
+    """Post-reload step: record a portable weather url on the result.
+
+    Never raises: the measure already succeeded and the model reloaded — a
+    failure in this cleanup (OpenStudio API RuntimeError) must not flip the
+    tool result to ok=False (PR #108 review). Failures are surfaced as
+    `weather_url_error` instead.
+    """
+    try:
+        portable = make_weather_url_portable(get_model())
+        if portable is not None:
+            result["weather_url"] = portable
+    except Exception as e:
+        result["weather_url_error"] = str(e)
+
+
 def apply_measure(
     measure_dir: str,
     arguments: dict[str, Any] | None = None,
@@ -759,17 +776,34 @@ def apply_measure(
         file_paths = weather["file_paths"]
         osw_weather_file = weather["weather_file"]
 
-        # Also add directories of any EPW paths passed as arguments
-        # (e.g. ChangeBuildingLocation's weather_file_name argument).
-        # An explicit argument EPW overrides model-based resolution.
-        if arguments:
-            for v in arguments.values():
-                v_str = str(v)
-                if v_str.endswith(".epw") and Path(v_str).is_file():
-                    parent = str(Path(v_str).parent)
-                    if parent not in file_paths:
-                        file_paths.append(parent)
-                    osw_weather_file = v_str
+        # Stage any EPW passed as an argument (e.g. ChangeBuildingLocation's
+        # weather_file_name) into the run dir and rewrite the argument to the
+        # staged copy. The sandboxed subprocess can only read its own run dir,
+        # so passing an /inputs path through raw gets EACCES from Landlock
+        # (issue #104). An explicit argument EPW overrides model-based
+        # resolution. Bare filenames resolve against known weather dirs.
+        for k, v in list(measure_args.items()):
+            v_str = str(v)
+            if not v_str.endswith(".epw"):
+                continue
+            src = Path(v_str)
+            if src.is_file():
+                # is_path_allowed resolves symlinks, so this also blocks a
+                # link under an allowed root pointing at a forbidden target
+                if not is_path_allowed(src):
+                    return {"ok": False, "error": f"EPW path not allowed: {v_str}"}
+                src = src.resolve()
+            else:
+                found = find_epw_by_name(src.name) if src.name == v_str else None
+                if found is None:
+                    continue
+                src = found
+            rel = stage_epw_into_run(src, run_dir)
+            staged = run_dir / rel
+            measure_args[k] = str(staged)
+            if str(staged.parent) not in file_paths:
+                file_paths.append(str(staged.parent))
+            osw_weather_file = rel
 
         # Build minimal OSW — use relative path to local copy
         osw = {
@@ -897,6 +931,14 @@ def apply_measure(
                     "model weather reference was unresolvable; removed for the "
                     "measures_only run and restored afterward"
                 )
+
+        # Make the weather reference portable when recoverable: the runner
+        # writes the staged absolute EPW path (this run's files/) into the
+        # output model, which points later tools at a container path that a
+        # future confined run can't read (issue #104 class). Custom EPWs with
+        # unfindable basenames keep the absolute url — tier 1 staging above
+        # handles those per-run instead.
+        _attach_portable_weather_url(result)
 
         if runner_messages:
             result["runner_messages"] = runner_messages

@@ -4,11 +4,18 @@ Tests get_weather_info, change_building_location, add_design_day.
 Uses Boston EPW from ChangeBuildingLocation measure tests (has .stat + .ddy).
 """
 import asyncio
+import shutil
 import uuid
 from pathlib import Path
 
 import pytest
-from conftest import integration_enabled, server_params, setup_example, unwrap
+from conftest import (
+    integration_enabled,
+    poll_until_done,
+    server_params,
+    setup_example,
+    unwrap,
+)
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -22,6 +29,29 @@ EPW_PATH = (
     "/opt/comstock-measures/ChangeBuildingLocation"
     "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 )
+EPW_NAME = "USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+
+# INPUT_ROOT as the server resolves it (issue #104 repro needs an EPW there)
+INPUTS_DIR = Path("/inputs")
+
+
+def _stage_inputs_epw() -> str:
+    """Ensure the Boston EPW (+ .ddy/.stat) exists under /inputs; return its path.
+
+    CI containers have no /inputs mount, so create it and copy from the
+    comstock measure tests dir. Skip only if /inputs is a read-only mount
+    that doesn't already hold the EPW.
+    """
+    src = Path(EPW_PATH)
+    dst = INPUTS_DIR / src.name
+    if not dst.is_file():
+        try:
+            INPUTS_DIR.mkdir(parents=True, exist_ok=True)
+            for companion in (src, src.with_suffix(".ddy"), src.with_suffix(".stat")):
+                shutil.copy2(str(companion), str(INPUTS_DIR / companion.name))
+        except OSError:
+            pytest.skip("/inputs not writable and Boston EPW not present there")
+    return str(dst)
 
 
 # ---- Unit tests for climate zone estimation (no Docker needed) ----
@@ -118,6 +148,157 @@ def test_get_weather_info_after_set():
                 assert -72.0 < wf["longitude"] < -70.0, \
                     f"Boston longitude should be ~-71, got {wf['longitude']}"
     asyncio.run(_run())
+
+
+# ---- Issue #104: /inputs EPW staging + portable weather url ----
+
+
+@pytest.mark.integration
+def test_change_building_location_inputs_epw():
+    """EPW under /inputs must be staged into the run dir, not passed raw."""
+    # Regression: issue #104 — raw /inputs path reached the sandboxed measure
+    # subprocess, which Landlock denies (EACCES); EPW+companions must be staged
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    epw = _stage_inputs_epw()
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": epw,
+                }))
+                assert res["ok"] is True, (
+                    f"change_building_location failed: {res.get('error')} "
+                    f"{res.get('log_tail', '')[-500:]}"
+                )
+
+                # EPW + .ddy + .stat staged into the run's files/ dir
+                files_dir = Path(res["run_dir"]) / "files"
+                assert (files_dir / EPW_NAME).is_file(), "staged EPW missing from run files/"
+                assert (files_dir / Path(EPW_NAME).with_suffix(".ddy").name).is_file(), \
+                    "companion .ddy not staged — ChangeBuildingLocation needs it for design days"
+                assert (files_dir / Path(EPW_NAME).with_suffix(".stat").name).is_file(), \
+                    "companion .stat not staged — ChangeBuildingLocation needs it for climate zone"
+                # measure argument rewritten to the staged copy, not /inputs
+                assert res["arguments_applied"]["weather_file_name"] == str(files_dir / EPW_NAME)
+
+                # Measure actually read the EPW: Boston lat/lon on the model
+                wi = unwrap(await s.call_tool("get_weather_info", {}))
+                assert wi["ok"] is True
+                assert 42.0 < wi["weather_file"]["latitude"] < 43.0, \
+                    f"Boston latitude should be ~42.4, got {wi['weather_file']['latitude']}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_change_building_location_portable_url():
+    """OS:WeatherFile url must be the bare EPW filename, not a container path."""
+    # Regression: issue #104 secondary — url stored the container-absolute path,
+    # so saved models didn't open cleanly in a host OpenStudio App install
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": EPW_PATH,
+                }))
+                assert res["ok"] is True, f"change_building_location failed: {res.get('error')}"
+                assert res["weather_url"] == EPW_NAME, \
+                    f"weather_url should be bare filename, got {res.get('weather_url')}"
+
+                # In-memory model agrees
+                wi = unwrap(await s.call_tool("get_weather_info", {}))
+                assert wi["weather_file"]["url"] == EPW_NAME
+
+                # Saved OSM stores the portable reference
+                osm_path = f"/runs/{_unique('portable_url')}.osm"
+                sv = unwrap(await s.call_tool("save_osm_model", {"osm_path": osm_path}))
+                assert sv["ok"] is True, f"save_osm_model failed: {sv.get('error')}"
+                text = Path(osm_path).read_text(encoding="utf-8")
+                start = text.index("OS:WeatherFile,")
+                block = text[start:text.index(";", start)]
+                assert f"\n  {EPW_NAME}," in block, \
+                    f"OS:WeatherFile Url should be bare filename, block was:\n{block}"
+                assert "/runs/" not in block and "/inputs/" not in block and "/opt/" not in block, \
+                    f"container-absolute path leaked into OS:WeatherFile:\n{block}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_run_simulation_resolves_portable_weather_url():
+    """run_simulation with no epw override must resolve a bare-filename url."""
+    # Regression: issue #104 — after the portable-url rewrite, run_simulation
+    # must stage the model's EPW itself (bare name is unresolvable by the CLI
+    # alone and a /inputs path is unreadable by the sandboxed sim child)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    epw = _stage_inputs_epw()
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("change_building_location", {
+                    "weather_file": epw,
+                }))
+                assert res["ok"] is True, f"change_building_location failed: {res.get('error')}"
+                rp = unwrap(await s.call_tool("set_run_period", {
+                    "begin_month": 7, "begin_day": 20, "end_month": 7, "end_day": 22,
+                }))
+                assert rp["ok"] is True, f"set_run_period failed: {rp.get('error')}"
+                osm_path = f"/runs/{_unique('portable_sim')}.osm"
+                sv = unwrap(await s.call_tool("save_osm_model", {"osm_path": osm_path}))
+                assert sv["ok"] is True, f"save_osm_model failed: {sv.get('error')}"
+
+                sim = unwrap(await s.call_tool("run_simulation", {"osm_path": osm_path}))
+                assert sim["ok"] is True, f"run_simulation failed: {sim.get('error')}"
+                assert sim["epw_path"] is not None and sim["epw_path"].endswith(f"files/{EPW_NAME}"), \
+                    f"model weather url not resolved+staged, epw_path={sim.get('epw_path')}"
+                status = await poll_until_done(s, sim["run_id"])
+                assert status["run"]["status"] == "success", \
+                    f"simulation with resolved weather should succeed: {status}"
+    asyncio.run(_run())
+
+
+def test_stage_epw_skips_symlinked_companions(tmp_path):
+    """A symlinked .ddy/.stat next to the EPW must not be staged."""
+    # Regression: PR #106 review — companions were copied ungated; a tenant can
+    # write its own run dir (sandboxed measures), so x.ddy -> /etc/shadow made
+    # the root server copy the target into the tenant-readable run dir
+    from mcp_server.skills.measures.osw_weather import stage_epw_into_run
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    epw = src_dir / "leak_test.epw"
+    epw.write_text("LOCATION,fake,,,,,,,0,0,0,0\n")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("root:hunter2\n")
+    try:
+        (src_dir / "leak_test.ddy").symlink_to(secret)
+    except OSError:
+        pytest.skip("symlink creation not permitted (Windows without dev mode)")
+    stat = src_dir / "leak_test.stat"
+    stat.write_text("legit stat content\n")
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    rel = stage_epw_into_run(epw, run_dir)
+
+    assert rel == "files/leak_test.epw"
+    files_dir = run_dir / "files"
+    assert (files_dir / "leak_test.epw").is_file()
+    assert (files_dir / "leak_test.stat").read_text() == "legit stat content\n", \
+        "regular companion should still be staged"
+    assert not (files_dir / "leak_test.ddy").exists(), \
+        "symlinked companion was staged — root server leaked the link target into the run dir"
 
 
 # ---- Design day tests ----

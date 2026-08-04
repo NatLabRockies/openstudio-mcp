@@ -213,11 +213,19 @@ def _create_vav_reheat_terminal(
         terminal.setName(f"{zone.nameString()} VAV Reheat Terminal")
 
         # Set minimum airflow fraction (cooling mode minimum)
-        # ASHRAE 90.1 default is 0.3 (30% minimum airflow)
-        if "min_airflow_fraction" in options:
-            terminal.setZoneMinimumAirFlowFraction(options["min_airflow_fraction"])
-        else:
-            terminal.setZoneMinimumAirFlowFraction(0.3)
+        # ASHRAE 90.1 default is 0.3 (30% minimum airflow).
+        # setConstantMinimumAirFlowFraction + input method — the previously
+        # used setZoneMinimumAirFlowFraction does not exist in this SDK, so
+        # every VAV_Reheat replacement raised AttributeError (found by the
+        # issue #97 damper regression test; the success path was untested)
+        terminal.setZoneMinimumAirFlowInputMethod("Constant")
+        terminal.setConstantMinimumAirFlowFraction(
+            options.get("min_airflow_fraction", 0.3))
+
+        # Reverse damper action: the default (Normal) caps heating at minimum
+        # airflow (issue #97 — chronic unmet heating; matches standards and
+        # the baseline system 5/7 fix)
+        terminal.setDamperHeatingAction("Reverse")
 
         # Connect terminal to air loop and zone
         air_loop.addBranchForZone(zone, terminal)

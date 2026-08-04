@@ -12,7 +12,12 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.config import COMSTOCK_MEASURES_DIR, INPUT_ROOT, OSCLI_GEM_PATH
+from mcp_server.config import (
+    COMSTOCK_MEASURES_DIR,
+    INPUT_ROOT,
+    OSCLI_GEM_PATH,
+    is_path_allowed,
+)
 from mcp_server.model_manager import get_model
 
 
@@ -181,6 +186,69 @@ def find_epw_by_name(basename: str) -> Path | None:
             if candidate.is_file():
                 return candidate
     return None
+
+
+def make_weather_url_portable(model: Any) -> str | None:
+    """Rewrite the model's OS:WeatherFile url to the bare EPW filename.
+
+    Bare filename is the portable OSM convention (issue #104 secondary): a
+    host OpenStudio App resolves it via the model's companion files/ dir and
+    the server re-resolves it via find_epw_by_name. Only rewrites when the
+    basename IS findable in the known weather dirs — relativizing a custom
+    EPW that lives only in a run dir would strand the reference (nothing
+    could resolve it afterwards), so those keep their absolute url.
+
+    Returns the bare url when the reference is portable (rewritten now or
+    already bare), else None (unchanged).
+    """
+    wf = model.weatherFile()
+    if not wf.is_initialized():
+        return None
+    url = wf.get().path()
+    if not url.is_initialized():
+        return None
+    raw = str(url.get())
+    p = Path(raw)
+    if p.name == raw:
+        return raw  # already bare
+    if find_epw_by_name(p.name) is None:
+        return None
+    if wf.get().makeUrlRelative():
+        rewritten = wf.get().url()
+        if rewritten.is_initialized():
+            return str(rewritten.get())
+    return None
+
+
+def resolve_model_weather_epw(osm_path: Path) -> Path | None:
+    """Resolve a saved OSM's OS:WeatherFile url to a readable EPW, or None.
+
+    Lets run_simulation stage the model's own weather when no epw_path
+    override is given — required since change_building_location writes the
+    portable bare-filename url (issue #104): the CLI alone can't resolve a
+    bare name, and a container-absolute /inputs url is unreadable by the
+    sandboxed sim child.
+
+    The url is caller-controlled model content, so an absolute url is honored
+    only when it passes is_path_allowed — without that gate a crafted model
+    could make the server stage another tenant's file into this caller's run
+    dir. Unresolvable urls fall back to bare-filename lookup across the known
+    weather dirs (trusted, server-chosen — no gate needed).
+    """
+    loaded = openstudio.osversion.VersionTranslator().loadModel(
+        openstudio.toPath(str(osm_path)))
+    if not loaded.is_initialized():
+        return None
+    wf = loaded.get().weatherFile()
+    if not wf.is_initialized():
+        return None
+    url = wf.get().path()
+    if not url.is_initialized():
+        return None
+    epw = Path(str(url.get()))
+    if epw.is_file() and is_path_allowed(epw):
+        return epw.resolve()
+    return find_epw_by_name(epw.name)
 
 
 def get_weather_info() -> dict[str, Any]:

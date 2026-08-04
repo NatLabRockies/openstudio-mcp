@@ -59,9 +59,27 @@ search_wiring_patterns("DOAS")                     # get working Ruby wiring cod
 search_api("CoilCoolingFourPipeBeam")              # verify SDK method names
 ```
 
+## Comparing Systems / Decision-Grade Results
+
+The generic templates above (add_baseline_system, add_doas_system, add_vrf_system)
+are wiring templates — no standards efficiency tuning or availability-manager
+coordination. For comparative studies or decision-grade EUI/comfort numbers, use
+the standards-tuned path instead:
+
+```
+# Replace ONLY the HVAC on an already-configured model — loads, constructions,
+# schedules, thermostats preserved. One call per candidate system:
+create_typical_building(system_type="PVAV with gas boiler reheat",
+    template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
+save_osm_model(...); run_simulation(...)   # then next candidate
+
+compare_runs(run_id_a, run_id_b)           # EUI + unmet-hours deltas
+```
+
 ## Notes
 
 - Get all zone names from `list_thermal_zones()` — names must match exactly
-- Systems 3-4 create one air loop per zone (single-zone systems)
+- Systems 3-4 create one air loop per zone — pass the full zone list in one
+  call, the tool fans out automatically
 - Systems 5-8 create one shared air loop for all zones (multi-zone VAV)
 - Systems 1-2, 9-10 create zone equipment only (no air loops)

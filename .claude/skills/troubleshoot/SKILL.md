@@ -25,6 +25,8 @@ get_run_logs(run_id=..., log_type="stderr")
 | `Node not connected` | Broken HVAC loop | Check with `get_air_loop_details` / `get_plant_loop_details` |
 | `Surface has no vertices` | Bad geometry | Check `list_surfaces()` for degenerate surfaces |
 | `Zone has no surfaces` | Empty thermal zone | Zone needs spaces with geometry assigned |
+| `Due to limitations on Windows file path lengths ... less than 90 characters` | MISLEADING — an openstudio-standards sizing run could not read/resolve the weather file (nothing to do with path length). The model's EPW reference points somewhere unreadable | Re-run `change_building_location(weather_file=...)` with a real EPW path so the reference is re-staged |
+| `Terminal unit not found on any ZoneTerminalUnitList` | VRF terminals orphaned from the outdoor unit | Rebuild the system with `add_vrf_system` (older models may carry an incompatible FluidTemperatureControl outdoor unit) |
 
 ## Results Look Wrong
 

@@ -317,25 +317,44 @@ def create_baseline_system_4(
     # Add outdoor air system
     oa_system = add_outdoor_air_system(model, air_loop, economizer)
 
-    # Create supply fan
-    fan = openstudio.model.FanConstantVolume(model, always_on)
+    # Composite unitary heat pump — NOT loose coils on the branch. With loose
+    # coils E+ sized the supplemental electric coil to only the design load
+    # minus the DX rated contribution (~44% on the issue #97 benchmark), so
+    # when the derated/locked-out heat pump couldn't carry a Boston winter
+    # morning the backup couldn't either: 1416 unmet heating hrs. The unitary
+    # object stages DX + supplemental together and sizes the backup for the
+    # full load (this is also how openstudio-standards builds PSZ-HP).
+    # Fan:OnOff — required by E+ for the cycling fan mode below (and what
+    # the standards PSZ-HP prototype uses)
+    fan = openstudio.model.FanOnOff(model, always_on)
     fan.setName(f"{name} Supply Fan")
-    fan.addToNode(air_loop.supplyInletNode())
 
-    # Create DX heating coil (heat pump)
     htg_coil = openstudio.model.CoilHeatingDXSingleSpeed(model)
     htg_coil.setName(f"{name} HP Heating Coil")
-    htg_coil.addToNode(air_loop.supplyInletNode())
+    # Standards low-temperature lockout: default -8C abandons the compressor
+    # exactly when the load peaks; -12.2C matches the prototype assumption
+    htg_coil.setMinimumOutdoorDryBulbTemperatureforCompressorOperation(-12.2)
 
-    # Create DX cooling coil (heat pump)
     clg_coil = openstudio.model.CoilCoolingDXSingleSpeed(model)
     clg_coil.setName(f"{name} HP Cooling Coil")
-    clg_coil.addToNode(air_loop.supplyInletNode())
 
-    # Create supplemental heating coil
     supp_htg_coil = openstudio.model.CoilHeatingElectric(model, always_on)
     supp_htg_coil.setName(f"{name} Supplemental Heating Coil")
-    supp_htg_coil.addToNode(air_loop.supplyInletNode())
+
+    unitary = openstudio.model.AirLoopHVACUnitaryHeatPumpAirToAir(
+        model, always_on, fan, htg_coil, clg_coil, supp_htg_coil,
+    )
+    unitary.setName(f"{name} Unitary Heat Pump")
+    unitary.setControllingZone(zone)
+    # Fan operating mode left at default (cycling): a continuous fan dumps
+    # fan heat into the airstream all summer — benchmarked at +343 unmet
+    # cooling hours on issue #97's building. Cycling matches the standards
+    # PSZ-HP prototype.
+    # Autosizing caps supplemental supply air at the system sizing central
+    # heating temp (16.7C — cannot heat a 21C zone no matter the coil size);
+    # 40C matches standards heating supply practice
+    unitary.setMaximumSupplyAirTemperaturefromSupplementalHeater(40.0)
+    unitary.addToNode(air_loop.supplyInletNode())
 
     # Create uncontrolled terminal
     terminal = openstudio.model.AirTerminalSingleDuctUncontrolled(model, always_on)
@@ -354,6 +373,7 @@ def create_baseline_system_4(
         "system": {
             "name": name,
             "type": "PSZ-HP (Baseline System 4)",
+            "unitary_system": unitary.nameString(),
             "category": "baseline",
             "system_number": 4,
             "equipment_type": "Packaged Rooftop Heat Pump",
@@ -455,6 +475,10 @@ def create_baseline_system_5(
             model, always_on, reheat_coil,
         )
         terminal.setName(f"{name} VAV Terminal - {zone.nameString()}")
+        # Reverse damper action: the default (Normal) caps heating at minimum
+        # airflow, chronically underheating perimeter zones (issue #97 — 1807
+        # unmet heating hrs on the benchmark). Matches openstudio-standards.
+        terminal.setDamperHeatingAction("Reverse")
         air_loop.addBranchForZone(zone, terminal)
         terminals.append(terminal.nameString())
 
@@ -668,6 +692,8 @@ def create_baseline_system_7(
             model, always_on, reheat_coil,
         )
         terminal.setName(f"{name} VAV Terminal - {zone.nameString()}")
+        # Reverse damper action — see system 5 (issue #97 unmet heating)
+        terminal.setDamperHeatingAction("Reverse")
         air_loop.addBranchForZone(zone, terminal)
         terminals.append(terminal.nameString())
 
