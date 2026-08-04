@@ -6,7 +6,6 @@ Complementary to OSW-level epw_path override in simulation/operations.py.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -19,22 +18,6 @@ from mcp_server.config import (
     is_path_allowed,
 )
 from mcp_server.model_manager import get_model
-
-
-def _parse_climate_zone_from_stat(stat_path: Path) -> str | None:
-    """Extract ASHRAE climate zone from a .stat file (e.g. "5A", "2B").
-
-    Looks for line like:
-      - Climate type "5A" (ASHRAE Standard 196-2006 Climate Zone)**
-    """
-    try:
-        text = stat_path.read_text(encoding="utf-8", errors="replace")
-        m = re.search(r'Climate type "([^"]+)" \(ASHRAE Standards?', text)
-        if m:
-            return m.group(1)
-    except Exception:
-        pass
-    return None
 
 
 def _estimate_climate_zone_from_epw(epw_path: Path) -> str | None:

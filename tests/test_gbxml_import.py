@@ -22,6 +22,10 @@ from mcp.client.stdio import stdio_client
 
 GBXML_PATH = "/repo/tests/assets/gbxml/25_SpacesOneZE.xml"
 GBXML_PATH_11JAY = "/repo/tests/assets/2026_11Ja_path1.xml"
+GBXML_PATH_AUSTIN = "/repo/tests/assets/gbxml.xml"
+AUSTIN_EPW_PATH = "/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.epw"
+AUSTIN_STAT_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.stat")
+AUSTIN_DDY_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.ddy")
 RUN_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs")))
 
 
@@ -331,6 +335,13 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
     # larger, coplanar su-w-11-13-i-w-209 (6.7005 m^2), both in
     # sp-11mastercloset. This is upstream/source-geometry behavior the
     # detector correctly flags, not a bug in _surface_overlaps() itself.
+    #
+    # Regression: this fixture's wall-duplication defect also leaves 2 of its
+    # 18 conditioned zones (WSHP-9, WSHP-17) with near-zero computed volume —
+    # the same enclosure-corruption family as the 14 non-enclosed spaces
+    # below, just caught at the ThermalZone level instead of the Space level.
+    # That's a real extra warning on top of the climate zone (already valid
+    # via the Boston .stat file, so climate_zone_source stays "gbxml_measure").
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -347,7 +358,13 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
                 ))
                 assert import_result["ok"] is True, import_result
                 assert import_result["total_errors"] == 0, import_result
-                assert import_result["total_warnings"] == 0, import_result
+                assert import_result["climate_zone"] == "5A", import_result
+                assert import_result["climate_zone_source"] == "gbxml_measure", import_result
+                assert import_result["conditioned_zone_count"] == 18, import_result
+                assert import_result["zero_volume_zone_count"] == 2, import_result
+                assert {z["zone"] for z in import_result["zero_volume_zones"]} == {"WSHP-9", "WSHP-17"}, import_result
+                assert import_result["zero_volume_warning"] is not None, import_result
+                assert import_result["total_warnings"] == 1, import_result
 
                 load_result = unwrap(await session.call_tool(
                     "load_osm_model", {"osm_path": import_result["osm_path"]},
@@ -475,5 +492,136 @@ def test_repair_missing_roof_ceiling_on_11jay_fixture():
                     "sp-4masterbedroom", "sp-13backstairwell", "sp-16bedroom",
                     "sp-14livingroom", "sp-2secondfloor", "sp-3diningroom",
                 }, remaining
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_import_gbxml_climate_zone_already_valid_from_measure():
+    """Test that a .stat file the vendored measure's own regex already handles is left untouched."""
+    # Validates: the Boston EPW's .stat file uses the older "Climate type ...**"
+    # phrasing, so ChangeBuildingLocation's own regex resolves it — import_gbxml's
+    # ensure_climate_zone() sees an already-valid ASHRAE value and reports
+    # climate_zone_source="gbxml_measure" without touching the model or falling
+    # through to the .stat re-parse / WMO lookup tiers.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH, "epw_path": EPW_PATH, "run_name": run_name},
+                ))
+                assert result["ok"] is True, result
+                assert result["climate_zone"] == "5A", result
+                assert result["climate_zone_source"] == "gbxml_measure", result
+                assert result["climate_zone_resolved"] is True, result
+                assert "climate_zone_prior_invalid_value" not in result, result
+                assert result["total_warnings"] == 0, result
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture():
+    """Test the real-world garbage-climate-zone bug this feature guards against, plus the
+    conditioned-zone volume fields on the same import (one large-fixture import, not two —
+    the Austin fixture is 74 spaces vs. the 25-space Boston fixture used elsewhere in this
+    file, so its cost is worth amortizing across both assertions)."""
+    # Regression: the Austin fixture's .stat file (Climate.OneBuilding.org
+    # format) uses "Climate Zone "2A" (ASHRAE Standard 169-2021)" — no
+    # "type" label, no trailing "**". The vendored ChangeBuildingLocation
+    # measure's own regex misses this entirely and silently leaves the
+    # literal string "Lookup From Stat File" as the model's ASHRAE climate
+    # zone (confirmed via its own registered warning, "Can't find ASHRAE
+    # climate zone in stat file."). ensure_climate_zone() catches this
+    # invalid placeholder and re-resolves "2A" directly from the same .stat
+    # file with the broadened regex, rather than falling through to the
+    # WMO/geographic lookup tier unnecessarily.
+    #
+    # Validates: the same import also reports conditioned_zone_count and
+    # zero_volume_zone_count/zero_volume_zones/zero_volume_warning. On this
+    # fixture the 74 conditioned zones all have real volume — the positive
+    # "flag it" branch (zero/missing volume) is covered separately with
+    # lightweight fakes in tests/test_gbxml_zone_checks.py, since this real
+    # fixture happens not to reproduce that defect.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH_AUSTIN, "epw_path": AUSTIN_EPW_PATH, "run_name": run_name},
+                ))
+                assert result["ok"] is True, result
+                assert result["climate_zone"] == "2A", result
+                assert result["climate_zone_source"] == "stat_file", result
+                assert result["climate_zone_resolved"] is True, result
+                assert result["climate_zone_prior_invalid_value"] == "Lookup From Stat File", result
+                assert result["conditioned_zone_count"] == 74, result
+                assert result["zero_volume_zone_count"] == 0, result
+                assert result["zero_volume_zones"] == [], result
+                assert result["zero_volume_warning"] is None, result
+                assert result["total_errors"] == 0, result
+                assert result["total_warnings"] == 1, result  # the measure's own "Can't find ASHRAE..." warning
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable():
+    """Test the WMO-hash fallback tier when the .stat file has no usable climate-zone line at all."""
+    # Validates: with a .stat file that has its ASHRAE climate-zone line
+    # replaced entirely (so neither the vendored measure's regex nor our own
+    # broadened re-parse can match), ensure_climate_zone() falls through to
+    # the WMO-station hash lookup and resolves the correct zone from the
+    # EPW's own WMO number (722544 -> "2A" in the bundled reference table),
+    # never fabricating a value it can't support with real data.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_dir = RUN_ROOT / _unique_name("austin_no_stat_zone")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    mutated_epw = run_dir / "austin.epw"
+    mutated_stat = run_dir / "austin.stat"
+    mutated_ddy = run_dir / "austin.ddy"
+    shutil.copy2("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.epw", mutated_epw)
+    shutil.copy2(AUSTIN_DDY_PATH, mutated_ddy)
+    stat_text = AUSTIN_STAT_PATH.read_text(encoding="utf-8", errors="replace")
+    assert ' - Climate Zone "2A" (ASHRAE Standard 169-2021)' in stat_text
+    mutated_text = stat_text.replace(
+        ' - Climate Zone "2A" (ASHRAE Standard 169-2021)',
+        " - Local Climate Descriptor 2A (no longer a recognizable ASHRAE zone line)",
+    )
+    mutated_stat.write_text(mutated_text, encoding="utf-8")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH_AUSTIN, "epw_path": str(mutated_epw), "run_name": run_name},
+                ))
+                assert result["ok"] is True, result
+                assert result["climate_zone"] == "2A", result
+                assert result["climate_zone_source"] == "wmo_or_geographic_lookup", result
+                assert result["climate_zone_resolved"] is True, result
+                assert result["climate_zone_prior_invalid_value"] == "Lookup From Stat File", result
 
     asyncio.run(_run())

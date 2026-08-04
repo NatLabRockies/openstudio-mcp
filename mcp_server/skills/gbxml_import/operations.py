@@ -30,6 +30,8 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.model_manager import get_model
+from mcp_server.skills.gbxml_import.climate_zone import ensure_climate_zone
+from mcp_server.skills.gbxml_import.zone_checks import check_conditioned_zone_volumes
 from mcp_server.skills.geometry.operations import match_surfaces
 from mcp_server.skills.measures.runner_messages import OSW_MAX_BYTES, parse_all_step_messages
 from mcp_server.util import create_run_dir, read_file_bounded, read_tail_bounded, reject_escaping_symlinks
@@ -274,15 +276,31 @@ def import_gbxml_op(
 
         model_manager.load_model(final_osm_path)
 
+        # Guarantee a valid ASHRAE climate zone (the ChangeBuildingLocation
+        # measure above can silently leave a garbage placeholder value on a
+        # .stat regex miss), and flag conditioned zones whose volume didn't
+        # survive a broken gbXML enclosure — both run automatically so the
+        # caller never has to remember a second diagnostic call.
+        climate_zone_result = ensure_climate_zone(model, stat_src)
+        volume_result = check_conditioned_zone_volumes(model)
+        extra_warnings = sum(
+            1 for w in (climate_zone_result.get("climate_zone_warning"), volume_result.get("zero_volume_warning"))
+            if w
+        )
+
         result = {
             "ok": True,
             "osm_path": str(final_osm_path),
             "run_dir": str(run_dir),
+            **climate_zone_result,
+            **volume_result,
         }
         if step_messages:
             result["total_errors"] = step_messages.get("total_errors", 0)
-            result["total_warnings"] = step_messages.get("total_warnings", 0)
+            result["total_warnings"] = step_messages.get("total_warnings", 0) + extra_warnings
             result["step_messages"] = step_messages
+        elif extra_warnings:
+            result["total_warnings"] = extra_warnings
         return result
 
     except subprocess.TimeoutExpired:

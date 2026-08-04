@@ -21,7 +21,9 @@ exactly as that pipeline would build it — without ever invoking EnergyPlus.
    schedules and errors out without one. This is also what embeds the project's
    real location in the resulting `.osm`, rather than a placeholder.
 4. Result includes `osm_path` (auto-loaded as the current session model), plus per-step
-   `error`/`warning` messages and `total_errors`/`total_warnings` counts.
+   `error`/`warning` messages and `total_errors`/`total_warnings` counts. It also always includes
+   a guaranteed climate zone and a conditioned-zone volume check — see "Climate zone and zone
+   volume guarantees" below.
 5. `repair_and_validate_gbxml_geometry()` — checks the (now-loaded) model for same-space overlaps and
    non-enclosed volumes match_surfaces() can't fix. One call replaces the manual
    list_surfaces/get_surface_details/list_spaces/get_space_details diagnostic chain — see "Why
@@ -35,6 +37,28 @@ Baked into the Docker image at build time from a **pinned release tag** of
 `GBXML_MEASURES_DIR` (measures) and `GBXML_SEED_OSM` (the empty seed model the workflow starts
 from). Bumping to a newer measures release is a one-line `ARG GBXML_TO_OS_TAG=...` change +
 rebuild — no code changes needed.
+
+## Climate zone and zone volume guarantees
+
+`import_gbxml` runs two extra checks automatically after the model loads — no separate tool call:
+
+- **ASHRAE climate zone**: the vendored `ChangeBuildingLocation` measure sets a climate zone by
+  regexing the project's `.stat` file, but on a regex miss it doesn't fail — it silently writes the
+  literal string `"Lookup From Stat File"` into the model as if it were a real value. `import_gbxml`
+  re-validates whatever the measure left behind; if it's missing or garbage, it re-resolves in order:
+  re-parse the same `.stat` file directly, then an ASHRAE-zone-by-WMO-station lookup (exact hash
+  match, falling back to Haversine nearest-station by lat/lon) over a bundled ~2,570-station
+  reference table. Result fields: `climate_zone`, `climate_zone_source` (`gbxml_measure`, `stat_file`,
+  or `wmo_or_geographic_lookup`), `climate_zone_resolved`. If every tier misses, the zone is left
+  unresolved (`climate_zone_resolved: false`, `climate_zone_warning` set) rather than guessing —
+  `ok` stays `true`, but any downstream ASHRAE 90.1 baseline work needs `change_building_location`
+  called explicitly first.
+- **Conditioned zone volume**: flags conditioned (non-plenum, thermostat-assigned) thermal zones with
+  zero or uncomputable volume — a sign of the same enclosure defects
+  `repair_and_validate_gbxml_geometry` catches at the Space level, but one that specifically corrupts
+  autosized equipment capacities. Result fields: `conditioned_zone_count`, `zero_volume_zone_count`,
+  `zero_volume_zones`, `zero_volume_warning`. This is diagnostic only — fix flagged zones the same way
+  as any other non-enclosed-space finding (`repair_missing_roof_ceiling`, then re-check).
 
 ## Why `repair_and_validate_gbxml_geometry`
 
@@ -60,4 +84,5 @@ guessed at, and it does not touch same-space overlaps (still a manual fix).
 ## Tools
 
 `import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `repair_missing_roof_ceiling`
-(geometry skill).
+(geometry skill) and `change_building_location` (common_measures skill, to set climate zone
+explicitly if `import_gbxml` couldn't resolve one).
