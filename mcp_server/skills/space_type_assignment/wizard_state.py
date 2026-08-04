@@ -28,7 +28,10 @@ class PendingRow:
 
 @dataclass
 class WizardState:
-    model_id: int
+    # model_manager.model_generation() at wizard start — any reload bumps the
+    # session's counter, invalidating this wizard (its handles/indices are
+    # snapshots of the old model).
+    model_generation: int
     pending: dict[int, PendingRow] = field(default_factory=dict)
     assigned: dict[int, str] = field(default_factory=dict)
     templates: list[str] = field(default_factory=list)
