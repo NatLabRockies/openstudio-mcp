@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**150+ tools · 12 workflow skills · 480+ integration tests**
+**150+ tools · 13 workflow skills · 480+ integration tests**
 
 ---
 
@@ -245,7 +245,7 @@ OSM, SQL, report, and log files as untrusted outputs.
 
 ## Skills & Tools (150+ total)
 
-In Claude Code, 12 bundled skills add workflow automation and domain knowledge:
+In Claude Code, 13 bundled skills add workflow automation and domain knowledge:
 
 | Skill | Type | What it does |
 |-------|------|--------------|
@@ -261,6 +261,7 @@ In Claude Code, 12 bundled skills add workflow automation and domain knowledge:
 | `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection |
 | `openstudio-patterns` | Knowledge | tool dependencies and model relationships |
 | `tool-workflows` | Knowledge | multi-tool recipes for common operations |
+| `attribute-space-types` | Task | attribute standards space types to conditioned spaces (post-gbXML) |
 
 Workflow/task skills are invoked with `/name`; knowledge skills load automatically. Any MCP host can also discover these guides via the `list_skills()` and `get_skill(name)` tools (mount `-v ./.claude/skills:/skills:ro`).
 
@@ -379,13 +380,21 @@ List loads via `list_model_objects("People")`, `("Lights")`, etc.; use `get_obje
 </details>
 
 <details>
-<summary><b>Space types</b> — 1 tool</summary>
+<summary><b>Space types</b> — 9 tools</summary>
 
 List space types via `list_model_objects("SpaceType")`.
 
 | Tool | Description |
 |------|-------------|
 | `get_space_type_details` | Space-type loads, schedules, standards |
+| `assign_space_type_simple` | One standards combo -> every conditioned space, one call |
+| `start_space_type_wizard` | Scan conditioned spaces, start the multi-turn assignment wizard |
+| `choose_space_type_templates` | Narrow the wizard to one or more standards templates |
+| `choose_space_type_building_types` | Narrow to building types, show the remaining space table |
+| `get_space_type_wizard_status` | Wizard progress + a page of the remaining space table |
+| `assign_space_type_batch` | Assign one standards combo to a batch of space indices |
+| `finish_space_type_wizard` | Save the model and end the wizard |
+| `cancel_space_type_wizard` | Abandon wizard tracking (does not undo assignments) |
 
 </details>
 
@@ -669,21 +678,22 @@ The component-properties tools query/modify these 15 types:
 
 ## Examples
 
-22 worked examples with full tool-call sequences:
+23 worked examples with full tool-call sequences:
 
 | # | Example | # | Example |
 |---|---------|---|---------|
-| 1 | [Custom Measure: Lighting](docs/examples/01_custom_measure_lighting.md) | 11 | [Results Deep Dive](docs/examples/11_results_extraction.md) |
-| 2 | [Custom Measure: Chilled Beams](docs/examples/02_custom_measure_hvac.md) | 12 | [`/simulate`](docs/examples/12_simulate.md) |
-| 3 | [Baseline Comparison](docs/examples/03_baseline_comparison.md) | 13 | [`/energy-report`](docs/examples/13_energy_report.md) |
-| 4 | [HVAC Design Exploration](docs/examples/04_hvac_design_exploration.md) | 14 | [`/qaqc`](docs/examples/14_qaqc.md) |
-| 5 | [Envelope Retrofit](docs/examples/05_envelope_retrofit.md) | 15 | [`/add-hvac`](docs/examples/15_add_hvac.md) |
-| 6 | [Internal Loads](docs/examples/06_internal_loads.md) | 16 | [`/new-building`](docs/examples/16_new_building.md) |
-| 7 | [Full Building Model](docs/examples/07_full_building.md) | 17 | [`/retrofit`](docs/examples/17_retrofit.md) |
-| 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | 18 | [`/view`](docs/examples/18_view.md) |
-| 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | 19 | [Four-Pipe Beam Retrofit (E2E)](docs/examples/19_systemd_fourpipebeam_retrofit.md) |
-| 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | 20 | [Demand Response with Python EMS](docs/examples/20_python_ems_demand_response.md) |
-| 21 | [gbXML Import from Revit](docs/examples/21_gbxml_import.md) | 22 | [Repairing & Validating gbXML Geometry](docs/examples/22_repair_and_validate_gbxml_geometry.md) |
+| 1 | [Custom Measure: Lighting](docs/examples/01_custom_measure_lighting.md) | 12 | [`/simulate`](docs/examples/12_simulate.md) |
+| 2 | [Custom Measure: Chilled Beams](docs/examples/02_custom_measure_hvac.md) | 13 | [`/energy-report`](docs/examples/13_energy_report.md) |
+| 3 | [Baseline Comparison](docs/examples/03_baseline_comparison.md) | 14 | [`/qaqc`](docs/examples/14_qaqc.md) |
+| 4 | [HVAC Design Exploration](docs/examples/04_hvac_design_exploration.md) | 15 | [`/add-hvac`](docs/examples/15_add_hvac.md) |
+| 5 | [Envelope Retrofit](docs/examples/05_envelope_retrofit.md) | 16 | [`/new-building`](docs/examples/16_new_building.md) |
+| 6 | [Internal Loads](docs/examples/06_internal_loads.md) | 17 | [`/retrofit`](docs/examples/17_retrofit.md) |
+| 7 | [Full Building Model](docs/examples/07_full_building.md) | 18 | [`/view`](docs/examples/18_view.md) |
+| 8 | [Geometry from Scratch](docs/examples/08_geometry_creation.md) | 19 | [Four-Pipe Beam Retrofit (E2E)](docs/examples/19_systemd_fourpipebeam_retrofit.md) |
+| 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | 20 | [Demand Response with Python EMS](docs/examples/20_python_ems_demand_response.md) |
+| 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | 21 | [gbXML Import from Revit](docs/examples/21_gbxml_import.md) |
+| 11 | [Results Deep Dive](docs/examples/11_results_extraction.md) | 22 | [Repairing & Validating gbXML Geometry](docs/examples/22_repair_and_validate_gbxml_geometry.md) |
+| 23 | [Attributing Space Types (post-gbXML)](docs/examples/23_attribute_space_types.md) | | |
 
 ---
 

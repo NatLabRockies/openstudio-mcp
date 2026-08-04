@@ -17,8 +17,9 @@ import atexit
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import openstudio
 
@@ -37,6 +38,16 @@ class _SessionState:
     model: openstudio.model.Model | None = None
     path: Path | None = None
     last_access: float = 0.0  # time.monotonic() of last touch
+    # Bumped every time `model` is replaced. Session-scoped skill state (see
+    # `extra`) records this at capture time to detect that the model it
+    # references was swapped out — id(model) can't be trusted for that
+    # because CPython reuses freed addresses.
+    generation: int = 0
+    # Generic scratch space for skills that need session-scoped state beyond
+    # the model itself (e.g. a multi-turn wizard). Keyed by skill name so
+    # unrelated skills can't collide. Shares this session's TTL/LRU eviction,
+    # so wizard state and its model are always dropped together.
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 _lock = threading.RLock()
@@ -91,6 +102,7 @@ def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.mod
         st = _sessions.setdefault(key, _SessionState())
         st.model = model
         st.path = Path(osm_path)
+        st.generation += 1
         _touch(st)
     return model
 
@@ -145,6 +157,35 @@ def get_model_if_loaded() -> openstudio.model.Model | None:
             return None
         _touch(st)
         return st.model
+
+
+def model_generation() -> int:
+    """Monotonic per-session counter, bumped on every load_model.
+
+    Session-scoped skill state (see get_session_extra) records this at
+    capture time and compares later to detect that the model it references
+    was replaced. Returns 0 if the session has never loaded a model.
+    """
+    with _lock:
+        st = _sessions.get(session_key())
+        return st.generation if st else 0
+
+
+def get_session_extra() -> dict[str, Any]:
+    """Return this session's generic scratch dict, creating it if needed.
+
+    For skills that need session-scoped non-model state (e.g. a multi-turn
+    wizard) without model_manager knowing anything about that skill's data
+    shape. Shares the same TTL/LRU sweep as the model, so wizard-style state
+    is always evicted together with the model it references.
+    """
+    key = session_key()
+    with _lock:
+        _sweep_idle()
+        _evict_if_needed(keep=key)
+        st = _sessions.setdefault(key, _SessionState())
+        _touch(st)
+        return st.extra
 
 
 def clear_model() -> None:

@@ -9,7 +9,7 @@ import math
 from typing import Any
 
 from mcp_server.model_manager import get_model
-from mcp_server.osm_helpers import list_all_as_dicts, optional_name
+from mcp_server.osm_helpers import is_conditioned_zone, list_all_as_dicts, optional_name
 
 
 def _safe_float(value) -> float | None:
@@ -29,8 +29,7 @@ def _compute_conditioned_floor_area(model) -> float:
     """
     total = 0.0
     for zone in model.getThermalZones():
-        # Check if zone has a dual-setpoint thermostat assigned
-        if not zone.thermostatSetpointDualSetpoint().is_initialized():
+        if not is_conditioned_zone(zone):
             continue
         # Sum floor area of all spaces in this conditioned zone
         for space in zone.spaces():
