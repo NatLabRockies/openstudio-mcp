@@ -18,7 +18,7 @@ from typing import Any
 
 import openstudio
 
-from mcp_server.model_manager import get_model
+from mcp_server.model_manager import get_model, model_generation
 from mcp_server.osm_helpers import fetch_object, is_conditioned_zone, parse_str_list
 from mcp_server.skills.model_management.operations import save_osm_model
 from mcp_server.skills.space_type_assignment import wizard_state
@@ -109,6 +109,35 @@ def _get_or_create_space_type(model, template: str, building_type: str, space_ty
     return st, False
 
 
+def _validate_combo(model, template: str, building_type: str, space_type: str) -> dict[str, Any] | None:
+    """Validate a standards triple against the SDK's suggested lists.
+
+    Returns an ok=False error dict with did_you_mean suggestions, or None if valid.
+    """
+    templates = _all_templates(model)
+    if template not in templates:
+        return {
+            "ok": False,
+            "error": f"'{template}' is not a known standards_template",
+            "did_you_mean": difflib.get_close_matches(template, templates, n=5),
+        }
+    building_types = _building_types_for_template(model, template)
+    if building_type not in building_types:
+        return {
+            "ok": False,
+            "error": f"'{building_type}' is not a valid standards_building_type for {template}",
+            "did_you_mean": difflib.get_close_matches(building_type, building_types, n=5),
+        }
+    space_types = _space_types_for(model, template, building_type)
+    if space_type not in space_types:
+        return {
+            "ok": False,
+            "error": f"'{space_type}' is not a valid standards_space_type for ({template}, {building_type})",
+            "did_you_mean": difflib.get_close_matches(space_type, space_types, n=5),
+        }
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Path A — simple, one shot
 # ---------------------------------------------------------------------------
@@ -124,6 +153,10 @@ def assign_space_type_simple(
         spaces = _list_conditioned_spaces(model)
         if not spaces:
             return {"ok": False, "error": "No conditioned (heated and cooled) zones found in the model."}
+
+        invalid = _validate_combo(model, standards_template, standards_building_type, standards_space_type)
+        if invalid:
+            return invalid
 
         space_type, reused = _get_or_create_space_type(
             model, standards_template, standards_building_type, standards_space_type,
@@ -147,11 +180,11 @@ def assign_space_type_simple(
 # Path B — wizard
 # ---------------------------------------------------------------------------
 
-def _require_wizard(model) -> tuple[WizardState | None, dict[str, Any] | None]:
+def _require_wizard() -> tuple[WizardState | None, dict[str, Any] | None]:
     state = wizard_state.get()
     if state is None:
         return None, {"ok": False, "error": "No space type wizard active. Call start_space_type_wizard first."}
-    if state.model_id != id(model):
+    if state.model_generation != model_generation():
         return None, {
             "ok": False,
             "error": "Model changed since the wizard started (reloaded/replaced). Call start_space_type_wizard again.",
@@ -191,7 +224,7 @@ def start_space_type_wizard() -> dict[str, Any]:
             idx: PendingRow(**_extract_conditioned_space_row(space))
             for idx, space in enumerate(sorted(spaces, key=lambda s: s.nameString()))
         }
-        wizard_state.set_state(WizardState(model_id=id(model), pending=pending))
+        wizard_state.set_state(WizardState(model_generation=model_generation(), pending=pending))
         return {
             "ok": True,
             "conditioned_space_count": len(pending),
@@ -207,7 +240,7 @@ def choose_space_type_templates(templates: list[str] | str) -> dict[str, Any]:
     """Narrow the wizard to one or more standards templates."""
     try:
         model = get_model()
-        state, err = _require_wizard(model)
+        state, err = _require_wizard()
         if err:
             return err
 
@@ -224,6 +257,11 @@ def choose_space_type_templates(templates: list[str] | str) -> dict[str, Any]:
                 "available_templates": available,
             }
 
+        # Changing templates invalidates the narrower choices made under the
+        # old ones — force choose_space_type_building_types to be re-run.
+        if set(names) != set(state.templates):
+            state.building_types = []
+            state.valid_combos = set()
         state.templates = names
         building_types: set[str] = set()
         for template in names:
@@ -248,7 +286,7 @@ def choose_space_type_building_types(
     """Narrow the wizard to one or more building types, then show the space table."""
     try:
         model = get_model()
-        state, err = _require_wizard(model)
+        state, err = _require_wizard()
         if err:
             return err
         if not state.templates:
@@ -292,8 +330,8 @@ def choose_space_type_building_types(
 def get_space_type_wizard_status(page: int = 1, page_size: int = 40) -> dict[str, Any]:
     """Status + a paginated page of the remaining (unassigned) space table."""
     try:
-        model = get_model()
-        state, err = _require_wizard(model)
+        get_model()  # raise if no model loaded; keeps the session touched
+        state, err = _require_wizard()
         if err:
             return err
         return {
@@ -318,7 +356,7 @@ def assign_space_type_batch(
     """Assign one (template, building_type, space_type) combo to a batch of space indices."""
     try:
         model = get_model()
-        state, err = _require_wizard(model)
+        state, err = _require_wizard()
         if err:
             return err
         if not state.valid_combos:
@@ -343,7 +381,7 @@ def assign_space_type_batch(
 
         raw_indices = parse_str_list(space_indices) if isinstance(space_indices, str) else list(space_indices)
         try:
-            indices = [int(i) for i in raw_indices]
+            indices = list(dict.fromkeys(int(i) for i in raw_indices))  # dedupe, keep order
         except (TypeError, ValueError):
             return {"ok": False, "error": "space_indices must be a list of integers."}
         if not indices:
@@ -355,14 +393,24 @@ def assign_space_type_batch(
             if idx not in state.pending:
                 return {"ok": False, "error": f"Space index {idx} is not a pending space index."}
 
-        space_type, reused = _get_or_create_space_type(
-            model, standards_template, standards_building_type, standards_space_type,
-        )
+        # Resolve every space before mutating anything, so a stale handle
+        # fails the whole batch instead of leaving it half-applied.
+        resolved = []
         for idx in indices:
             row = state.pending[idx]
             space = fetch_object(model, "Space", handle=row.handle)
             if space is None:
-                return {"ok": False, "error": f"Space '{row.name}' (index {idx}) no longer exists in the model."}
+                return {
+                    "ok": False,
+                    "error": f"Space '{row.name}' (index {idx}) no longer exists in the model; "
+                             "no assignments were made.",
+                }
+            resolved.append((idx, space))
+
+        space_type, reused = _get_or_create_space_type(
+            model, standards_template, standards_building_type, standards_space_type,
+        )
+        for idx, space in resolved:
             space.setSpaceType(space_type)
             del state.pending[idx]
             state.assigned[idx] = space_type.nameString()
@@ -383,8 +431,8 @@ def assign_space_type_batch(
 def finish_space_type_wizard(force: bool = False) -> dict[str, Any]:
     """Save the model and end the wizard, once every conditioned space is assigned."""
     try:
-        model = get_model()
-        state, err = _require_wizard(model)
+        get_model()  # raise if no model loaded; save_osm_model re-fetches it
+        state, err = _require_wizard()
         if err:
             return err
         if state.pending and not force:

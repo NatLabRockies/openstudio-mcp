@@ -150,10 +150,12 @@ def test_simple_path_dedupes_existing_combo():
                 await session.initialize()
                 await create_baseline_and_load(session, name)
 
+                # "Core_Retail" is a real (90.1-2016, Retail) combo per the SDK's
+                # suggested lists — assign_space_type_simple now validates these.
                 args = {
                     "standards_template": "90.1-2016",
                     "standards_building_type": "Retail",
-                    "standards_space_type": "WholeBuilding - Retail",
+                    "standards_space_type": "Core_Retail",
                 }
                 first = unwrap(await session.call_tool("assign_space_type_simple", args))
                 assert first["ok"] is True, first
@@ -434,5 +436,220 @@ def test_wizard_cancel_clears_state_not_model():
                 ))
                 assert details["ok"] is True, details
                 assert len(details["space_type"]["spaces"]) == 1, details
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_rechoose_templates_resets_downstream_scope():
+    # Regression: choose_space_type_templates kept building_types/valid_combos
+    # from the previous template choice, so after re-choosing templates,
+    # assign_space_type_batch accepted combos from a template no longer in scope.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await create_baseline_and_load(session, name)
+
+                start = unwrap(await session.call_tool("start_space_type_wizard", {}))
+                assert start["ok"] is True, start
+                other = [t for t in start["available_templates"] if t != "90.1-2019"]
+                assert other, f"need a second template to re-choose: {start['available_templates']}"
+
+                assert unwrap(await session.call_tool(
+                    "choose_space_type_templates", {"templates": ["90.1-2019"]},
+                ))["ok"] is True
+                assert unwrap(await session.call_tool(
+                    "choose_space_type_building_types", {"building_types": ["Office"]},
+                ))["ok"] is True
+
+                # Change mind: narrow to a different template. Old combos must die.
+                rechoose = unwrap(await session.call_tool(
+                    "choose_space_type_templates", {"templates": [other[0]]},
+                ))
+                assert rechoose["ok"] is True, rechoose
+
+                stale = unwrap(await session.call_tool("assign_space_type_batch", {
+                    "standards_template": "90.1-2019",
+                    "standards_building_type": "Office",
+                    "standards_space_type": "OpenOffice",
+                    "space_indices": [0],
+                }))
+                assert stale["ok"] is False, (
+                    f"batch accepted a combo from the no-longer-chosen template: {stale}"
+                )
+                assert "choose_space_type_building_types" in stale["error"], stale
+
+                status = unwrap(await session.call_tool("get_space_type_wizard_status", {}))
+                assert status["ok"] is True, status
+                assert status["remaining_count"] == 10, (
+                    f"stale-combo batch mutated the model/state: {status}"
+                )
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_batch_duplicate_indices_deduped():
+    # Regression: duplicate space_indices ([0, 0, 1]) passed pre-validation
+    # (checks read unmutated state), then KeyError'd mid-mutation on the second
+    # 0 — cryptic "Failed to assign space type batch: 0" AFTER idx 0 was
+    # already assigned, so the error lied about what happened.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await create_baseline_and_load(session, name)
+
+                assert unwrap(await session.call_tool("start_space_type_wizard", {}))["ok"] is True
+                assert unwrap(await session.call_tool(
+                    "choose_space_type_templates", {"templates": ["90.1-2019"]},
+                ))["ok"] is True
+                assert unwrap(await session.call_tool(
+                    "choose_space_type_building_types", {"building_types": ["Office"]},
+                ))["ok"] is True
+
+                batch = unwrap(await session.call_tool("assign_space_type_batch", {
+                    "standards_template": "90.1-2019",
+                    "standards_building_type": "Office",
+                    "standards_space_type": "OpenOffice",
+                    "space_indices": [0, 0, 1],
+                }))
+                assert batch["ok"] is True, f"duplicate indices must dedupe, not crash: {batch}"
+                assert batch["assigned_this_batch"] == 2, batch
+                assert batch["remaining_count"] == 8, batch
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_batch_missing_space_is_atomic():
+    # Regression: when a space was deleted after wizard start, assign_space_type_batch
+    # assigned earlier indices before erroring on the missing one — the error
+    # implied nothing happened but idx 0 was already assigned (partial mutation).
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await create_baseline_and_load(session, name)
+
+                assert unwrap(await session.call_tool("start_space_type_wizard", {}))["ok"] is True
+                assert unwrap(await session.call_tool(
+                    "choose_space_type_templates", {"templates": ["90.1-2019"]},
+                ))["ok"] is True
+                assert unwrap(await session.call_tool(
+                    "choose_space_type_building_types", {"building_types": ["Office"]},
+                ))["ok"] is True
+
+                # Wizard idx order == spaces sorted by name; delete the space at idx 1.
+                spaces = unwrap(await session.call_tool("list_spaces", {"max_results": 0}))
+                assert spaces["ok"] is True, spaces
+                idx1_name = sorted(s["name"] for s in spaces["spaces"])[1]
+                deleted = unwrap(await session.call_tool(
+                    "delete_object", {"object_name": idx1_name, "object_type": "Space"},
+                ))
+                assert deleted["ok"] is True, deleted
+
+                batch = unwrap(await session.call_tool("assign_space_type_batch", {
+                    "standards_template": "90.1-2019",
+                    "standards_building_type": "Office",
+                    "standards_space_type": "OpenOffice",
+                    "space_indices": [0, 1],
+                }))
+                assert batch["ok"] is False, batch
+                assert "no longer exists" in batch["error"], batch
+
+                # Atomicity: the failed batch must not have assigned idx 0.
+                status = unwrap(await session.call_tool("get_space_type_wizard_status", {"page_size": 100}))
+                assert status["ok"] is True, status
+                assert status["remaining_count"] == 10, (
+                    f"failed batch partially mutated wizard state: {status}"
+                )
+                assert 0 in _parse_table(status["table_rows"]), status
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_simple_path_rejects_invalid_combo():
+    # Regression: assign_space_type_simple accepted arbitrary strings, silently
+    # creating a bogus standards combo — the exact failure mode the wizard's
+    # did_you_mean exists to prevent, on the path most exposed to freehand input.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await create_baseline_and_load(session, name)
+
+                bad = unwrap(await session.call_tool("assign_space_type_simple", {
+                    "standards_template": "90.1-2019",
+                    "standards_building_type": "Office",
+                    "standards_space_type": "OpenOfice",  # typo
+                }))
+                assert bad["ok"] is False, f"typo'd space type silently accepted: {bad}"
+                assert "OpenOffice" in bad["did_you_mean"], bad
+
+                # No bogus SpaceType may have been created by the failed call.
+                listed = unwrap(await session.call_tool(
+                    "list_model_objects", {"object_type": "SpaceType", "max_results": 0},
+                ))
+                names = [o["name"] for o in listed["objects"]]
+                assert not any("OpenOfice" in n for n in names), names
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_reload_model_invalidates_wizard():
+    # Validates: a wizard started on one model refuses to act after the session
+    # loads another model — pending handles/indices describe the old model.
+    # (Guards the model-staleness contract; see also the generation-counter fix
+    # replacing the id(model) comparison, whose failure mode — CPython address
+    # reuse — is not deterministically reproducible in a test.)
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await create_baseline_and_load(session, name)
+
+                assert unwrap(await session.call_tool("start_space_type_wizard", {}))["ok"] is True
+
+                save = unwrap(await session.call_tool("save_osm_model", {}))
+                assert save["ok"] is True, save
+                reload_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": save["osm_path"]},
+                ))
+                assert reload_result["ok"] is True, reload_result
+
+                status = unwrap(await session.call_tool("get_space_type_wizard_status", {}))
+                assert status["ok"] is False, (
+                    f"wizard survived a model reload; its handles/indices are stale: {status}"
+                )
+                assert "start_space_type_wizard" in status["error"], status
 
     asyncio.run(_run())

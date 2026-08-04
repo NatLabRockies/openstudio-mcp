@@ -38,6 +38,11 @@ class _SessionState:
     model: openstudio.model.Model | None = None
     path: Path | None = None
     last_access: float = 0.0  # time.monotonic() of last touch
+    # Bumped every time `model` is replaced. Session-scoped skill state (see
+    # `extra`) records this at capture time to detect that the model it
+    # references was swapped out — id(model) can't be trusted for that
+    # because CPython reuses freed addresses.
+    generation: int = 0
     # Generic scratch space for skills that need session-scoped state beyond
     # the model itself (e.g. a multi-turn wizard). Keyed by skill name so
     # unrelated skills can't collide. Shares this session's TTL/LRU eviction,
@@ -97,6 +102,7 @@ def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.mod
         st = _sessions.setdefault(key, _SessionState())
         st.model = model
         st.path = Path(osm_path)
+        st.generation += 1
         _touch(st)
     return model
 
@@ -151,6 +157,18 @@ def get_model_if_loaded() -> openstudio.model.Model | None:
             return None
         _touch(st)
         return st.model
+
+
+def model_generation() -> int:
+    """Monotonic per-session counter, bumped on every load_model.
+
+    Session-scoped skill state (see get_session_extra) records this at
+    capture time and compares later to detect that the model it references
+    was replaced. Returns 0 if the session has never loaded a model.
+    """
+    with _lock:
+        st = _sessions.get(session_key())
+        return st.generation if st else 0
 
 
 def get_session_extra() -> dict[str, Any]:
