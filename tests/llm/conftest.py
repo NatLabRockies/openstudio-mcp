@@ -429,6 +429,18 @@ def pytest_runtest_logreport(report):
             except (IndexError, ValueError):
                 pass
 
+    # Call-phase skips (e.g. needs_model with no baseline seeded) never invoke
+    # the runner — recording them via _last_result heuristics copied the
+    # PREVIOUS test's stats/tool_calls into their rows (found in pilot-4 when
+    # a failed setup cascaded 8 skips). Record as skipped, no stats, and let
+    # the aggregator exclude them from pass rates.
+    if report.skipped:
+        _benchmark_results.append({
+            "test_id": report.nodeid, "passed": False, "skipped": True,
+            "duration_s": round(duration, 1), "tier": tier, "attempt": 1,
+        })
+        return
+
     # Pull token/cost stats from the last run_claude result
     from .runner import _last_result
     stats = _last_result.stats if _last_result else {}

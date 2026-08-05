@@ -74,6 +74,7 @@ RUNS = [
     _run("opus", "full", [
         _t(f"{PROG}[import_floorplan_L1]", False, mode="tool_error",
            recovered=True),
+        _t(f"{PROG}[add_hvac_L1]", False, skipped=True),
     ]),
 ]
 
@@ -145,6 +146,20 @@ def test_recovered_tool_errors_reported_separately():
     agg = aggregate(RUNS)
     assert agg["modes"][("opus", "full", "tool_error (recovered)")] == 1
     assert ("opus", "full", "tool_error") not in agg["modes"]
+
+
+def test_skipped_trials_excluded_from_pools(tmp_path):
+    # Regression: pilot-4 cascade skips (failed setup -> needs_model skips)
+    # were recorded as failures with the PREVIOUS test's stats; aggregator
+    # must exclude skipped=True rows from every pool and footnote the count
+    agg = aggregate(RUNS)
+    assert agg["tiers"][("opus", "full", "progressive")] == {"s": 0, "n": 1}
+    assert agg["skips"][("opus", "full")] == 1
+    assert agg["behavior"][("opus", "full")]["tests"] == 1
+    assert ("opus", "full", f"{PROG}[add_hvac_L1]") not in agg["tasks"]
+    write_artifacts(agg, tmp_path)
+    table = (tmp_path / "table4.md").read_text(encoding="utf-8")
+    assert "Skipped trials" in table and "opus/full: 1" in table
 
 
 def test_flips_lists_only_discordant_tasks(tmp_path):

@@ -88,11 +88,17 @@ def aggregate(runs: list[dict]) -> dict:
     behav = defaultdict(lambda: {"tests": 0, "knowledge": 0, "toolsearch": 0,
                                  "tool_calls": 0, "duration_s": 0.0,
                                  "input_tokens": 0, "output_tokens": 0})
+    skips = defaultdict(int)                              # (model, arm)
 
     for run in runs:
         model, arm = _key(run)
         repeats[(model, arm)] += 1
         for t in run.get("tests", []):
+            # Skipped trials (unmet dependency, agent never invoked) are not
+            # failures — excluded from every pool, surfaced as a footnote
+            if t.get("skipped"):
+                skips[(model, arm)] += 1
+                continue
             passed = bool(t.get("passed"))
             b = behav[(model, arm)]
             b["tests"] += 1
@@ -126,7 +132,7 @@ def aggregate(runs: list[dict]) -> dict:
 
     return {"tiers": dict(tiers), "levels": dict(levels), "modes": dict(modes),
             "unstable": unstable, "repeats": dict(repeats),
-            "behavior": dict(behav), "tasks": dict(tasks)}
+            "behavior": dict(behav), "tasks": dict(tasks), "skips": dict(skips)}
 
 
 def _pct_ci(s: int, n: int) -> str:
@@ -151,6 +157,10 @@ def write_artifacts(agg: dict, out: Path) -> None:
             c = agg["tiers"].get((model, arm, t), {"s": 0, "n": 0})
             cells.append(_pct_ci(c["s"], c["n"]))
         lines.append(f"| {model} | {arm} | " + " | ".join(cells) + " |")
+    if agg["skips"]:
+        lines += ["", "Skipped trials (unmet dependency, excluded from rates):"]
+        for (model, arm), n in sorted(agg["skips"].items()):
+            lines.append(f"- {model}/{arm}: {n}")
     (out / "table4.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     models_both = sorted({m for (m, a) in combos if a == "full"}
