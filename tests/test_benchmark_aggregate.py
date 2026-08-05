@@ -104,6 +104,28 @@ def test_write_artifacts_emits_all_files(tmp_path):
     assert "wrong_tool" in modes and "outcome_mismatch" in modes
 
 
+def test_check_image_freshness_aborts_on_stale_image(monkeypatch):
+    # Regression: a stale openstudio-mcp:dev image silently no-op'd the
+    # ablation arm — the harness runs BAKED server code, so an image older
+    # than HEAD must abort the sweep
+    from benchmark_sweep import check_image_freshness
+
+    monkeypatch.delenv("OSMCP_SWEEP_ALLOW_STALE_IMAGE", raising=False)
+    with pytest.raises(SystemExit, match="predates HEAD"):
+        check_image_freshness("img:dev", "2026-08-05T14:20:10.123456789Z",
+                              "2026-08-05T15:55:00-04:00")
+
+    # fresh image passes; override lets a stale one through deliberately
+    check_image_freshness("img:dev", "2026-08-05T21:00:00.000000000Z",
+                          "2026-08-05T15:55:00-04:00")
+    monkeypatch.setenv("OSMCP_SWEEP_ALLOW_STALE_IMAGE", "1")
+    check_image_freshness("img:dev", "2026-08-05T14:20:10.123456789Z",
+                          "2026-08-05T15:55:00-04:00")
+    # unparseable timestamps never block (provenance is still recorded)
+    monkeypatch.delenv("OSMCP_SWEEP_ALLOW_STALE_IMAGE", raising=False)
+    check_image_freshness("img:dev", "not-a-date", "also-not-a-date")
+
+
 def test_load_results_refuses_mixed_image_identity(tmp_path):
     # Validates: a sweep mixing two image builds aborts instead of silently
     # pooling results from different artifacts (reviewer issue B4)

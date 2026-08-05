@@ -124,6 +124,8 @@ def test_knowledge_skills_ablation_flag():
 
 Ablation scope (arms compared on identical subsets): progressive L1+L2 (`-m progressive -k "not _L3"`) + NL tier (`tests/llm/test_03_eval_cases.py`) + workflow tiers (`test_04`, `test_07`, `test_08` chains — DECIDED IN; this makes D6 verifier wiring mandatory, since workflow grading under ablation relies on outcome checks). L3 excluded by design (tool named → knowledge layer irrelevant). Known leakage to acknowledge in paper: other tools' descriptions may mention skills; system prompt held constant.
 
+Ablation runs on BOTH providers (decided 2026-08-05 after pilot-1): pilot data showed knowledge-layer usage is a client property — codex consulted list_skills/get_skill on 12/16 tasks (no client-side discovery), while Claude Code made 0-1 knowledge calls but 23-26 ToolSearch calls (its own discovery substitutes). The codex ablation is therefore the higher-signal experiment; the paper frames knowledge-layer value as conditional on client discovery affordances.
+
 Arm C ("simpler baseline", R1) — DECIDED BUILD: no MCP config at all; `allowed_tools="Bash,Read,Write,Edit,Glob,Grep"`; prompt directs agent to a long-lived `docker exec` shell in the same image; ~10-15 task subset; graded by D6 verifier only.
 
 ## D4. Cross-provider backend (B1)
@@ -210,8 +212,9 @@ Docs: rewrite `docs/testing/llm-testing-methodology.md` metric section; new comp
 | full | claude/sonnet | full suite | 3 | ~540-660 |
 | full | claude/haiku | progressive | 3 | ~230-300 |
 | full | claude/opus | progressive | 3 | ~230-300 |
-| full | codex (GPT-5.x) | progressive | 3 | ~230-300 |
+| full | codex (gpt-5.4) | progressive | 3 | ~230-300 |
 | noskills | claude/sonnet | progressive L1/L2 + NL + workflows | 3 | ~290-380 |
+| noskills | codex (gpt-5.4) | progressive L1/L2 + NL + workflows | 3 | ~290-380 |
 | codegen (Arm C) | claude/sonnet | 10-15 subset | 3 | ~30-45 |
 | epmcp-compare (D8) | both servers, 1 provider | ~10 tasks | 3 | ~60 |
 

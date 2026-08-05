@@ -49,15 +49,46 @@ def preflight(image: str, allow_dirty: bool) -> dict:
 
     inspect = subprocess.run(
         ["docker", "image", "inspect", image,
-         "--format", '{{.Id}} {{join .RepoDigests ","}}'],
+         "--format", '{{.Id}}|{{.Created}}|{{join .RepoDigests ","}}'],
         capture_output=True, text=True, check=False,
     )
     if inspect.returncode != 0:
         sys.exit(f"ABORT: docker image '{image}' not found — build it first.")
-    image_id, _, repo_digests = inspect.stdout.strip().partition(" ")
+    image_id, image_created, repo_digests = (
+        inspect.stdout.strip().split("|", 2) + ["", ""])[:3]
+
+    head_time = subprocess.run(
+        ["git", "log", "-1", "--format=%cI"],
+        capture_output=True, text=True, cwd=REPO, check=True,
+    ).stdout.strip()
+    check_image_freshness(image, image_created, head_time)
 
     return {"git": git, "image": image, "image_id": image_id,
+            "image_created": image_created, "head_committed": head_time,
             "image_repo_digests": repo_digests}
+
+
+def check_image_freshness(image: str, image_created: str, head_time: str) -> None:
+    """Abort if the image predates HEAD — the container runs BAKED server
+    code (the LLM harness mounts only /runs+assets, not /repo), so a stale
+    image silently benchmarks old behavior. Found the hard way: an ablation
+    arm no-op'd because the image was built before the flag existed.
+    ISO timestamps compare lexicographically once normalized to UTC via
+    datetime; abort is overridable with OSMCP_SWEEP_ALLOW_STALE_IMAGE=1.
+    """
+    from datetime import datetime
+    try:
+        # docker Created: 2026-08-05T18:20:10.267839293Z (ns precision) —
+        # drop sub-seconds, force UTC; git %cI carries its own offset
+        img_dt = datetime.fromisoformat(image_created.split(".")[0] + "+00:00")
+        head_dt = datetime.fromisoformat(head_time)
+    except ValueError:
+        return  # unparseable timestamps — don't block, provenance still recorded
+    if img_dt < head_dt and os.environ.get("OSMCP_SWEEP_ALLOW_STALE_IMAGE") != "1":
+        sys.exit(
+            f"ABORT: image '{image}' built {image_created} predates HEAD "
+            f"commit {head_time} — the harness runs the BAKED server code. "
+            "Rebuild the image (or set OSMCP_SWEEP_ALLOW_STALE_IMAGE=1).")
 
 
 def _safe(name: str) -> str:
