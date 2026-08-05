@@ -37,18 +37,25 @@ def _run(model, arm, tests, image_id="sha256:abc"):
     }
 
 
-def _t(test_id, passed, tier="progressive", mode=None):
+def _t(test_id, passed, tier="progressive", mode=None, **extra):
     entry = {"test_id": test_id, "passed": passed, "tier": tier}
     if mode:
         entry["failure_mode"] = mode
+    entry.update(extra)
     return entry
 
 
 PROG = "tests/llm/test_06_progressive.py::test_progressive"
 RUNS = [
     _run("sonnet", "full", [
-        _t(f"{PROG}[thermostat_L1]", True),
-        _t(f"{PROG}[thermostat_L2]", True),
+        _t(f"{PROG}[thermostat_L1]", True,
+           tool_calls=["list_skills", "adjust_thermostat_setpoints"],
+           num_tool_calls=2, toolsearch_count=0, duration_s=10.0,
+           input_tokens=1000, output_tokens=100),
+        _t(f"{PROG}[thermostat_L2]", True,
+           tool_calls=["get_skill", "set_thermostat_schedules"],
+           num_tool_calls=2, toolsearch_count=0, duration_s=20.0,
+           input_tokens=3000, output_tokens=200),
         _t("tests/llm/test_04_workflows.py::test_workflow[x]", True, tier="tier2"),
     ]),
     _run("sonnet", "full", [
@@ -58,8 +65,15 @@ RUNS = [
            tier="tier2", mode="outcome_mismatch"),
     ]),
     _run("sonnet", "noskills", [
-        _t(f"{PROG}[thermostat_L1]", False, mode="no_mcp_tool"),
+        _t(f"{PROG}[thermostat_L1]", False, mode="no_mcp_tool",
+           tool_calls=["list_thermal_zones"], num_tool_calls=1,
+           toolsearch_count=4, duration_s=30.0,
+           input_tokens=2000, output_tokens=300),
         _t(f"{PROG}[thermostat_L2]", True),
+    ]),
+    _run("opus", "full", [
+        _t(f"{PROG}[import_floorplan_L1]", False, mode="tool_error",
+           recovered=True),
     ]),
 ]
 
@@ -88,7 +102,7 @@ def test_aggregate_pools_tiers_levels_modes_stability():
 
 
 def test_write_artifacts_emits_all_files(tmp_path):
-    # Validates: all five paper artifacts render with the pooled numbers in them
+    # Validates: all seven paper artifacts render with the pooled numbers in them
     agg = aggregate(RUNS)
     write_artifacts(agg, tmp_path)
 
@@ -102,6 +116,46 @@ def test_write_artifacts_emits_all_files(tmp_path):
     assert "thermostat_L1" in stability and "1/2" in stability
     modes = (tmp_path / "failure_modes.md").read_text(encoding="utf-8")
     assert "wrong_tool" in modes and "outcome_mismatch" in modes
+    assert (tmp_path / "behavior.md").exists()
+    assert (tmp_path / "flips.md").exists()
+
+
+def test_aggregate_behavior_means():
+    # Validates: knowledge-call/toolsearch/token sums per (model, arm) feed
+    # behavior.md — the ablation mechanism evidence (consultation vs
+    # ToolSearch substitution) the paper reports alongside pass rates
+    agg = aggregate(RUNS)
+    full = agg["behavior"][("sonnet", "full")]
+    assert full["tests"] == 6
+    assert full["knowledge"] == 2      # list_skills + get_skill, one each
+    assert full["toolsearch"] == 0
+    assert full["tool_calls"] == 4
+    assert full["duration_s"] == pytest.approx(30.0)
+    assert full["input_tokens"] == 4000
+    noskills = agg["behavior"][("sonnet", "noskills")]
+    assert noskills["tests"] == 2
+    assert noskills["knowledge"] == 0  # knowledge tools absent in this arm
+    assert noskills["toolsearch"] == 4
+
+
+def test_recovered_tool_errors_reported_separately():
+    # Validates: a tool_error failure tagged recovered=True (later accepted-tool
+    # call succeeded) is counted as its own mode, so the paper can report how
+    # often first-call strictness rejected a completed task
+    agg = aggregate(RUNS)
+    assert agg["modes"][("opus", "full", "tool_error (recovered)")] == 1
+    assert ("opus", "full", "tool_error") not in agg["modes"]
+
+
+def test_flips_lists_only_discordant_tasks(tmp_path):
+    # Validates: flips.md pairs each task across arms and reports only
+    # discordant ones with direction — thermostat_L1 (full 1/2 vs noskills
+    # 0/1) is skill-lift; concordant thermostat_L2 must not appear
+    agg = aggregate(RUNS)
+    write_artifacts(agg, tmp_path)
+    flips = (tmp_path / "flips.md").read_text(encoding="utf-8")
+    assert "thermostat_L1] | 1/2 | 0/1 | skill-lift" in flips
+    assert "thermostat_L2" not in flips
 
 
 def test_check_image_freshness_aborts_on_stale_image(monkeypatch):

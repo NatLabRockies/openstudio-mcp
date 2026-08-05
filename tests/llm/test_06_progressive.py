@@ -769,6 +769,12 @@ def test_progressive(case, request):
     # list_ems_actuators, which errors informatively on a no-design-days
     # model, before create_python_plugin succeeded).
     if all(result.tool_ok(t) is False for t in matched):
+        # Secondary honesty metric: the pass/fail verdict stays first-call
+        # strict, but record whether a LATER call of an accepted tool
+        # succeeded (agent recovered and likely completed the task) so the
+        # paper can report how many tool_error failures were recoveries.
+        if any(r.get("ok") is True for t in matched for r in result.results_for(t)):
+            request.node.user_properties.append(("recovered", True))
         fail_with_mode(
             request, "tool_error",
             f"[{case['case_id']} {case['level']}] accepted tool(s) "

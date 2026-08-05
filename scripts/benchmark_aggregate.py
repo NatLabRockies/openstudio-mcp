@@ -8,6 +8,10 @@ pools repeats per (model, arm, tier), and emits under results/<sweep_id>/paper/:
   discovery.csv    progressive L1/L2/L3 pass rates per model/arm
   stability.md     tasks passing 0<k<N repeats (the honest "these flip" table)
   failure_modes.md failure-mode counts per model/arm
+  behavior.md      per model/arm means: knowledge calls, ToolSearch, tool calls,
+                   duration, tokens — the ablation *mechanism* evidence
+  flips.md         paired full-vs-noskills discordant tasks per model
+                   (skill-lift / skill-drag) — where the knowledge layer acts
 
 Refuses to merge files whose run_config image identity differs (paper runs
 must all come from one pinned artifact) — override with --ignore-digest.
@@ -21,6 +25,10 @@ import math
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+# The D3 ablation removes exactly these tools; counting their use per arm
+# shows the consultation/substitution mechanism, not just pass-rate deltas
+KNOWLEDGE_TOOLS = ("list_skills", "get_skill", "recommend_tools")
 
 
 def wilson(s: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -77,12 +85,24 @@ def aggregate(runs: list[dict]) -> dict:
     levels = defaultdict(lambda: {"s": 0, "n": 0})       # (model, arm, level)
     modes = defaultdict(int)                              # (model, arm, mode)
     repeats = defaultdict(int)                            # (model, arm)
+    behav = defaultdict(lambda: {"tests": 0, "knowledge": 0, "toolsearch": 0,
+                                 "tool_calls": 0, "duration_s": 0.0,
+                                 "input_tokens": 0, "output_tokens": 0})
 
     for run in runs:
         model, arm = _key(run)
         repeats[(model, arm)] += 1
         for t in run.get("tests", []):
             passed = bool(t.get("passed"))
+            b = behav[(model, arm)]
+            b["tests"] += 1
+            b["knowledge"] += sum(1 for c in t.get("tool_calls", [])
+                                  if c in KNOWLEDGE_TOOLS)
+            b["toolsearch"] += t.get("toolsearch_count", 0)
+            b["tool_calls"] += t.get("num_tool_calls", 0)
+            b["duration_s"] += t.get("duration_s", 0.0)
+            b["input_tokens"] += t.get("input_tokens", 0)
+            b["output_tokens"] += t.get("output_tokens", 0)
             tiers[(model, arm, t.get("tier", "?"))]["s"] += int(passed)
             tiers[(model, arm, t.get("tier", "?"))]["n"] += 1
             tasks[(model, arm, t["test_id"])].append(passed)
@@ -91,7 +111,12 @@ def aggregate(runs: list[dict]) -> dict:
                 levels[(model, arm, cl[1])]["s"] += int(passed)
                 levels[(model, arm, cl[1])]["n"] += 1
             if not passed:
-                modes[(model, arm, t.get("failure_mode", "unknown"))] += 1
+                mode = t.get("failure_mode", "unknown")
+                # First-call-strict verdicts where a later accepted-tool call
+                # succeeded — reported separately so strictness is visible
+                if t.get("recovered"):
+                    mode += " (recovered)"
+                modes[(model, arm, mode)] += 1
 
     unstable = {}
     for (model, arm, test_id), outcomes in tasks.items():
@@ -100,7 +125,8 @@ def aggregate(runs: list[dict]) -> dict:
             unstable[(model, arm, test_id)] = (k, n)
 
     return {"tiers": dict(tiers), "levels": dict(levels), "modes": dict(modes),
-            "unstable": unstable, "repeats": dict(repeats)}
+            "unstable": unstable, "repeats": dict(repeats),
+            "behavior": dict(behav), "tasks": dict(tasks)}
 
 
 def _pct_ci(s: int, n: int) -> str:
@@ -144,6 +170,43 @@ def write_artifacts(agg: dict, out: Path) -> None:
     if not models_both:
         lines.append("(no model present in both arms)")
     (out / "ablation.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    lines = ["# Agent behavior — means per test, per model/arm", "",
+             "| Model | Arm | Tests | Knowledge calls | ToolSearch | Tool calls "
+             "| Duration s | Input tok | Output tok |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for (model, arm), b in sorted(agg["behavior"].items()):
+        n = b["tests"] or 1
+        lines.append(
+            f"| {model} | {arm} | {b['tests']} | {b['knowledge'] / n:.2f} "
+            f"| {b['toolsearch'] / n:.2f} | {b['tool_calls'] / n:.2f} "
+            f"| {b['duration_s'] / n:.1f} | {b['input_tokens'] / n:.0f} "
+            f"| {b['output_tokens'] / n:.0f} |")
+    (out / "behavior.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    lines = ["# Paired task flips — full vs noskills discordance per model", "",
+             "| Model | Task | full | noskills | Direction |",
+             "|---|---|---|---|---|"]
+    n_flips = 0
+    for model in models_both:
+        per_task = defaultdict(dict)
+        for (m, arm, test_id), outcomes in agg["tasks"].items():
+            if m == model and arm in ("full", "noskills"):
+                per_task[test_id][arm] = (sum(outcomes), len(outcomes))
+        for test_id, by_arm in sorted(per_task.items()):
+            if "full" not in by_arm or "noskills" not in by_arm:
+                continue
+            (fk, fn), (nk, nn) = by_arm["full"], by_arm["noskills"]
+            if fk / fn == nk / nn:
+                continue
+            n_flips += 1
+            direction = "skill-lift" if fk / fn > nk / nn else "skill-drag"
+            short = test_id.split("::")[-1]
+            lines.append(f"| {model} | {short} | {fk}/{fn} | {nk}/{nn} "
+                         f"| {direction} |")
+    if not n_flips:
+        lines.append("| (no discordant tasks) | | | | |")
+    (out / "flips.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     with (out / "discovery.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
