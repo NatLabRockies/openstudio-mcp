@@ -489,10 +489,27 @@ PROGRESSIVE_CASES = [
 
 SUFFIX = " Use MCP tools only."
 
+# L3 (tool name in the prompt) is a near-tautology for most cases. Kept only
+# for tools that historically failed at/near L3, have complex arg shapes L3
+# exercises, or sit in confusion pairs. New coverage cases keep L3 for 3 runs,
+# then trim if 3/3 stable. See docs/plans/plan-llm-benchmark-realism.md Phase 2.
+L3_KEEP = {
+    # historical L3/near-L3 failures
+    "edit_measure", "zone_equipment_priority", "test_measure",
+    # complex-arg tools — L3 exercises API shape
+    "create_measure", "measure_replace_terminals", "apply_existing_measure",
+    "replace_terminals_cooled_beam", "replace_terminals_four_pipe_beam",
+    "python_ems_control", "create_plant_loop", "create_loads",
+    # confusion-pair members
+    "run_qaqc", "thermostat",
+}
+
 # Flatten into parametrized cases: (case_id, level, prompt, expected)
 _FLAT_CASES = []
 for case in PROGRESSIVE_CASES:
     for level in ("L1", "L2", "L3"):
+        if level == "L3" and case["id"] not in L3_KEEP:
+            continue
         _FLAT_CASES.append({
             "id": f"{case['id']}_{level}",
             "case_id": case["id"],

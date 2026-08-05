@@ -245,14 +245,14 @@ def _is_setup(nodeid: str) -> bool:
 _GENERIC_CASE_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
 
 # Smoke subset — fast validation of key tools (~10 tests)
+# L2 ids (not L3): most L3 rows were trimmed via L3_KEEP in test_06.
 _SMOKE_IDS = {
     # setup
     "test_create_baseline_model", "test_create_baseline_with_hvac",
-    # progressive L3 (most reliable)
-    "list_spaces_L3", "add_hvac_L3", "view_model_L3",
-    "inspect_component_L3", "list_dynamic_type_L3",
-    # new progressive L3
-    "get_eui_L3", "set_wwr_L3", "save_model_L3",
+    # progressive L2
+    "list_spaces_L2", "add_hvac_L2", "view_model_L2",
+    "inspect_component_L2", "list_dynamic_type_L2",
+    "get_eui_L2", "set_wwr_L2", "save_model_L2",
     # workflow
     "inspect_and_modify_boiler",
     # guardrail
