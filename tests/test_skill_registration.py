@@ -268,3 +268,36 @@ def test_all_tool_names_registered():
 
     extra = registered_names - EXPECTED_TOOLS
     assert not extra, f"Unexpected tools not in EXPECTED_TOOLS: {extra}"
+
+
+# The exact roster removed by the benchmark ablation arm (reviewer-response
+# plan D3) — keep in lockstep with _KNOWLEDGE_SKILLS in mcp_server/skills.
+KNOWLEDGE_TOOLS = {"list_skills", "get_skill", "recommend_tools"}
+
+
+def test_knowledge_skills_ablation_flag(monkeypatch):
+    # Validates: OSMCP_DISABLE_KNOWLEDGE_SKILLS=1 removes exactly the 3
+    # knowledge-layer tools (benchmark ablation arm) and nothing else
+    registered_tools = {}
+
+    class FakeMCP:
+        def tool(self, name=None, **kwargs):
+            def decorator(fn):
+                registered_tools[name or fn.__name__] = fn
+                return fn
+            return decorator
+        def prompt(self, **kw):
+            return lambda fn: fn
+        def resource(self, *a, **kw):
+            return lambda fn: fn
+
+    monkeypatch.setenv("OSMCP_DISABLE_KNOWLEDGE_SKILLS", "1")
+    skills = register_all_skills(FakeMCP())
+
+    assert "skill_discovery" not in skills and "tool_router" not in skills
+    registered_names = set(registered_tools.keys())
+    assert registered_names == EXPECTED_TOOLS - KNOWLEDGE_TOOLS, (
+        f"Ablation must remove exactly {KNOWLEDGE_TOOLS}; "
+        f"diff: missing={EXPECTED_TOOLS - KNOWLEDGE_TOOLS - registered_names}, "
+        f"extra={registered_names - (EXPECTED_TOOLS - KNOWLEDGE_TOOLS)}"
+    )
