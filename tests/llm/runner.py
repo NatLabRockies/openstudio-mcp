@@ -49,8 +49,14 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 
-class ClaudeResult:
-    """Parsed result from a Claude Code CLI invocation."""
+class AgentResult:
+    """Normalized result from an agent CLI invocation (provider-agnostic).
+
+    Built today from Claude Code stream-json; the codex adapter maps its
+    JSONL events into the same shape (messages with tool_use/tool_result
+    blocks + a result object). Usage fields are 0 when a provider does not
+    report them.
+    """
 
     def __init__(self, messages: list[dict], result: dict, raw_ndjson: str = ""):
         self.messages = messages
@@ -249,8 +255,36 @@ def _tool_result_text(content) -> str:
     return ""
 
 
-# Last result from run_claude — used by conftest benchmark tracking
-_last_result: ClaudeResult | None = None
+# Back-compat alias — tests written against the Claude-only runner still work
+ClaudeResult = AgentResult
+
+# Last result from run_agent — used by conftest benchmark tracking
+_last_result: AgentResult | None = None
+
+
+def run_agent(
+    prompt: str,
+    model: str | None = None,
+    timeout: int = 120,
+    allowed_tools: str = "mcp__openstudio__*",
+    system_prompt: str | None = None,
+    max_turns: int | None = None,
+) -> AgentResult:
+    """Run the configured agent backend and return a normalized AgentResult.
+
+    Backend selected by LLM_TESTS_PROVIDER (default "claude"). The codex
+    adapter lands with the cross-provider work; unknown providers fail loudly
+    rather than silently benchmarking the wrong model.
+    """
+    provider = os.environ.get("LLM_TESTS_PROVIDER", "claude")
+    backend = _BACKENDS.get(provider)
+    if backend is None:
+        raise ValueError(
+            f"Unknown LLM_TESTS_PROVIDER '{provider}' — known: {sorted(_BACKENDS)}")
+    return backend(
+        prompt, model=model, timeout=timeout, allowed_tools=allowed_tools,
+        system_prompt=system_prompt, max_turns=max_turns,
+    )
 
 
 def run_claude(
@@ -260,8 +294,23 @@ def run_claude(
     allowed_tools: str = "mcp__openstudio__*",
     system_prompt: str | None = None,
     max_turns: int | None = None,
-) -> ClaudeResult:
-    """Run Claude Code CLI with MCP config and return parsed result.
+) -> AgentResult:
+    """Compat wrapper — existing tests call run_claude; dispatches run_agent."""
+    return run_agent(
+        prompt, model=model, timeout=timeout, allowed_tools=allowed_tools,
+        system_prompt=system_prompt, max_turns=max_turns,
+    )
+
+
+def _run_claude(
+    prompt: str,
+    model: str | None = None,
+    timeout: int = 120,
+    allowed_tools: str = "mcp__openstudio__*",
+    system_prompt: str | None = None,
+    max_turns: int | None = None,
+) -> AgentResult:
+    """Claude Code CLI backend.
 
     Uses stream-json --verbose to capture tool_use blocks.
     ToolSearch calls (deferred tool loading) consume turns, so max_turns
@@ -315,7 +364,7 @@ def run_claude(
     return _last_result
 
 
-def _parse_stream_json(raw: str | None) -> ClaudeResult:
+def _parse_stream_json(raw: str | None) -> AgentResult:
     """Parse newline-delimited JSON from stream-json output."""
     messages = []
     result_obj = {}
@@ -334,7 +383,7 @@ def _parse_stream_json(raw: str | None) -> ClaudeResult:
         else:
             messages.append(obj)
 
-    return ClaudeResult(messages=messages, result=result_obj, raw_ndjson=raw)
+    return AgentResult(messages=messages, result=result_obj, raw_ndjson=raw)
 
 
 def _write_mcp_config() -> Path:
@@ -351,26 +400,33 @@ def _write_mcp_config() -> Path:
     Path(measures_dir).mkdir(parents=True, exist_ok=True)
     assets_dir = str(Path(__file__).resolve().parents[1] / "assets")
 
+    # Benchmark sweeps pin the exact image (LLM_TESTS_IMAGE=openstudio-mcp:v1.2.0)
+    # so every benchmark.json can carry the artifact identity; dev default keeps
+    # local iteration unchanged.
+    image = os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev")
     code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
-    config = {
-        "mcpServers": {
-            "openstudio": {
-                "command": "docker",
-                "args": [
-                    "run", "--rm", "-i",
-                    "-v", f"{runs_dir}:/runs",
-                    "-v", f"{measures_dir}:/measures",
-                    "-v", f"{assets_dir}:/test-assets:ro",
-                    "-v", f"{assets_dir}:/inputs:ro",
-                    "-e", "OPENSTUDIO_MCP_MODE=prod",
-                    "-e", f"OSMCP_CODE_MODE={code_mode}",
-                    "openstudio-mcp:dev",
-                    "openstudio-mcp",
-                ],
-            },
-        },
-    }
+    docker_args = [
+        "run", "--rm", "-i",
+        "-v", f"{runs_dir}:/runs",
+        "-v", f"{measures_dir}:/measures",
+        "-v", f"{assets_dir}:/test-assets:ro",
+        "-v", f"{assets_dir}:/inputs:ro",
+        "-e", "OPENSTUDIO_MCP_MODE=prod",
+        "-e", f"OSMCP_CODE_MODE={code_mode}",
+    ]
+    # Ablation arm: the knowledge-layer tools are absent server-side (refusals
+    # from client-side blocking would contaminate behavior) — see
+    # docs/plans/plan-benchmark-reviewer-response.md D3.
+    if os.environ.get("LLM_TESTS_ARM") == "noskills":
+        docker_args += ["-e", "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1"]
+    docker_args += [image, "openstudio-mcp"]
+    config = {"mcpServers": {"openstudio": {"command": "docker", "args": docker_args}}}
     tmpdir = Path(tempfile.mkdtemp(prefix="llm-test-"))
     path = tmpdir / "mcp.json"
     path.write_text(json.dumps(config))
     return path
+
+
+# Provider name -> backend callable (same signature as run_agent). The codex
+# adapter registers here when the cross-provider work lands.
+_BACKENDS = {"claude": _run_claude}

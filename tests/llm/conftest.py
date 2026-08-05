@@ -260,6 +260,18 @@ def get_tier() -> str:
 MAX_RETRIES = int(os.environ.get("LLM_TESTS_RETRIES", "0"))
 
 
+def fail_with_mode(request, mode: str, msg: str) -> None:
+    """Tag the test with an explicit failure-mode classification, then fail.
+
+    Modes: wrong_tool | no_mcp_tool | timeout | tool_error | wrong_args |
+    outcome_mismatch. pytest_runtest_logreport reads the tag from
+    report.user_properties, falling back to the _last_result heuristics for
+    untagged failures.
+    """
+    request.node.user_properties.append(("failure_mode", mode))
+    pytest.fail(msg)
+
+
 def _is_flaky(nodeid: str) -> bool:
     """Check if a test nodeid matches any known flaky pattern."""
     return any(pattern in nodeid for pattern in FLAKY_TESTS)
@@ -419,9 +431,13 @@ def pytest_runtest_logreport(report):
     from .runner import _last_result
     stats = _last_result.stats if _last_result else {}
 
-    # Classify failure mode for failed tests
+    # Classify failure mode: explicit fail_with_mode tag wins, then heuristics
     failure_mode = None
-    if not report.passed and _last_result:
+    if not report.passed:
+        for prop_name, prop_value in getattr(report, "user_properties", []):
+            if prop_name == "failure_mode":
+                failure_mode = prop_value
+    if failure_mode is None and not report.passed and _last_result:
         if _last_result.is_error and "Timed out" in _last_result.final_text:
             failure_mode = "timeout"
         elif not _last_result.tool_names:
@@ -506,9 +522,26 @@ def pytest_sessionfinish(session, exitstatus):
     code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
     code_mode_tests = sum(1 for r in _benchmark_results if r.get("code_mode_active"))
 
+    # Sweep-provided provenance (git SHA, image digest, repeat index — set by
+    # scripts/benchmark_sweep.py via LLM_TESTS_RUN_META) + the env knobs that
+    # define this run's arm. The aggregator refuses to merge mismatched digests.
+    try:
+        run_meta = json.loads(os.environ.get("LLM_TESTS_RUN_META", "{}"))
+        if not isinstance(run_meta, dict):
+            run_meta = {"_bad_run_meta": str(run_meta)}
+    except json.JSONDecodeError:
+        run_meta = {"_bad_run_meta": os.environ.get("LLM_TESTS_RUN_META", "")}
+    run_config = run_meta | {
+        "provider": os.environ.get("LLM_TESTS_PROVIDER", "claude"),
+        "arm": os.environ.get("LLM_TESTS_ARM", "full"),
+        "image": os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev"),
+        "retries": MAX_RETRIES,
+    }
+
     summary = {
         "timestamp": ts,
         "model": model,
+        "run_config": run_config,
         "retries": MAX_RETRIES,
         "code_mode": code_mode == "1",
         "code_mode_tests": code_mode_tests,
@@ -680,6 +713,9 @@ def pytest_sessionfinish(session, exitstatus):
             "wrong_tool": "MCP tool called but not the expected one",
             "no_mcp_tool": "No MCP tool called (stuck in builtins)",
             "timeout": "Timed out before completing",
+            "tool_error": "Expected tool called but returned ok:false",
+            "wrong_args": "Expected tool called with wrong argument values",
+            "outcome_mismatch": "Tools ran but outcome checks failed (EUI/verifier)",
             "unknown": "Failure mode not classified",
         }
         for m, count in sorted(modes.items(), key=lambda x: -x[1]):

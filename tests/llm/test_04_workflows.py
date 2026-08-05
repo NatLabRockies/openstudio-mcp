@@ -28,8 +28,8 @@ import pytest
 
 from .conftest import (
     BASELINE_MODEL, BASELINE_HVAC_MODEL,
-    baseline_model_exists, baseline_hvac_model_exists, get_tier,
-    get_sim_run_id, summary_metric_euis,
+    baseline_model_exists, baseline_hvac_model_exists, fail_with_mode,
+    get_sim_run_id, get_tier, summary_metric_euis,
 )
 from .runner import run_claude
 
@@ -609,7 +609,7 @@ SYSTEMD_MODEL = SYSTEMD  # alias for the standalone test below
 
 
 @pytest.mark.parametrize("case", WORKFLOW_CASES, ids=[c["id"] for c in WORKFLOW_CASES])
-def test_workflow(case):
+def test_workflow(case, request):
     """Agent loads model and completes a multi-step workflow."""
     # Validates: Claude chains all required MCP tools for multi-step BEM workflows
     tier = get_tier()
@@ -660,14 +660,18 @@ def test_workflow(case):
 
     if "eui_baseline_ref" in case:
         euis = summary_metric_euis(result)
-        assert euis, (
-            "No extract_summary_metrics result carried an EUI — simulations "
-            f"likely failed silently. Tools: {tool_names}"
-        )
-        assert euis[0] == pytest.approx(case["eui_baseline_ref"], rel=0.05), (
-            f"Baseline EUI {euis[0]:.2f} kBtu/ft2 outside 5% of pinned "
-            f"{case['eui_baseline_ref']} (llm-test-baseline-hvac + Boston)"
-        )
+        if not euis:
+            fail_with_mode(
+                request, "outcome_mismatch",
+                "No extract_summary_metrics result carried an EUI — "
+                f"simulations likely failed. Tools: {tool_names}",
+            )
+        if euis[0] != pytest.approx(case["eui_baseline_ref"], rel=0.05):
+            fail_with_mode(
+                request, "outcome_mismatch",
+                f"Baseline EUI {euis[0]:.2f} kBtu/ft2 outside 5% of pinned "
+                f"{case['eui_baseline_ref']} (llm-test-baseline-hvac + Boston)",
+            )
 
 
 def test_create_measure_with_args_quality():

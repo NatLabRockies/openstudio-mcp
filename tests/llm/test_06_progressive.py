@@ -20,7 +20,7 @@ import pytest
 from .conftest import (
     BASELINE_MODEL, BASELINE_HVAC_MODEL, EMS_MODEL,
     baseline_model_exists, baseline_hvac_model_exists, ems_model_exists,
-    get_retrofit_run_id, get_sim_run_id, get_tier,
+    fail_with_mode, get_retrofit_run_id, get_sim_run_id, get_tier,
 )
 from .runner import run_claude
 
@@ -704,7 +704,7 @@ _GENERIC_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
 
 @pytest.mark.progressive
 @pytest.mark.parametrize("case", _FLAT_CASES, ids=[c["id"] for c in _FLAT_CASES])
-def test_progressive(case):
+def test_progressive(case, request):
     """Test tool discovery at varying prompt specificity levels."""
     # Validates: Claude routes L1/L2/L3 prompts to correct tools — lower levels passing = better discoverability
     tier = get_tier()
@@ -743,21 +743,26 @@ def test_progressive(case):
     tool_names = result.tool_names
 
     matched = [t for t in tool_names if t in case["expected"]]
-    assert matched, (
-        f"[{case['case_id']} {case['level']}] "
-        f"Expected one of {case['expected']}, got: {tool_names}"
-    )
+    if not matched:
+        fail_with_mode(
+            request,
+            "wrong_tool" if tool_names else "no_mcp_tool",
+            f"[{case['case_id']} {case['level']}] "
+            f"Expected one of {case['expected']}, got: {tool_names}",
+        )
 
     # Right tool called AND its first call succeeded (ok:false = tool_error)
-    assert result.tool_ok(matched[0]) is not False, (
-        f"[{case['case_id']} {case['level']}] "
-        f"{matched[0]} was called but returned ok:false"
-    )
+    if result.tool_ok(matched[0]) is False:
+        fail_with_mode(
+            request, "tool_error",
+            f"[{case['case_id']} {case['level']}] "
+            f"{matched[0]} was called but returned ok:false",
+        )
 
-    _assert_expected_args(case, result)
+    _assert_expected_args(case, result, request)
 
 
-def _assert_expected_args(case, result):
+def _assert_expected_args(case, result, request):
     """Check pinned argument values on the first call to each spec'd tool.
 
     Skips tools the agent never called — the case may have been satisfied
@@ -779,14 +784,15 @@ def _assert_expected_args(case, result):
                     got_num = float(got)
                 except (TypeError, ValueError):
                     got_num = None
-                assert got_num == pytest.approx(target, rel=rel), (
-                    f"{label} expected ~{target}, got {got!r}"
-                )
+                if got_num != pytest.approx(target, rel=rel):
+                    fail_with_mode(request, "wrong_args",
+                                   f"{label} expected ~{target}, got {got!r}")
             elif isinstance(want, str) and isinstance(got, str):
                 # Case-insensitive: casing correctness is the TOOL's contract —
-                # a casing the tool rejects already fails the tool_ok assert.
-                assert got.lower() == want.lower(), (
-                    f"{label} expected {want!r}, got {got!r}"
-                )
-            else:
-                assert got == want, f"{label} expected {want!r}, got {got!r}"
+                # a casing the tool rejects already fails the tool_error check.
+                if got.lower() != want.lower():
+                    fail_with_mode(request, "wrong_args",
+                                   f"{label} expected {want!r}, got {got!r}")
+            elif got != want:
+                fail_with_mode(request, "wrong_args",
+                               f"{label} expected {want!r}, got {got!r}")

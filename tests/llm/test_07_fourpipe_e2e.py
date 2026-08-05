@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import summary_metric_euis
+from .conftest import fail_with_mode, summary_metric_euis
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
@@ -23,7 +23,7 @@ SYSTEMD = "/inputs/SystemD_baseline.osm"
 BOSTON_EPW = "/inputs/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 
 
-def test_fourpipe_beam_retrofit_e2e():
+def test_fourpipe_beam_retrofit_e2e(request):
     """Full retrofit: load → weather → baseline sim → measure → apply → sim → compare."""
     # Validates: Claude completes full 4-pipe beam retrofit workflow with measure authoring, 2 sims, and comparison
     prompt = (
@@ -103,17 +103,23 @@ def test_fourpipe_beam_retrofit_e2e():
     # baseline 28.21 kBtu/ft2, four-pipe-beam retrofit 28.44 (+0.8%).
     # Re-pin on OpenStudio version bump only.
     euis = summary_metric_euis(result)
-    assert len(euis) >= 2, (
-        f"Expected baseline + retrofit EUIs from extract_summary_metrics "
-        f"results, got {euis} — a simulation likely failed. "
-        f"Text: {result.final_text[:300]}"
-    )
-    assert euis[0] == pytest.approx(28.21, rel=0.05), (
-        f"Baseline EUI {euis[0]:.2f} outside 5% of pinned 28.21 kBtu/ft2"
-    )
-    assert euis[-1] == pytest.approx(28.44, rel=0.05), (
-        f"Retrofit EUI {euis[-1]:.2f} outside 5% of pinned 28.44 kBtu/ft2"
-    )
+    if len(euis) < 2:
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Expected baseline + retrofit EUIs from extract_summary_metrics "
+            f"results, got {euis} — a simulation likely failed. "
+            f"Text: {result.final_text[:300]}",
+        )
+    if euis[0] != pytest.approx(28.21, rel=0.05):
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Baseline EUI {euis[0]:.2f} outside 5% of pinned 28.21 kBtu/ft2",
+        )
+    if euis[-1] != pytest.approx(28.44, rel=0.05):
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Retrofit EUI {euis[-1]:.2f} outside 5% of pinned 28.44 kBtu/ft2",
+        )
 
     # --- 6. No error ---
     assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"
