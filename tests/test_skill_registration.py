@@ -301,3 +301,20 @@ def test_knowledge_skills_ablation_flag(monkeypatch):
         f"diff: missing={EXPECTED_TOOLS - KNOWLEDGE_TOOLS - registered_names}, "
         f"extra={registered_names - (EXPECTED_TOOLS - KNOWLEDGE_TOOLS)}"
     )
+
+
+def test_export_tool_table_matches_expected_roster():
+    # Validates: the paper's Table 1 exporter groups every EXPECTED_TOOLS
+    # entry under exactly one skill — the artifact counts equal the roster
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from export_tool_table import collect_tools_by_skill
+
+    by_skill = collect_tools_by_skill()
+    flat = [t for tools in by_skill.values() for t in tools]
+    assert len(flat) == len(set(flat)), "a tool is attributed to two skills"
+    assert set(flat) == EXPECTED_TOOLS, (
+        f"missing={EXPECTED_TOOLS - set(flat)}, extra={set(flat) - EXPECTED_TOOLS}"
+    )
+    assert len(by_skill) >= 20, f"suspiciously few skills: {sorted(by_skill)}"
