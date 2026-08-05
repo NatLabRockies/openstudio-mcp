@@ -111,6 +111,57 @@ class ClaudeResult:
         return [c["tool"] for c in self.tool_calls]
 
     @property
+    def tool_results(self) -> dict[str, dict]:
+        """tool_use id -> parsed tool_result JSON (or {"_raw": text}).
+
+        tool_result blocks arrive in type=user messages; content is either a
+        plain string or a list of text blocks. Non-JSON results are preserved
+        under "_raw" so callers can still inspect them.
+        """
+        results: dict[str, dict] = {}
+        for msg in self.messages:
+            if msg.get("type") != "user":
+                continue
+            content = msg.get("message", {}).get("content", [])
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not (isinstance(block, dict) and block.get("type") == "tool_result"):
+                    continue
+                text = _tool_result_text(block.get("content"))
+                try:
+                    parsed = json.loads(text)
+                except (json.JSONDecodeError, TypeError):
+                    parsed = {"_raw": text}
+                if not isinstance(parsed, dict):
+                    parsed = {"_raw": text}
+                results[block.get("tool_use_id", "")] = parsed
+        return results
+
+    def tool_ok(self, name: str) -> bool | None:
+        """ok flag of the FIRST call to `name` (prefix-stripped match).
+
+        Returns None if the tool was never called or its result carries no
+        boolean ok flag — asserts should use `is not False` so undeterminable
+        results don't fail.
+        """
+        prefix = "mcp__openstudio__"
+        results = self.tool_results
+        for msg in self.messages:
+            if msg.get("type") != "assistant":
+                continue
+            for block in msg.get("message", {}).get("content", []):
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "tool_use"
+                    and block["name"].removeprefix(prefix) == name
+                ):
+                    res = results.get(block.get("id", ""))
+                    ok = res.get("ok") if res else None
+                    return ok if isinstance(ok, bool) else None
+        return None
+
+    @property
     def final_text(self) -> str:
         """Final text result."""
         return self.result.get("result", "") or ""
@@ -172,6 +223,18 @@ class ClaudeResult:
                 if c["tool"].removeprefix("mcp__openstudio__") == "execute"
             ),
         }
+
+
+def _tool_result_text(content) -> str:
+    """Flatten a tool_result content field (string or text-block list) to text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            b.get("text", "") for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return ""
 
 
 # Last result from run_claude — used by conftest benchmark tracking

@@ -11,7 +11,7 @@ This conftest provides:
 
 Environment variables:
   LLM_TESTS_ENABLED  — set to "1" to enable LLM tests (default: disabled)
-  LLM_TESTS_MAX_PROMPTS — hard cap on Claude invocations per run (default: 180)
+  LLM_TESTS_MAX_PROMPTS — hard cap on Claude invocations per run (default: 300)
   LLM_TESTS_TIER — filter to run specific tier: "1", "2", "3", "4", or "all"
   LLM_TESTS_RETRIES — retry count for failed tests (default: 0)
   LLM_TESTS_MODEL — model to use: "sonnet", "haiku", "opus" (default: "sonnet")
@@ -73,11 +73,6 @@ FLAKY_TESTS = frozenset({
     # Measure authoring — L1 may trigger related tools instead
     "test_measure_L1",
     "edit_measure_L1",
-    # Phase 10 — L1 prompts ambiguous for new results/validation tools
-    "extract_errors_L1",
-    "validate_model_L1",
-    "compare_runs_L1",
-    "list_variables_L1",
 })
 
 
@@ -165,7 +160,7 @@ def get_retrofit_run_id() -> str | None:
 # ---------------------------------------------------------------------------
 # Prevents runaway test runs from burning through too many Claude invocations.
 # Each test_* function consumes 1 prompt. Retries also consume prompts.
-MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "180"))
+MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "300"))
 _prompt_count = 0
 
 

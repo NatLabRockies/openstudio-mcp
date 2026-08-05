@@ -79,7 +79,7 @@ PROGRESSIVE_CASES = [
     {
         "id": "set_weather",
         "needs_model": True,
-        "expected": ["change_building_location", "set_weather_file"],
+        "expected": ["change_building_location"],
         "L1": "Set the weather to Boston.",
         "L2": f"Set the weather file to {BOSTON_EPW}.",
         "L3": f"Set the weather using change_building_location with weather_file {BOSTON_EPW}.",
@@ -479,11 +479,11 @@ def test_progressive(case):
     elif case.get("needs_hvac"):
         if not baseline_hvac_model_exists():
             pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
-        prompt = LOAD_HVAC + prompt.lower()
+        prompt = LOAD_HVAC + prompt
     elif case["needs_model"]:
         if not baseline_model_exists():
             pytest.skip("Baseline model not found — run test_01_setup first")
-        prompt = LOAD + prompt.lower()
+        prompt = LOAD + prompt
     prompt += SUFFIX
 
     timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else 120
