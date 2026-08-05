@@ -85,6 +85,30 @@ def test_results_for_call_order():
     assert summary_metric_euis(r) == [pytest.approx(28.2)]
 
 
+def test_assert_sim_valid_gates():
+    # Validates: the D6 verifier's assert gates — completion, fatal/severe,
+    # unmet cap (None skips), and pinned-EUI tolerance — each fail correctly
+    from llm.verify import assert_sim_valid
+
+    good = {"run_id": "r", "completed": True, "fatal": 0, "severe": 0,
+            "eui": 57.4, "unmet_heating": 100.0, "unmet_cooling": 0.0}
+    assert_sim_valid(good, eui_ref=57.41, rel=0.05)
+
+    with pytest.raises(AssertionError, match="did not terminate"):
+        assert_sim_valid(good | {"completed": False})
+    with pytest.raises(AssertionError, match="fatal"):
+        assert_sim_valid(good | {"fatal": 1})
+    with pytest.raises(AssertionError, match="severe"):
+        assert_sim_valid(good | {"severe": 2})
+    with pytest.raises(AssertionError, match="unmet hours"):
+        assert_sim_valid(good | {"unmet_heating": 561.0})
+    assert_sim_valid(good | {"unmet_heating": 561.0}, max_unmet=None)  # skip cap
+    with pytest.raises(AssertionError, match="outside 5%"):
+        assert_sim_valid(good, eui_ref=28.21, rel=0.05)
+    with pytest.raises(AssertionError, match="no EUI"):
+        assert_sim_valid(good | {"eui": None}, eui_ref=57.41)
+
+
 def test_claude_result_alias_preserved():
     # Validates: pre-rename tests importing ClaudeResult keep working
     assert ClaudeResult is AgentResult

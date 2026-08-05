@@ -171,6 +171,16 @@ def test_run_baseline_simulation():
         f"run_simulation not called. Tools: {tool_names}"
     )
 
+    # The run must actually SUCCEED — downstream needs_run cases consume this
+    # run_id, and a failed run previously slipped through (tool-call-only
+    # asserts) leaving every results case pointed at garbage.
+    statuses = result.results_for("get_run_status")
+    final_state = ((statuses[-1].get("run", {}).get("status") or "unknown")
+                   if statuses else "unknown").lower()
+    assert final_state == "success", (
+        f"Baseline simulation did not succeed (last status: {final_state})"
+    )
+
     # Extract run_id from the tool call inputs
     run_id = None
     for call in result.mcp_tool_calls:
@@ -187,8 +197,8 @@ def test_run_baseline_simulation():
         if match:
             run_id = match.group(0)
 
-    if run_id:
-        save_sim_run_id(run_id)
+    assert run_id, "No run_id extractable from tool calls or final text"
+    save_sim_run_id(run_id)
 
     assert not result.is_error, f"Simulation failed: {result.final_text}"
 
@@ -218,6 +228,14 @@ def test_run_retrofit_simulation():
         f"run_simulation not called. Tools: {tool_names}"
     )
 
+    # Same success gate as the baseline sim — compare_runs consumes this
+    statuses = result.results_for("get_run_status")
+    final_state = ((statuses[-1].get("run", {}).get("status") or "unknown")
+                   if statuses else "unknown").lower()
+    assert final_state == "success", (
+        f"Retrofit simulation did not succeed (last status: {final_state})"
+    )
+
     # Extract run_id from tool call inputs
     run_id = None
     for call in result.mcp_tool_calls:
@@ -231,7 +249,7 @@ def test_run_retrofit_simulation():
         if match:
             run_id = match.group(0)
 
-    if run_id:
-        save_retrofit_run_id(run_id)
+    assert run_id, "No run_id extractable from tool calls or final text"
+    save_retrofit_run_id(run_id)
 
     assert not result.is_error, f"Retrofit simulation failed: {result.final_text}"

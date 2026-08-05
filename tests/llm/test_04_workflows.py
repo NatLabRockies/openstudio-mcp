@@ -32,6 +32,7 @@ from .conftest import (
     get_sim_run_id, get_tier, summary_metric_euis,
 )
 from .runner import run_claude
+from .verify import assert_sim_valid, verify_run
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 
@@ -672,6 +673,26 @@ def test_workflow(case, request):
                 f"Baseline EUI {euis[0]:.2f} kBtu/ft2 outside 5% of pinned "
                 f"{case['eui_baseline_ref']} (llm-test-baseline-hvac + Boston)",
             )
+
+        # D6: independently verify the agent's runs via a direct non-LLM MCP
+        # session — pass requires successful E+ termination + clean err file,
+        # not the agent's claims. max_unmet=None: llm-test-baseline-hvac is
+        # knowingly undersized (~561 unmet heating hours); EUI pin guards it.
+        run_ids = [r.get("run_id")
+                   for r in result.results_for("run_simulation")
+                   if r.get("ok") and r.get("run_id")]
+        if not run_ids:
+            fail_with_mode(
+                request, "outcome_mismatch",
+                f"No successful run_simulation launches. Tools: {tool_names}",
+            )
+        try:
+            assert_sim_valid(verify_run(run_ids[0]),
+                             eui_ref=case["eui_baseline_ref"], max_unmet=None)
+            if len(run_ids) > 1:
+                assert_sim_valid(verify_run(run_ids[-1]), max_unmet=None)
+        except AssertionError as e:
+            fail_with_mode(request, "outcome_mismatch", f"D6 verifier: {e}")
 
 
 def test_create_measure_with_args_quality():

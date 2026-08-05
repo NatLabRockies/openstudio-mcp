@@ -15,6 +15,7 @@ import pytest
 
 from .conftest import fail_with_mode, summary_metric_euis
 from .runner import run_claude
+from .verify import assert_sim_valid, verify_run
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 
@@ -120,6 +121,21 @@ def test_fourpipe_beam_retrofit_e2e(request):
             request, "outcome_mismatch",
             f"Retrofit EUI {euis[-1]:.2f} outside 5% of pinned 28.44 kBtu/ft2",
         )
+
+    # --- 5b. D6 verifier: both sims independently valid (non-LLM session).
+    # SystemD unmet hours stay well under 300 (pinned 58.5 -> 34.5).
+    run_ids = [r.get("run_id") for r in result.results_for("run_simulation")
+               if r.get("ok") and r.get("run_id")]
+    if len(run_ids) < 2:
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Expected 2 successful sims to verify, got run_ids: {run_ids}",
+        )
+    try:
+        assert_sim_valid(verify_run(run_ids[0]), eui_ref=28.21, max_unmet=300)
+        assert_sim_valid(verify_run(run_ids[-1]), eui_ref=28.44, max_unmet=300)
+    except AssertionError as e:
+        fail_with_mode(request, "outcome_mismatch", f"D6 verifier: {e}")
 
     # --- 6. No error ---
     assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"
