@@ -38,19 +38,28 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=2 pytest tests/llm/ -v
 | `LLM_TESTS_RETRIES` | `0` | Retry count for flaky LLM tests |
 | `LLM_TESTS_TIER` | `all` | Filter: `1`, `2`, `3`, `4`, or `all` |
 | `LLM_TESTS_MODEL` | `sonnet` | Model: `sonnet`, `haiku`, `opus` |
-| `LLM_TESTS_MAX_PROMPTS` | `180` | Hard cap on Claude invocations per run |
+| `LLM_TESTS_MAX_PROMPTS` | `300` | Hard cap on Claude invocations per run |
 | `LLM_TESTS_RUNS_DIR` | `/tmp/llm-test-runs` | Host path mounted as `/runs` in Docker |
+| `LLM_TESTS_MEASURES_DIR` | `/tmp/llm-test-measures` | Host path mounted as `/measures` (persists custom measures across the per-prompt containers) |
 
-## Test Tiers
+## Test Files (253 tests total, counts from `pytest tests/llm --co`)
 
-| Tier | File | Count | Time | Description |
-|------|------|-------|------|-------------|
-| setup | `test_01_setup.py` | 3 | ~1 min | Creates models for other tiers |
-| 1 | `test_02_tool_selection.py` | 14 | ~5 min | Single tool selection |
-| 2 | `test_04_workflows.py` | 26 | ~30 min | Multi-step tool chains |
-| 3 | `test_03_eval_cases.py` | 27 | ~35 min | Skill eval prompts |
-| 4 | `test_05_guardrails.py` | 2 | ~3 min | Safety/refusal tests |
-| progressive | `test_06_progressive.py` | 132 | ~60 min | L1/L2/L3 specificity levels |
+| File | Count | Description |
+|------|-------|-------------|
+| `test_01_setup.py` | 8 | Creates models, seeds `my_measure` + EMS plugin model, runs baseline+retrofit sims |
+| `test_02_tool_selection.py` | 4 | Single tool selection |
+| `test_03_eval_cases.py` | 26 | Skill eval prompts |
+| `test_04_workflows.py` | 37 | Multi-step tool chains (full chains assert pinned EUI) |
+| `test_05_guardrails.py` | 3 | Safety/refusal tests |
+| `test_06_progressive.py` | 149 | 60 operations; L1/L2 all, L3 only for `L3_KEEP` (29) |
+| `test_07_fourpipe_e2e.py` | 1 | SystemD e2e with pinned EUI refs |
+| `test_08_measure_authoring.py` | 4 | Measure authoring regressions |
+| `test_09_tool_routing.py` | 12 | Routing A/B cases |
+| `test_10_confusion_pairs.py` | 9 | Ambiguous-prompt tool choice |
+
+**Comparability epoch (2026-08-05):** phases 0-3 of the realism rework
+(prompt casing preserved, arg/ok/EUI asserts, L3 trim, +16 coverage cases)
+break strict comparability with Runs <= 16.
 
 ## Stable vs Flaky Classification
 
@@ -99,12 +108,16 @@ Check the tool call sequence in assertion errors — it reveals agent behavior:
 
 ### Docker mounts
 - `/runs` — model save/load (from `LLM_TESTS_RUNS_DIR`)
-- `/test-assets` (read-only) — `tests/assets/` for FloorspaceJS files etc.
+- `/measures` — persistent custom-measure root (from `LLM_TESTS_MEASURES_DIR`).
+  Every `run_claude` spawns a fresh `--rm` container; without this mount,
+  measures created in one test would vanish before the next
+- `/test-assets` and `/inputs` (read-only) — `tests/assets/` for FloorspaceJS
+  files, SystemD models, the set_building_name measure, Boston EPW set
 - EPW files at `/opt/comstock-measures/.../tests/*.epw` (baked into image)
 
 ### Minimizing Claude Max usage
-Each test invocation loads ~27K tokens of tool definitions (134 tools). Full suite
-(90 tests) uses ~9M cache read tokens per run. To conserve weekly quota:
+Each test invocation loads ~27K tokens of tool definitions (150+ tools). Full suite
+uses ~9M+ cache read tokens per run. To conserve weekly quota:
 - **Iterate on specific tests:** `pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
 - **Use tier filters:** `LLM_TESTS_TIER=1` for tier 1 only (14 tests, ~5 min)
 - **Full suite only for final validation** — not per-change
@@ -132,7 +145,7 @@ Every test run persists the full NDJSON stream from `claude -p` to `ndjson_logs/
 Logs are named by test ID (e.g. `measure_set_lights_full_chain.ndjson`). Retried tests get `_attempt2` suffix. The directory is cleared at session start so only the latest run is kept.
 
 ### Before/after comparison tests
-The 4 `measure_*_full_chain` workflow tests run two simulations: one baseline (unmodified model) and one after applying the custom measure. The test asserts `run_simulation` was called at least twice (`min_calls`). The agent is prompted to compare baseline vs retrofit EUI and report the difference.
+The 4 `measure_*_full_chain` workflow tests run two simulations: one baseline (unmodified model) and one after applying the custom measure. Prompts set Boston weather explicitly — without it the sim exits failed in ~1s while `extract_summary_metrics` still returns `ok:true` with null metrics. The tests assert `run_simulation` called at least twice AND the baseline EUI from actual tool results is within 5% of the pinned 57.41 kBtu/ft2 reference (re-pin on OpenStudio version bumps).
 
 The `systemd_fourpipebeam_e2e` test is the most realistic — it uses natural language (no tool names) with the 44-zone SystemD model, matching an actual Claude Desktop user session. Expected results: baseline EUI ~28.21, retrofit ~28.44 kBtu/ft2, unmet hours drop from ~58.5 to ~34.5.
 
@@ -140,10 +153,17 @@ The `systemd_fourpipebeam_e2e` test is the most realistic — it uses natural la
 The MCP server's `instructions` field (server.py) and `list_files` tool description prevent the agent from looping on `list_files` calls. This was the single biggest reliability improvement (44% -> 83% pass rate). The guardrails are native to the server so all MCP clients benefit. `runner.py` has a minimal system prompt that can be overridden per-test via `run_claude(system_prompt=...)`.
 
 ### Progressive tests
-`test_06_progressive.py` tests 44 operations at 3 specificity levels:
+`test_06_progressive.py` tests 60 operations at up to 3 specificity levels:
 - **L1 (vague):** "Add HVAC to the building" — tests tool description keywords
 - **L2 (moderate):** "Add a VAV reheat system to all zones" — tests with context
 - **L3 (explicit):** "Add System 7 VAV reheat using add_baseline_system" — tests with tool name
+
+L3 is emitted only for `L3_KEEP` members (historical failures, complex-arg
+tools, confusion pairs, and new cases for their first 3 runs) — for everything
+else it was a near-tautology and is trimmed.
+
+Pass now requires: an accepted tool called, its first call not `ok:false`,
+and (where `expected_args` pins them) argument values matching the prompt.
 
 If L1 fails but L2/L3 pass, the tool description needs better keywords.
 If all levels fail, there's a structural issue (tool API mismatch, missing args, etc.).

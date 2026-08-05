@@ -73,6 +73,28 @@ FLAKY_TESTS = frozenset({
     # Measure authoring — L1 may trigger related tools instead
     "test_measure_L1",
     "edit_measure_L1",
+    # Phase 3 coverage cases — quarantined until 3 stable runs ("_L" suffix
+    # matches all levels of the case without matching other tests)
+    "sim_errors_L",
+    "compare_runs_L",
+    "output_variables_L",
+    "timeseries_L",
+    "air_loop_details_L",
+    "plant_loop_details_L",
+    "zone_hvac_L",
+    "economizer_L",
+    "setpoint_manager_L",
+    "roof_insulation_L",
+    "infiltration_L",
+    "plug_loads_L",
+    "shift_schedule_L",
+    "bcl_search_L",
+    "ems_edit_L",
+    "run_lifecycle_L",
+    # Phase 3 seed steps + confusion pair — same quarantine window
+    "test_create_seed_measure",
+    "test_create_ems_plugin_model",
+    "test_search_before_create_measure",
 })
 
 
@@ -93,6 +115,8 @@ def claude_cli_available() -> bool:
 BASELINE_MODEL = "/runs/examples/llm-test-baseline/baseline_model.osm"
 BASELINE_HVAC_MODEL = "/runs/examples/llm-test-baseline-hvac/baseline_model.osm"
 EXAMPLE_MODEL = "/runs/examples/llm-test-example/example_model.osm"
+# Baseline + seeded schedule_override Python plugin (for ems_edit cases)
+EMS_MODEL = "/runs/examples/llm-test-ems/model.osm"
 
 # Host-side runs dir — used to verify model files exist before tests.
 # On Windows, Python Path("/tmp") resolves to C:\tmp, not the real temp dir.
@@ -112,6 +136,11 @@ def baseline_hvac_model_exists() -> bool:
     """Check if the baseline+HVAC model exists on the host filesystem."""
     host_path = _RUNS_DIR / "examples" / "llm-test-baseline-hvac" / "baseline_model.osm"
     return host_path.exists()
+
+
+def ems_model_exists() -> bool:
+    """Check if the EMS-plugin-seeded model exists on the host filesystem."""
+    return (_RUNS_DIR / "examples" / "llm-test-ems" / "model.osm").exists()
 
 
 # File where test_01_setup saves the simulation run_id for troubleshoot tests

@@ -307,7 +307,8 @@ def run_claude(
     if result.returncode != 0:
         raise RuntimeError(
             f"claude CLI failed (rc={result.returncode}):\n"
-            f"stderr: {result.stderr[:2000]}",
+            f"stderr: {result.stderr[:2000]}\n"
+            f"stdout tail: {(result.stdout or '')[-2000:]}",
         )
 
     _last_result = _parse_stream_json(result.stdout)
@@ -337,9 +338,17 @@ def _parse_stream_json(raw: str | None) -> ClaudeResult:
 
 
 def _write_mcp_config() -> Path:
-    """Write temporary MCP config for Docker stdio transport."""
+    """Write temporary MCP config for Docker stdio transport.
+
+    /measures is a persistent volume: every run_claude call spawns a fresh
+    --rm container, so without it custom measures and seeded fixtures
+    (my_measure, EMS plugins) would vanish between tests.
+    """
     _default_runs = str(Path(tempfile.gettempdir()) / "llm-test-runs")
     runs_dir = os.environ.get("LLM_TESTS_RUNS_DIR", _default_runs)
+    _default_measures = str(Path(tempfile.gettempdir()) / "llm-test-measures")
+    measures_dir = os.environ.get("LLM_TESTS_MEASURES_DIR", _default_measures)
+    Path(measures_dir).mkdir(parents=True, exist_ok=True)
     assets_dir = str(Path(__file__).resolve().parents[1] / "assets")
 
     code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
@@ -350,6 +359,7 @@ def _write_mcp_config() -> Path:
                 "args": [
                     "run", "--rm", "-i",
                     "-v", f"{runs_dir}:/runs",
+                    "-v", f"{measures_dir}:/measures",
                     "-v", f"{assets_dir}:/test-assets:ro",
                     "-v", f"{assets_dir}:/inputs:ro",
                     "-e", "OPENSTUDIO_MCP_MODE=prod",

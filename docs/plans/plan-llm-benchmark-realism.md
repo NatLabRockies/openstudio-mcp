@@ -1,7 +1,13 @@
 # Plan: LLM Benchmark Realism Rework
 
 Branch: `feat/llm-benchmark-realism` (from `origin/develop`)
-Status: PLANNED
+Status: Phases 0-3 DONE (2026-08-05). Phases 4-10 SKIPPED for the SoftwareX
+revision (decision 2026-08-05 — reviewer issues only; see
+plan-benchmark-reviewer-response.md). Deviations: runner `suffix` param
+deferred with Phase 8; docs reconcile landed with Phase 3; test_09's
+prompt.lower() also removed; full chains additionally gained a weather step +
+pinned baseline EUI (sims silently failed without weather); /measures volume
+added to harness + my_measure/EMS seeds (fixtures never existed before).
 
 ## Problem
 

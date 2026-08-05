@@ -38,8 +38,10 @@ pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
-SYSTEMD = "/repo/tests/assets/SystemD_baseline.osm"
-BOSTON_EPW_DIR = "/repo/tests/assets"
+# /inputs is the harness mount of tests/assets — the old /repo/... paths were
+# never mounted by the LLM harness, so this e2e case could not even load.
+SYSTEMD = "/inputs/SystemD_baseline.osm"
+BOSTON_EPW_DIR = "/inputs"
 
 # Boston EPW with .stat/.ddy companions (same as test_01_setup)
 BOSTON_EPW = (
@@ -80,7 +82,7 @@ WORKFLOW_CASES = [
             "After that, create a measure for me that changes the air terminals "
             "to 4-pipe chilled beams, apply that measure to the model, "
             "run the model, and compare the results for me. "
-            "Save the measure in the same location as the model so I have a copy."
+            "Save the measure under /runs so I have a copy."
         ),
         "required_tools": ["load_osm_model", "change_building_location",
                            "save_osm_model", "run_simulation",

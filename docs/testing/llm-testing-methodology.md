@@ -1,6 +1,8 @@
 # LLM Testing Methodology, Implementation & Results
 
-**openstudio-mcp** — behavioral testing of an MCP server with ~142 tools, where a real LLM agent drives the tests end-to-end.
+**openstudio-mcp** — behavioral testing of an MCP server with 150+ tools, where a real LLM agent drives the tests end-to-end.
+
+> **Comparability epoch break (2026-08-05).** Realism-rework phases 0-3 changed prompts (casing preserved, weather steps added) and deepened pass criteria (tool `ok` flag, pinned args, pinned EUI outcomes from tool results); L3 trimmed to `L3_KEEP`; +16 coverage cases. Pass rates below this line are from the old criteria and are not comparable with Run 17+.
 
 > **TL;DR** — 160/167 tests passing (**95.8%**) in Run 13. Core methodology: each tool tested at three prompt specificity levels (L1 vague / L2 moderate / L3 explicit). Pass-rate gap between levels isolates tool-description problems from tool-design problems. System prompt is the single biggest lever (44% → 83% in one run).
 
@@ -57,7 +59,7 @@ pytest (tests/llm/conftest.py)
 | Retry logic | `conftest.py:281-323` | Custom `pytest_runtest_protocol` hook. Each retry consumes one prompt from the budget. |
 | Benchmark collection | `conftest.py:342-412, 434-692` | `pytest_runtest_logreport` stores per-test metrics. Session end writes `benchmark.json` / `benchmark.md` / `benchmark_history.json`. |
 | Failure classification | `conftest.py:383-390` | `timeout` · `no_mcp_tool` · `wrong_tool`. |
-| Prompt budget | `conftest.py` `LLM_TESTS_MAX_PROMPTS` (default 180) | Hard cap prevents runaway cost during iteration. |
+| Prompt budget | `conftest.py` `LLM_TESTS_MAX_PROMPTS` (default 300) | Hard cap prevents runaway cost during iteration. |
 | Skill eval auto-discovery | `eval_parser.py:48-90` | Scrapes "Should trigger" / "Should NOT trigger" tables from `.claude/skills/*/eval.md`. |
 
 ### Environment knobs
@@ -67,7 +69,7 @@ pytest (tests/llm/conftest.py)
 | `LLM_TESTS_ENABLED` | unset | Must be `1` to enable the suite |
 | `LLM_TESTS_MODEL` | `sonnet` | `sonnet` / `haiku` / `opus` |
 | `LLM_TESTS_RETRIES` | `0` | Retry count for non-determinism |
-| `LLM_TESTS_MAX_PROMPTS` | `180` | Hard budget cap |
+| `LLM_TESTS_MAX_PROMPTS` | `300` | Hard budget cap |
 | `LLM_TESTS_TIER` | `all` | `1`/`2`/`3`/`4`/`all` |
 | `LLM_TESTS_RUNS_DIR` | `/tmp/llm-test-runs` | Host path mounted as `/runs` in Docker |
 

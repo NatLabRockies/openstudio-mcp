@@ -18,9 +18,9 @@ from __future__ import annotations
 import pytest
 
 from .conftest import (
-    BASELINE_MODEL, BASELINE_HVAC_MODEL,
-    baseline_model_exists, baseline_hvac_model_exists, get_tier,
-    get_retrofit_run_id, get_sim_run_id,
+    BASELINE_MODEL, BASELINE_HVAC_MODEL, EMS_MODEL,
+    baseline_model_exists, baseline_hvac_model_exists, ems_model_exists,
+    get_retrofit_run_id, get_sim_run_id, get_tier,
 )
 from .runner import run_claude
 
@@ -28,6 +28,7 @@ pytestmark = [pytest.mark.llm, pytest.mark.tier1]
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
+LOAD_EMS = f"Load the model at {EMS_MODEL} using load_osm_model. Then "
 
 # Boston EPW with .stat/.ddy companions
 BOSTON_EPW = (
@@ -418,13 +419,16 @@ PROGRESSIVE_CASES = [
               "/measures/local/custom/my_measure.",
     },
     {
+        # /test-assets is the harness mount of tests/assets — the old
+        # /repo/... path was never mounted by the LLM harness, so apply
+        # always failed silently before tool_ok asserts existed.
         "id": "apply_existing_measure",
         "needs_model": True,
         "expected": ["apply_measure", "list_measure_arguments"],
-        "L1": "Apply the set_building_name measure from /repo/tests/assets/measures/.",
-        "L2": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+        "L1": "Apply the set_building_name measure from /test-assets/measures/.",
+        "L2": "Apply the measure at /test-assets/measures/set_building_name "
               "with building_name 'New Name'.",
-        "L3": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+        "L3": "Apply the measure at /test-assets/measures/set_building_name "
               "using apply_measure with arguments {building_name: 'New Name'}.",
     },
     # --- CooledBeam + zone priority ---
@@ -485,6 +489,170 @@ PROGRESSIVE_CASES = [
         "L3": "Edit measure my_measure using edit_measure with run_body "
               "'    runner.registerInfo(\"updated\")'.",
     },
+    # --- Phase 3 coverage cases (previously untested tools) ---
+    {
+        "id": "sim_errors",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_simulation_errors", "get_run_logs"],
+        "L1": "My simulation had problems. Why?",
+        "L2": "Show the errors and warnings from the simulation output.",
+        "L3": "Extract the simulation errors using extract_simulation_errors.",
+    },
+    {
+        "id": "compare_runs",
+        "needs_model": False,
+        "needs_retrofit": True,
+        "expected": ["compare_runs"],
+        "L1": "Did the retrofit help? Compare the two runs.",
+        "L2": "Compare the baseline and retrofit simulation results and "
+              "report the EUI difference.",
+        "L3": "Compare the two simulation runs using compare_runs.",
+    },
+    {
+        "id": "output_variables",
+        "needs_model": True,
+        "expected": ["add_output_variable", "list_output_variables"],
+        "L1": "I need hourly zone temperatures in the results.",
+        "L2": "Add an hourly output variable for Zone Mean Air Temperature.",
+        "L3": "Add it using add_output_variable with variable name "
+              "'Zone Mean Air Temperature' and hourly frequency.",
+    },
+    {
+        "id": "timeseries",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["query_timeseries", "view_simulation_data"],
+        "L1": "Plot the hourly cooling energy for July.",
+        "L2": "Query the hourly cooling electricity timeseries for July "
+              "from the simulation results.",
+        "L3": "Query the cooling timeseries using query_timeseries.",
+    },
+    {
+        "id": "air_loop_details",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_air_loop_details"],
+        "L1": "What equipment is on the air handler?",
+        "L2": "Show the supply-side components of the air loop in order.",
+        "L3": "Get the air loop details using get_air_loop_details.",
+    },
+    {
+        "id": "plant_loop_details",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_plant_loop_details"],
+        "L1": "Trace the chilled water loop.",
+        "L2": "Show the supply and demand components of the chilled water "
+              "plant loop.",
+        "L3": "Get the plant loop details using get_plant_loop_details.",
+    },
+    {
+        "id": "zone_hvac",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["list_zone_hvac_equipment", "get_zone_hvac_details",
+                     "get_air_loop_details", "list_air_loops"],
+        "L1": "What HVAC serves the first zone?",
+        "L2": "List the zone HVAC equipment and the terminal serving the "
+              "first thermal zone.",
+        "L3": "List zone equipment using list_zone_hvac_equipment.",
+    },
+    {
+        "id": "economizer",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["set_economizer_properties"],
+        "L1": "Add an airside economizer.",
+        "L2": "Enable a differential dry bulb airside economizer on the "
+              "air loop.",
+        "L3": "Set the economizer using set_economizer_properties with "
+              "economizer_control_type DifferentialDryBulb.",
+    },
+    {
+        "id": "setpoint_manager",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_setpoint_manager_properties",
+                     "set_setpoint_manager_properties"],
+        "L1": "Change the supply air temperature reset.",
+        "L2": "Show the setpoint manager on the air loop supply outlet and "
+              "its temperature setpoints.",
+        "L3": "Get the setpoint manager properties using "
+              "get_setpoint_manager_properties.",
+    },
+    {
+        "id": "roof_insulation",
+        "needs_model": True,
+        "expected": ["create_standard_opaque_material", "create_construction",
+                     "assign_construction_to_surface"],
+        "L1": "Add R-30 insulation to the roof.",
+        "L2": "Create an insulation material and construction for the roof "
+              "and assign it to the roof surfaces.",
+        "L3": "Use create_standard_opaque_material, then create_construction, "
+              "then assign_construction_to_surface on the roof surfaces.",
+    },
+    {
+        "id": "infiltration",
+        "needs_model": True,
+        "expected": ["create_infiltration"],
+        "L1": "Tighten the envelope to 0.3 ACH.",
+        "L2": "Set space infiltration to 0.3 air changes per hour in all "
+              "spaces.",
+        "L3": "Create infiltration using create_infiltration with 0.3 ACH.",
+    },
+    {
+        "id": "plug_loads",
+        "needs_model": True,
+        "expected": ["create_electric_equipment"],
+        "L1": "Add plug loads to the offices.",
+        "L2": "Add electric equipment plug loads at 10 W per square meter.",
+        "L3": "Create plug loads using create_electric_equipment.",
+    },
+    {
+        "id": "shift_schedule",
+        "needs_model": True,
+        "expected": ["shift_schedule_time", "get_schedule_details"],
+        "L1": "Occupancy starts at 7 now, not 9.",
+        "L2": "Shift the occupancy schedule 2 hours earlier.",
+        "L3": "Shift the schedule using shift_schedule_time.",
+    },
+    {
+        "id": "bcl_search",
+        "needs_model": False,
+        "expected": ["search_bcl_measures", "find_measure",
+                     "list_comstock_measures"],
+        "L1": "Is there an existing measure that adds daylighting controls?",
+        "L2": "Search the BCL and bundled measures for a daylighting "
+              "controls measure.",
+        "L3": "Search for a daylighting measure using search_bcl_measures.",
+    },
+    {
+        "id": "ems_edit",
+        "needs_model": False,
+        "needs_ems": True,
+        "expected": ["get_python_plugin", "edit_python_plugin"],
+        "L1": "My Python plugin has a bug in its schedule override values. "
+              "Show me its source.",
+        "L2": "Show the source of the Python plugin "
+              "'llm-test-sched-override' so I can check its override rules.",
+        "L3": "Get the plugin source using get_python_plugin for "
+              "'llm-test-sched-override'.",
+    },
+    # LAST on purpose: touches run lifecycle (pin/cleanup). cleanup_runs
+    # defaults to dry_run and never deletes pinned runs, but keep it after
+    # every case that consumes the baseline/retrofit run_ids anyway.
+    {
+        "id": "run_lifecycle",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["pin_run", "cleanup_runs"],
+        "L1": "Clean up old simulation runs but keep the baseline.",
+        "L2": "Pin the baseline run so it is kept, then preview a cleanup "
+              "of old simulation runs.",
+        "L3": "Pin the baseline run using pin_run, then preview cleanup "
+              "with cleanup_runs.",
+    },
 ]
 
 SUFFIX = " Use MCP tools only."
@@ -502,6 +670,12 @@ L3_KEEP = {
     "python_ems_control", "create_plant_loop", "create_loads",
     # confusion-pair members
     "run_qaqc", "thermostat",
+    # Phase 3 coverage cases (added 2026-08-05) — keep L3 for 3 runs, then
+    # trim each id that goes 3/3 stable
+    "sim_errors", "compare_runs", "output_variables", "timeseries",
+    "air_loop_details", "plant_loop_details", "zone_hvac", "economizer",
+    "setpoint_manager", "roof_insulation", "infiltration", "plug_loads",
+    "shift_schedule", "bcl_search", "ems_edit", "run_lifecycle",
 }
 
 # Flatten into parametrized cases: (case_id, level, prompt, expected)
@@ -517,6 +691,8 @@ for case in PROGRESSIVE_CASES:
             "needs_model": case["needs_model"],
             "needs_hvac": case.get("needs_hvac", False),
             "needs_run": case.get("needs_run", False),
+            "needs_retrofit": case.get("needs_retrofit", False),
+            "needs_ems": case.get("needs_ems", False),
             "prompt": case[level],
             "expected": case["expected"],
             "expected_args": case.get("expected_args", {}).get(level, {}),
@@ -536,11 +712,22 @@ def test_progressive(case):
         pytest.skip("Tier 1 not selected")
 
     prompt = case["prompt"]
-    if case.get("needs_run"):
+    if case.get("needs_retrofit"):
+        base_id, retro_id = get_sim_run_id(), get_retrofit_run_id()
+        if not (base_id and retro_id):
+            pytest.skip("Baseline+retrofit run_ids not found — run test_01_setup first")
+        prompt = (
+            f"Baseline run_id '{base_id}', retrofit run_id '{retro_id}'. "
+        ) + prompt
+    elif case.get("needs_run"):
         run_id = get_sim_run_id()
         if not run_id:
             pytest.skip("No simulation run_id — run test_01_setup first")
         prompt = f"Use run_id '{run_id}'. " + prompt
+    elif case.get("needs_ems"):
+        if not ems_model_exists():
+            pytest.skip("EMS model not found — run test_01_setup first")
+        prompt = LOAD_EMS + prompt
     elif case.get("needs_hvac"):
         if not baseline_hvac_model_exists():
             pytest.skip("Baseline+HVAC model not found — run test_01_setup first")

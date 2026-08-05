@@ -1,5 +1,14 @@
 # LLM Test Benchmark Report
 
+> **Comparability epoch break (2026-08-05).** Realism-rework phases 0-3
+> landed on `feat/llm-benchmark-realism`: prompts no longer lowercased,
+> pass criteria deepened (tool `ok` flag, pinned argument values, pinned
+> EUI outcomes), L3 trimmed to `L3_KEEP` (29 of 60 cases), +16 coverage
+> cases, full-chain prompts gained an explicit weather step (their sims
+> silently failed before). Runs from the next baseline (Run 17) onward are
+> NOT comparable with Runs <= 16 below. `export_measure` rows refer to a
+> tool since removed from the roster.
+
 ## Latest Run Summary
 
 | Run | Date | Model | Tests | Passed | Rate | Runtime | Notes |
@@ -62,7 +71,7 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | list_measures | list_custom_measures | PASS | PASS | PASS | — | Run 8 | Measure authoring |
 | create_measure | create_measure | PASS | PASS | PASS | — | Run 8 | |
 | test_measure | test_measure | PASS | PASS | PASS | — | Run 8 | |
-| export_measure | export_measure | FAIL | FAIL | PASS | L1+L2 | Run 8 | Agent can't discover export without explicit name |
+| export_measure | export_measure (REMOVED from roster) | FAIL | FAIL | PASS | L1+L2 | Run 8 | Historical; tool no longer registered |
 | edit_measure | edit_measure | PASS | PASS | PASS | — | Run 8 | |
 | replace_terminals_cooled_beam | replace_air_terminals | PASS | PASS | PASS | — | Run 8 | CooledBeam 2-pipe docstring works well |
 | measure_replace_terminals | create_measure | PASS | PASS | PASS | — | Run 8 | Agent chose measure authoring path at L1 |
