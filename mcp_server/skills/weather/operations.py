@@ -220,8 +220,13 @@ def make_weather_url_portable(model: Any) -> str | None:
     return None
 
 
-def resolve_model_weather_epw(osm_path: Path) -> Path | None:
-    """Resolve a saved OSM's OS:WeatherFile url to a readable EPW, or None.
+def resolve_model_weather_epw(osm_path: Path) -> dict[str, Any]:
+    """Resolve a saved OSM's OS:WeatherFile url to a readable EPW.
+
+    Returns {"loadable": bool, "declared": bool, "url": str | None,
+    "epw": Path | None, "run_periods_requested": bool} so run_simulation can
+    distinguish "no weather set" (fail fast) from "weather set but not found"
+    from a design-day-only model that legitimately needs no EPW.
 
     Lets run_simulation stage the model's own weather when no epw_path
     override is given — required since change_building_location writes the
@@ -232,23 +237,45 @@ def resolve_model_weather_epw(osm_path: Path) -> Path | None:
     The url is caller-controlled model content, so an absolute url is honored
     only when it passes is_path_allowed — without that gate a crafted model
     could make the server stage another tenant's file into this caller's run
-    dir. Unresolvable urls fall back to bare-filename lookup across the known
+    dir. Otherwise the url's BASENAME (directory components stripped, so it
+    cannot escape) is checked against the OSM's companion files/ dir and own
+    dir — those travel with the staged seed — then looked up across the known
     weather dirs (trusted, server-chosen — no gate needed).
     """
+    result: dict[str, Any] = {
+        "loadable": False, "declared": False, "url": None, "epw": None,
+        "run_periods_requested": True,
+    }
     loaded = openstudio.osversion.VersionTranslator().loadModel(
         openstudio.toPath(str(osm_path)))
     if not loaded.is_initialized():
-        return None
-    wf = loaded.get().weatherFile()
+        return result
+    model = loaded.get()
+    result["loadable"] = True
+    # Throwaway loaded copy — getSimulationControl may create the unique
+    # object, which is fine because this model is never saved.
+    result["run_periods_requested"] = (
+        model.getSimulationControl().runSimulationforWeatherFileRunPeriods())
+    wf = model.weatherFile()
     if not wf.is_initialized():
-        return None
+        return result
     url = wf.get().path()
     if not url.is_initialized():
-        return None
-    epw = Path(str(url.get()))
+        return result
+    raw = str(url.get())
+    result["declared"] = True
+    result["url"] = raw
+    epw = Path(raw)
     if epw.is_file() and is_path_allowed(epw):
-        return epw.resolve()
-    return find_epw_by_name(epw.name)
+        result["epw"] = epw.resolve()
+        return result
+    osm_dir = osm_path.resolve().parent
+    for candidate in (osm_dir / "files" / epw.name, osm_dir / epw.name):
+        if candidate.is_file():
+            result["epw"] = candidate.resolve()
+            return result
+    result["epw"] = find_epw_by_name(epw.name)
+    return result
 
 
 def get_weather_info() -> dict[str, Any]:

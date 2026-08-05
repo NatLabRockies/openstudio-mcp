@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import mimetypes
 import re
 import shutil
@@ -10,6 +11,18 @@ from typing import Any
 
 from mcp_server.config import user_run_root
 from mcp_server.util import resolve_run_dir, safe_read_text  # resolve_run_dir still used by extract_* ops
+
+
+def _run_status_from_record(run_dir: Path) -> str | None:
+    """Status from the run's on-disk record (simulation _persist_run_record).
+
+    None for dirs without a readable record (legacy or externally seeded runs)
+    — callers then extract whatever result files exist, as before.
+    """
+    try:
+        return json.loads((run_dir / "run_record.json").read_text()).get("status")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return None
 
 
 def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Path | None:
@@ -115,6 +128,26 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
     except FileNotFoundError:
         return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
 
+    # A failed/unfinished run has no meaningful summary. Answering ok:true
+    # with all-null metrics misled agents into reporting success (found via
+    # the LLM benchmark: weatherless sims died in ~1s yet extraction
+    # "succeeded" silently).
+    status = _run_status_from_record(run_dir)
+    if status in ("failed", "cancelled"):
+        return {
+            "ok": False, "run_id": run_id, "status": status,
+            "error": (
+                f"Run {status} — no summary metrics to extract. Diagnose "
+                "with extract_simulation_errors or get_run_logs."),
+        }
+    if status in ("queued", "running"):
+        return {
+            "ok": False, "run_id": run_id, "status": status,
+            "error": (
+                "Run has not finished — poll get_run_status until it is "
+                "terminal, then extract."),
+        }
+
     sql_path = _find_first_existing(run_dir, ["run/eplusout.sql", "eplusout.sql"])
     html_path = _find_first_existing(
         run_dir,
@@ -193,6 +226,14 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
     if total_unmet > 300:
         warnings_list.append(
             f"Unmet hours ({total_unmet:.0f}) exceed 300 — HVAC may be undersized",
+        )
+
+    # Run dirs without a status record (legacy/seeded) can still be empty of
+    # results — say so instead of returning a silently all-null "success"
+    if total_site_value is None and eui is None and unmet is None:
+        warnings_list.append(
+            "No results found in run directory — simulation may not have "
+            "completed successfully",
         )
 
     return {
