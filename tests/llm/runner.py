@@ -364,6 +364,155 @@ def _run_claude(
     return _last_result
 
 
+def _find_codex() -> str:
+    """Locate the codex CLI: env override, PATH, then the Windows install dir."""
+    override = os.environ.get("LLM_TESTS_CODEX_CMD")
+    if override:
+        return override
+    import shutil as _shutil
+    found = _shutil.which("codex") or _shutil.which("codex.exe")
+    if found:
+        return found
+    default = (Path(os.environ.get("LOCALAPPDATA", ""))
+               / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe")
+    if default.is_file():
+        return str(default)
+    raise RuntimeError(
+        "codex CLI not found — install it or set LLM_TESTS_CODEX_CMD")
+
+
+def _run_codex(
+    prompt: str,
+    model: str | None = None,
+    timeout: int = 120,
+    allowed_tools: str = "mcp__openstudio__*",
+    system_prompt: str | None = None,
+    max_turns: int | None = None,
+) -> AgentResult:
+    """codex exec backend (SPIKE-1 verified 2026-08-05, codex-cli 0.146.0).
+
+    - MCP server injected via -c mcp_servers.openstudio overrides;
+      --ignore-user-config keeps the user's config out while CODEX_HOME auth
+      still applies.
+    - --dangerously-bypass-approvals-and-sandbox is required: exec mode
+      auto-cancels MCP tool calls otherwise ("user cancelled MCP tool call");
+      approval_policy=never does NOT cover MCP calls. Mirrors claude's
+      --dangerously-skip-permissions role in this harness.
+    - No --system-prompt equivalent: system prompt is PREPENDED to the user
+      prompt (footnoted in the paper). allowed_tools/max_turns have no codex
+      equivalent and are ignored.
+    """
+    global _last_result
+    model = model or os.environ.get("LLM_TESTS_MODEL") or None
+    system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+    full_prompt = f"{system_prompt}\n\n{prompt}"
+
+    docker_args_toml = json.dumps(_docker_mcp_args())  # JSON array is valid TOML
+    cmd = [
+        _find_codex(), "exec", "--json", "--ephemeral",
+        "--skip-git-repo-check", "--ignore-user-config",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--color", "never",
+        "-c", 'mcp_servers.openstudio.command="docker"',
+        "-c", f"mcp_servers.openstudio.args={docker_args_toml}",
+    ]
+    if model:
+        cmd += ["-m", model]
+    cmd.append(full_prompt)
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, check=False,
+            stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace",
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.stdout if isinstance(exc.stdout, str) else (
+            exc.stdout.decode("utf-8", "replace") if exc.stdout else "")
+        parsed = _parse_codex_jsonl(partial)
+        parsed.result["is_error"] = True
+        parsed.result["result"] = f"Timed out after {timeout}s"
+        _last_result = parsed
+        return parsed
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"codex CLI failed (rc={result.returncode}):\n"
+            f"stderr: {result.stderr[:2000]}\n"
+            f"stdout tail: {(result.stdout or '')[-2000:]}",
+        )
+
+    _last_result = _parse_codex_jsonl(result.stdout)
+    return _last_result
+
+
+def _parse_codex_jsonl(raw: str | None) -> AgentResult:
+    """Map codex exec --json events onto the claude-shaped AgentResult.
+
+    Each completed mcp_tool_call item is synthesized into an assistant
+    tool_use block + a user tool_result block (result text preferred,
+    structured_content fallback), so every AgentResult accessor —
+    tool_names, tool_ok, results_for — works identically across backends.
+    """
+    messages: list[dict] = []
+    final_text = ""
+    usage: dict = {}
+    is_error = False
+
+    for line in (raw or "").strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        etype = obj.get("type", "")
+        if etype == "item.completed":
+            item = obj.get("item", {})
+            itype = item.get("type")
+            if itype == "mcp_tool_call":
+                item_id = item.get("id", "")
+                name = f"mcp__{item.get('server', 'openstudio')}__{item.get('tool', '')}"
+                messages.append({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": item_id, "name": name,
+                     "input": item.get("arguments") or {}},
+                ]}})
+                res = item.get("result") or {}
+                text = _tool_result_text(res.get("content"))
+                if not text and item.get("error"):
+                    text = json.dumps(
+                        {"ok": False, "error": item["error"].get("message", "")})
+                if not text and res.get("structured_content") is not None:
+                    text = json.dumps(res["structured_content"])
+                messages.append({"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": item_id,
+                     "content": text},
+                ]}})
+            elif itype == "agent_message":
+                final_text = item.get("text", "") or final_text
+        elif etype == "turn.completed":
+            u = obj.get("usage", {})
+            usage = {
+                "input_tokens": u.get("input_tokens", 0),
+                "output_tokens": u.get("output_tokens", 0),
+                "cache_read_input_tokens": u.get("cached_input_tokens", 0),
+            }
+        elif etype in ("turn.failed", "error"):
+            is_error = True
+
+    result_obj = {
+        "result": final_text,
+        "is_error": is_error,
+        "usage": usage,
+        # codex reports tokens, not dollars — cost stays 0 and the paper
+        # reports token counts for cross-provider comparisons
+        "total_cost_usd": 0.0,
+        "num_turns": sum(1 for m in messages if m["type"] == "assistant"),
+    }
+    return AgentResult(messages=messages, result=result_obj, raw_ndjson=raw or "")
+
+
 def _parse_stream_json(raw: str | None) -> AgentResult:
     """Parse newline-delimited JSON from stream-json output."""
     messages = []
@@ -386,12 +535,12 @@ def _parse_stream_json(raw: str | None) -> AgentResult:
     return AgentResult(messages=messages, result=result_obj, raw_ndjson=raw)
 
 
-def _write_mcp_config() -> Path:
-    """Write temporary MCP config for Docker stdio transport.
+def _docker_mcp_args() -> list[str]:
+    """Docker args for the openstudio MCP server — shared by every backend.
 
-    /measures is a persistent volume: every run_claude call spawns a fresh
-    --rm container, so without it custom measures and seeded fixtures
-    (my_measure, EMS plugins) would vanish between tests.
+    /measures is a persistent volume: every agent call spawns a fresh --rm
+    container, so without it custom measures and seeded fixtures (my_measure,
+    EMS plugins) would vanish between tests.
     """
     _default_runs = str(Path(tempfile.gettempdir()) / "llm-test-runs")
     runs_dir = os.environ.get("LLM_TESTS_RUNS_DIR", _default_runs)
@@ -405,7 +554,7 @@ def _write_mcp_config() -> Path:
     # local iteration unchanged.
     image = os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev")
     code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
-    docker_args = [
+    args = [
         "run", "--rm", "-i",
         "-v", f"{runs_dir}:/runs",
         "-v", f"{measures_dir}:/measures",
@@ -418,15 +567,21 @@ def _write_mcp_config() -> Path:
     # from client-side blocking would contaminate behavior) — see
     # docs/plans/plan-benchmark-reviewer-response.md D3.
     if os.environ.get("LLM_TESTS_ARM") == "noskills":
-        docker_args += ["-e", "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1"]
-    docker_args += [image, "openstudio-mcp"]
-    config = {"mcpServers": {"openstudio": {"command": "docker", "args": docker_args}}}
+        args += ["-e", "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1"]
+    args += [image, "openstudio-mcp"]
+    return args
+
+
+def _write_mcp_config() -> Path:
+    """Write temporary MCP config for Docker stdio transport (claude backend)."""
+
+    config = {"mcpServers": {"openstudio": {"command": "docker",
+                                            "args": _docker_mcp_args()}}}
     tmpdir = Path(tempfile.mkdtemp(prefix="llm-test-"))
     path = tmpdir / "mcp.json"
     path.write_text(json.dumps(config))
     return path
 
 
-# Provider name -> backend callable (same signature as run_agent). The codex
-# adapter registers here when the cross-provider work lands.
-_BACKENDS = {"claude": _run_claude}
+# Provider name -> backend callable (same signature as run_agent)
+_BACKENDS = {"claude": _run_claude, "codex": _run_codex}

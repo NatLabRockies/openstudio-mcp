@@ -90,6 +90,50 @@ def test_claude_result_alias_preserved():
     assert ClaudeResult is AgentResult
 
 
+def test_parse_codex_jsonl_normalizes_to_agent_result():
+    # Validates: codex exec --json events map onto the same AgentResult shape
+    # as claude NDJSON — tool_names/tool_ok/results_for work cross-backend.
+    # Fixture mirrors real codex-cli 0.146.0 output (SPIKE-1, 2026-08-05).
+    from llm.runner import _parse_codex_jsonl
+    raw = _ndjson(
+        {"type": "thread.started", "thread_id": "t"},
+        {"type": "turn.started"},
+        {"type": "item.completed", "item": {
+            "id": "item_0", "type": "agent_message", "text": "working"}},
+        {"type": "item.started", "item": {
+            "id": "item_1", "type": "mcp_tool_call", "server": "openstudio",
+            "tool": "create_baseline_osm", "arguments": {"name": "x"},
+            "result": None, "error": None, "status": "in_progress"}},
+        {"type": "item.completed", "item": {
+            "id": "item_1", "type": "mcp_tool_call", "server": "openstudio",
+            "tool": "create_baseline_osm", "arguments": {"name": "x"},
+            "result": {"content": [{"type": "text",
+                                    "text": '{"ok": true, "osm_path": "/runs/x.osm"}'}],
+                       "structured_content": {"ok": True}},
+            "error": None, "status": "completed"}},
+        {"type": "item.completed", "item": {
+            "id": "item_2", "type": "mcp_tool_call", "server": "openstudio",
+            "tool": "apply_measure", "arguments": {},
+            "result": None,
+            "error": {"message": "user cancelled MCP tool call"},
+            "status": "failed"}},
+        {"type": "item.completed", "item": {
+            "id": "item_3", "type": "agent_message", "text": "Created x."}},
+        {"type": "turn.completed", "usage": {
+            "input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 20}},
+    )
+    r = _parse_codex_jsonl(raw)
+    assert r.tool_names == ["create_baseline_osm", "apply_measure"]
+    assert r.tool_ok("create_baseline_osm") is True
+    assert r.tool_ok("apply_measure") is False  # cancelled -> synthesized ok:false
+    assert r.results_for("create_baseline_osm")[0]["osm_path"] == "/runs/x.osm"
+    assert r.final_text == "Created x."
+    assert r.input_tokens == 100
+    assert r.cache_read_tokens == 40
+    assert r.is_error is False
+    assert r.cost_usd == 0.0  # codex reports tokens, not dollars
+
+
 def test_run_agent_rejects_unknown_provider(monkeypatch):
     # Validates: a typo'd LLM_TESTS_PROVIDER fails loudly instead of silently
     # benchmarking the wrong backend
