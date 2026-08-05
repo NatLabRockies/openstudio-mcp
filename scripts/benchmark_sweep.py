@@ -57,8 +57,11 @@ def preflight(image: str, allow_dirty: bool) -> dict:
     image_id, image_created, repo_digests = (
         inspect.stdout.strip().split("|", 2) + ["", ""])[:3]
 
+    # Compare against the last commit that could change the BAKED image
+    # contents — docs/tests-only commits must not force rebuilds
     head_time = subprocess.run(
-        ["git", "log", "-1", "--format=%cI"],
+        ["git", "log", "-1", "--format=%cI", "--",
+         "mcp_server", "docker", "pyproject.toml"],
         capture_output=True, text=True, cwd=REPO, check=True,
     ).stdout.strip()
     check_image_freshness(image, image_created, head_time)
