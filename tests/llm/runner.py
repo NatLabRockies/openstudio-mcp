@@ -269,12 +269,13 @@ def run_agent(
     allowed_tools: str = "mcp__openstudio__*",
     system_prompt: str | None = None,
     max_turns: int | None = None,
+    use_mcp: bool = True,
 ) -> AgentResult:
     """Run the configured agent backend and return a normalized AgentResult.
 
-    Backend selected by LLM_TESTS_PROVIDER (default "claude"). The codex
-    adapter lands with the cross-provider work; unknown providers fail loudly
-    rather than silently benchmarking the wrong model.
+    Backend selected by LLM_TESTS_PROVIDER (default "claude"). use_mcp=False
+    omits the MCP server entirely (Arm C codegen baseline — the agent gets
+    only shell/file tools and must script the SDK itself).
     """
     provider = os.environ.get("LLM_TESTS_PROVIDER", "claude")
     backend = _BACKENDS.get(provider)
@@ -283,7 +284,7 @@ def run_agent(
             f"Unknown LLM_TESTS_PROVIDER '{provider}' — known: {sorted(_BACKENDS)}")
     return backend(
         prompt, model=model, timeout=timeout, allowed_tools=allowed_tools,
-        system_prompt=system_prompt, max_turns=max_turns,
+        system_prompt=system_prompt, max_turns=max_turns, use_mcp=use_mcp,
     )
 
 
@@ -294,11 +295,12 @@ def run_claude(
     allowed_tools: str = "mcp__openstudio__*",
     system_prompt: str | None = None,
     max_turns: int | None = None,
+    use_mcp: bool = True,
 ) -> AgentResult:
     """Compat wrapper — existing tests call run_claude; dispatches run_agent."""
     return run_agent(
         prompt, model=model, timeout=timeout, allowed_tools=allowed_tools,
-        system_prompt=system_prompt, max_turns=max_turns,
+        system_prompt=system_prompt, max_turns=max_turns, use_mcp=use_mcp,
     )
 
 
@@ -309,6 +311,7 @@ def _run_claude(
     allowed_tools: str = "mcp__openstudio__*",
     system_prompt: str | None = None,
     max_turns: int | None = None,
+    use_mcp: bool = True,
 ) -> AgentResult:
     """Claude Code CLI backend.
 
@@ -319,19 +322,19 @@ def _run_claude(
     global _last_result
     model = model or os.environ.get("LLM_TESTS_MODEL", "sonnet")
     system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
-    mcp_config = _write_mcp_config()
 
     cmd = [
         "claude", "-p", prompt,
         "--output-format", "stream-json",
         "--verbose",
-        "--mcp-config", str(mcp_config),
         "--model", model,
         "--dangerously-skip-permissions",
         "--no-session-persistence",
         "--allowedTools", allowed_tools,
         "--system-prompt", system_prompt,
     ]
+    if use_mcp:
+        cmd += ["--mcp-config", str(_write_mcp_config())]
     if max_turns:
         cmd.extend(["--max-turns", str(max_turns)])
 
@@ -388,6 +391,7 @@ def _run_codex(
     allowed_tools: str = "mcp__openstudio__*",
     system_prompt: str | None = None,
     max_turns: int | None = None,
+    use_mcp: bool = True,
 ) -> AgentResult:
     """codex exec backend (SPIKE-1 verified 2026-08-05, codex-cli 0.146.0).
 
@@ -407,15 +411,18 @@ def _run_codex(
     system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
     full_prompt = f"{system_prompt}\n\n{prompt}"
 
-    docker_args_toml = json.dumps(_docker_mcp_args())  # JSON array is valid TOML
     cmd = [
         _find_codex(), "exec", "--json", "--ephemeral",
         "--skip-git-repo-check", "--ignore-user-config",
         "--dangerously-bypass-approvals-and-sandbox",
         "--color", "never",
-        "-c", 'mcp_servers.openstudio.command="docker"',
-        "-c", f"mcp_servers.openstudio.args={docker_args_toml}",
     ]
+    if use_mcp:
+        docker_args_toml = json.dumps(_docker_mcp_args())  # JSON array is valid TOML
+        cmd += [
+            "-c", 'mcp_servers.openstudio.command="docker"',
+            "-c", f"mcp_servers.openstudio.args={docker_args_toml}",
+        ]
     if model:
         cmd += ["-m", model]
     cmd.append(full_prompt)
