@@ -548,11 +548,15 @@ PROGRESSIVE_CASES = [
         "L3": "Get the plant loop details using get_plant_loop_details.",
     },
     {
+        # get_thermal_zone_details is accepted: it returns air_loop_hvac +
+        # equipment count, a legitimate answer path (pilot-1 finding —
+        # sonnet consistently chose it). The bare zone LIST is not accepted.
         "id": "zone_hvac",
         "needs_model": True,
         "needs_hvac": True,
         "expected": ["list_zone_hvac_equipment", "get_zone_hvac_details",
-                     "get_air_loop_details", "list_air_loops"],
+                     "get_air_loop_details", "list_air_loops",
+                     "get_thermal_zone_details"],
         "L1": "What HVAC serves the first zone?",
         "L2": "List the zone HVAC equipment and the terminal serving the "
               "first thermal zone.",
