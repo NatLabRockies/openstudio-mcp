@@ -11,10 +11,9 @@ Expected results (SystemD_baseline + Boston weather):
 """
 from __future__ import annotations
 
-import re
-
 import pytest
 
+from .conftest import summary_metric_euis
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
@@ -54,7 +53,6 @@ def test_fourpipe_beam_retrofit_e2e():
 
     result = run_claude(prompt, timeout=900, max_turns=45)
     tool_names = result.tool_names
-    final = result.final_text.lower()
 
     # --- 1. Tool chain ---
     for tool in ["load_osm_model", "change_building_location",
@@ -100,17 +98,22 @@ def test_fourpipe_beam_retrofit_e2e():
         f"No argument has description field. Args: {args}"
     )
 
-    # --- 5. EUI plausibility from final text ---
-    eui_numbers = re.findall(r'(\d+\.?\d*)\s*(?:kbtu|kbtu/ft)', final)
-    if not eui_numbers:
-        eui_numbers = re.findall(r'eui[^0-9]*(\d+\.?\d*)', final)
-    if eui_numbers:
-        for eui_str in eui_numbers:
-            eui = float(eui_str)
-            assert 15 <= eui <= 60, (
-                f"EUI {eui} outside plausible range [15-60] kBtu/ft2. "
-                f"Text: {result.final_text[:500]}"
-            )
+    # --- 5. EUI pinned references from tool results (not agent prose) ---
+    # SystemD_baseline + Boston, measured 2026-03-13 Claude Desktop session:
+    # baseline 28.21 kBtu/ft2, four-pipe-beam retrofit 28.44 (+0.8%).
+    # Re-pin on OpenStudio version bump only.
+    euis = summary_metric_euis(result)
+    assert len(euis) >= 2, (
+        f"Expected baseline + retrofit EUIs from extract_summary_metrics "
+        f"results, got {euis} — a simulation likely failed. "
+        f"Text: {result.final_text[:300]}"
+    )
+    assert euis[0] == pytest.approx(28.21, rel=0.05), (
+        f"Baseline EUI {euis[0]:.2f} outside 5% of pinned 28.21 kBtu/ft2"
+    )
+    assert euis[-1] == pytest.approx(28.44, rel=0.05), (
+        f"Retrofit EUI {euis[-1]:.2f} outside 5% of pinned 28.44 kBtu/ft2"
+    )
 
     # --- 6. No error ---
     assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"

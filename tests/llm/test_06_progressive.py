@@ -38,6 +38,11 @@ BOSTON_EPW = (
 FLOORPLAN = "/test-assets/sddc_office/floorplan.json"
 
 # (id, needs_model, expected_tools, L1_prompt, L2_prompt, L3_prompt)
+#
+# Optional "expected_args": {level: {tool: {arg: value | (value, rel_tol)}}}.
+# Asserted on the FIRST call to that tool, only at levels whose prompt states
+# the value unambiguously, and only when that tool was the one called (cases
+# satisfied via an alternative accepted tool skip the arg check).
 PROGRESSIVE_CASES = [
     {
         "id": "import_floorplan",
@@ -55,6 +60,10 @@ PROGRESSIVE_CASES = [
         "L1": "Add HVAC to the building.",
         "L2": "Add a VAV reheat system (System 7) to all zones.",
         "L3": "Add System 7 VAV reheat to all zones using add_baseline_system.",
+        "expected_args": {
+            "L2": {"add_baseline_system": {"system_type": 7}},
+            "L3": {"add_baseline_system": {"system_type": 7}},
+        },
     },
     {
         "id": "view_model",
@@ -124,6 +133,10 @@ PROGRESSIVE_CASES = [
         "L2": "Raise the cooling setpoint by 2 degrees F.",
         "L3": "Adjust the thermostat setpoints using adjust_thermostat_setpoints. "
               "Raise cooling by 2F.",
+        "expected_args": {
+            "L2": {"adjust_thermostat_setpoints": {"cooling_offset_f": (2.0, 0.001)}},
+            "L3": {"adjust_thermostat_setpoints": {"cooling_offset_f": (2.0, 0.001)}},
+        },
     },
     {
         "id": "list_spaces",
@@ -160,6 +173,10 @@ PROGRESSIVE_CASES = [
         "L2": "Set the boiler's nominal thermal efficiency to 0.92.",
         "L3": "Use set_object_property to set nominalThermalEfficiency to 0.92 "
               "on the BoilerHotWater.",
+        "expected_args": {
+            "L2": {"set_object_property": {"value": (0.92, 0.001)}},
+            "L3": {"set_object_property": {"value": (0.92, 0.001)}},
+        },
     },
     {
         "id": "list_dynamic_type",
@@ -256,6 +273,10 @@ PROGRESSIVE_CASES = [
         "L1": "Add windows to the building.",
         "L2": "Set the window-to-wall ratio to 40% on all facades.",
         "L3": "Set the window to wall ratio to 0.4 using set_window_to_wall_ratio.",
+        "expected_args": {
+            "L2": {"set_window_to_wall_ratio": {"ratio": (0.4, 0.001)}},
+            "L3": {"set_window_to_wall_ratio": {"ratio": (0.4, 0.001)}},
+        },
     },
     {
         "id": "replace_windows",
@@ -289,9 +310,14 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "expected": ["create_people_definition", "create_lights_definition"],
         "L1": "Add people and lighting to the office spaces.",
-        "L2": "Create a people load of 0.05 people/sqft and lighting at 10 W/sqft.",
+        "L2": "Create a people load of 0.05 people per square meter and "
+              "lighting at 10 W per square meter.",
         "L3": "Create a people definition using create_people_definition with "
-              "people_per_floor_area 0.05.",
+              "people_per_area 0.05.",
+        "expected_args": {
+            "L2": {"create_people_definition": {"people_per_area": (0.05, 0.001)}},
+            "L3": {"create_people_definition": {"people_per_area": (0.05, 0.001)}},
+        },
     },
     # --- Plant loops ---
     {
@@ -301,6 +327,11 @@ PROGRESSIVE_CASES = [
         "L1": "Create a hot water heating loop.",
         "L2": "Create a plant loop for hot water heating with a 82C design temp.",
         "L3": "Create a plant loop using create_plant_loop with loop_type heating.",
+        "expected_args": {
+            "L2": {"create_plant_loop": {"loop_type": "Heating",
+                                         "design_exit_temp_c": (82.0, 0.001)}},
+            "L3": {"create_plant_loop": {"loop_type": "Heating"}},
+        },
     },
     # --- Schedules & space types ---
     {
@@ -327,6 +358,12 @@ PROGRESSIVE_CASES = [
         "L1": "Set the simulation to run for a full year.",
         "L2": "Set the run period from January 1 to December 31.",
         "L3": "Set the run period using set_run_period with start 1/1 end 12/31.",
+        "expected_args": {
+            "L2": {"set_run_period": {"begin_month": 1, "begin_day": 1,
+                                      "end_month": 12, "end_day": 31}},
+            "L3": {"set_run_period": {"begin_month": 1, "begin_day": 1,
+                                      "end_month": 12, "end_day": 31}},
+        },
     },
     {
         "id": "ideal_air",
@@ -399,6 +436,11 @@ PROGRESSIVE_CASES = [
         "L1": "Replace the air terminals with cooling-only chilled beams.",
         "L2": "Replace the air terminals on the air loop with CooledBeam type using replace_air_terminals.",
         "L3": "Use replace_air_terminals with terminal_type='CooledBeam'.",
+        "expected_args": {
+            "L1": {"replace_air_terminals": {"terminal_type": "CooledBeam"}},
+            "L2": {"replace_air_terminals": {"terminal_type": "CooledBeam"}},
+            "L3": {"replace_air_terminals": {"terminal_type": "CooledBeam"}},
+        },
     },
     {
         "id": "replace_terminals_four_pipe_beam",
@@ -408,6 +450,11 @@ PROGRESSIVE_CASES = [
         "L1": "Replace the air terminals with 4-pipe chilled beams that provide both heating and cooling.",
         "L2": "Replace the air terminals on the air loop with FourPipeBeam type using replace_air_terminals.",
         "L3": "Use replace_air_terminals with terminal_type='FourPipeBeam'.",
+        "expected_args": {
+            "L1": {"replace_air_terminals": {"terminal_type": "FourPipeBeam"}},
+            "L2": {"replace_air_terminals": {"terminal_type": "FourPipeBeam"}},
+            "L3": {"replace_air_terminals": {"terminal_type": "FourPipeBeam"}},
+        },
     },
     {
         "id": "measure_replace_terminals",
@@ -455,6 +502,7 @@ for case in PROGRESSIVE_CASES:
             "needs_run": case.get("needs_run", False),
             "prompt": case[level],
             "expected": case["expected"],
+            "expected_args": case.get("expected_args", {}).get(level, {}),
         })
 
 
@@ -490,7 +538,51 @@ def test_progressive(case):
     result = run_claude(prompt, timeout=timeout)
     tool_names = result.tool_names
 
-    assert any(t in case["expected"] for t in tool_names), (
+    matched = [t for t in tool_names if t in case["expected"]]
+    assert matched, (
         f"[{case['case_id']} {case['level']}] "
         f"Expected one of {case['expected']}, got: {tool_names}"
     )
+
+    # Right tool called AND its first call succeeded (ok:false = tool_error)
+    assert result.tool_ok(matched[0]) is not False, (
+        f"[{case['case_id']} {case['level']}] "
+        f"{matched[0]} was called but returned ok:false"
+    )
+
+    _assert_expected_args(case, result)
+
+
+def _assert_expected_args(case, result):
+    """Check pinned argument values on the first call to each spec'd tool.
+
+    Skips tools the agent never called — the case may have been satisfied
+    via an alternative accepted tool, which the expected-tool assert covers.
+    """
+    prefix = "mcp__openstudio__"
+    for tool, spec in case["expected_args"].items():
+        calls = [c for c in result.mcp_tool_calls
+                 if c["tool"].removeprefix(prefix) == tool]
+        if not calls:
+            continue
+        got_input = calls[0]["input"]
+        for arg, want in spec.items():
+            got = got_input.get(arg)
+            label = f"[{case['case_id']} {case['level']}] {tool}.{arg}"
+            if isinstance(want, tuple):
+                target, rel = want
+                try:
+                    got_num = float(got)
+                except (TypeError, ValueError):
+                    got_num = None
+                assert got_num == pytest.approx(target, rel=rel), (
+                    f"{label} expected ~{target}, got {got!r}"
+                )
+            elif isinstance(want, str) and isinstance(got, str):
+                # Case-insensitive: casing correctness is the TOOL's contract —
+                # a casing the tool rejects already fails the tool_ok assert.
+                assert got.lower() == want.lower(), (
+                    f"{label} expected {want!r}, got {got!r}"
+                )
+            else:
+                assert got == want, f"{label} expected {want!r}, got {got!r}"

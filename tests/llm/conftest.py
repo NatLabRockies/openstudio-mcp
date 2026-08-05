@@ -138,6 +138,22 @@ def sim_run_exists() -> bool:
     return get_sim_run_id() is not None
 
 
+def summary_metric_euis(result) -> list[float]:
+    """EUI values (kBtu/ft2) from extract_summary_metrics calls, in call order.
+
+    Reads actual tool RESULTS (ClaudeResult.results_for), not the agent's
+    prose — a failed sim yields null metrics and is excluded, so callers can
+    assert real simulation outcomes.
+    """
+    euis = []
+    for r in result.results_for("extract_summary_metrics"):
+        metrics = r.get("metrics")
+        eui = metrics.get("eui_kBtu_ft2") if isinstance(metrics, dict) else None
+        if isinstance(eui, (int, float)):
+            euis.append(float(eui))
+    return euis
+
+
 # File where test_01_setup saves the retrofit run_id for compare_runs tests
 _RETROFIT_RUN_ID_FILE = _RUNS_DIR / "llm-test-retrofit-run-id.txt"
 RETROFIT_RUN_ID_FILE = "/runs/llm-test-retrofit-run-id.txt"

@@ -138,15 +138,14 @@ class ClaudeResult:
                 results[block.get("tool_use_id", "")] = parsed
         return results
 
-    def tool_ok(self, name: str) -> bool | None:
-        """ok flag of the FIRST call to `name` (prefix-stripped match).
+    def results_for(self, name: str) -> list[dict]:
+        """Parsed results of every call to `name` (prefix-stripped), in call order.
 
-        Returns None if the tool was never called or its result carries no
-        boolean ok flag — asserts should use `is not False` so undeterminable
-        results don't fail.
+        Calls whose result never arrived (e.g. cut off by timeout) are skipped.
         """
         prefix = "mcp__openstudio__"
         results = self.tool_results
+        out = []
         for msg in self.messages:
             if msg.get("type") != "assistant":
                 continue
@@ -157,9 +156,22 @@ class ClaudeResult:
                     and block["name"].removeprefix(prefix) == name
                 ):
                     res = results.get(block.get("id", ""))
-                    ok = res.get("ok") if res else None
-                    return ok if isinstance(ok, bool) else None
-        return None
+                    if res is not None:
+                        out.append(res)
+        return out
+
+    def tool_ok(self, name: str) -> bool | None:
+        """ok flag of the FIRST call to `name` (prefix-stripped match).
+
+        Returns None if the tool was never called or its result carries no
+        boolean ok flag — asserts should use `is not False` so undeterminable
+        results don't fail.
+        """
+        results = self.results_for(name)
+        if not results:
+            return None
+        ok = results[0].get("ok")
+        return ok if isinstance(ok, bool) else None
 
     @property
     def final_text(self) -> str:
