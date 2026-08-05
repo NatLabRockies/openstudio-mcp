@@ -36,7 +36,10 @@ BOSTON_EPW = (
     "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 )
 
-FLOORPLAN = "/test-assets/sddc_office/floorplan.json"
+# /inputs (not /test-assets): both mount tests/assets, but only /inputs is in
+# the server's _SHARED_READ_ROOTS — /test-assets paths fail is_path_allowed
+# (pilot-3 finding; historically masked by tool-name-only asserts)
+FLOORPLAN = "/inputs/sddc_office/floorplan.json"
 
 # (id, needs_model, expected_tools, L1_prompt, L2_prompt, L3_prompt)
 #
@@ -81,10 +84,14 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "expected": ["create_python_plugin", "list_ems_actuators"],
         "L1": "Add custom control logic that sets the heating setpoint back at night.",
-        "L2": "Create a Python EMS plugin that overrides the heating setpoint "
-              "schedule to 15.6 C outside 6am-6pm.",
-        "L3": "Use create_python_plugin with the schedule_override template to set "
-              "the heating schedule to 15.6 outside hours 6-18.",
+        # Explicit names at L2/L3: agents sometimes save their plugin into the
+        # shared baseline model, and a later level reusing the same default
+        # name hits "already exists" (pilot-3 state-leak finding)
+        "L2": "Create a Python EMS plugin named 'ems_setback_l2' that overrides "
+              "the heating setpoint schedule to 15.6 C outside 6am-6pm.",
+        "L3": "Use create_python_plugin (name 'ems_setback_l3') with the "
+              "schedule_override template to set the heating schedule to 15.6 "
+              "outside hours 6-18.",
     },
     {
         "id": "set_weather",
@@ -419,16 +426,16 @@ PROGRESSIVE_CASES = [
               "/measures/local/custom/my_measure.",
     },
     {
-        # /test-assets is the harness mount of tests/assets — the old
-        # /repo/... path was never mounted by the LLM harness, so apply
-        # always failed silently before tool_ok asserts existed.
+        # /inputs is the allowed-read mount of tests/assets (the old /repo
+        # and /test-assets paths both fail in the harness: /repo unmounted,
+        # /test-assets not in _SHARED_READ_ROOTS).
         "id": "apply_existing_measure",
         "needs_model": True,
         "expected": ["apply_measure", "list_measure_arguments"],
-        "L1": "Apply the set_building_name measure from /test-assets/measures/.",
-        "L2": "Apply the measure at /test-assets/measures/set_building_name "
+        "L1": "Apply the set_building_name measure from /inputs/measures/.",
+        "L2": "Apply the measure at /inputs/measures/set_building_name "
               "with building_name 'New Name'.",
-        "L3": "Apply the measure at /test-assets/measures/set_building_name "
+        "L3": "Apply the measure at /inputs/measures/set_building_name "
               "using apply_measure with arguments {building_name: 'New Name'}.",
     },
     # --- CooledBeam + zone priority ---
@@ -755,12 +762,17 @@ def test_progressive(case, request):
             f"Expected one of {case['expected']}, got: {tool_names}",
         )
 
-    # Right tool called AND its first call succeeded (ok:false = tool_error)
-    if result.tool_ok(matched[0]) is False:
+    # Right tool called AND some accepted path succeeded. With multi-tool
+    # accept sets, any called accepted tool whose FIRST call did not fail
+    # counts — penalizing only the first-called member scored valid richer
+    # workflows as failures (pilot-3: skill guidance led codex through
+    # list_ems_actuators, which errors informatively on a no-design-days
+    # model, before create_python_plugin succeeded).
+    if all(result.tool_ok(t) is False for t in matched):
         fail_with_mode(
             request, "tool_error",
-            f"[{case['case_id']} {case['level']}] "
-            f"{matched[0]} was called but returned ok:false",
+            f"[{case['case_id']} {case['level']}] accepted tool(s) "
+            f"{matched} called but every first call returned ok:false",
         )
 
     _assert_expected_args(case, result, request)
