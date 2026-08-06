@@ -24,6 +24,7 @@ from .conftest import (
     baseline_model_exists, baseline_hvac_model_exists, ems_model_exists,
     fail_with_mode, get_retrofit_run_id, get_sim_run_id, get_tier,
 )
+from .grading import host as grading_host
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
@@ -749,6 +750,11 @@ def test_progressive(case, request):
         if not baseline_model_exists():
             pytest.skip("Baseline model not found — run test_01_setup first")
         prompt = LOAD + prompt
+    # Outcome-graded mutation cases must leave an artifact: no autosave
+    # exists, and save-AS (not save-in-place) keeps shared fixtures clean
+    if (case["case_id"] in grading_host.SAVE_REQUIRED
+            and (case["case_id"], case["level"]) not in grading_host.ROUTING_ONLY):
+        prompt += grading_host.save_instruction(case["case_id"], case["level"])
     prompt += SUFFIX
 
     # 120s base is a load-bearing benchmark parameter (L1 multi-step rows run
@@ -780,6 +786,7 @@ def test_progressive(case, request):
         # paper can report how many tool_error failures were recoveries.
         if any(r.get("ok") is True for t in matched for r in result.results_for(t)):
             request.node.user_properties.append(("recovered", True))
+            _record_outcome_facts(case, result, request)
         fail_with_mode(
             request, "tool_error",
             f"[{case['case_id']} {case['level']}] accepted tool(s) "
@@ -787,6 +794,7 @@ def test_progressive(case, request):
         )
 
     _assert_expected_args(case, result, request)
+    _grade_outcome(case, result, request)
 
 
 def _assert_expected_args(case, result, request):
@@ -823,3 +831,51 @@ def _assert_expected_args(case, result, request):
             elif got != want:
                 fail_with_mode(request, "wrong_args",
                                f"{label} expected {want!r}, got {got!r}")
+
+
+def _create_measure_name(result) -> str | None:
+    """Name argument of the agent's first create_measure call (any outcome)."""
+    prefix = "mcp__openstudio__"
+    for call in result.mcp_tool_calls:
+        if call["tool"].removeprefix(prefix) == "create_measure":
+            name = call["input"].get("name")
+            if name:
+                return str(name)
+    return None
+
+
+def _outcome_for(case, result):
+    measure_name = None
+    if case["case_id"] == "measure_replace_terminals":
+        measure_name = _create_measure_name(result)
+    return grading_host.grade_case(case["case_id"], case["level"],
+                                   measure_name=measure_name)
+
+
+def _record_outcome_facts(case, result, request):
+    """Facts-only recording for recovered rows — verdict stays tool_error."""
+    if case["case_id"] not in grading_host.GRADED_CASES:
+        return
+    outcome = _outcome_for(case, result)
+    if outcome is not None:
+        request.node.user_properties.append(("outcome", outcome))
+
+
+def _grade_outcome(case, result, request):
+    """Gate 2: deterministic artifact grading (plan-outcome-grading.md).
+
+    Runs only after the routing gates pass; facts + verdict land in the
+    benchmark row via the "outcome" user property either way.
+    """
+    if case["case_id"] not in grading_host.GRADED_CASES:
+        return
+    outcome = _outcome_for(case, result)
+    if outcome is None:
+        return  # routing-only (case, level)
+    request.node.user_properties.append(("outcome", outcome))
+    if not outcome["outcome_pass"]:
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"[{case['case_id']} {case['level']}] outcome: "
+            + "; ".join(outcome["reasons"]),
+        )

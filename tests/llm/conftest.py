@@ -445,15 +445,19 @@ def pytest_runtest_logreport(report):
     from .runner import _last_result
     stats = _last_result.stats if _last_result else {}
 
-    # Classify failure mode: explicit fail_with_mode tag wins, then heuristics
+    # Classify failure mode: explicit fail_with_mode tag wins, then heuristics.
+    # "outcome" (facts + rubric verdict, tests/llm/grading/) is recorded for
+    # passed AND failed rows — passing-row facts enable post-hoc re-scoring.
     failure_mode = None
     recovered = False
-    if not report.passed:
-        for prop_name, prop_value in getattr(report, "user_properties", []):
-            if prop_name == "failure_mode":
-                failure_mode = prop_value
-            elif prop_name == "recovered":
-                recovered = bool(prop_value)
+    outcome = None
+    for prop_name, prop_value in getattr(report, "user_properties", []):
+        if prop_name == "outcome":
+            outcome = prop_value
+        elif not report.passed and prop_name == "failure_mode":
+            failure_mode = prop_value
+        elif not report.passed and prop_name == "recovered":
+            recovered = bool(prop_value)
     if failure_mode is None and not report.passed and _last_result:
         if _last_result.is_error and "Timed out" in _last_result.final_text:
             failure_mode = "timeout"
@@ -474,6 +478,8 @@ def pytest_runtest_logreport(report):
         entry["failure_mode"] = failure_mode
     if recovered:
         entry["recovered"] = True
+    if outcome is not None:
+        entry["outcome"] = outcome
     _benchmark_results.append(entry)
 
     # Persist NDJSON log for debugging

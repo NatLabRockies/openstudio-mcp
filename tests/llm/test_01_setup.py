@@ -21,13 +21,16 @@ import re
 
 import pytest
 
-from .conftest import BASELINE_MODEL, save_retrofit_run_id, save_sim_run_id
+from .conftest import (
+    BASELINE_MODEL, fail_with_mode, save_retrofit_run_id, save_sim_run_id,
+)
+from .grading import host as grading_host
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
 
 
-def test_create_baseline_model():
+def test_create_baseline_model(request):
     """Create a 10-zone baseline model and save it for later tests."""
     # Validates: Claude uses create_baseline_osm (not create_example_osm or raw IDF) for baseline models
     result = run_claude(
@@ -42,9 +45,10 @@ def test_create_baseline_model():
     )
 
     assert not result.is_error, f"Claude reported error: {result.final_text}"
+    _grade_setup(request, "create_baseline_model")
 
 
-def test_create_baseline_with_hvac():
+def test_create_baseline_with_hvac(request):
     """Create baseline + System 7 HVAC for component inspection tests."""
     # Validates: Claude uses create_baseline_osm with ashrae_sys_num for HVAC-equipped baseline
     result = run_claude(
@@ -56,6 +60,16 @@ def test_create_baseline_with_hvac():
         f"create_baseline_osm not called. Tools: {result.tool_names}"
     )
     assert not result.is_error, f"Claude reported error: {result.final_text}"
+    _grade_setup(request, "create_baseline_with_hvac")
+
+
+def _grade_setup(request, case_id: str):
+    """Gate 2 for setup creation cases — see plan-outcome-grading.md."""
+    outcome = grading_host.grade_case(case_id, "setup")
+    request.node.user_properties.append(("outcome", outcome))
+    if not outcome["outcome_pass"]:
+        fail_with_mode(request, "outcome_mismatch",
+                       f"[{case_id}] outcome: " + "; ".join(outcome["reasons"]))
 
 
 def test_create_example_model():

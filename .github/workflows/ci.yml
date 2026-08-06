@@ -275,7 +275,8 @@ jobs:
               # + remote HTTP transport, session isolation, token auth & session eviction (no-sim, fast)
               # + measure discovery/BCL download + per-tenant measures isolation (HTTP)
               # + python_ems (plugin templates, actuator discovery, plugin sims)
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py tests/test_measure_discovery.py tests/test_python_ems.py tests/test_knowledge_ablation.py"
+              # + outcome grader (LLM benchmark gate-2 ground truth, ~7s)
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py tests/test_measure_discovery.py tests/test_python_ems.py tests/test_knowledge_ablation.py tests/test_outcome_grader_integration.py"
               EXTRA_ENV=""
               ;;
             3)

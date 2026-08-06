@@ -12,6 +12,8 @@ pools repeats per (model, arm, tier), and emits under results/<sweep_id>/paper/:
                    duration, tokens — the ablation *mechanism* evidence
   flips.md         paired full-vs-noskills discordant tasks per model
                    (skill-lift / skill-drag) — where the knowledge layer acts
+  outcome.md       gate-2 outcome grading per model/arm/case: routing-passed
+                   vs outcome-passed and the mismatch gap
 
 Refuses to merge files whose run_config image identity differs (paper runs
 must all come from one pinned artifact) — override with --ignore-digest.
@@ -89,6 +91,8 @@ def aggregate(runs: list[dict]) -> dict:
                                  "tool_calls": 0, "duration_s": 0.0,
                                  "input_tokens": 0, "output_tokens": 0})
     skips = defaultdict(int)                              # (model, arm)
+    outcomes = defaultdict(lambda: {"graded": 0, "outcome_pass": 0,
+                                    "ungradable": 0})    # (model, arm, case)
 
     for run in runs:
         model, arm = _key(run)
@@ -123,6 +127,19 @@ def aggregate(runs: list[dict]) -> dict:
                 if t.get("recovered"):
                     mode += " (recovered)"
                 modes[(model, arm, mode)] += 1
+            # Gate-2 pool: rows that reached outcome grading (routing passed).
+            # Recovered rows carry facts but keep their tool_error verdict —
+            # excluded here; raw facts stay in benchmark.json for analysis.
+            o = t.get("outcome")
+            if o is not None and (passed or
+                                  t.get("failure_mode") == "outcome_mismatch"):
+                case = (cl[0] if cl else t["test_id"].split("::")[-1])
+                oc = outcomes[(model, arm, case)]
+                oc["graded"] += 1
+                oc["outcome_pass"] += int(bool(o.get("outcome_pass")))
+                if any(str(r).startswith("ungradable")
+                       for r in o.get("reasons", [])):
+                    oc["ungradable"] += 1
 
     unstable = {}
     for (model, arm, test_id), outcomes in tasks.items():
@@ -132,7 +149,8 @@ def aggregate(runs: list[dict]) -> dict:
 
     return {"tiers": dict(tiers), "levels": dict(levels), "modes": dict(modes),
             "unstable": unstable, "repeats": dict(repeats),
-            "behavior": dict(behav), "tasks": dict(tasks), "skips": dict(skips)}
+            "behavior": dict(behav), "tasks": dict(tasks), "skips": dict(skips),
+            "outcomes": dict(outcomes)}
 
 
 def _pct_ci(s: int, n: int) -> str:
@@ -235,6 +253,23 @@ def write_artifacts(agg: dict, out: Path) -> None:
     if not agg["unstable"]:
         lines.append("| (none) | | | |")
     (out / "stability.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    lines = ["# Outcome grading (gate 2) — routing-passed rows only", "",
+             "Routing pass = accepted tool called + first call ok. Outcome",
+             "pass = the artifact did the job (rubric v1 over recorded facts;",
+             "re-scorable post-hoc — plan-outcome-grading.md). Mismatch is the",
+             "routing-passed-but-wrong-artifact gap per model/arm/case.", "",
+             "| Model | Arm | Case | Routing-passed | Outcome-passed "
+             "| Mismatch | Ungradable |",
+             "|---|---|---|---|---|---|---|"]
+    for (model, arm, case), c in sorted(agg["outcomes"].items()):
+        lines.append(
+            f"| {model} | {arm} | {case} | {c['graded']} "
+            f"| {c['outcome_pass']} | {c['graded'] - c['outcome_pass']} "
+            f"| {c['ungradable']} |")
+    if not agg["outcomes"]:
+        lines.append("| (no graded rows) | | | | | | |")
+    (out / "outcome.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     lines = ["# Failure modes per model/arm", "",
              "| Model | Arm | Mode | Count |", "|---|---|---|---|"]
