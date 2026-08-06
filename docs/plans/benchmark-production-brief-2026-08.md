@@ -25,11 +25,26 @@ archived data (see the superseded-claims register below). Do not cite them.
    escape annotations to docs/benchmarks/ (pattern:
    pilot-archive-2026-08; write a README with image digest + harness sha).
 
+## Models (resolved IDs, verified from pilot transcripts 2026-08-06)
+
+- `sonnet` -> **claude-sonnet-5** (UNDATED id — alias could move to a newer
+  snapshot mid-run; launch with the most specific id available and record
+  the resolved id from each leg's ndjson into the archive README)
+- `haiku` -> **claude-haiku-4-5-20251001** (dated snapshot, 4.5 GENERATION —
+  the haiku/sonnet contrast spans tier AND generation; say so in the paper)
+- codex: gpt-5.4, gpt-5.4-mini (ChatGPT-account auth; gpt-5.2-codex
+  rejected; see handoff-05 for codex CLI mechanics)
+
 ## Matrix
 
 - claude sonnet + haiku x {full, noskills, nodiscovery,
   nodiscovery-noskills, nohost} x3 = 30 legs (~8-25 min each observed)
 - codex gpt-5.4 + gpt-5.4-mini x {full, noskills} x3 = 12 legs
+- opus (claude-opus-5, pending decision 5 below): full + noskills x3 =
+  6 legs — completes the Claude 5 pair, adds the top point on the
+  consultation-propensity curve (H2), balances gpt-5.4. Escape data comes
+  free from sandbox metrics in any arm; add opus nodiscovery/nohost later
+  only if the full/noskills data motivates it (sweep is resume-safe).
 - Case set: the 18-hard-case `-k` (setup + import_floorplan, add_hvac,
   python_ems_control, measure_replace_terminals, zone_equipment_priority,
   roof_insulation) unless the scope decision (below) says full suite.
@@ -115,6 +130,8 @@ prod-run legs, not pilot legs.
 3. ToolSearch dose probe (ENABLE_TOOL_SEARCH=auto:N) as an extra arm?
 4. Second non-Anthropic vendor (gemini seam exists, unbuilt) — worth the
    adapter for vendor-generality, or note as limitation?
+5. Include opus (claude-opus-5)? Recommended at reduced scope
+   (full + noskills x3 = 6 legs, ~$150-450 at opus pricing).
 
 ## Analysis deliverables
 
