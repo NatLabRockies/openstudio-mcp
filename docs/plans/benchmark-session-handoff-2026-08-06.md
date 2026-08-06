@@ -186,12 +186,27 @@ Implications:
   legs and later agents can find them (haiku's out-of-band model now sits in
   repo runs/examples/llm-test-baseline/ — gitignored, harmless, left as
   evidence).
-- QUEUED FIX (do NOT apply mid-pilot-5 — legs must share conditions):
-  pass cwd=<per-leg empty scratch dir> to both subprocess.run calls in
-  runner.py (~5 lines). Kills host-dropping persistence AND the
-  answer-leakage realism bug (agents no longer start inside our source).
-  Apply AFTER pilot-5, BEFORE the matrix; footnote the condition change
-  (pilots ran cwd=repo). HTTP mode NOT needed — the leak is agent-side.
+- FIX SHIPPED 2026-08-06 (user decision: everything re-runs after pilots
+  for clean data, so applied immediately; pilot-5 legs BEFORE this commit
+  ran cwd=repo — check run_config git sha for the condition):
+  - Per-TEST empty sandbox cwd (`_agent_cwd()`, under <runs>/agent_cwd/),
+    both backends. Live-smoked: haiku ran fully inside the sandbox.
+  - host_tool_counts / host_tool_call_count / agent_cwd / dropped_files in
+    stats → benchmark.json (escape metric: MCP calls == 0 AND host > 0).
+  - BUILTIN_TOOLS gained "PowerShell" (BUG: Windows PowerShell calls were
+    counted as MCP tool names → escapes scored wrong_tool, not no_mcp_tool)
+    and "LocalShell" (codex command_execution items now parsed — codex host
+    activity was previously INVISIBLE; note codex num_turns now counts
+    shell turns too).
+  - Arm "nohost" (claude-only): --disallowedTools <HOST_TOOLS>. LIVE-SMOKED:
+    blocks Bash/Write even under --dangerously-skip-permissions — haiku
+    apologized and gave up instead of escaping. Escape is STOPPABLE;
+    "does the knowledge layer reduce escapes" = compare escape rates
+    full vs noskills (now measured per test). codex nohost raises.
+  - Windows gotcha: Claude Code's Bash tool shows a %TEMP% sandbox as
+    /tmp/..., which Git Bash resolves to C:\tmp\... — Bash-created files
+    land in that MIRROR. dropped_files scans both roots.
+  HTTP mode NOT needed — the leak was agent-side, not server-side.
 
 ## Nodiscovery arm: LIVE-VERIFIED (smoke, 2026-08-06)
 

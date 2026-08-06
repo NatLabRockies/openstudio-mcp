@@ -228,6 +228,174 @@ def test_leg_env_isolates_measures_dir(tmp_path):
     assert e1["LLM_TESTS_RETRIES"] == "0"
 
 
+def test_powershell_and_localshell_classified_builtin():
+    # Regression: BUILTIN_TOOLS lacked "PowerShell" — on Windows legs the
+    # agent's PowerShell calls were counted as MCP tool names, misclassifying
+    # harness-escape failures as wrong_tool instead of no_mcp_tool
+    raw = _ndjson(
+        _assistant("t1", "PowerShell", {"command": "ls C:/"}),
+        _tool_result("t1", "dir listing"),
+        _assistant("t2", "mcp__openstudio__list_spaces", {}),
+        _tool_result("t2", '{"ok": true, "spaces": []}'),
+        {"type": "result", "result": "done"},
+    )
+    r = _parse_stream_json(raw)
+    assert r.tool_names == ["list_spaces"]
+    assert r.host_tool_counts == {"PowerShell": 1}
+    assert r.stats["host_tool_call_count"] == 1
+
+
+def test_codex_command_execution_visible_to_host_metrics():
+    # Validates: codex command_execution items (host shell) surface as
+    # builtin LocalShell calls — before this, codex host-side activity was
+    # invisible to the harness-escape metric (pilot transcripts show codex
+    # rg'ing the server repo with zero trace in benchmark.json)
+    from llm.runner import _parse_codex_jsonl
+    raw = _ndjson(
+        {"type": "item.completed", "item": {
+            "id": "c1", "type": "command_execution",
+            "command": 'powershell.exe -Command "rg --files"',
+            "aggregated_output": "mcp_server\\config.py\n",
+            "exit_code": 0, "status": "completed"}},
+        {"type": "item.completed", "item": {
+            "id": "m1", "type": "mcp_tool_call", "server": "openstudio",
+            "tool": "list_spaces", "arguments": {},
+            "result": {"content": [{"type": "text", "text": '{"ok": true}'}]},
+            "error": None, "status": "completed"}},
+        {"type": "turn.completed", "usage": {
+            "input_tokens": 5, "cached_input_tokens": 0, "output_tokens": 5}},
+    )
+    r = _parse_codex_jsonl(raw)
+    assert r.tool_names == ["list_spaces"]
+    assert r.host_tool_counts == {"LocalShell": 1}
+    assert r.tool_results["c1"] == {
+        "exit_code": 0, "output": "mcp_server\\config.py\n"}
+
+
+def test_agent_cwd_fresh_empty_unique(monkeypatch, tmp_path):
+    # Validates: each agent invocation gets its own EMPTY sandbox dir under
+    # the leg's runs dir — the anti-escape/anti-leak isolation boundary
+    from llm.runner import _agent_cwd
+    monkeypatch.setenv("LLM_TESTS_RUNS_DIR", str(tmp_path))
+    a, b = _agent_cwd(), _agent_cwd()
+    assert a != b
+    from pathlib import Path
+    for d in (a, b):
+        assert Path(d).is_dir()
+        assert list(Path(d).iterdir()) == [], "sandbox cwd must start empty"
+        assert Path(d).parent == tmp_path / "agent_cwd"
+
+
+def test_run_claude_uses_sandbox_cwd_and_reports_droppings(monkeypatch, tmp_path):
+    # Regression: pilot-5a — agent CLI inherited pytest cwd (the server's own
+    # repo); haiku read our source, authored an out-of-band MCP client, and
+    # dropped artifacts that persisted across legs. cwd must be the sandbox.
+    import llm.runner as runner
+    monkeypatch.setenv("LLM_TESTS_RUNS_DIR", str(tmp_path))
+    monkeypatch.delenv("LLM_TESTS_PROVIDER", raising=False)
+    monkeypatch.delenv("LLM_TESTS_ARM", raising=False)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"], captured["cwd"] = cmd, kwargs.get("cwd")
+        import subprocess
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout='{"type": "result", "result": "ok"}', stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    result = runner.run_claude("hi", use_mcp=False)
+
+    from pathlib import Path
+    cwd = Path(captured["cwd"])
+    assert cwd.parent == tmp_path / "agent_cwd", \
+        f"agent must run in the per-leg sandbox, got {cwd}"
+    assert result.agent_cwd == str(cwd)
+    assert result.stats["dropped_files"] == []
+    (cwd / "escape.txt").write_text("dropped")
+    assert result.stats["dropped_files"] == ["escape.txt"]
+
+
+def test_dropped_files_sees_gitbash_tmp_mirror(monkeypatch, tmp_path):
+    # Regression: live smoke 2026-08-06 — Claude Code's Bash tool presents a
+    # %TEMP% sandbox cwd as /tmp/..., which Git Bash resolves to C:\tmp\...;
+    # the agent's file landed in that mirror and dropped_files missed it
+    import tempfile as _tempfile
+    from pathlib import Path
+
+    import llm.runner as runner
+
+    temp_root = tmp_path / "temp"
+    sandbox = temp_root / "agent_cwd" / "t123"
+    sandbox.mkdir(parents=True)
+    mirror = Path(temp_root.anchor) / "tmp" / "agent_cwd" / "t123"
+    mirror.mkdir(parents=True, exist_ok=True)
+    (mirror / "escaped.txt").write_text("via bash /tmp")
+    monkeypatch.setattr(_tempfile, "gettempdir", lambda: str(temp_root))
+    try:
+        r = runner.AgentResult(messages=[], result={})
+        r.agent_cwd = str(sandbox)
+        assert r.dropped_files == ["escaped.txt"]
+    finally:
+        import contextlib
+        import shutil
+        shutil.rmtree(mirror, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            mirror.parent.rmdir()  # only if we created it and it's now empty
+
+
+def test_run_codex_uses_sandbox_cwd(monkeypatch, tmp_path):
+    # Validates: the codex backend gets the same sandbox isolation as claude
+    import llm.runner as runner
+    monkeypatch.setenv("LLM_TESTS_RUNS_DIR", str(tmp_path))
+    monkeypatch.setenv("LLM_TESTS_CODEX_CMD", "codex-fake")
+    monkeypatch.delenv("LLM_TESTS_ARM", raising=False)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cwd"] = kwargs.get("cwd")
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    result = runner._run_codex("hi", use_mcp=False)
+    from pathlib import Path
+    assert Path(captured["cwd"]).parent == tmp_path / "agent_cwd"
+    assert result.agent_cwd == captured["cwd"]
+
+
+def test_nohost_arm_blocks_host_tools(monkeypatch, tmp_path):
+    # Validates: arm "nohost" removes host-touching tools from claude
+    # (stoppability lever for the harness-escape study) and fails loudly on
+    # codex, which has no per-tool disable
+    import llm.runner as runner
+    monkeypatch.setenv("LLM_TESTS_RUNS_DIR", str(tmp_path))
+    monkeypatch.setenv("LLM_TESTS_ARM", "nohost")
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        import subprocess
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout='{"type": "result", "result": "ok"}', stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    runner._run_claude("hi", use_mcp=False)
+    flag = captured["cmd"].index("--disallowedTools")
+    blocked = captured["cmd"][flag + 1]
+    for tool in ("Bash", "PowerShell", "Read", "Write", "Edit"):
+        assert tool in blocked, f"nohost arm must block {tool}"
+    assert "ToolSearch" not in blocked, "discovery is not host access"
+
+    monkeypatch.setenv("LLM_TESTS_CODEX_CMD", "codex-fake")
+    with pytest.raises(ValueError, match=r"nohost.*claude-only"):
+        runner._run_codex("hi")
+
+    monkeypatch.setenv("LLM_TESTS_ARM", "full")
+    captured.clear()
+    runner._run_claude("hi", use_mcp=False)
+    assert "--disallowedTools" not in captured["cmd"]
+
+
 def test_nodiscovery_arm_plumbing(monkeypatch):
     # Validates: arm "nodiscovery" disables Claude Code's ToolSearch
     # (ENABLE_TOOL_SEARCH=false -> schemas load up-front, client discovery
