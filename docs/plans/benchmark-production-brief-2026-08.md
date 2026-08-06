@@ -70,9 +70,15 @@ Pass these EXACT ids as LLM_TESTS_MODEL (hyphens, not dots):
   5 generation (cleaner than the pilots' sonnet-5/haiku-4.5 mix).
 - codex: gpt-5.4, gpt-5.4-mini (ChatGPT-account auth; gpt-5.2-codex
   rejected; see handoff-05 for codex CLI mechanics)
-- PREFLIGHT: one-prompt smoke per model id before the matrix (catches id
-  typos/entitlement failures cheaply); record each leg's resolved model
-  id from its ndjson into the archive README.
+- PREFLIGHT: ALREADY DONE 2026-08-06 — id smokes for all 5 ids passed
+  (3 claude ids resolve exactly; codex ids accepted — codex --json does
+  not echo the id, CLI acceptance is the check) AND arm verification on
+  sonnet-4-6 (nodiscovery drops ToolSearch/loads all 190 schemas; nohost
+  strips all 13 host tools). Record: results/prod-2026-08/preflight.json
+  (on-disk only, results/ is gitignored — same host). Copy it into
+  results/prod-2026-08b/; re-run smokes only if a model id changes.
+  Still record each leg's resolved model id from its ndjson into the
+  archive README.
 - NOTE: pilots ran claude-sonnet-5 — production sonnet-4-6 results are a
   DIFFERENT MODEL; never compare pilot sonnet numbers to production
   sonnet numbers, even informally.
@@ -80,7 +86,8 @@ Pass these EXACT ids as LLM_TESTS_MODEL (hyphens, not dots):
 ## Matrix (48 legs + 6 sensitivity)
 
 - claude-sonnet-4-6 + claude-haiku-4-5 x {full, noskills, nodiscovery,
-  nodiscovery-noskills, nohost} x3 = 30 legs (~8-25 min each observed)
+  nodiscovery-noskills, nohost} x3 = 30 legs (val legs: 10-12 min for an
+  11-row subset INCLUDING grading; expect ~15-25 min for 18 rows)
 - claude-opus-4-6 x {full, noskills} x3 = 6 legs (reduced scope: mirrors
   codex arms, tops the consultation-propensity curve; expand to the other
   arms later only if data motivates — sweep is resume-safe)
@@ -179,7 +186,13 @@ prod-run legs, not pilot legs.
   "lower-grade models showed great success" under routing-only grading
   because authoring cases only checked syntax acceptance. Measure: the
   outcome.md mismatch column per model x arm x case; compare across
-  tiers. NO pilot evidence exists either way (pilots were routing-only).
+  tiers. Validation evidence (n=1, NON-CITABLE, motivates only):
+  val-grading legs, rubric 1.1 graded rows — haiku 5/8 vs sonnet 8/10;
+  haiku's L1/L2 measures crashed at runtime (OptionalModel unwrap,
+  invented caster) while sonnet passed authoring at all levels; BOTH
+  models failed roof L2/L3 identically (assembly replaced by a bare
+  R-3.75 insulation slab) — some outcome failures are shared, not
+  tier-dependent.
 
 ## Superseded-claims register (do NOT carry into the paper)
 
@@ -209,9 +222,12 @@ prod-run legs, not pilot legs.
 4. Gemini: note as limitation, no adapter.
 5. Opus included as claude-opus-4-6 at reduced scope (full + noskills
    x3); models pinned to 4.x snapshots (see Models).
-6. Grading: two-gate (routing + outcome), rubric v1, facts recorded for
-   post-hoc re-scoring. import_floorplan L1 is routing-only (no file in
-   prompt). Recovered rows carry facts, verdict stays tool_error.
+6. Grading: two-gate (routing + outcome), RUBRIC 1.1 (1.0's roof L1
+   criterion was wrong — rejected the standard insulate-to-R-30 reading;
+   see plan-outcome-grading.md validation section), facts recorded for
+   post-hoc re-scoring (RUBRIC_VERSION stamped per row).
+   import_floorplan L1 is routing-only (no file in prompt). Recovered
+   rows carry facts, verdict stays tool_error, excluded from outcome pool.
 
 ## Analysis deliverables
 
@@ -244,6 +260,13 @@ prod-run legs, not pilot legs.
   transcript/droppings zips; all results JSONs incl. inv4).
 - Live results: results/<sweep-id>/ (gitignored) + %TEMP%/llm-sweep/
   (transcripts; volatile — archive promptly).
+- Validation legs (grading machinery, 2026-08-06): results/val-grading/
+  — haiku + sonnet full, 11-row subset, rubric-1.0 verdicts as recorded
+  (re-scored to 1.1 in plan-outcome-grading.md). NOT citable as
+  findings; archive alongside the discarded results/prod-2026-08/ legs.
+- Aggregate with: python scripts/benchmark_aggregate.py
+  results/prod-2026-08b (emits paper/ incl. outcome.md; t240 sweep
+  aggregated separately).
 - Tracking issues: #118 tool descriptions, #119 error-message hints,
   #120 guide language, #121 advertised-path contract (all open with
   sibling-audit checklists).
