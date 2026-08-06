@@ -215,6 +215,16 @@ _SHARED_READ_ROOTS = [
     SKILLS_DIR.resolve(),
 ]
 
+# Server-bundled weather data (openstudio-standards gem). list_weather_files
+# advertises these paths, so the read allowlist must accept them — a tool
+# must not list paths a sibling tool's gate rejects (issue #121). Read-only
+# baked image data; same version-proof glob the weather skill uses.
+_SHARED_READ_ROOTS += [
+    p.resolve()
+    for p in Path(OSCLI_GEM_PATH).glob(
+        "ruby/*/gems/openstudio-standards-*/data/weather")
+]
+
 
 def user_run_root() -> Path:
     """The caller's private run root, created if missing.

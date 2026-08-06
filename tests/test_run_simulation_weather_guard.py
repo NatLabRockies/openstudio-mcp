@@ -126,3 +126,39 @@ def test_extract_summary_metrics_failed_run_reports_failure():
                 )
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_gem_weather_epws_pass_the_epw_gate():
+    """Every EPW list_weather_files advertises must be usable downstream."""
+    # Regression: list_weather_files listed openstudio-standards gem EPWs
+    # (/var/oscli/...) that _SHARED_READ_ROOTS did not cover, so
+    # change_building_location rejected the server's own suggestions with
+    # "EPW path not allowed" (#121, found live by the nodiscovery smoke)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                listing = unwrap(await s.call_tool("list_weather_files", {}))
+                assert listing["ok"] is True
+                gem_epws = [f for f in listing["weather_files"]
+                            if "/openstudio-standards-" in f["path"]]
+                assert len(gem_epws) >= 50, (
+                    f"gem weather dir should list dozens of EPWs, got {len(gem_epws)}"
+                )
+                target = next(f for f in gem_epws if f["has_ddy"] and f["has_stat"])
+                res = unwrap(await s.call_tool("create_new_building", {
+                    "building_type": "SmallOffice",
+                    "total_bldg_floor_area": 10000,
+                    "num_stories_above_grade": 1,
+                    "weather_file": target["path"],
+                }))
+                assert res["ok"] is True, (
+                    f"advertised gem EPW {target['path']} must be accepted: "
+                    f"{res.get('error')}"
+                )
+
+    asyncio.run(_run())
