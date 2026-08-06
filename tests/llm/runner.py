@@ -221,6 +221,21 @@ class AgentResult:
         return sum(1 for c in self.tool_calls if c["tool"] == "ToolSearch")
 
     @property
+    def toolsearch_queries(self) -> list[str]:
+        """Raw ToolSearch query strings, in call order.
+
+        Discovery-substitution evidence for the ablation: Claude Code models
+        fetch schemas by name ("select:mcp__openstudio__x,...") instead of
+        consulting the server's knowledge layer — WHICH tools they reach for
+        (and whether that differs between arms) is the mechanism the paper
+        reports alongside knowledge-call counts.
+        """
+        return [
+            str(c["input"].get("query", ""))
+            for c in self.tool_calls if c["tool"] == "ToolSearch"
+        ]
+
+    @property
     def stats(self) -> dict:
         """Summary stats for benchmarking."""
         return {
@@ -234,6 +249,7 @@ class AgentResult:
             "num_tool_calls": len(self.tool_names),
             "all_tool_calls": self.all_tool_names,
             "toolsearch_count": self.toolsearch_count,
+            "toolsearch_queries": self.toolsearch_queries,
             "is_timeout": self.is_error and "Timed out" in self.final_text,
             "code_mode_active": bool(self.code_mode_tool_calls),
             "code_executions": sum(

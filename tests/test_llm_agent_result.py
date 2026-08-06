@@ -182,3 +182,47 @@ def test_mcp_config_image_and_ablation_plumbing(monkeypatch, tmp_path):
     args = json.loads(_write_mcp_config().read_text())["mcpServers"]["openstudio"]["args"]
     assert "openstudio-mcp:dev" in args
     assert "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1" not in args
+
+
+def test_toolsearch_queries_captured_in_stats():
+    # Validates: ToolSearch query strings land in stats/benchmark.json —
+    # the ablation's discovery-substitution evidence (WHICH schemas Claude
+    # Code fetches by name instead of consulting the knowledge layer)
+    raw = _ndjson(
+        {"type": "system", "subtype": "init"},
+        _assistant("t1", "ToolSearch",
+                   {"query": "select:mcp__openstudio__load_osm_model", "max_results": 1}),
+        _tool_result("t1", "schemas loaded"),
+        _assistant("t2", "mcp__openstudio__load_osm_model", {"osm_path": "/runs/x.osm"}),
+        _tool_result("t2", '{"ok": true}'),
+        _assistant("t3", "ToolSearch", {"query": "thermostat setpoint", "max_results": 5}),
+        _tool_result("t3", "schemas loaded"),
+        {"type": "result", "result": "done", "total_cost_usd": 0.0, "num_turns": 3,
+         "usage": {"input_tokens": 1, "output_tokens": 1}},
+    )
+    result = _parse_stream_json(raw)
+    assert result.toolsearch_count == 2
+    assert result.toolsearch_queries == [
+        "select:mcp__openstudio__load_osm_model", "thermostat setpoint"]
+    assert result.stats["toolsearch_queries"] == result.toolsearch_queries
+
+
+def test_leg_env_isolates_measures_dir(tmp_path):
+    # Regression: pilot-4 — the shared default measures volume leaked a
+    # previous leg's authored measure into later legs; gpt-5.4-mini found it
+    # via list_custom_measures and reused it instead of authoring its own
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "scripts"))
+    from benchmark_sweep import leg_env
+
+    e1 = leg_env({}, model="haiku", provider="claude", arm="full",
+                 image="img:dev", runs_dir=tmp_path / "leg_a", meta={"git": "x"},
+                 repeat=1)
+    e2 = leg_env({}, model="haiku", provider="claude", arm="noskills",
+                 image="img:dev", runs_dir=tmp_path / "leg_b", meta={"git": "x"},
+                 repeat=1)
+    assert e1["LLM_TESTS_MEASURES_DIR"] == str(tmp_path / "leg_a" / "measures")
+    assert e1["LLM_TESTS_MEASURES_DIR"] != e2["LLM_TESTS_MEASURES_DIR"]
+    assert e1["LLM_TESTS_RUNS_DIR"] != e2["LLM_TESTS_RUNS_DIR"]
+    assert e1["LLM_TESTS_RETRIES"] == "0"
