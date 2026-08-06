@@ -465,9 +465,13 @@ def _run_claude(
     agent_cwd = _agent_cwd()
 
     try:
+        # encoding: claude emits UTF-8; without it Windows decodes cp1252 —
+        # mojibake in every transcript and a hard UnicodeDecodeError on bytes
+        # like 0x90 (killed a pilot-5 test as a fake failure). codex path
+        # already had this.
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout, check=False,
-            env=env, cwd=agent_cwd,
+            env=env, cwd=agent_cwd, encoding="utf-8", errors="replace",
         )
     except subprocess.TimeoutExpired as exc:
         # Parse whatever output we got before timeout

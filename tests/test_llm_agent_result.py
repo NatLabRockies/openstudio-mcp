@@ -298,12 +298,16 @@ def test_run_claude_uses_sandbox_cwd_and_reports_droppings(monkeypatch, tmp_path
 
     def fake_run(cmd, **kwargs):
         captured["cmd"], captured["cwd"] = cmd, kwargs.get("cwd")
+        captured["encoding"] = kwargs.get("encoding")
         import subprocess
         return subprocess.CompletedProcess(
             cmd, 0, stdout='{"type": "result", "result": "ok"}', stderr="")
 
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
     result = runner.run_claude("hi", use_mcp=False)
+    # Regression: no encoding -> cp1252 on Windows -> UnicodeDecodeError on
+    # 0x90 killed a pilot-5 test as a fake failure (and mojibake'd transcripts)
+    assert captured["encoding"] == "utf-8"
 
     from pathlib import Path
     cwd = Path(captured["cwd"])
