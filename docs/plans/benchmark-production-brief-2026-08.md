@@ -25,26 +25,41 @@ archived data (see the superseded-claims register below). Do not cite them.
    escape annotations to docs/benchmarks/ (pattern:
    pilot-archive-2026-08; write a README with image digest + harness sha).
 
-## Models (resolved IDs, verified from pilot transcripts 2026-08-06)
+## Models (USER DECISION 2026-08-06: 4.x generation, fixed snapshots)
 
-- `sonnet` -> **claude-sonnet-5** (UNDATED id — alias could move to a newer
-  snapshot mid-run; launch with the most specific id available and record
-  the resolved id from each leg's ndjson into the archive README)
-- `haiku` -> **claude-haiku-4-5-20251001** (dated snapshot, 4.5 GENERATION —
-  the haiku/sonnet contrast spans tier AND generation; say so in the paper)
+Pass these EXACT ids as LLM_TESTS_MODEL (hyphens, not dots):
+
+- **claude-sonnet-4-6** — fixed snapshot (4.6-gen ids are snapshots, not
+  moving aliases — better for citable outcomes than claude-sonnet-5,
+  which is undated and could drift mid-run; that's why pilots' sonnet-5
+  results are additionally non-citable going forward)
+- **claude-opus-4-6** — fixed snapshot (opus INCLUDED per user decision)
+- **claude-haiku-4-5-20251001** — dated snapshot. Lifecycle checked
+  2026-08-06: ACTIVE, no deprecation announced; no Haiku 5 released
+  (speculation says late 2026). Remains the small tier.
+- All three are 4.x-family — tier comparison no longer crosses into the
+  5 generation (cleaner than the pilots' sonnet-5/haiku-4.5 mix).
 - codex: gpt-5.4, gpt-5.4-mini (ChatGPT-account auth; gpt-5.2-codex
   rejected; see handoff-05 for codex CLI mechanics)
+- PREFLIGHT: one-prompt smoke per model id before the matrix (catches id
+  typos/entitlement failures cheaply); record each leg's resolved model
+  id from its ndjson into the archive README.
+- NOTE: pilots ran claude-sonnet-5 — production sonnet-4-6 results are a
+  DIFFERENT MODEL; never compare pilot sonnet numbers to production
+  sonnet numbers, even informally.
 
-## Matrix
+## Matrix (48 legs)
 
-- claude sonnet + haiku x {full, noskills, nodiscovery,
+- claude-sonnet-4-6 + claude-haiku-4-5 x {full, noskills, nodiscovery,
   nodiscovery-noskills, nohost} x3 = 30 legs (~8-25 min each observed)
+- claude-opus-4-6 x {full, noskills} x3 = 6 legs (reduced scope: mirrors
+  codex arms, tops the consultation-propensity curve; expand to the other
+  arms later only if data motivates — sweep is resume-safe)
 - codex gpt-5.4 + gpt-5.4-mini x {full, noskills} x3 = 12 legs
-- opus (claude-opus-5, pending decision 5 below): full + noskills x3 =
-  6 legs — completes the Claude 5 pair, adds the top point on the
-  consultation-propensity curve (H2), balances gpt-5.4. Escape data comes
-  free from sandbox metrics in any arm; add opus nodiscovery/nohost later
-  only if the full/noskills data motivates it (sweep is resume-safe).
+- nodiscovery/nohost require 4.5-gen+ claude models — verify
+  ENABLE_TOOL_SEARCH=false and --disallowedTools take effect on the 4.6
+  snapshots during the preflight smoke (pilot verification was on
+  sonnet-5/haiku-4.5 only).
 - Case set: the 18-hard-case `-k` (setup + import_floorplan, add_hvac,
   python_ems_control, measure_replace_terminals, zone_equipment_priority,
   roof_insulation) unless the scope decision (below) says full suite.
@@ -130,8 +145,8 @@ prod-run legs, not pilot legs.
 3. ToolSearch dose probe (ENABLE_TOOL_SEARCH=auto:N) as an extra arm?
 4. Second non-Anthropic vendor (gemini seam exists, unbuilt) — worth the
    adapter for vendor-generality, or note as limitation?
-5. Include opus (claude-opus-5)? Recommended at reduced scope
-   (full + noskills x3 = 6 legs, ~$150-450 at opus pricing).
+5. RESOLVED 2026-08-06: opus IS included, as claude-opus-4-6 at reduced
+   scope (full + noskills x3); models pinned to 4.x snapshots (see Models).
 
 ## Analysis deliverables
 
