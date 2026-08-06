@@ -13,8 +13,9 @@ docs/plans/plan-outcome-grading.md + tests/llm/grading/. Consequences:
 - Sweep-id is now **prod-2026-08b**. The 2 legs run under prod-2026-08
   (haiku full/noskills r1) are DISCARDED (different grading; archived,
   never cited). Sensitivity cells: **prod-2026-08b-t240**.
-- Harness commit for every leg: >= **ff00977** (outcome grading; includes
-  3aed97d LLM_TESTS_TIMEOUT_BASE and cac68d9 sandbox cwd + utf-8).
+- Harness commit for every leg: >= **88601ae** (outcome grading + rubric
+  1.1; includes ff00977 graders, 3aed97d LLM_TESTS_TIMEOUT_BASE and
+  cac68d9 sandbox cwd + utf-8).
 - Image tag UNCHANGED: openstudio-mcp:bench-2026-08, digest
   sha256:cf9e9f7cb01a... (grading is host-mounted, nothing baked changed;
   sweep freshness check still passes). Preflight record:
@@ -42,7 +43,8 @@ archived data (see the superseded-claims register below). Do not cite them.
 1. ONE pinned image for every leg: `openstudio-mcp:bench-2026-08`
    (digest recorded in results/prod-2026-08/preflight.json + archive
    README). Rebuild only if mcp_server/docker/pyproject changes.
-2. ONE harness commit for every leg: >= ff00977 (outcome grading).
+2. ONE harness commit for every leg: >= 88601ae (outcome grading with
+   rubric 1.1 — ff00977's roof L1 criterion was wrong, see plan doc).
 3. `LLM_TESTS_RETRIES=0`. Repeats replace retries (sweep preflight aborts
    otherwise).
 4. n=3 repeats per (model, arm) cell.
