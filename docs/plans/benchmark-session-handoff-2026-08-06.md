@@ -144,6 +144,55 @@ scoring rejecting recovered completions, now surfaced via the
 its own contamination — that is what the provenance/isolation machinery
 is for.
 
+## PILOT-5 FINDING: "no_mcp_tool" is often HARNESS ESCAPE, not disengagement (paper)
+
+Discovered pilot-5a (2026-08-06, user wants this IN THE PAPER). Transcript
+audit of haiku's zero-MCP-call failures shows they are NOT quiet giving-up:
+
+- haiku_full_r3 setup: haiku read our server source (`grep -A 60 "def
+  create_baseline_osm" .../operations.py`), WROTE its own stdio MCP client
+  script into the repo, ran it via `docker run` (model actually created —
+  but in the REPO's runs/, invisible to the harness's per-leg /runs mount),
+  deleted the script, then reported success citing `create_baseline_osm`
+  as if called through MCP. 23 host-side tool calls (12 Bash, 6 Read,
+  2 Edit, 1 Write, 2 ToolSearch), zero sanctioned MCP calls. Scored
+  no_mcp_tool — correct for a tool-routing benchmark.
+- haiku_full_r1 roof_insulation_L3: 14 Bash calls, 1 Read, no MCP.
+  zone_equipment_priority_L3: PowerShell x5 + Write + Edit x2, no MCP.
+
+Implications:
+1. "Engagement collapse" hypothesis revised: without (or even with) skills,
+   haiku doesn't stop acting — it CIRCUMVENTS the MCP layer host-side and
+   confabulates sanctioned-tool usage in its summary. Fabricated-success
+   is itself a safety-relevant paper point.
+2. Aggregation must subclassify no_mcp_tool rows from transcripts:
+   {asked/gave up | answered in text | host-side circumvention}.
+3. Root enabler: the harness runs the agent CLI with cwd = OUR REPO and
+   --dangerously-skip-permissions (host shell unrestricted). The agent
+   sits inside the server's own source tree — it can read implementation,
+   grep the grading tests (answer leakage), and drop artifacts that persist
+   across legs on the host.
+
+## Isolation audit (2026-08-06): where cross-run contamination can/cannot happen
+
+- Server process: fresh `--rm` container PER PROMPT — no in-memory state
+  survives between prompts, tests, or legs. HTTP mode would WEAKEN this
+  (long-lived shared process); stdio + fresh container is already maximal.
+- Server-visible filesystem: exactly 4 mounts (runner.py:596-604):
+  /runs (per-leg), /measures (per-leg since fb7ed15), /test-assets + /inputs
+  both `:ro`. Server-side cross-leg channels: CLOSED.
+- HOST filesystem: the open channel. Agent CLI inherits pytest cwd (repo
+  root), no cwd= passed (runner.py:377/463). Host droppings persist across
+  legs and later agents can find them (haiku's out-of-band model now sits in
+  repo runs/examples/llm-test-baseline/ — gitignored, harmless, left as
+  evidence).
+- QUEUED FIX (do NOT apply mid-pilot-5 — legs must share conditions):
+  pass cwd=<per-leg empty scratch dir> to both subprocess.run calls in
+  runner.py (~5 lines). Kills host-dropping persistence AND the
+  answer-leakage realism bug (agents no longer start inside our source).
+  Apply AFTER pilot-5, BEFORE the matrix; footnote the condition change
+  (pilots ran cwd=repo). HTTP mode NOT needed — the leak is agent-side.
+
 ## Nodiscovery arm: LIVE-VERIFIED (smoke, 2026-08-06)
 
 One-case smoke (sonnet, create_building_L2, LLM_TESTS_ARM=nodiscovery):
