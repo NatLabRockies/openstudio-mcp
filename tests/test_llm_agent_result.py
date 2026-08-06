@@ -226,3 +226,29 @@ def test_leg_env_isolates_measures_dir(tmp_path):
     assert e1["LLM_TESTS_MEASURES_DIR"] != e2["LLM_TESTS_MEASURES_DIR"]
     assert e1["LLM_TESTS_RUNS_DIR"] != e2["LLM_TESTS_RUNS_DIR"]
     assert e1["LLM_TESTS_RETRIES"] == "0"
+
+
+def test_nodiscovery_arm_plumbing(monkeypatch):
+    # Validates: arm "nodiscovery" disables Claude Code's ToolSearch
+    # (ENABLE_TOOL_SEARCH=false -> schemas load up-front, client discovery
+    # removed) and "nodiscovery-noskills" composes with the server-side
+    # knowledge ablation — the claude-side analogue of the codex ablation
+    from llm.runner import _claude_env, _docker_mcp_args
+
+    monkeypatch.setenv("LLM_TESTS_ARM", "nodiscovery-noskills")
+    assert _claude_env()["ENABLE_TOOL_SEARCH"] == "false"
+    assert "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1" in _docker_mcp_args()
+
+    monkeypatch.setenv("LLM_TESTS_ARM", "nodiscovery")
+    assert _claude_env()["ENABLE_TOOL_SEARCH"] == "false"
+    assert "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1" not in _docker_mcp_args()
+
+    monkeypatch.setenv("LLM_TESTS_ARM", "full")
+    assert "ENABLE_TOOL_SEARCH" not in _claude_env()
+
+    monkeypatch.setenv("LLM_TESTS_ARM", "noskills")
+    assert "ENABLE_TOOL_SEARCH" not in _claude_env()
+    assert "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1" in _docker_mcp_args()
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert "CLAUDECODE" not in _claude_env()

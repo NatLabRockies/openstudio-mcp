@@ -259,6 +259,23 @@ class AgentResult:
         }
 
 
+def _claude_env() -> dict:
+    """Env for the claude subprocess.
+
+    Strips CLAUDECODE (a nested claude CLI refuses to run). Arms containing
+    "nodiscovery" set ENABLE_TOOL_SEARCH=false: Claude Code then loads every
+    MCP tool schema up-front instead of discovering via ToolSearch — removes
+    the client-side discovery that substitutes for the server's knowledge
+    layer, making the claude-side ablation symmetric with codex (which has
+    no client discovery). Composes with the server-side ablation as
+    "nodiscovery-noskills".
+    """
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    if "nodiscovery" in os.environ.get("LLM_TESTS_ARM", ""):
+        env["ENABLE_TOOL_SEARCH"] = "false"
+    return env
+
+
 def _tool_result_text(content) -> str:
     """Flatten a tool_result content field (string or text-block list) to text."""
     if isinstance(content, str):
@@ -354,8 +371,7 @@ def _run_claude(
     if max_turns:
         cmd.extend(["--max-turns", str(max_turns)])
 
-    # Strip CLAUDECODE env var so nested claude CLI doesn't refuse to run
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env = _claude_env()
 
     try:
         result = subprocess.run(
@@ -588,8 +604,9 @@ def _docker_mcp_args() -> list[str]:
     ]
     # Ablation arm: the knowledge-layer tools are absent server-side (refusals
     # from client-side blocking would contaminate behavior) — see
-    # docs/plans/plan-benchmark-reviewer-response.md D3.
-    if os.environ.get("LLM_TESTS_ARM") == "noskills":
+    # docs/plans/plan-benchmark-reviewer-response.md D3. Substring match so
+    # the composite arm "nodiscovery-noskills" gets the server flag too.
+    if "noskills" in os.environ.get("LLM_TESTS_ARM", ""):
         args += ["-e", "OSMCP_DISABLE_KNOWLEDGE_SKILLS=1"]
     args += [image, "openstudio-mcp"]
     return args
