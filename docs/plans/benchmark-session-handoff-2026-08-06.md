@@ -144,6 +144,34 @@ scoring rejecting recovered completions, now surfaced via the
 its own contamination — that is what the provenance/isolation machinery
 is for.
 
+## Nodiscovery arm: LIVE-VERIFIED (smoke, 2026-08-06)
+
+One-case smoke (sonnet, create_building_L2, LLM_TESTS_ARM=nodiscovery):
+toolsearch_count=0, zero queries, cache-read ~764k (up-front schemas ~10x
+normal) — the CLI honors ENABLE_TOOL_SEARCH=false. And the mechanism
+datapoint appeared IMMEDIATELY: sonnet's first action was
+get_skill("new-building") — a Claude model consulting the knowledge layer,
+which effectively never happens in ToolSearch arms (0.22 calls/test).
+Client discovery really does substitute for the knowledge layer.
+
+The smoke also caught a NEW server contract bug (#121, fixed 9cee2e9):
+list_weather_files advertised openstudio-standards gem EPW paths
+(/var/oscli/...) that the EPW allowlist rejected — sonnet picked an
+advertised EPW, failed first-call ("EPW path not allowed"), recovered via
+/inputs, completed the full chain, scored tool_error. Gem weather dirs now
+in _SHARED_READ_ROOTS (integration test end-to-end). REBUILD REQUIRED
+before pilot-5 (kicked off at session end — verify image postdates 9cee2e9).
+
+## Contamination blast radius (empirical, all pilot legs scanned)
+
+Measure-tool calls appear ONLY in measure_replace_terminals rows (+1 benign
+roof_insulation_L1/gpt list_measure_arguments, passed). Within the family:
+mini full L1 = the one contaminated-behavior failure (reused leftover);
+gpt listed leftovers but authored anyway (passed); sonnet + haiku never
+touched leftover state — the sonnet skill-lift is CLEAN on both sides.
+Pilot-5c therefore reruns the measure family for sonnet + gpt-5.4 + mini
+(both arms) on the fixed sweep; haiku's rows regenerate via 5a.
+
 ## Pilot-5 design (user approved nodiscovery 2026-08-06)
 
 Arms available: full | noskills (server flag) | nodiscovery
