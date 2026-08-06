@@ -327,3 +327,28 @@ def test_floorspacejs_to_typical():
                 assert total_hvac > 0, f"No HVAC: {counts}"
 
     asyncio.run(_run())
+
+
+# --- Test 10: host-side path gets a self-describing error ---
+@pytest.mark.integration
+def test_import_floorspacejs_host_path_error_names_roots():
+    """A host-side path fails with a hint naming server roots + list_files."""
+    # Regression: benchmark pilot-4 — agents passed host paths (C:\...) and
+    # the terse not-found error never said paths are server-side (#119)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = unwrap(await s.call_tool("import_floorspacejs", {
+                    "floorplan_path": "C:\projects\floorplan.json",
+                }))
+                assert res["ok"] is False
+                assert "not found" in res["error"].lower()
+                assert "SERVER-side" in res["error"], f"error must explain path namespace: {res['error']}"
+                assert "list_files" in res["error"], f"error must point at discovery tool: {res['error']}"
+                assert "/inputs" in res["error"], f"error must name readable roots: {res['error']}"
+
+    asyncio.run(_run())
