@@ -64,12 +64,18 @@ Pass these EXACT ids as LLM_TESTS_MODEL (hyphens, not dots):
   python_ems_control, measure_replace_terminals, zone_equipment_priority,
   roof_insulation) unless the scope decision (below) says full suite.
 
-Sweep command shape (per leg; repeats r2/r3 via --repeats 2/3, resume-safe):
+Exact leg command (copy-paste; swap --model/--arms/--repeats per leg;
+repeats r2/r3 via --repeats 2/3 — existing legs are skipped, resume-safe;
+run ONE leg per background invocation):
 
     python scripts/benchmark_sweep.py --sweep-id prod-2026-08 \
-      --image openstudio-mcp:bench-2026-08 --model haiku:claude \
-      --arms full --repeats 1 --pytest-args "tests/llm/test_01_setup.py \
-      tests/llm/test_06_progressive.py -k '<18-case expression>'"
+      --image openstudio-mcp:bench-2026-08 \
+      --model claude-haiku-4-5-20251001:claude \
+      --arms full --repeats 1 \
+      --pytest-args "tests/llm/test_01_setup.py tests/llm/test_06_progressive.py -k 'create_baseline_model or create_baseline_with_hvac or import_floorplan or add_hvac or python_ems_control or measure_replace_terminals or zone_equipment_priority or roof_insulation'"
+
+Model specs per provider: claude-sonnet-4-6:claude, claude-opus-4-6:claude,
+claude-haiku-4-5-20251001:claude, gpt-5.4:codex, gpt-5.4-mini:codex.
 
 ## Verified condition-facts (mechanics, not findings)
 
