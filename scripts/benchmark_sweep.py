@@ -98,6 +98,27 @@ def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", name)
 
 
+def leg_env(base: dict, *, model: str, provider: str, arm: str, image: str,
+            runs_dir: Path, meta: dict, repeat: int) -> dict:
+    """Per-leg environment. The /measures volume must persist WITHIN a leg
+    (each prompt spawns a fresh --rm container; authored measures must
+    survive between prompts) but must NOT leak BETWEEN legs: pilot-4 caught
+    an agent finding a previous leg's authored measure via
+    list_custom_measures and reusing it instead of authoring its own.
+    """
+    return base | {
+        "LLM_TESTS_ENABLED": "1",
+        "LLM_TESTS_RETRIES": "0",
+        "LLM_TESTS_MODEL": model,
+        "LLM_TESTS_PROVIDER": provider,
+        "LLM_TESTS_ARM": arm,
+        "LLM_TESTS_IMAGE": image,
+        "LLM_TESTS_RUNS_DIR": str(runs_dir),
+        "LLM_TESTS_MEASURES_DIR": str(runs_dir / "measures"),
+        "LLM_TESTS_RUN_META": json.dumps(meta | {"repeat": repeat}),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -139,16 +160,9 @@ def main() -> int:
                     continue
                 runs_dir = Path(args.runs_root) / args.sweep_id / tag
                 runs_dir.mkdir(parents=True, exist_ok=True)
-                env = os.environ | {
-                    "LLM_TESTS_ENABLED": "1",
-                    "LLM_TESTS_RETRIES": "0",
-                    "LLM_TESTS_MODEL": model,
-                    "LLM_TESTS_PROVIDER": provider,
-                    "LLM_TESTS_ARM": arm,
-                    "LLM_TESTS_IMAGE": args.image,
-                    "LLM_TESTS_RUNS_DIR": str(runs_dir),
-                    "LLM_TESTS_RUN_META": json.dumps(meta | {"repeat": r}),
-                }
+                env = leg_env(dict(os.environ), model=model, provider=provider,
+                              arm=arm, image=args.image, runs_dir=runs_dir,
+                              meta=meta, repeat=r)
                 print(f"[run ] {tag}: pytest {' '.join(pytest_args)}")
                 subprocess.run([sys.executable, "-m", "pytest", *pytest_args],
                                env=env, cwd=REPO, check=False)
