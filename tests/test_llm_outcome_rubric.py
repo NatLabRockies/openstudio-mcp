@@ -197,10 +197,11 @@ def test_zone_priority_no_baseboard_fails():
     assert "no baseboard" in verdict["reasons"][0]
 
 
-def _roof(r_si: float) -> list[dict]:
+def _roof(*layer_rs: float) -> list[dict]:
     return [{"surface": "Roof 1", "construction": "C",
-             "layers": [{"name": "L", "class": "OS:Material", "r_si": r_si}],
-             "assembly_r_si": r_si}]
+             "layers": [{"name": f"L{i}", "class": "OS:Material", "r_si": r}
+                        for i, r in enumerate(layer_rs)],
+             "assembly_r_si": round(sum(layer_rs), 4)}]
 
 
 def test_roof_insulation_r30_added_passes_l1_partial_fails():
@@ -214,6 +215,31 @@ def test_roof_insulation_r30_added_passes_l1_partial_fails():
     verdict = rubric.evaluate("roof_insulation", "L1", unchanged)
     assert verdict["outcome_pass"] is False
     assert "assembly R increase" in verdict["reasons"][0]
+
+
+def test_roof_insulation_l1_accepts_insulate_to_r30_reading():
+    # Regression: val-grading rubric 1.0 failed sonnet's CORRECT roof (swapped
+    # R-21 layer for an exact R-30 layer, membrane+decking kept) by demanding
+    # a +R-30 assembly DELTA; an R-30 layer + any improvement must pass
+    sonnet_style = {"load_ok": True,
+                    "model": _model(roof_surfaces=_roof(0.0594, 5.2818, 0.0)),
+                    "baseline": _model(roof_surfaces=_roof(0.0594, 4.2959, 0.0))}
+    assert rubric.evaluate("roof_insulation", "L1",
+                           sonnet_style)["outcome_pass"] is True
+    bare_slab = {"load_ok": True, "model": _model(roof_surfaces=_roof(5.25)),
+                 "baseline": _model(roof_surfaces=_roof(0.0594, 4.2959, 0.0))}
+    assert rubric.evaluate("roof_insulation", "L1",
+                           bare_slab)["outcome_pass"] is True
+
+
+def test_roof_insulation_l1_r30_layer_must_still_improve_roof():
+    # Validates: an ~R-30 layer that leaves the assembly WORSE than baseline
+    # (replaced a better roof) fails despite the layer being nominally R-30
+    worse = {"load_ok": True, "model": _model(roof_surfaces=_roof(5.25)),
+             "baseline": _model(roof_surfaces=_roof(0.0594, 5.9, 0.1))}
+    verdict = rubric.evaluate("roof_insulation", "L1", worse)
+    assert verdict["outcome_pass"] is False
+    assert "R-30 layer present: True" in verdict["reasons"][0]
 
 
 def test_roof_insulation_l2_requires_only_real_increase():

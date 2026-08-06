@@ -146,8 +146,18 @@ no dose probe, gemini limitation).
   rows carried facts with tool_error verdict; no_mcp_tool skipped grading.
 - Rubric guard added after val: tolerance boundaries are inclusive
   (exactly-0.1 drift passes; IEEE noise must not decide verdicts).
-- Sonnet mini-leg SKIPPED: grading is model-agnostic and haiku exercised
-  every grader mode + verdict path; nothing model-specific left to test.
+- Sonnet mini-leg (user-requested): 7/11 live vs haiku 3/11 — the H6
+  tier separation is visible already. Sonnet authored runtime-correct
+  measures at ALL levels (haiku: L3 only) and nailed the EMS day value
+  21.1 (haiku guessed 21.0).
+- RUBRIC 1.1 (from sonnet leg): v1.0's roof L1 criterion demanded a
+  +R-30 assembly DELTA and wrongly failed sonnet's correct roof (R-21
+  layer swapped for an exact R-30 layer). 1.1 accepts an ~R-30 layer
+  that improves the roof, or the literal add. Both models' L2/L3 roof
+  failures stand (assembly replaced by a bare R-3.75 insulation slab —
+  worse than baseline). Re-scored FROM RECORDED FACTS, no re-run:
+  haiku 3->5/8 graded rows, sonnet 7->8/10. Production runs 1.1 live;
+  val jsons keep their recorded 1.0 verdicts (val legs are not citable).
 - Floorplan ground truth recorded: 44 spaces / 1858.06 m2.
 
 ## Unresolved questions

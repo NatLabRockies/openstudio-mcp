@@ -10,7 +10,7 @@ Class-name checks use substrings of iddObjectType().valueDescription()
 """
 from __future__ import annotations
 
-RUBRIC_VERSION = "1.0"
+RUBRIC_VERSION = "1.1"
 
 N_ZONES = 10                 # baseline fixture zone count
 NIGHT_SETPOINT_C = 15.6      # L2/L3 pinned setback value
@@ -19,6 +19,7 @@ SETPOINT_TOL_C = 0.1
 L1_MIN_SETBACK_K = 1.0       # L1 only asserts direction: night <= day - 1K
 R30_SI = 5.283               # R-30 ft2hF/Btu in m2K/W
 R30_MIN_INCREASE_SI = R30_SI * 0.85
+R30_LAYER_REL_TOL = 0.15     # a layer within 15% of R-30 counts as "R-30"
 L2_MIN_R_INCREASE_SI = 0.5   # L2/L3 don't pin a value; require a real increase
 
 
@@ -230,10 +231,23 @@ def grade_roof_insulation(level: str, facts: dict) -> dict:
             r is None for r in base_rs):
         return _fail(["assembly R not computable (unknown layer resistance)"])
     increase = (sum(graded_rs) / len(graded_rs)) - (sum(base_rs) / len(base_rs))
-    minimum = R30_MIN_INCREASE_SI if level == "L1" else L2_MIN_R_INCREASE_SI
-    if increase < minimum:
+    if level == "L1":
+        # "Add R-30 insulation" — accept the standard reading (roof insulated
+        # WITH an R-30 layer, assembly better than baseline; rubric 1.1, from
+        # val-grading: sonnet swapped R-21 -> exact R-30 layer and v1.0
+        # wrongly demanded a +R-30 assembly DELTA) or the literal add.
+        has_r30_layer = any(
+            layer.get("r_si") is not None
+            and abs(layer["r_si"] - R30_SI) <= R30_SI * R30_LAYER_REL_TOL
+            for surface in graded_roofs for layer in surface["layers"])
+        if not ((has_r30_layer and increase > 0)
+                or increase >= R30_MIN_INCREASE_SI):
+            reasons.append(
+                f"no ~R-30 layer improving the roof (assembly R increase "
+                f"{increase:.2f} m2K/W, R-30 layer present: {has_r30_layer})")
+    elif increase < L2_MIN_R_INCREASE_SI:
         reasons.append(f"roof assembly R increase {increase:.2f} m2K/W < "
-                       f"required {minimum:.2f} (level {level})")
+                       f"required {L2_MIN_R_INCREASE_SI:.2f} (level {level})")
     return _verdict(reasons)
 
 
