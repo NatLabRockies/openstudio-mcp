@@ -287,6 +287,64 @@ results JSONs, transcript+droppings zips, escape_annotations). Aggregator
 does not yet consume escape_annotations — asterisk old-harness rows
 manually or wire it in for the matrix.
 
+## Critical review of pilot-5 (2026-08-06) — read before citing the ladder
+
+Three confounds cap what the pilot proves:
+1. n=1 on nohost/nodiscovery/nodiscovery-noskills vs haiku's 5-point
+   full-arm swing. Monotone triple + behavior co-movement = credible
+   direction, unproven magnitude.
+2. IMAGE CONFOUND (biggest): sonnet's historic skill-lift (measure 2/2
+   with vs 0/2 without) was measured on the PRE-#118/#119/#120 image;
+   nodiscovery legs ran post-fix. "Schemas-up-front substitutes for
+   skills" has a rival explanation: the docs got better. Investigation 4
+   (below) tests this directly.
+3. No sandboxed full-arm anchor — "full is worst" rests on
+   escape-capable data.
+
+Conceptual correction (use in paper): nodiscovery-noskills is NOT "no
+assistance" — it swaps curated skill docs for the full schema corpus
+(~2x cache reads: 8.2M vs 3.7M/leg haiku). Durable framing: assistance
+must match the model's CONSULTATION PROPENSITY — pull-based (skills,
+ToolSearch) is worthless to models that never ask (haiku: 0 knowledge
+calls in ~7k tool calls); push-based (schemas in context) works. NOT
+"less help is better".
+
+Also verified: haiku's nodiscovery python_ems passes are real accepted
+create_python_plugin calls (not the list_ems_actuators shortcut) — which
+complicates the "python_ems = pure capability wall" story (sonnet fails
+L2 under some arms while haiku passes under nodiscovery). Progressive
+tier still grades ROUTING not outcome — D6-sample nodiscovery passes in
+the matrix.
+
+## Investigation 4 (running 2026-08-06): doc-fix vs discovery-regime
+
+sonnet noskills, ToolSearch ACTIVE, CURRENT image + sandboxed harness,
+setup+measure_replace only, x3. Historic 0/2 on old image.
+- If it now PASSES → #118-#120 doc fixes explain the substitution;
+  skill-lift claim must be re-derived on the new image.
+- If it still FAILS → discovery-regime explanation survives.
+Results: results/inv4-doc-fix-check/ (archive after).
+
+## PRODUCTION RUN SPEC (next session, user-approved 2026-08-06)
+
+Clean full re-run. NON-NEGOTIABLES: one pinned image for every leg
+(rebuild first, tag e.g. openstudio-mcp:bench-2026-08, record digest);
+one harness commit for every leg (sandboxed + utf-8 fix, >= cac68d9);
+LLM_TESTS_RETRIES=0; n=3; one leg per background invocation; never pipe
+through head; archive results+transcripts to docs/benchmarks/ at the end
+(pattern: pilot-archive-2026-08).
+
+Matrix rows (18-hard-case set unless scope decision says full suite):
+- claude sonnet + haiku x {full, noskills, nodiscovery,
+  nodiscovery-noskills, nohost} x3 = 30 legs (~12-25 min each)
+- codex gpt-5.4 + gpt-5.4-mini x {full, noskills} x3 = 12 legs
+- OPEN SCOPE DECISION: original reviewer matrix (plan-benchmark-
+  reviewer-response.md) used the FULL progressive suite for full/noskills
+  rows — decide 18-case vs full-suite with user before launching.
+Analysis adds: escape-rate per model/arm (host metrics now in every
+benchmark.json; wire escape asterisks into aggregator), D6 outcome-grade
+sample of nodiscovery passes, optional ToolSearch dose probe (auto:N).
+
 ## Next session, in order
 
 1. Rebuild check: image `openstudio-mcp:dev` must postdate b92bc8c
