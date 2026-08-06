@@ -316,14 +316,33 @@ L2 under some arms while haiku passes under nodiscovery). Progressive
 tier still grades ROUTING not outcome — D6-sample nodiscovery passes in
 the matrix.
 
-## Investigation 4 (running 2026-08-06): doc-fix vs discovery-regime
+## Investigation 4 VERDICT (2026-08-06) — SUPERSEDES all prior skill-lift claims
 
-sonnet noskills, ToolSearch ACTIVE, CURRENT image + sandboxed harness,
-setup+measure_replace only, x3. Historic 0/2 on old image.
-- If it now PASSES → #118-#120 doc fixes explain the substitution;
-  skill-lift claim must be re-derived on the new image.
-- If it still FAILS → discovery-regime explanation survives.
-Results: results/inv4-doc-fix-check/ (archive after).
+sonnet noskills, ToolSearch ACTIVE, current image + sandboxed harness,
+setup+measure_replace, x3: **9/9 PASS** (L1 durations 120.1/83.8/106.5s).
+The historic "0/2 without skills" does NOT reproduce. Archive-forensics
+corrections that fell out:
+
+1. The historic lift was **L1-ONLY**. L2/L3 passed WITHOUT skills in
+   pilots 3 AND 3b (archived tool_calls prove it). Every prior "measure
+   authoring 2/2-with vs 0/2-without" statement overstated scope.
+2. Mechanism was NOT capability and NOT the doc fixes (#118-#120 never
+   touched measure tools). pilot-3 L1 ran the CORRECT workflow
+   (search_wiring_patterns → search_api → create_measure) and TIMED OUT
+   at 120.1s before create_measure; pilot-3b L1 quit early (2 calls,
+   32s). measure_L1-noskills is a RACE AGAINST THE 120s BUDGET
+   (workflow takes ~85-120s; one new pass landed at 120.1s with
+   create_measure already fired). Skills compress exploration → comfortably
+   under budget. So "skill lift" = workflow compression vs timeout, not
+   enablement.
+3. Likely contributor to the reversal, unverified: old harness ran the
+   agent CLI with cwd=repo, so claude -p likely loaded OUR CLAUDE.md +
+   project context into every agent (startup cost + context, another
+   contamination channel) — closed by the sandbox regardless.
+4. Matrix implication: the 120s timeout is a load-bearing benchmark
+   parameter for L1 rows — footnote it; consider a timeout-sensitivity
+   note in the paper. Skill-lift, if claimed at all, must be re-derived
+   from production-matrix data and framed as budget/latency, not ability.
 
 ## PRODUCTION RUN SPEC (next session, user-approved 2026-08-06)
 

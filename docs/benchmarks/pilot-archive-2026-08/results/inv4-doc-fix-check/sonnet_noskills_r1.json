@@ -1,0 +1,248 @@
+{
+  "timestamp": "2026-08-06T17:25:34+00:00",
+  "model": "sonnet",
+  "run_config": {
+    "git": "v1.1.3-41-gd3d4918",
+    "image": "openstudio-mcp:dev",
+    "image_id": "sha256:dcbe694419e12666a21a83685f036b8e2cd34beb2781b6275a11331b0ce31b88",
+    "image_created": "2026-08-06T17:18:03.814756144Z",
+    "head_committed": "2026-08-06T08:57:58-04:00",
+    "image_repo_digests": "",
+    "repeat": 1,
+    "provider": "claude",
+    "arm": "noskills",
+    "retries": 0
+  },
+  "retries": 0,
+  "code_mode": false,
+  "code_mode_tests": 0,
+  "total_tests": 5,
+  "passed": 5,
+  "failed": 0,
+  "pass_rate": 100.0,
+  "total_duration_s": 276.3,
+  "total_input_tokens": 38,
+  "total_output_tokens": 13667,
+  "total_cache_read_tokens": 648187,
+  "total_cost_usd": 0.9494,
+  "tiers": {
+    "setup": {
+      "total": 2,
+      "passed": 2,
+      "duration_s": 21.4,
+      "pass_rate": 100.0
+    },
+    "progressive": {
+      "total": 3,
+      "passed": 3,
+      "duration_s": 254.9,
+      "pass_rate": 100.0
+    }
+  },
+  "tests": [
+    {
+      "test_id": "tests/llm/test_01_setup.py::test_create_baseline_model",
+      "passed": true,
+      "duration_s": 11.5,
+      "tier": "setup",
+      "attempt": 1,
+      "num_turns": 3,
+      "cost_usd": 0.2316133,
+      "duration_ms": 8485,
+      "input_tokens": 6,
+      "output_tokens": 271,
+      "cache_read_tokens": 67721,
+      "tool_calls": [
+        "create_baseline_osm"
+      ],
+      "num_tool_calls": 1,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__create_baseline_osm"
+      ],
+      "toolsearch_count": 1,
+      "toolsearch_queries": [
+        "select:mcp__openstudio__create_baseline_osm"
+      ],
+      "host_tool_counts": {},
+      "host_tool_call_count": 0,
+      "agent_cwd": "C:\\Users\\Brian\\AppData\\Local\\Temp\\llm-sweep\\inv4-doc-fix-check\\sonnet_noskills_r1\\agent_cwd\\ty7108cr9",
+      "dropped_files": [],
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_01_setup.py::test_create_baseline_with_hvac",
+      "passed": true,
+      "duration_s": 9.9,
+      "tier": "setup",
+      "attempt": 1,
+      "num_turns": 3,
+      "cost_usd": 0.0843868,
+      "duration_ms": 7319,
+      "input_tokens": 6,
+      "output_tokens": 289,
+      "cache_read_tokens": 93646,
+      "tool_calls": [
+        "create_baseline_osm"
+      ],
+      "num_tool_calls": 1,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__create_baseline_osm"
+      ],
+      "toolsearch_count": 1,
+      "toolsearch_queries": [
+        "select:mcp__openstudio__create_baseline_osm"
+      ],
+      "host_tool_counts": {},
+      "host_tool_call_count": 0,
+      "agent_cwd": "C:\\Users\\Brian\\AppData\\Local\\Temp\\llm-sweep\\inv4-doc-fix-check\\sonnet_noskills_r1\\agent_cwd\\tn40vzgqe",
+      "dropped_files": [],
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[measure_replace_terminals_L1]",
+      "passed": true,
+      "duration_s": 120.1,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 0,
+      "cost_usd": 0.0,
+      "duration_ms": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "tool_calls": [
+        "load_osm_model",
+        "search_wiring_patterns",
+        "search_api",
+        "list_air_loops",
+        "list_plant_loops",
+        "search_api",
+        "search_api",
+        "search_api",
+        "search_api",
+        "create_measure"
+      ],
+      "num_tool_calls": 10,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__search_wiring_patterns",
+        "mcp__openstudio__search_api",
+        "mcp__openstudio__list_air_loops",
+        "mcp__openstudio__list_plant_loops",
+        "mcp__openstudio__search_api",
+        "mcp__openstudio__search_api",
+        "mcp__openstudio__search_api",
+        "mcp__openstudio__search_api",
+        "mcp__openstudio__create_measure"
+      ],
+      "toolsearch_count": 1,
+      "toolsearch_queries": [
+        "select:mcp__openstudio__load_osm_model,mcp__openstudio__create_measure,mcp__openstudio__search_wiring_patterns,mcp__openstudio__search_api,mcp__openstudio__list_air_loops,mcp__openstudio__get_air_loop_details"
+      ],
+      "host_tool_counts": {},
+      "host_tool_call_count": 0,
+      "agent_cwd": "C:\\Users\\Brian\\AppData\\Local\\Temp\\llm-sweep\\inv4-doc-fix-check\\sonnet_noskills_r1\\agent_cwd\\tf9rs27el",
+      "dropped_files": [],
+      "is_timeout": true,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[measure_replace_terminals_L2]",
+      "passed": true,
+      "duration_s": 89.8,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 10,
+      "cost_usd": 0.3924436,
+      "duration_ms": 86742,
+      "input_tokens": 14,
+      "output_tokens": 9047,
+      "cache_read_tokens": 270852,
+      "tool_calls": [
+        "load_osm_model",
+        "search_wiring_patterns",
+        "search_api",
+        "list_plant_loops",
+        "list_air_loops",
+        "create_measure"
+      ],
+      "num_tool_calls": 6,
+      "all_tool_calls": [
+        "ToolSearch",
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__search_wiring_patterns",
+        "mcp__openstudio__search_api",
+        "mcp__openstudio__list_plant_loops",
+        "mcp__openstudio__list_air_loops",
+        "ToolSearch",
+        "mcp__openstudio__create_measure"
+      ],
+      "toolsearch_count": 3,
+      "toolsearch_queries": [
+        "select:mcp__openstudio__load_osm_model,mcp__openstudio__create_measure",
+        "search_wiring_patterns search_api list_skills get_skill",
+        "get_skill measure authoring skill"
+      ],
+      "host_tool_counts": {},
+      "host_tool_call_count": 0,
+      "agent_cwd": "C:\\Users\\Brian\\AppData\\Local\\Temp\\llm-sweep\\inv4-doc-fix-check\\sonnet_noskills_r1\\agent_cwd\\tc7k05for",
+      "dropped_files": [],
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[measure_replace_terminals_L3]",
+      "passed": true,
+      "duration_s": 45.0,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 9,
+      "cost_usd": 0.24094840000000003,
+      "duration_ms": 42143,
+      "input_tokens": 12,
+      "output_tokens": 4060,
+      "cache_read_tokens": 215968,
+      "tool_calls": [
+        "load_osm_model",
+        "search_wiring_patterns",
+        "search_api",
+        "list_plant_loops",
+        "list_air_loops",
+        "create_measure"
+      ],
+      "num_tool_calls": 6,
+      "all_tool_calls": [
+        "ToolSearch",
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__search_wiring_patterns",
+        "mcp__openstudio__search_api",
+        "mcp__openstudio__list_plant_loops",
+        "mcp__openstudio__list_air_loops",
+        "mcp__openstudio__create_measure"
+      ],
+      "toolsearch_count": 2,
+      "toolsearch_queries": [
+        "select:mcp__openstudio__load_osm_model,mcp__openstudio__create_measure",
+        "select:mcp__openstudio__search_wiring_patterns,mcp__openstudio__search_api"
+      ],
+      "host_tool_counts": {},
+      "host_tool_call_count": 0,
+      "agent_cwd": "C:\\Users\\Brian\\AppData\\Local\\Temp\\llm-sweep\\inv4-doc-fix-check\\sonnet_noskills_r1\\agent_cwd\\tqcznylau",
+      "dropped_files": [],
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    }
+  ]
+}
