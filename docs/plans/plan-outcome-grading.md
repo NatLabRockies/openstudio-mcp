@@ -129,6 +129,27 @@ both-metrics deliverables, restart-from-zero, new sweep-id
 archived-not-cited), decisions of 2026-08-06 (18 cases, t240 cell,
 no dose probe, gemini limitation).
 
+## Validation results (2026-08-06, this session — DONE)
+
+- Rubric unit tests: 16 (tests/test_llm_outcome_rubric.py). Grader
+  integration: 5 in-image red-green (tests/test_outcome_grader_integration.py,
+  CI shard 2, ~7s). Aggregator: 10 incl. outcome pool.
+- E+ SQL gotcha found+fixed: Time rows mark interval END with the clock
+  hour NOT decremented — an hour-early bucketing read night mean 16.058
+  instead of 15.6 against a known plugin.
+- Live haiku leg (results/val-grading/, 11 graded rows): 3/11 pass vs
+  ~9-10/11 under routing-only. Every failure traced to REAL agent
+  behavior: measures crashed at runtime (OptionalModel unwrap, invented
+  caster method) at L1/L2 but PASSED at L3 (recipe in prompt); roof
+  changed by R-0.89 (L1) and made WORSE (L3, -0.61); EMS night setback
+  correct but day value clobbered to 21.0. Zero ungradable rows; recovered
+  rows carried facts with tool_error verdict; no_mcp_tool skipped grading.
+- Rubric guard added after val: tolerance boundaries are inclusive
+  (exactly-0.1 drift passes; IEEE noise must not decide verdicts).
+- Sonnet mini-leg SKIPPED: grading is model-agnostic and haiku exercised
+  every grader mode + verdict path; nothing model-specific left to test.
+- Floorplan ground truth recorded: 44 spaces / 1858.06 m2.
+
 ## Unresolved questions
 
 1. ems_sim Jan 1-14 run period enough, or full month? (validation
