@@ -11,6 +11,8 @@ args flow through the LLM, so passing file bytes in-band (base64) is infeasible
 **out-of-band** over signed HTTP routes on the same port.
 
 ## Flow (upload)
+0. Check first: `list_files` / `list_uploads` — staged inputs (e.g. `/inputs`)
+   are already server-visible and need no upload.
 1. `request_upload(filename, size_bytes[, sha256, kind])` → `{file_id, upload_url, ...}`
 2. PUT raw bytes: `curl --upload-file model.osm "<upload_url>"`
 3. `get_upload(file_id)` → `server_path` (or `extracted_path` for a `.zip`)
