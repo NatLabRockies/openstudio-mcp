@@ -1,0 +1,583 @@
+{
+  "timestamp": "2026-08-05T17:08:35+00:00",
+  "model": "sonnet",
+  "run_config": {
+    "git": "v1.1.3-17-gd97eb6e",
+    "image": "openstudio-mcp:dev",
+    "image_id": "sha256:0257ad9ae565d6bd33f4175462665ad2ef047059f679ce67357420b437f4cd63",
+    "image_repo_digests": "",
+    "repeat": 2,
+    "provider": "claude",
+    "arm": "full",
+    "retries": 0
+  },
+  "retries": 0,
+  "code_mode": false,
+  "code_mode_tests": 0,
+  "total_tests": 18,
+  "passed": 17,
+  "failed": 1,
+  "pass_rate": 94.4,
+  "total_duration_s": 313.1,
+  "total_input_tokens": 170,
+  "total_output_tokens": 13515,
+  "total_cache_read_tokens": 3785612,
+  "total_cost_usd": 1.6317,
+  "tiers": {
+    "setup": {
+      "total": 2,
+      "passed": 2,
+      "duration_s": 25.8,
+      "pass_rate": 100.0
+    },
+    "progressive": {
+      "total": 16,
+      "passed": 15,
+      "duration_s": 287.3,
+      "pass_rate": 93.8
+    }
+  },
+  "tests": [
+    {
+      "test_id": "tests/llm/test_01_setup.py::test_create_baseline_model",
+      "passed": true,
+      "duration_s": 12.5,
+      "tier": "setup",
+      "attempt": 1,
+      "num_turns": 3,
+      "cost_usd": 0.050015399999999995,
+      "duration_ms": 9900,
+      "input_tokens": 6,
+      "output_tokens": 290,
+      "cache_read_tokens": 131748,
+      "tool_calls": [
+        "create_baseline_osm"
+      ],
+      "num_tool_calls": 1,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__create_baseline_osm"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_01_setup.py::test_create_baseline_with_hvac",
+      "passed": true,
+      "duration_s": 13.3,
+      "tier": "setup",
+      "attempt": 1,
+      "num_turns": 3,
+      "cost_usd": 0.0507607,
+      "duration_ms": 10662,
+      "input_tokens": 6,
+      "output_tokens": 327,
+      "cache_read_tokens": 131779,
+      "tool_calls": [
+        "create_baseline_osm"
+      ],
+      "num_tool_calls": 1,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__create_baseline_osm"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[thermostat_L1]",
+      "passed": true,
+      "duration_s": 26.7,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 7,
+      "cost_usd": 0.1318375,
+      "duration_ms": 24359,
+      "input_tokens": 14,
+      "output_tokens": 1282,
+      "cache_read_tokens": 314205,
+      "tool_calls": [
+        "load_osm_model",
+        "adjust_thermostat_setpoints",
+        "save_osm_model",
+        "save_osm_model"
+      ],
+      "num_tool_calls": 4,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__adjust_thermostat_setpoints",
+        "ToolSearch",
+        "mcp__openstudio__save_osm_model",
+        "mcp__openstudio__save_osm_model"
+      ],
+      "toolsearch_count": 2,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[thermostat_L2]",
+      "passed": true,
+      "duration_s": 22.6,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.0714834,
+      "duration_ms": 19991,
+      "input_tokens": 8,
+      "output_tokens": 473,
+      "cache_read_tokens": 176618,
+      "tool_calls": [
+        "load_osm_model",
+        "adjust_thermostat_setpoints"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__adjust_thermostat_setpoints"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[thermostat_L3]",
+      "passed": true,
+      "duration_s": 16.9,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.070811,
+      "duration_ms": 14441,
+      "input_tokens": 8,
+      "output_tokens": 448,
+      "cache_read_tokens": 176590,
+      "tool_calls": [
+        "load_osm_model",
+        "adjust_thermostat_setpoints"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__adjust_thermostat_setpoints"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[list_spaces_L1]",
+      "passed": true,
+      "duration_s": 14.7,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 5,
+      "cost_usd": 0.087823,
+      "duration_ms": 12100,
+      "input_tokens": 10,
+      "output_tokens": 539,
+      "cache_read_tokens": 220800,
+      "tool_calls": [
+        "load_osm_model",
+        "list_spaces"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__list_spaces"
+      ],
+      "toolsearch_count": 2,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[list_spaces_L2]",
+      "passed": true,
+      "duration_s": 13.1,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.0766014,
+      "duration_ms": 10475,
+      "input_tokens": 8,
+      "output_tokens": 728,
+      "cache_read_tokens": 176678,
+      "tool_calls": [
+        "load_osm_model",
+        "list_spaces"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__list_spaces"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[set_wwr_L1]",
+      "passed": true,
+      "duration_s": 27.0,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 14,
+      "cost_usd": 0.16037420000000002,
+      "duration_ms": 24529,
+      "input_tokens": 10,
+      "output_tokens": 2091,
+      "cache_read_tokens": 229044,
+      "tool_calls": [
+        "load_osm_model",
+        "get_skill",
+        "list_surfaces",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio"
+      ],
+      "num_tool_calls": 11,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "ToolSearch",
+        "mcp__openstudio__get_skill",
+        "mcp__openstudio__list_surfaces",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio"
+      ],
+      "toolsearch_count": 2,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[set_wwr_L2]",
+      "passed": true,
+      "duration_s": 22.0,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 13,
+      "cost_usd": 0.14122880000000002,
+      "duration_ms": 19594,
+      "input_tokens": 12,
+      "output_tokens": 1638,
+      "cache_read_tokens": 267806,
+      "tool_calls": [
+        "load_osm_model",
+        "list_surfaces",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio",
+        "set_window_to_wall_ratio"
+      ],
+      "num_tool_calls": 10,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "ToolSearch",
+        "mcp__openstudio__list_surfaces",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio",
+        "mcp__openstudio__set_window_to_wall_ratio"
+      ],
+      "toolsearch_count": 2,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[create_plant_loop_L1]",
+      "passed": true,
+      "duration_s": 17.8,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.0695038,
+      "duration_ms": 15390,
+      "input_tokens": 8,
+      "output_tokens": 482,
+      "cache_read_tokens": 177046,
+      "tool_calls": [
+        "load_osm_model",
+        "create_plant_loop"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__create_plant_loop"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[create_plant_loop_L2]",
+      "passed": true,
+      "duration_s": 11.8,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.0690968,
+      "duration_ms": 9339,
+      "input_tokens": 8,
+      "output_tokens": 464,
+      "cache_read_tokens": 176986,
+      "tool_calls": [
+        "load_osm_model",
+        "create_plant_loop"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__create_plant_loop"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[create_plant_loop_L3]",
+      "passed": true,
+      "duration_s": 11.4,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.0673938,
+      "duration_ms": 8808,
+      "input_tokens": 8,
+      "output_tokens": 385,
+      "cache_read_tokens": 176876,
+      "tool_calls": [
+        "load_osm_model",
+        "create_plant_loop"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__create_plant_loop"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[zone_hvac_L1]",
+      "passed": false,
+      "duration_s": 11.8,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.06942759999999999,
+      "duration_ms": 9030,
+      "input_tokens": 8,
+      "output_tokens": 422,
+      "cache_read_tokens": 177162,
+      "tool_calls": [
+        "load_osm_model",
+        "list_thermal_zones"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__list_thermal_zones"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0,
+      "failure_mode": "wrong_tool"
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[zone_hvac_L2]",
+      "passed": true,
+      "duration_s": 29.0,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 8,
+      "cost_usd": 0.15380319999999997,
+      "duration_ms": 26560,
+      "input_tokens": 14,
+      "output_tokens": 1537,
+      "cache_read_tokens": 319314,
+      "tool_calls": [
+        "load_osm_model",
+        "list_zone_hvac_equipment",
+        "list_thermal_zones",
+        "get_thermal_zone_details",
+        "get_air_loop_details"
+      ],
+      "num_tool_calls": 5,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__list_zone_hvac_equipment",
+        "mcp__openstudio__list_thermal_zones",
+        "ToolSearch",
+        "mcp__openstudio__get_thermal_zone_details",
+        "mcp__openstudio__get_air_loop_details"
+      ],
+      "toolsearch_count": 2,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[zone_hvac_L3]",
+      "passed": true,
+      "duration_s": 11.5,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 4,
+      "cost_usd": 0.0660742,
+      "duration_ms": 8637,
+      "input_tokens": 8,
+      "output_tokens": 388,
+      "cache_read_tokens": 176674,
+      "tool_calls": [
+        "load_osm_model",
+        "list_zone_hvac_equipment"
+      ],
+      "num_tool_calls": 2,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__list_zone_hvac_equipment"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[economizer_L1]",
+      "passed": true,
+      "duration_s": 19.6,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 5,
+      "cost_usd": 0.08756180000000001,
+      "duration_ms": 17073,
+      "input_tokens": 10,
+      "output_tokens": 556,
+      "cache_read_tokens": 222776,
+      "tool_calls": [
+        "load_osm_model",
+        "list_air_loops",
+        "set_economizer_properties"
+      ],
+      "num_tool_calls": 3,
+      "all_tool_calls": [
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__list_air_loops",
+        "mcp__openstudio__set_economizer_properties"
+      ],
+      "toolsearch_count": 1,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[economizer_L2]",
+      "passed": true,
+      "duration_s": 15.1,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 6,
+      "cost_usd": 0.0889738,
+      "duration_ms": 12519,
+      "input_tokens": 10,
+      "output_tokens": 657,
+      "cache_read_tokens": 221706,
+      "tool_calls": [
+        "load_osm_model",
+        "list_air_loops",
+        "set_economizer_properties"
+      ],
+      "num_tool_calls": 3,
+      "all_tool_calls": [
+        "ToolSearch",
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "mcp__openstudio__list_air_loops",
+        "mcp__openstudio__set_economizer_properties"
+      ],
+      "toolsearch_count": 2,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    },
+    {
+      "test_id": "tests/llm/test_06_progressive.py::test_progressive[economizer_L3]",
+      "passed": true,
+      "duration_s": 16.3,
+      "tier": "progressive",
+      "attempt": 1,
+      "num_turns": 7,
+      "cost_usd": 0.11891219999999998,
+      "duration_ms": 13738,
+      "input_tokens": 14,
+      "output_tokens": 808,
+      "cache_read_tokens": 311804,
+      "tool_calls": [
+        "load_osm_model",
+        "list_air_loops",
+        "set_economizer_properties"
+      ],
+      "num_tool_calls": 3,
+      "all_tool_calls": [
+        "ToolSearch",
+        "ToolSearch",
+        "mcp__openstudio__load_osm_model",
+        "ToolSearch",
+        "mcp__openstudio__list_air_loops",
+        "mcp__openstudio__set_economizer_properties"
+      ],
+      "toolsearch_count": 3,
+      "is_timeout": false,
+      "code_mode_active": false,
+      "code_executions": 0
+    }
+  ]
+}

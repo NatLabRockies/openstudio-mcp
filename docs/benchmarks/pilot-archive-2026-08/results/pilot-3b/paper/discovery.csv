@@ -1,0 +1,13 @@
+model,arm,level,passed,total,rate,wilson_lo,wilson_hi
+gpt-5.4,full,L1,5,6,0.8333,0.4365,0.9699
+gpt-5.4,full,L2,6,6,1.0000,0.6097,1.0000
+gpt-5.4,full,L3,4,4,1.0000,0.5101,1.0000
+gpt-5.4,noskills,L1,6,6,1.0000,0.6097,1.0000
+gpt-5.4,noskills,L2,6,6,1.0000,0.6097,1.0000
+gpt-5.4,noskills,L3,4,4,1.0000,0.5101,1.0000
+sonnet,full,L1,6,6,1.0000,0.6097,1.0000
+sonnet,full,L2,5,6,0.8333,0.4365,0.9699
+sonnet,full,L3,3,4,0.7500,0.3006,0.9544
+sonnet,noskills,L1,5,6,0.8333,0.4365,0.9699
+sonnet,noskills,L2,5,6,0.8333,0.4365,0.9699
+sonnet,noskills,L3,3,4,0.7500,0.3006,0.9544
