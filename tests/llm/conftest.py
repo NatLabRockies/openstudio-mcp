@@ -555,6 +555,7 @@ def pytest_sessionfinish(session, exitstatus):
         "arm": os.environ.get("LLM_TESTS_ARM", "full"),
         "image": os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev"),
         "retries": MAX_RETRIES,
+        "timeout_base": int(os.environ.get("LLM_TESTS_TIMEOUT_BASE", "120")),
     }
 
     summary = {

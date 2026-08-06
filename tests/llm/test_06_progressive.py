@@ -15,6 +15,8 @@ don't need one.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from .conftest import (
@@ -749,7 +751,10 @@ def test_progressive(case, request):
         prompt = LOAD + prompt
     prompt += SUFFIX
 
-    timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else 120
+    # 120s base is a load-bearing benchmark parameter (L1 multi-step rows run
+    # 84-120s); LLM_TESTS_TIMEOUT_BASE overrides it for timeout-sensitivity cells
+    base_timeout = int(os.environ.get("LLM_TESTS_TIMEOUT_BASE", "120"))
+    timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else base_timeout
     result = run_claude(prompt, timeout=timeout)
     tool_names = result.tool_names
 
