@@ -1,5 +1,20 @@
 # Benchmark session handoff (2026-08-06) — knowledge-layer ablation deep-dive
 
+> **STATUS (2026-08-06 end of session): HISTORICAL — do not cite as fact.**
+> Pilots 1-5 + investigation 4 are complete. Several findings below were
+> DISPROVEN by their own archived data as the session progressed (notably:
+> the sonnet skill-lift claim, the gpt-5.4 latency claim, the haiku
+> engagement-collapse hypothesis, "mini measure failure = capability").
+> The accurate end-state lives in TWO places only:
+> - `benchmark-production-brief-2026-08.md` — run spec, verified
+>   condition-facts, hypotheses, superseded-claims register. THE doc for
+>   the production session.
+> - `docs/benchmarks/pilot-archive-2026-08/` — frozen raw data + escape
+>   annotations. The only citable pilot record.
+> Sections below are kept for chronology; where they conflict with the
+> Investigation 4 verdict or the critical-review section, the later
+> sections win.
+
 Supersedes `benchmark-session-handoff-2026-08-05.md` (still valid for sweep
 mechanics, codex CLI flags, pinned refs — read it too). Branch:
 `feat/llm-benchmark-realism`. SPIKE-2 is ON HOLD (user decision) until the
