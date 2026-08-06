@@ -193,8 +193,14 @@ def register(mcp):
 
         Create FloorspaceJS JSON at https://nrel.github.io/floorspace.js/
 
+        Paths are SERVER-side: the file must be readable by this server
+        (staged inputs live under /inputs — enumerate with list_files).
+        Do not pass a path from your local machine; if the file only exists
+        client-side, upload it first (request_upload).
+
         Args:
-            floorplan_path: Absolute path to FloorspaceJS JSON file (*.json)
+            floorplan_path: Absolute SERVER-side path to FloorspaceJS JSON
+                file (*.json), e.g. /inputs/<project>/floorplan.json
             building_type: DOE prototype — "SmallOffice", "LargeOffice",
                 "RetailStandalone", "Hospital", etc. Sets standardsBuildingType.
             create_zones: Create one thermal zone per space (default True)
