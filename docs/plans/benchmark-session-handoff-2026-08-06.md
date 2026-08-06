@@ -76,6 +76,35 @@ to our server container, AND client-side affordances that confound results:
 So every result is a (model × harness) pair, not a pure model property.
 Ablation comparisons are valid because both arms share a harness.
 
+## Late-session additions (after the pilot-4 writeup above)
+
+- **Cross-leg measure contamination found and fixed** (fb7ed15): the sweep
+  freshened LLM_TESTS_RUNS_DIR per leg but the /measures volume defaulted to
+  the shared %TEMP%/llm-test-measures — gpt-5.4-mini found a PREVIOUS leg's
+  authored measure via list_custom_measures and reused it instead of
+  authoring (scored wrong_tool). Measures now live under each leg's runs
+  dir. CONSEQUENCE: pilot measure_replace results involving
+  list_custom_measures are suspect; mini's measure_replace_L1 failure was
+  a contamination artifact, NOT capability. Sonnet's skill-lift stands (its
+  noskills stall never touched list_custom_measures).
+- **Failure-taxonomy revision**: python_ems = genuine capability failure
+  (sonnet L3 fetched create_python_plugin's schema FIRST via ToolSearch,
+  tool named in prompt, docs available, then explored for 120s and never
+  called it; gpt-5.4 passes both arms — the task demands authoring a Python
+  EMS plugin program, a generative step weaker models avoid by context-
+  gathering until timeout).
+- **ToolSearch query capture** (2135005): benchmark.json now records
+  toolsearch_queries per test (which schemas Claude Code fetches by name)
+  — per-arm discovery-substitution evidence.
+- **Claude-side discovery ablation is POSSIBLE**: `ENABLE_TOOL_SEARCH=false
+  claude -p ...` disables ToolSearch, loading all schemas up-front
+  (docs: code.claude.com/docs/en/agent-sdk/tool-search; default is auto at
+  10% of context, `auto:N` tunes it; requires 4.5-gen models). A
+  "claude-nodiscovery" arm (noskills + no ToolSearch, and/or full + no
+  ToolSearch) would isolate our knowledge layer on Claude models the way
+  codex already does. DECISION FOR USER: add this arm to pilot-5/matrix?
+  Cost: context grows by ~190 tool schemas per prompt (token cost up).
+
 ## Next session, in order
 
 1. Rebuild check: image `openstudio-mcp:dev` must postdate b92bc8c
