@@ -208,3 +208,34 @@ def test_load_results_refuses_mixed_image_identity(tmp_path):
 
     runs = load_results(tmp_path, ignore_digest=True)
     assert len(runs) == 2
+
+
+def test_outcome_pool_counts_and_recovered_exclusion(tmp_path):
+    # Validates: gate-2 pool counts routing-passed rows only (passed or
+    # outcome_mismatch); recovered tool_error rows carry facts but are
+    # excluded; ungradable reasons counted separately; outcome.md rendered
+    runs = [_run("haiku", "full", [
+        _t(f"{PROG}[measure_replace_terminals_L3]", True,
+           outcome={"outcome_pass": True, "reasons": []}),
+        _t(f"{PROG}[measure_replace_terminals_L1]", False,
+           mode="outcome_mismatch",
+           outcome={"outcome_pass": False,
+                    "reasons": ["expected 10 FourPipeBeam terminals, got 1"]}),
+        _t(f"{PROG}[python_ems_control_L2]", False, mode="tool_error",
+           recovered=True,
+           outcome={"outcome_pass": False, "reasons": ["day mean 15.6"]}),
+        _t(f"{PROG}[roof_insulation_L2]", False, mode="outcome_mismatch",
+           outcome={"outcome_pass": False,
+                    "reasons": ["ungradable: grader timeout after 180s"]}),
+    ])]
+    agg = aggregate(runs)
+    pool = agg["outcomes"]
+    assert pool[("haiku", "full", "measure_replace_terminals")] == {
+        "graded": 2, "outcome_pass": 1, "ungradable": 0}
+    assert ("haiku", "full", "python_ems_control") not in pool, (
+        "recovered tool_error rows must not enter the gate-2 pool")
+    assert pool[("haiku", "full", "roof_insulation")] == {
+        "graded": 1, "outcome_pass": 0, "ungradable": 1}
+    write_artifacts(agg, tmp_path)
+    outcome_md = (tmp_path / "outcome.md").read_text(encoding="utf-8")
+    assert "| haiku | full | measure_replace_terminals | 2 | 1 | 1 | 0 |" in outcome_md
