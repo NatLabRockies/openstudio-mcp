@@ -253,6 +253,40 @@ codex does natively:
 Note: nodiscovery loads ~190 schemas up-front — higher tokens/prompt and
 input_tokens not comparable to ToolSearch arms; report separately.
 
+## PILOT-5 RESULTS (complete, 11 legs, aggregated results/pilot-5/paper)
+
+haiku ladder (18 hard cases; * = escape-capable harness, see
+docs/benchmarks/pilot-archive-2026-08/escape_annotations.md):
+full 9*/14*/setup-collapse* → noskills 13*/12*/13 → nohost 16 →
+nodiscovery 17 → nodiscovery-noskills 18/18. Sandboxed anchor for noskills
+(r3=13) matches unsandboxed (13/12) → sandbox alone is not the boost; the
+within-sandbox ladder 13→16→17→18 is clean. MISSING: sandboxed full-arm
+anchor (comes with the clean re-run).
+
+sonnet 2x2: full 16* (3b) / noskills 15* (3b) / nodiscovery 18 /
+nodiscovery-noskills 16 (fails python_ems_L2 capability + roof_L1).
+nodiscovery mechanism datapoint: sonnet consulted get_skill at
+measure_replace_L1 (its historic flip case) and add_hvac_L1. BUT
+nodiscovery-noskills PASSED all measure_replace levels — schemas-up-front
+substitutes for the knowledge layer even on sonnet's flip case (n=1).
+
+Escape annotations (all pilots): 28 escape rows, ALL haiku; other models
+use host tools only alongside MCP. haiku nohost/nodiscovery legs: ZERO
+host calls (nodiscovery needed no enforcement — up-front schemas removed
+the wandering). Duration halves in nodiscovery arms (28-35s/test vs
+67-73s). nohost pushed ToolSearch to 7.56/test (leaned on discovery when
+shell was gone).
+
+Paper story upgrade: "assistance-layer inversion" — for haiku every layer
+removed improves score AND speed; deferred discovery (ToolSearch) looks
+like the root cause of its wandering/escaping, not model capability.
+Verify at n=3 in the matrix before claiming.
+
+Raw data FROZEN at docs/benchmarks/pilot-archive-2026-08/ (committed:
+results JSONs, transcript+droppings zips, escape_annotations). Aggregator
+does not yet consume escape_annotations — asterisk old-harness rows
+manually or wire it in for the matrix.
+
 ## Next session, in order
 
 1. Rebuild check: image `openstudio-mcp:dev` must postdate b92bc8c
