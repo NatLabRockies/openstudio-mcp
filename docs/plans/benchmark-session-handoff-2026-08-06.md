@@ -105,22 +105,81 @@ Ablation comparisons are valid because both arms share a harness.
   codex already does. DECISION FOR USER: add this arm to pilot-5/matrix?
   Cost: context grows by ~190 tool schemas per prompt (token cost up).
 
+## Paper narrative: three distinct failure classes (user-approved, keep)
+
+The ablation surfaced three failure classes the paper should narrate
+explicitly — they are the difference between "pass rates moved" and
+"we know why":
+
+**1. Capability failure (python_ems).** Sonnet's L3 transcript is
+conclusive: its FIRST action was a ToolSearch that fetched the
+`create_python_plugin` schema — it knew exactly which tool the task needed
+(L3 names it in the prompt). It then spent the entire 120 s budget
+exploring — `get_schedule_details` twice, `get_object_fields`,
+`list_model_objects`, even grepping the test file for hints — and never
+called the tool whose schema it was holding. No instruction fix can help:
+docs were available (full arm), the schema was loaded, the prompt named the
+tool. The blocker is the task itself — writing a Python program against the
+EnergyPlus plugin API (calling points, actuator handles, setpoint logic).
+That generative step is what weaker models displace with endless
+context-gathering. Controls: identical failure in both arms (not
+knowledge-related); gpt-5.4 passes in both arms (task, tools, and prompts
+are sufficient).
+
+**2. Knowledge-layer effect (measure authoring, sonnet).** Repeatable
+2/2-with-skills vs 0/2-without across pilots 3/3b/4: with `get_skill`
+available sonnet follows the author→test→apply chain; without it, it
+stalls after two exploratory calls. Its consultation is selective (0.22
+knowledge calls/test) but lands exactly where it flips the outcome.
+
+**3. Environment/scoring artifacts (measure authoring, mini) — found and
+fixed.** Mini's transcript shows textbook exploration (search_wiring_
+patterns, search_api for FourPipeBeam classes, list_air_loops), then
+`list_custom_measures` found an already-authored measure with the exact
+target name — leaked from a previous leg through the shared /measures
+volume. It rationally reused it and was scored wrong_tool. Fixed
+(fb7ed15: per-leg measures dir). Related artifact class: first-call-strict
+scoring rejecting recovered completions, now surfaced via the
+`tool_error (recovered)` tag. The paper should note the benchmark caught
+its own contamination — that is what the provenance/isolation machinery
+is for.
+
+## Pilot-5 design (user approved nodiscovery 2026-08-06)
+
+Arms available: full | noskills (server flag) | nodiscovery
+(ENABLE_TOOL_SEARCH=false, claude only, 9931c9e) | nodiscovery-noskills
+(both). The claude-side 2x2 finally isolates the knowledge layer the way
+codex does natively:
+
+| arm | client discovery | server knowledge | question answered |
+|---|---|---|---|
+| full | ToolSearch | yes | production behavior |
+| noskills | ToolSearch | no | does knowledge matter when client discovery substitutes? |
+| nodiscovery | none | yes | does the model consult skills when its own discovery is gone? |
+| nodiscovery-noskills | none | no | floor: tool schemas alone |
+
+Note: nodiscovery loads ~190 schemas up-front — higher tokens/prompt and
+input_tokens not comparable to ToolSearch arms; report separately.
+
 ## Next session, in order
 
 1. Rebuild check: image `openstudio-mcp:dev` must postdate b92bc8c
    (a rebuild was kicked off at session end — verify with
    `docker image inspect openstudio-mcp:dev --format '{{.Created}}'`;
    sweep preflight enforces this anyway).
-2. **Pilot-5: haiku ×3 repeats, both arms**, same 18-case `-k` (in
-   handoff-05 / results/pilot-4 sweep commands; use
-   `--model haiku:claude --arms full,noskills --repeats 3`, ONE leg per
-   background invocation, NEVER pipe the sweep through head/tail —
-   SIGPIPE kills it). Purpose: settle haiku variance; test engagement-
-   collapse hypothesis via no_mcp_tool counts in failure_modes.md.
-   Optionally rerun mini/gpt legs on the fixed image to see if the path
-   fixes (#118/#119) recover import_floorplan (expected: yes — that's a
-   nice before/after paper anecdote: "the benchmark found and validated
-   tool-ergonomics fixes").
+2. **Pilot-5** (same 18-case `-k`; ONE leg per background invocation,
+   NEVER pipe the sweep through head/tail — SIGPIPE kills it):
+   a. haiku ×3 × {full, noskills} — settle variance; test engagement-
+      collapse hypothesis via no_mcp_tool counts.
+   b. haiku + sonnet ×1 × {nodiscovery, nodiscovery-noskills} — first look
+      at the claude 2x2 (scale to ×3 if the deltas look real).
+   c. measure_replace-only reruns on the FIXED sweep (contamination):
+      sonnet + mini, both arms, `-k measure_replace_terminals` + setup —
+      revalidates the sonnet skill-lift claim and mini's true capability
+      on clean state. Cheap (~5 min/leg).
+   d. Optional: gpt/mini import_floorplan rerun on the post-#118/#119
+      image — before/after validation of the tool-ergonomics fixes
+      (paper anecdote: the benchmark found and fixed real UX bugs).
 3. Decide with user: SPIKE-2 resume → then PR to develop → tag v1.2.0 →
    matrix (see handoff-05 for the full matrix; ADD haiku-noskills +
    gpt-5.4-mini full+noskills rows per user decision 2026-08-06).
