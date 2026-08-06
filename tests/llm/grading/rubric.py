@@ -160,10 +160,12 @@ def grade_python_ems_control(level: str, facts: dict) -> dict:
                 reasons.append(f"{zone}: no setback — night mean {night} vs "
                                f"day mean {day}")
         else:
-            if abs(night - NIGHT_SETPOINT_C) > SETPOINT_TOL_C:
+            # 1e-9 guard: a value drifted by EXACTLY the tolerance must be
+            # judged by the data, not IEEE noise (val-grading: 21.0 vs 21.1)
+            if abs(night - NIGHT_SETPOINT_C) > SETPOINT_TOL_C + 1e-9:
                 reasons.append(f"{zone}: night mean {night}, "
                                f"expected {NIGHT_SETPOINT_C}")
-            if abs(day - DAY_SETPOINT_C) > SETPOINT_TOL_C:
+            if abs(day - DAY_SETPOINT_C) > SETPOINT_TOL_C + 1e-9:
                 reasons.append(f"{zone}: day mean {day}, "
                                f"expected {DAY_SETPOINT_C} (unchanged)")
     return _verdict(reasons[:6])

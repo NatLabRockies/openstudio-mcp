@@ -147,6 +147,18 @@ def test_ems_day_value_clobbered_fails_l2():
     assert any("day mean 15.6" in r for r in verdict["reasons"])
 
 
+def test_ems_tolerance_boundary_is_inclusive():
+    # Regression: val-grading leg failed day mean 21.0 vs 21.1 on IEEE noise —
+    # a drift of EXACTLY the +-0.1 tolerance is within tolerance (inclusive);
+    # 0.11 is not
+    at_edge = _ems_facts(night=15.6, day=21.0)
+    assert rubric.evaluate("python_ems_control", "L2",
+                           at_edge)["outcome_pass"] is True
+    beyond = _ems_facts(night=15.6, day=20.99)
+    assert rubric.evaluate("python_ems_control", "L2",
+                           beyond)["outcome_pass"] is False
+
+
 def test_ems_sim_failure_fails_with_cli_context():
     # Validates: a saved-but-unsimulatable model fails with the grading-sim
     # context, not a KeyError

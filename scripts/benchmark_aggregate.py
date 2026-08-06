@@ -91,8 +91,8 @@ def aggregate(runs: list[dict]) -> dict:
                                  "tool_calls": 0, "duration_s": 0.0,
                                  "input_tokens": 0, "output_tokens": 0})
     skips = defaultdict(int)                              # (model, arm)
-    outcomes = defaultdict(lambda: {"graded": 0, "outcome_pass": 0,
-                                    "ungradable": 0})    # (model, arm, case)
+    outcome_pool = defaultdict(lambda: {"graded": 0, "outcome_pass": 0,
+                                        "ungradable": 0})  # (model, arm, case)
 
     for run in runs:
         model, arm = _key(run)
@@ -134,7 +134,7 @@ def aggregate(runs: list[dict]) -> dict:
             if o is not None and (passed or
                                   t.get("failure_mode") == "outcome_mismatch"):
                 case = (cl[0] if cl else t["test_id"].split("::")[-1])
-                oc = outcomes[(model, arm, case)]
+                oc = outcome_pool[(model, arm, case)]
                 oc["graded"] += 1
                 oc["outcome_pass"] += int(bool(o.get("outcome_pass")))
                 if any(str(r).startswith("ungradable")
@@ -150,7 +150,7 @@ def aggregate(runs: list[dict]) -> dict:
     return {"tiers": dict(tiers), "levels": dict(levels), "modes": dict(modes),
             "unstable": unstable, "repeats": dict(repeats),
             "behavior": dict(behav), "tasks": dict(tasks), "skips": dict(skips),
-            "outcomes": dict(outcomes)}
+            "outcomes": dict(outcome_pool)}
 
 
 def _pct_ci(s: int, n: int) -> str:

@@ -1,4 +1,4 @@
-# Production benchmark brief (2026-08)
+# Production benchmark brief (2026-08) — OUTCOME-GRADING EDITION
 
 Single source of truth for the production matrix run (new session).
 USER DIRECTIVE (2026-08-06): the production run is ENTIRELY data-driven —
@@ -7,15 +7,42 @@ Nothing from the pilots is carried forward as a finding; pilots inform
 hypotheses and run design only. This brief therefore contains NO findings —
 only run mechanics, verified condition-facts, and hypotheses to test.
 
+REVISION 2026-08-06 (this session): grading gained GATE 2 — outcome
+grading of the artifact (did the job), on top of gate 1 routing. See
+docs/plans/plan-outcome-grading.md + tests/llm/grading/. Consequences:
+- Sweep-id is now **prod-2026-08b**. The 2 legs run under prod-2026-08
+  (haiku full/noskills r1) are DISCARDED (different grading; archived,
+  never cited). Sensitivity cells: **prod-2026-08b-t240**.
+- Harness commit for every leg: >= **ff00977** (outcome grading; includes
+  3aed97d LLM_TESTS_TIMEOUT_BASE and cac68d9 sandbox cwd + utf-8).
+- Image tag UNCHANGED: openstudio-mcp:bench-2026-08, digest
+  sha256:cf9e9f7cb01a... (grading is host-mounted, nothing baked changed;
+  sweep freshness check still passes). Preflight record:
+  results/prod-2026-08/preflight.json (id smokes + arm verification on
+  sonnet-4-6 remain valid — copy it into the new sweep dir).
+- Graded rows now report failure_mode=outcome_mismatch with an "outcome"
+  dict (facts + rubric verdict) in every benchmark row. Rubric v1 is
+  re-scorable post-hoc from recorded facts — NO re-run needed to change
+  thresholds (tests/llm/grading/rubric.py, RUBRIC_VERSION).
+- Prompt change (benchmark parameter, footnote): graded mutation cases
+  append "save the model to /runs/graded_<case>_<level>.osm" — no
+  autosave exists; save-as also blocks fixture state-leaks. Applies
+  uniformly to every model/arm.
+- Outcome grading is provider-agnostic (grades artifacts, not
+  transcripts) — codex legs get the same gate 2.
+- Grading adds ~2-4 min per leg (measured: EMS grade ~3-5s/row,
+  measure grade ~2s/row, inspect ~1-2s/row + docker startup).
+
 Prior narrative docs (`benchmark-session-handoff-2026-08-05/-06.md`) are
 HISTORICAL: several claims in them were later disproven by their own
 archived data (see the superseded-claims register below). Do not cite them.
 
 ## Run spec — non-negotiables
 
-1. ONE pinned image for every leg: rebuild, tag (e.g.
-   `openstudio-mcp:bench-2026-08`), record digest in the archive README.
-2. ONE harness commit for every leg: >= cac68d9 (sandbox cwd + utf-8 fix).
+1. ONE pinned image for every leg: `openstudio-mcp:bench-2026-08`
+   (digest recorded in results/prod-2026-08/preflight.json + archive
+   README). Rebuild only if mcp_server/docker/pyproject changes.
+2. ONE harness commit for every leg: >= ff00977 (outcome grading).
 3. `LLM_TESTS_RETRIES=0`. Repeats replace retries (sweep preflight aborts
    otherwise).
 4. n=3 repeats per (model, arm) cell.
@@ -48,7 +75,7 @@ Pass these EXACT ids as LLM_TESTS_MODEL (hyphens, not dots):
   DIFFERENT MODEL; never compare pilot sonnet numbers to production
   sonnet numbers, even informally.
 
-## Matrix (48 legs)
+## Matrix (48 legs + 6 sensitivity)
 
 - claude-sonnet-4-6 + claude-haiku-4-5 x {full, noskills, nodiscovery,
   nodiscovery-noskills, nohost} x3 = 30 legs (~8-25 min each observed)
@@ -62,13 +89,20 @@ Pass these EXACT ids as LLM_TESTS_MODEL (hyphens, not dots):
   sonnet-5/haiku-4.5 only).
 - Case set: the 18-hard-case `-k` (setup + import_floorplan, add_hvac,
   python_ems_control, measure_replace_terminals, zone_equipment_priority,
-  roof_insulation) unless the scope decision (below) says full suite.
+  roof_insulation) — USER DECISION 2026-08-06: 18 cases for ALL cells.
+- SENSITIVITY CELLS (USER DECISION 2026-08-06): claude-sonnet-4-6 x
+  {full, noskills} x3 with LLM_TESTS_TIMEOUT_BASE=240, sweep-id
+  prod-2026-08b-t240 (H3 budget-race contrast at relaxed budget;
+  timeout_base is recorded in run_config). 6 legs.
+- Rejected scope options (USER DECISIONS 2026-08-06): ToolSearch dose
+  probe arm — skipped (resume-safe to add later if H1/H4 motivates);
+  second non-Anthropic vendor (gemini) — note as limitation, no adapter.
 
 Exact leg command (copy-paste; swap --model/--arms/--repeats per leg;
 repeats r2/r3 via --repeats 2/3 — existing legs are skipped, resume-safe;
 run ONE leg per background invocation):
 
-    python scripts/benchmark_sweep.py --sweep-id prod-2026-08 \
+    python scripts/benchmark_sweep.py --sweep-id prod-2026-08b \
       --image openstudio-mcp:bench-2026-08 \
       --model claude-haiku-4-5-20251001:claude \
       --arms full --repeats 1 \
@@ -99,8 +133,19 @@ claude-haiku-4-5-20251001:claude, gpt-5.4:codex, gpt-5.4-mini:codex.
   double cache reads. Report per-provider, footnote.
 - The 120s per-test timeout is LOAD-BEARING for L1 rows (multi-step
   workflows measured at 84-120s). Treat it as a benchmark parameter.
+  The save-model step added to graded prompts spends part of that budget
+  uniformly across models/arms — footnote both together.
 - Results are (model x harness) pairs. Ablation contrasts are valid only
   within a harness.
+- Grading mechanics (validated red-green in
+  tests/test_outcome_grader_integration.py, in CI shard 2): apply_measure
+  = openstudio run --measures_only on the Sys7 fixture, asserts 10
+  FourPipeBeam / 0 VAV / 10 zones connected from run/in.osm; ems_sim =
+  E+ Jan 1-14 timestep run on a copy with injected Boston EPW +
+  ideal-loads + thermostat-setpoint output, asserts night 15.6 / day
+  21.1 (L1: direction only); inspect = SDK fact dump (zones, terminals,
+  priorities, roof assembly R vs fixture baseline). Grader failures
+  surface as "ungradable", never as agent failures.
 
 ## Hypotheses to test (questions, not claims — each with pilot evidence)
 
@@ -125,8 +170,14 @@ prod-run legs, not pilot legs.
   escape rate per model x arm from the new host metrics.
 - H5 python_ems capability wall is model- AND regime-dependent: sonnet
   failed L2/L3 in ToolSearch arms yet haiku passed under nodiscovery
-  (real accepted create_python_plugin calls). D6-outcome-grade a sample —
-  routing passes may hide quality differences.
+  (real accepted create_python_plugin calls). Now answered PER-ROW by
+  gate 2 (ems_sim grader) instead of a D6 sample.
+- H6 (USER HYPOTHESIS 2026-08-06, now the headline question): the
+  routing-pass vs outcome-pass gap is larger for smaller models — i.e.
+  "lower-grade models showed great success" under routing-only grading
+  because authoring cases only checked syntax acceptance. Measure: the
+  outcome.md mismatch column per model x arm x case; compare across
+  tiers. NO pilot evidence exists either way (pilots were routing-only).
 
 ## Superseded-claims register (do NOT carry into the paper)
 
@@ -143,27 +194,36 @@ prod-run legs, not pilot legs.
   pilot-archive-2026-08/escape_annotations.md) — condition-contaminated:
   agents ran with cwd = our repo (source + grading tests readable;
   likely also loaded our CLAUDE.md into context).
+- EVERY pilot pass-rate is additionally routing-only (no gate 2) —
+  never compare pilot numbers to prod-2026-08b numbers, even informally.
+  Same for the 2 discarded prod-2026-08 legs.
 
-## Open decisions (ask user before launching)
+## Open decisions — ALL RESOLVED 2026-08-06 (launch is unblocked)
 
-1. Scope: 18 hard cases vs full progressive suite for full/noskills rows.
-2. 120s timeout: keep + footnote, raise, or run a sensitivity cell.
-3. ToolSearch dose probe (ENABLE_TOOL_SEARCH=auto:N) as an extra arm?
-4. Second non-Anthropic vendor (gemini seam exists, unbuilt) — worth the
-   adapter for vendor-generality, or note as limitation?
-5. RESOLVED 2026-08-06: opus IS included, as claude-opus-4-6 at reduced
-   scope (full + noskills x3); models pinned to 4.x snapshots (see Models).
+1. Scope: 18 hard cases for ALL cells.
+2. 120s timeout: keep + footnote; sensitivity cells sonnet-4-6
+   {full, noskills} x3 at LLM_TESTS_TIMEOUT_BASE=240 (prod-2026-08b-t240).
+3. ToolSearch dose probe: skipped (add later only if data motivates).
+4. Gemini: note as limitation, no adapter.
+5. Opus included as claude-opus-4-6 at reduced scope (full + noskills
+   x3); models pinned to 4.x snapshots (see Models).
+6. Grading: two-gate (routing + outcome), rubric v1, facts recorded for
+   post-hoc re-scoring. import_floorplan L1 is routing-only (no file in
+   prompt). Recovered rows carry facts, verdict stays tool_error.
 
 ## Analysis deliverables
 
 - Aggregator output per sweep (table4/ablation/flips/behavior/discovery/
-  stability/failure_modes) + wire escape metrics into the tables
-  (asterisk any escape-affected row automatically — fields exist in every
-  benchmark.json now; no transcript reconstruction needed).
+  stability/failure_modes/**outcome**) + wire escape metrics into the
+  tables (asterisk any escape-affected row automatically — fields exist
+  in every benchmark.json now; no transcript reconstruction needed).
+- **outcome.md is the headline table**: routing-passed vs outcome-passed
+  vs mismatch per model x arm x case (H6). Ungradable column separates
+  grader-infra failures from agent failures.
 - no_mcp_tool subclassification: {gave up | answered in text | escape}
   from host_tool_counts.
-- D6 outcome-grade sample of nodiscovery passes (H5).
 - Cost/token table per arm, per provider (separately).
+- (D6 sample superseded — every graded row now carries outcome facts.)
 
 ## Operational gotchas (carried forward, still true)
 
