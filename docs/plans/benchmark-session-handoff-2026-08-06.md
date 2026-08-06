@@ -216,6 +216,13 @@ input_tokens not comparable to ToolSearch arms; report separately.
 
 ## Gotchas added this session
 
+- "Install Python" Store popups during LLM legs: benchmark agents run
+  host-side shell commands; `python3` on this machine resolves to the
+  Microsoft Store app-execution-alias shim (real python = C:\Python313,
+  reachable as `python`). Harmless to the suite (the agent's command just
+  fails); silence permanently via Settings → Apps → App execution aliases →
+  disable python.exe/python3.exe. Never use `python3` in host scripts.
+
 - NEVER pipe a background sweep through `head`/`tail` — head exits, pipe
   closes, SIGPIPE kills pytest mid-leg, pipeline exit code lies (0).
 - `openstudio-mcp:dev` was rebuilt mid-pilot by something outside the
