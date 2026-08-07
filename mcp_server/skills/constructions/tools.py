@@ -67,7 +67,11 @@ def register(mcp):
 
     @mcp.tool(tags={"geometry"}, name="create_construction")
     def create_construction_tool(name: str, material_names: list[str] | str):
-        """Create a layered construction — ordered material layers from outside to inside.
+        """Create a NEW layered construction from scratch — ordered material layers
+        from outside to inside. Every layer must be listed explicitly. To add
+        insulation to an EXISTING construction, use add_layer_to_construction
+        instead — it preserves the original layers (a rebuilt assembly that omits
+        them can end up with LESS insulation than the original).
 
         Args:
             name: Name for the construction
@@ -98,7 +102,10 @@ def register(mcp):
 
     @mcp.tool(tags={"geometry"}, name="assign_construction_to_surface")
     def assign_construction_to_surface_tool(surface_name: str, construction_name: str):
-        """Apply a wall, roof, or floor construction to a surface.
+        """Apply a wall, roof, or floor construction to a surface, REPLACING its
+        current one. For insulation upgrades, build the upgraded construction with
+        add_layer_to_construction first. Response reports the surface's assembly R
+        and warns when the swap lowered it.
 
         Args:
             surface_name: Name of the surface to modify
