@@ -34917,8 +34917,8 @@
       <ProductName>Autodesk Revit 2026</ProductName>
       <Version>2026.1</Version>
       <ProjectEntity>
-        <URI>D:\New Models\RVT2026\11J\2026_11Ja_path1.rvt</URI>
-        <GUID entity="File">a5ac2f7d-a405-4bc3-af56-f38265398aaf</GUID>
+        <URI>D:\Models\test_residence.rvt</URI>
+        <GUID entity="File">00000000-0000-0000-0000-000000000000</GUID>
       </ProjectEntity>
     </ProgramInfo>
     <PersonInfo id="pers-info-1"/>

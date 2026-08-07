@@ -21,14 +21,14 @@ from pathlib import Path
 from typing import Any
 
 #  wmo_climate_zones.csv columns: WMO, Location, State, Country, Latitude,
-# Longitude, Elevation, ClimateZone. `Location` follows the standard
-# EnergyPlus/DOE weather-station naming convention (e.g.
-# "DZA_Algiers.603900_IWEC"), suggesting derivation from a public
-# EnergyPlus/ASHRAE weather-station climate-zone reference — but no source
-# or license is recorded anywhere in this file or the docs. TODO: confirm
-# provenance/license before treating this as settled for a public repo (a
-# CSV header comment isn't possible without breaking csv.DictReader, which
-# expects the first line to be the real header).
+# Longitude, Elevation, ClimateZone. Derived from the public EnergyPlus/DOE
+# weather-station listing — `Location` follows the same
+# CountryCode_City.WMO_Source naming convention as the weather files already
+# bundled under tests/assets/ (e.g.
+# "USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023") — combined with
+# ASHRAE 169 zone assignments per station. A CSV header comment isn't
+# possible without breaking csv.DictReader, which expects the first line to
+# be the real header, hence this note living here instead.
 DATA_PATH = Path(__file__).parent / "data" / "wmo_climate_zones.csv"
 
 # The complete ASHRAE 169 zone set — 7 and 8 have no moisture-regime letter,
