@@ -4,7 +4,7 @@ The vendored ChangeBuildingLocation measure (run as part of import_gbxml_op)
 already tries to set a climate zone by regexing the project's .stat file, but
 on a regex miss it doesn't fail — it writes the literal string
 "Lookup From Stat File" into the model's ClimateZones object as if it were a
-real value. resolve_and_ensure() re-validates whatever the measure left behind
+real value. ensure_climate_zone() re-validates whatever the measure left behind
 and, if it's missing or garbage, re-resolves it: first by re-parsing the same
 .stat file directly (cheap, no new data), then by a two-tier WMO-station
 lookup (O(1) hash by WMO number, Haversine nearest-station fallback by
@@ -20,22 +20,48 @@ import re
 from pathlib import Path
 from typing import Any
 
+#  wmo_climate_zones.csv columns: WMO, Location, State, Country, Latitude,
+# Longitude, Elevation, ClimateZone. `Location` follows the standard
+# EnergyPlus/DOE weather-station naming convention (e.g.
+# "DZA_Algiers.603900_IWEC"), suggesting derivation from a public
+# EnergyPlus/ASHRAE weather-station climate-zone reference — but no source
+# or license is recorded anywhere in this file or the docs. TODO: confirm
+# provenance/license before treating this as settled for a public repo (a
+# CSV header comment isn't possible without breaking csv.DictReader, which
+# expects the first line to be the real header).
 DATA_PATH = Path(__file__).parent / "data" / "wmo_climate_zones.csv"
 
-_ASHRAE_VALUE_RE = re.compile(r"[0-8][ABC]?")
+# The complete ASHRAE 169 zone set — 7 and 8 have no moisture-regime letter,
+# 3/4/5 have A/B/C, the rest only A/B. A permissive pattern like "[0-8][ABC]?"
+# would accept "0", "7A", or "1C" as valid and defeat the "never fabricates a
+# value it can't support" guarantee.
+_VALID_ASHRAE_VALUES = frozenset({
+    "1A", "1B", "2A", "2B", "3A", "3B", "3C", "4A", "4B", "4C",
+    "5A", "5B", "5C", "6A", "6B", "7", "8",
+})
 
 
 def _load_reference_table() -> tuple[dict[str, str], list[tuple[float, float, str]]]:
     wmo_to_cz: dict[str, str] = {}
     station_coords: list[tuple[float, float, str]] = []
-    with DATA_PATH.open(encoding="utf-8", newline="") as f:
-        for row in csv.DictReader(f):
-            wmo = (row.get("WMO") or "").strip().rjust(6, "0")
-            cz = (row.get("ClimateZone") or "").strip()
-            if not wmo or not cz:
-                continue
-            wmo_to_cz[wmo] = cz
-            station_coords.append((float(row["Latitude"]), float(row["Longitude"]), cz))
+    try:
+        with DATA_PATH.open(encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                try:
+                    wmo = (row.get("WMO") or "").strip().rjust(6, "0")
+                    cz = (row.get("ClimateZone") or "").strip()
+                    if not wmo or not cz:
+                        continue
+                    lat, lon = float(row["Latitude"]), float(row["Longitude"])
+                except (KeyError, ValueError):
+                    continue
+                wmo_to_cz[wmo] = cz
+                station_coords.append((lat, lon, cz))
+    except OSError:
+        # Missing/unreadable bundled CSV must not prevent the MCP server
+        # from starting — fall back to an empty table (.stat parsing still
+        # works; only the WMO/geographic fallback tier is unavailable).
+        return {}, []
     return wmo_to_cz, station_coords
 
 
@@ -48,7 +74,7 @@ def _valid_ashrae_value(value: str) -> bool:
     """True for a real ASHRAE 169 zone code (e.g. "5A", "7"), false for
     anything else — including the "Lookup From Stat File" placeholder the
     vendored measure leaves behind on a .stat regex miss."""
-    return bool(_ASHRAE_VALUE_RE.fullmatch(value.strip()))
+    return value.strip() in _VALID_ASHRAE_VALUES
 
 
 def parse_climate_zone_from_stat(stat_path: Path) -> str | None:

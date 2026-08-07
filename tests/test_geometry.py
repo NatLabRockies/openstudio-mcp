@@ -486,6 +486,13 @@ def test_repair_missing_roof_ceiling_synthesizes_flat_ceiling():
                 assert repaired["area_m2"] == pytest.approx(100.0, abs=0.01), repaired
                 assert repaired["ceiling_z"] == pytest.approx(3.0, abs=0.001), repaired
                 assert repaired["final_boundary_condition"] == "Adiabatic", repaired
+                # Regression: the built-in example model has a default construction
+                # set, so the synthesized surface should resolve one through the
+                # hierarchy with no warning — the no-construction fallback path is
+                # covered separately on the constructionless 11 Jay gbXML fixture.
+                assert repaired["construction"] is not None, repaired
+                assert repaired["construction_warning"] is None, repaired
+                assert repaired["boundary_condition_warning"] is not None, repaired
 
                 new_ceilings = unwrap(await s.call_tool("list_surfaces", {
                     "space_name": "RepairSpace", "surface_type": "RoofCeiling", "max_results": 0,

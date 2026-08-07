@@ -19,10 +19,17 @@ MIN_ZONE_VOLUME_M3 = 1.0
 def get_conditioned_zones(model: Any) -> list[Any]:
     """Conditioned, non-plenum thermal zones: has a thermostat assigned, not a plenum.
 
-    Simpler than the openstudio-standards gem's thermal_zone_plenum?/
-    is_zone_conditioned? heuristics (not available in this Python codebase) —
-    thermostat presence is the direct core-SDK signal for "this zone is meant
-    to be conditioned."
+    Intentionally does NOT reuse the project-wide osm_helpers.is_conditioned_zone()
+    (dual-setpoint thermostat) even though it's the same concept: osm_helpers
+    imports `openstudio` at module level, and this module is exercised by
+    tests/test_gbxml_zone_checks.py's pure-Python fakes with no openstudio
+    import at all. Importing the helper here would drag openstudio into that
+    test's collection. The two checks are equivalent in practice anyway — the
+    vendored gbxml_import_advanced measure (os_lib_adv_import.rb,
+    make_thermostat) only ever creates ThermostatSetpointDualSetpoint for
+    zones it gives real setpoints to, so every zone this broader
+    thermostat().is_initialized() check catches on a gbXML-imported model is
+    already dual-setpoint.
     """
     return [tz for tz in model.getThermalZones() if not tz.isPlenum() and tz.thermostat().is_initialized()]
 

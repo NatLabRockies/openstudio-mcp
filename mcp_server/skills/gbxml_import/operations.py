@@ -269,18 +269,16 @@ def import_gbxml_op(
             return {"ok": False, "error": f"Could not load translated model: {output_osm}", "run_dir": str(run_dir)}
         model = model_result.get()
 
-        final_osm_path = osm_out if osm_out is not None else (run_dir / f"{gbxml_src.stem}.osm")
-        final_osm_path.parent.mkdir(parents=True, exist_ok=True)
-        if not model.save(_os_path(final_osm_path), True):
-            return {"ok": False, "error": f"Failed to save model to {final_osm_path}", "run_dir": str(run_dir)}
-
-        model_manager.load_model(final_osm_path)
-
         # Guarantee a valid ASHRAE climate zone (the ChangeBuildingLocation
         # measure above can silently leave a garbage placeholder value on a
         # .stat regex miss), and flag conditioned zones whose volume didn't
         # survive a broken gbXML enclosure — both run automatically so the
-        # caller never has to remember a second diagnostic call.
+        # caller never has to remember a second diagnostic call. Must run
+        # BEFORE model.save()/load_model() below: those mutate/replace the
+        # Model instance the caller and the session end up with, so fixing
+        # up an already-saved-and-reloaded model would silently correct an
+        # orphaned in-memory copy while the file on disk (and the session
+        # model every downstream tool reads) kept the stale/invalid value.
         climate_zone_result = ensure_climate_zone(model, stat_src)
         volume_result = check_conditioned_zone_volumes(model)
         extra_warnings = sum(
@@ -288,19 +286,24 @@ def import_gbxml_op(
             if w
         )
 
+        final_osm_path = osm_out if osm_out is not None else (run_dir / f"{gbxml_src.stem}.osm")
+        final_osm_path.parent.mkdir(parents=True, exist_ok=True)
+        if not model.save(_os_path(final_osm_path), True):
+            return {"ok": False, "error": f"Failed to save model to {final_osm_path}", "run_dir": str(run_dir)}
+
+        model_manager.load_model(final_osm_path)
+
         result = {
             "ok": True,
             "osm_path": str(final_osm_path),
             "run_dir": str(run_dir),
             **climate_zone_result,
             **volume_result,
+            "total_errors": step_messages.get("total_errors", 0) if step_messages else 0,
+            "total_warnings": (step_messages.get("total_warnings", 0) if step_messages else 0) + extra_warnings,
         }
         if step_messages:
-            result["total_errors"] = step_messages.get("total_errors", 0)
-            result["total_warnings"] = step_messages.get("total_warnings", 0) + extra_warnings
             result["step_messages"] = step_messages
-        elif extra_warnings:
-            result["total_warnings"] = extra_warnings
         return result
 
     except subprocess.TimeoutExpired:

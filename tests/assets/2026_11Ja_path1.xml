@@ -10,7 +10,7 @@
       <Elevation>3056.9505583</Elevation>
     </Location>
     <Building buildingType="MultiFamily" id="bldg-1">
-      <Name>11 Jay St</Name>
+      <Name>Test Residence 1</Name>
       <Area>266.3116543</Area>
       <Space conditionType="Unconditioned" equipmentScheduleIdRef="schd-officelighting-6amto11pm" id="sp-0basement" lightScheduleIdRef="schd-officelighting-6amto11pm" peopleScheduleIdRef="schd-homeoccupancy-24hours" zoneIdRef="zone-14">
         <Name>0 Basement</Name>

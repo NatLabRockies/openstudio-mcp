@@ -1,4 +1,4 @@
-# Example 23: Guaranteed Climate Zone & Conditioned-Zone Volume Checks on gbXML Import
+# Example 24: Guaranteed Climate Zone & Conditioned-Zone Volume Checks on gbXML Import
 
 `import_gbxml` now always returns a valid ASHRAE climate zone (or a clear reason it couldn't) and
 flags conditioned zones with zero or missing volume — automatically, with no extra tool call.

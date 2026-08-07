@@ -22,7 +22,7 @@ from mcp.client.stdio import stdio_client
 
 GBXML_PATH = "/repo/tests/assets/gbxml/25_SpacesOneZE.xml"
 GBXML_PATH_11JAY = "/repo/tests/assets/2026_11Ja_path1.xml"
-GBXML_PATH_AUSTIN = "/repo/tests/assets/gbxml.xml"
+GBXML_PATH_AUSTIN = "/repo/tests/assets/gbxml/austin_office.xml"
 AUSTIN_EPW_PATH = "/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.epw"
 AUSTIN_STAT_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.stat")
 AUSTIN_DDY_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.ddy")
@@ -370,7 +370,7 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
                     "load_osm_model", {"osm_path": import_result["osm_path"]},
                 ))
                 assert load_result["ok"] is True, load_result
-                assert load_result["building_name"] == "11 Jay St", load_result
+                assert load_result["building_name"] == "Test Residence 1", load_result
                 assert load_result["spaces"] == 18, load_result
                 assert load_result["thermal_zones"] == 18, load_result
 
@@ -471,6 +471,27 @@ def test_repair_missing_roof_ceiling_on_11jay_fixture():
                 assert repaired["area_m2"] == pytest.approx(0.6068, abs=1e-4), repaired
                 assert repaired["ceiling_z"] == pytest.approx(9.4488, abs=1e-4), repaired
                 assert repaired["final_boundary_condition"] == "Adiabatic", repaired
+
+                # Regression: a real Revit gbXML export carries per-surface
+                # constructions and no default construction set, so a
+                # synthesized surface with nothing assigned would otherwise
+                # hit an EnergyPlus missing-construction fatal at simulation
+                # time. The fixture has other real RoofCeiling surfaces with
+                # constructions to borrow from, so this should resolve
+                # cleanly with no warning.
+                assert repaired["construction"] is not None, repaired
+                assert repaired["construction_warning"] is None, repaired
+                # Regression: the closet has no space above it, so Adiabatic
+                # is the physically-correct default here — but the response
+                # still flags it, since Adiabatic silently drops roof heat
+                # transfer for a genuinely top-floor space in the general case.
+                assert repaired["boundary_condition_warning"] is not None, repaired
+
+                validate = unwrap(await session.call_tool("validate_model", {}))
+                missing_construction_warnings = [
+                    w for w in validate["warnings"] if "missing construction" in w
+                ]
+                assert not any(repaired["new_surface_name"] in w for w in missing_construction_warnings), validate
 
                 skipped = {s["space"]: s["reason"] for s in result["skipped"]}
                 assert skipped == {
@@ -577,6 +598,17 @@ def test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture():
                 assert result["total_errors"] == 0, result
                 assert result["total_warnings"] == 1, result  # the measure's own "Can't find ASHRAE..." warning
 
+                # Regression: ensure_climate_zone() used to mutate a Model
+                # instance orphaned by an earlier model.save()/load_model()
+                # reorder — the response said "2A" while both the saved OSM
+                # and the session model still held the invalid placeholder.
+                # Reload the saved file fresh and read the zone back off the
+                # model itself, not the response, to catch that class of bug.
+                reload_result = unwrap(await session.call_tool("load_osm_model", {"osm_path": result["osm_path"]}))
+                assert reload_result["ok"] is True, reload_result
+                weather_info = unwrap(await session.call_tool("get_weather_info", {}))
+                assert weather_info["ashrae_climate_zone"] == "2A", weather_info
+
     asyncio.run(_run())
 
 
@@ -623,5 +655,14 @@ def test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable():
                 assert result["climate_zone_source"] == "wmo_or_geographic_lookup", result
                 assert result["climate_zone_resolved"] is True, result
                 assert result["climate_zone_prior_invalid_value"] == "Lookup From Stat File", result
+
+                # Regression: same persistence check as the stat-file test
+                # above — the WMO/geographic fallback tier mutates the model
+                # too, so it's equally exposed to the save/load-model reorder
+                # bug if that ever regresses.
+                reload_result = unwrap(await session.call_tool("load_osm_model", {"osm_path": result["osm_path"]}))
+                assert reload_result["ok"] is True, reload_result
+                weather_info = unwrap(await session.call_tool("get_weather_info", {}))
+                assert weather_info["ashrae_climate_zone"] == "2A", weather_info
 
     asyncio.run(_run())

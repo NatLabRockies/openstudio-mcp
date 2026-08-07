@@ -4,7 +4,7 @@ Pure Python — no `openstudio` import, no Docker. get_conditioned_zones() and
 check_conditioned_zone_volumes() only call a handful of ThermalZone methods
 (isPlenum, thermostat, volume, nameString), so lightweight fakes exercise the
 actual branching logic without a real model — the real fixture used in the
-Docker integration tests (tests/test_gbxml_import.py) happens to have zero
+Docker integration tests (tests/test_gbxml_import.py) happens to have no
 zero-volume conditioned zones, so this is the only coverage of the positive
 "flag it" branch.
 """

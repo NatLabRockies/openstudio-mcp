@@ -234,13 +234,23 @@ def resolve_model_weather_epw(osm_path: Path) -> Path | None:
     return find_epw_by_name(epw.name)
 
 
+def _model_ashrae_climate_zone(model) -> str | None:
+    """Read the model's own ASHRAE climate zone value, if set."""
+    czs = model.getClimateZones().getClimateZones("ASHRAE")
+    if not czs:
+        return None
+    value = czs[0].value().strip()
+    return value or None
+
+
 def get_weather_info() -> dict[str, Any]:
     """Read weather file info from the in-memory model."""
     try:
         model = get_model()
+        ashrae_climate_zone = _model_ashrae_climate_zone(model)
         wf = model.getOptionalWeatherFile()
         if not wf.is_initialized():
-            return {"ok": True, "weather_file": None}
+            return {"ok": True, "weather_file": None, "ashrae_climate_zone": ashrae_climate_zone}
 
         weather = wf.get()
         info: dict[str, Any] = {}
@@ -265,7 +275,7 @@ def get_weather_info() -> dict[str, Any]:
         if url and url.is_initialized():
             info["url"] = str(url.get())
 
-        return {"ok": True, "weather_file": info}
+        return {"ok": True, "weather_file": info, "ashrae_climate_zone": ashrae_climate_zone}
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

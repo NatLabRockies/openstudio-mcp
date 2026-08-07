@@ -51,6 +51,19 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
     try:
         model = get_model()
 
+        # gbXML imports typically carry per-surface constructions and no
+        # default construction set, so a synthesized surface with nothing
+        # assigned can hit an EnergyPlus severe/fatal ("surface has no
+        # construction") the first time anyone simulates the repaired model.
+        # Borrow one from an existing RoofCeiling surface elsewhere in the
+        # model before falling back to whatever a default construction set
+        # would resolve (there usually isn't one on these models).
+        donor_construction = next(
+            (c.get() for s in model.getSurfaces()
+             if s.surfaceType() == "RoofCeiling" and (c := s.construction()).is_initialized()),
+            None,
+        )
+
         repaired: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
         new_surfaces: list[openstudio.model.Surface] = []
@@ -120,20 +133,41 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
             surface.setSurfaceType("RoofCeiling")
             surface.setOutsideBoundaryCondition("Outdoors")
 
+            # construction() already searches the space/space-type/building
+            # default-construction-set hierarchy; only fall back to the
+            # borrowed donor if that search comes up empty.
+            if not surface.construction().is_initialized() and donor_construction is not None:
+                surface.setConstruction(donor_construction)
+            resolved_construction = surface.construction()
+
             new_surfaces.append(surface)
             repaired.append({
                 "space": name,
                 "new_surface_name": surface.nameString(),
                 "area_m2": round(area, 4),
                 "ceiling_z": round(ceiling_z, 4),
+                "construction": resolved_construction.get().nameString() if resolved_construction.is_initialized() else None,
+                "construction_warning": (
+                    None if resolved_construction.is_initialized()
+                    else "No construction assigned — no default construction set and no existing "
+                         "RoofCeiling surface to borrow one from. Assign one before simulating or "
+                         "EnergyPlus will likely fail with a missing-construction error."
+                ),
             })
 
         if new_surfaces:
             match_surfaces()
             for entry, surface in zip(repaired, new_surfaces, strict=True):
-                if surface.outsideBoundaryCondition() != "Surface":
+                matched_space_above = surface.outsideBoundaryCondition() == "Surface"
+                if not matched_space_above:
                     surface.setOutsideBoundaryCondition("Adiabatic")
                 entry["final_boundary_condition"] = surface.outsideBoundaryCondition()
+                entry["boundary_condition_warning"] = (
+                    None if matched_space_above
+                    else "Set Adiabatic (no matching space above) — correct for a nested space "
+                         "under another room's ceiling, but wrong if this space is genuinely "
+                         "top-floor with a missing roof; verify before trusting simulation results."
+                )
 
         return {
             "ok": True,
