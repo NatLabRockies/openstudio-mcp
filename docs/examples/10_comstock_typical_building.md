@@ -15,7 +15,7 @@ An engineer has a small office model with geometry and space types but no HVAC, 
 ```
 1. list_comstock_measures(category="setup")    -- browse available templates
 2. load_osm_model(osm_path="SmallOffice.osm")
-3. set_weather_file(epw_path="Houston.epw")
+3. change_building_location(weather_file="Houston.epw")
 4. create_typical_building(template="90.1-2019",
      climate_zone="ASHRAE 169-2013-2A")        -- adds everything
 5. get_model_summary()                         -- verify HVAC + constructions

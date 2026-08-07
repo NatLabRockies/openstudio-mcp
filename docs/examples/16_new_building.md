@@ -30,7 +30,7 @@ An engineer wants to create a new office building model from scratch and run an 
 10. create_electric_equipment(name="Office Plugs",
       space_name=<first space>, watts_per_area=1.076)
 11. list_air_loops()                              # verify HVAC from baseline
-12. set_weather_file(epw_path="/inputs/weather.epw")
+12. change_building_location(weather_file="/inputs/weather.epw")
 13. add_design_day(name="Htg 99.6%", day_type="WinterDesignDay",
       month=1, day=21, dry_bulb_max_c=-20.6, dry_bulb_range_c=0.0)
 14. add_design_day(name="Clg 0.4%", day_type="SummerDesignDay",
@@ -51,7 +51,7 @@ An engineer wants to create a new office building model from scratch and run an 
 | `create_people_definition` | Occupancy loads |
 | `create_lights_definition` | Lighting power density |
 | `create_electric_equipment` | Plug loads |
-| `set_weather_file` | Attach EPW weather file |
+| `change_building_location` | Attach EPW, load DDY design days, and set ASHRAE climate zone in one step |
 | `add_design_day` | HVAC sizing conditions |
 | `run_simulation` | Launch EnergyPlus |
 | `extract_summary_metrics` | Get simulation results |
@@ -66,4 +66,7 @@ An engineer wants to create a new office building model from scratch and run an 
 
 ## Integration Test
 
-See `tests/test_skill_new_building.py::test_skill_new_building_workflow`
+No dedicated integration test covers the `/new-building` skill workflow end-to-end yet — this is a
+documentation/test gap. `tests/test_example_workflows.py::test_workflow_full_building` (Example 7)
+covers the closest overlapping subset (baseline + loads + weather + simulation); glazing/schedule
+steps are covered separately in `tests/test_geometry.py` and `tests/test_create_schedule_ruleset.py`.

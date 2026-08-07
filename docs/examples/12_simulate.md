@@ -39,4 +39,7 @@ An engineer has finished building their model and wants to run a simulation with
 
 ## Integration Test
 
-See `tests/test_skill_simulate.py::test_skill_simulate_workflow`
+No dedicated integration test covers the `/simulate` skill workflow as a unit yet — this is a
+documentation/test gap. The individual tools it chains are covered elsewhere: `run_simulation` in
+`tests/test_hvac_supply_sim.py`, `extract_summary_metrics`/`extract_end_use_breakdown` in
+`tests/test_results_extraction.py`.

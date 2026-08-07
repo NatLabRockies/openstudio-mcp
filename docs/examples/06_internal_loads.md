@@ -22,8 +22,8 @@ A modeler is setting up internal loads for an open office space per ASHRAE 90.1 
      space_name="Open Office", watts_per_area=10.76)
 4. create_electric_equipment(name="Office Plugs",
      space_name="Open Office", watts_per_area=1.076)
-5. list_people_loads()
-6. list_lighting_loads()
+5. list_model_objects(object_type="People")   # verify people load created
+6. list_model_objects(object_type="Lights")   # verify lights load created
 ```
 
 ## Unit Conversions
@@ -47,6 +47,7 @@ The OpenStudio API uses SI units (metric). Common conversions:
 | `create_electric_equipment` | Equipment by W/m2 or total watts |
 | `create_gas_equipment` | Gas equipment (kitchens, labs) |
 | `create_infiltration` | Infiltration by area flow or ACH |
+| `list_model_objects` | Verify loads were created (e.g. `object_type="People"`, `"Lights"`) |
 
 ## Available Schedule Types
 

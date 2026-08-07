@@ -32,4 +32,6 @@ An engineer wants to visually inspect their building geometry — check zone lay
 
 ## Integration Test
 
-See `tests/test_skill_view.py::test_skill_view_workflow`
+See `tests/test_common_measures.py::test_view_model` — verifies `view_model()` produces HTML/JSON
+output artifacts in `run_dir`. (The skill wrapper itself has no dedicated test; this covers the
+underlying tool call.)

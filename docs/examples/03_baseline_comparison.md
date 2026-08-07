@@ -17,7 +17,7 @@ An engineer needs to evaluate which baseline HVAC system produces lower energy u
 ```
 1. create_baseline_osm(name="office_sys3", ashrae_sys_num="03")
 2. load_osm_model(osm_path=<returned path>)
-3. set_weather_file(epw_path="/inputs/Chicago.epw")
+3. change_building_location(weather_file="/inputs/Chicago.epw")
 4. add_design_day(name="Chicago Heating 99.6%",
      day_type="WinterDesignDay", month=1, day=21,
      dry_bulb_max_c=-20.6, dry_bulb_range_c=0.0)
@@ -46,7 +46,7 @@ The AI compares:
 | Tool | Purpose |
 |------|---------|
 | `create_baseline_osm` | Creates 10-zone model with ASHRAE system |
-| `set_weather_file` | Attaches EPW to the model |
+| `change_building_location` | Attaches EPW, loads design days from the DDY, and sets the ASHRAE climate zone in one step |
 | `add_design_day` | Heating/cooling design conditions for HVAC sizing |
 | `run_simulation` | Creates OSW and runs EnergyPlus |
 | `extract_summary_metrics` | Extracts EUI and unmet hours |

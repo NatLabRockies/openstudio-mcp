@@ -320,7 +320,7 @@ Read/write any OpenStudio object by introspection — covers types without a ded
 </details>
 
 <details>
-<summary><b>Geometry</b> — 9 tools</summary>
+<summary><b>Geometry</b> — 10 tools</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -333,6 +333,7 @@ Read/write any OpenStudio object by introspection — covers types without a ded
 | `match_surfaces` | Intersect + match shared walls between adjacent spaces |
 | `set_window_to_wall_ratio` | Add a centered window by glazing ratio |
 | `import_floorspacejs` | Import geometry from a FloorSpaceJS JSON file |
+| `repair_missing_roof_ceiling` | Synthesize a RoofCeiling for spaces with a floor but no ceiling |
 
 </details>
 
@@ -693,7 +694,7 @@ The component-properties tools query/modify these 15 types:
 | 9 | [Fenestration by Orientation](docs/examples/09_fenestration_by_orientation.md) | 20 | [Demand Response with Python EMS](docs/examples/20_python_ems_demand_response.md) |
 | 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | 21 | [gbXML Import from Revit](docs/examples/21_gbxml_import.md) |
 | 11 | [Results Deep Dive](docs/examples/11_results_extraction.md) | 22 | [Repairing & Validating gbXML Geometry](docs/examples/22_repair_and_validate_gbxml_geometry.md) |
-| 23 | [Attributing Space Types (post-gbXML)](docs/examples/23_attribute_space_types.md) | | |
+| 23 | [Attributing Space Types (post-gbXML)](docs/examples/23_attribute_space_types.md) | 24 | [Guaranteed Climate Zone & Zone Volume Checks](docs/examples/24_gbxml_climate_zone_and_zone_volume_checks.md) |
 
 ---
 
