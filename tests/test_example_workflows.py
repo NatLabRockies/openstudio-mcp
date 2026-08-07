@@ -186,8 +186,9 @@ def test_workflow_hvac_design_exploration():
 
 @pytest.mark.integration
 def test_workflow_envelope_retrofit():
-    """Example 3: Create insulation material, build construction, assign to wall."""
-    # Validates: material->construction->surface assignment pipeline round-trips correctly
+    """Example 3: Add insulation layer to existing wall construction, assign upgrade."""
+    # Validates: material->add_layer_to_construction->surface pipeline preserves the
+    # original assembly and raises its R (F7: replacement constructions lowered R)
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -218,7 +219,15 @@ def test_workflow_envelope_retrofit():
                 assert len(walls) > 0, "No walls found"
                 wall_name = walls[0]["name"]
 
-                # Step 4: Create insulation material
+                # Step 4: Current construction of the wall (upgrade target)
+                detail = unwrap(await s.call_tool("get_surface_details", {
+                    "surface_name": wall_name,
+                }))
+                assert detail.get("ok") is True
+                base_construction = detail["surface"]["construction"]
+                assert base_construction, "wall has no construction to upgrade"
+
+                # Step 5: Create insulation material
                 mat = unwrap(await s.call_tool("create_standard_opaque_material", {
                     "name": "R20_Insulation",
                     "thickness_m": 0.089,
@@ -228,21 +237,27 @@ def test_workflow_envelope_retrofit():
                 }))
                 assert mat.get("ok") is True
 
-                # Step 5: Create construction using the material
-                con = unwrap(await s.call_tool("create_construction", {
-                    "name": "High_R_Wall",
-                    "material_names": ["R20_Insulation"],
+                # Step 6: Add the layer to the EXISTING assembly (R += 0.089/0.04)
+                added = unwrap(await s.call_tool("add_layer_to_construction", {
+                    "construction_name": base_construction,
+                    "material_name": "R20_Insulation",
+                    "new_construction_name": "High_R_Wall",
                 }))
-                assert con.get("ok") is True
+                assert added.get("ok") is True, f"add_layer failed: {added.get('error')}"
+                assert added["assembly_r_si_after"] == pytest.approx(
+                    added["assembly_r_si_before"] + 2.225, abs=1e-3), (
+                    "added R-2.225 layer must raise assembly R by exactly that much")
 
-                # Step 6: Assign to the wall
+                # Step 7: Assign the upgraded construction to the wall
                 assign = unwrap(await s.call_tool("assign_construction_to_surface", {
                     "surface_name": wall_name,
                     "construction_name": "High_R_Wall",
                 }))
                 assert assign.get("ok") is True
+                assert "warning" not in assign, (
+                    f"upgrade must not trip the R-decrease warning: {assign.get('warning')}")
 
-                # Step 7: Verify assignment via surface details
+                # Step 8: Verify assignment via surface details
                 detail = unwrap(await s.call_tool("get_surface_details", {
                     "surface_name": wall_name,
                 }))

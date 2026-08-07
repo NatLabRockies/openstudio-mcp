@@ -598,7 +598,10 @@ PROGRESSIVE_CASES = [
     {
         "id": "roof_insulation",
         "needs_model": True,
+        # add_layer_to_construction added 2026-08-07 (F7 affordance fix) —
+        # prompts unchanged so roof-fix-* sweeps stay comparable to prod-2026-08b
         "expected": ["create_standard_opaque_material", "create_construction",
+                     "add_layer_to_construction",
                      "assign_construction_to_surface"],
         "L1": "Add R-30 insulation to the roof.",
         "L2": "Create an insulation material and construction for the roof "

@@ -36,7 +36,7 @@ Weather (EPW + design days, needed before simulation)
 2. **Geometry** — `create_space_from_floor_print` (preferred) or `create_space` + `create_surface`
 3. **Match surfaces** — `match_surfaces` after all spaces created (finds shared walls)
 4. **Thermal zones** — `create_thermal_zone` with `space_names`
-5. **Envelope** — `create_standard_opaque_material` → `create_construction` → `assign_construction_to_surface`
+5. **Envelope** — `create_standard_opaque_material` → `create_construction` → `assign_construction_to_surface` (new assemblies only; to upgrade an EXISTING assembly use `add_layer_to_construction`, which preserves its layers)
 6. **Glazing** — `set_window_to_wall_ratio` or `create_subsurface`
 7. **Schedules** — `create_schedule_ruleset` (needed by loads)
 8. **Loads** — `create_people_definition`, `create_lights_definition`, `create_electric_equipment`

@@ -42,6 +42,7 @@ EXPECTED_TOOLS = {
     "get_construction_details",
     "create_standard_opaque_material",
     "create_construction",
+    "add_layer_to_construction",
     "assign_construction_to_surface",
     "get_schedule_details",
     "create_schedule_ruleset",

@@ -34,7 +34,7 @@ Ask the user which upgrades to apply. Available ECM tools:
 
 **Envelope:**
 - `replace_window_constructions(construction_name="Triple Low-E")` — bulk replace windows
-- `create_standard_opaque_material` + `create_construction` + `assign_construction_to_surface` — upgrade walls/roof
+- `create_standard_opaque_material` + `add_layer_to_construction` + `assign_construction_to_surface` — upgrade walls/roof (adds to the existing assembly; never rebuild it from scratch)
 
 **HVAC/Controls:**
 - `adjust_thermostat_setpoints(cooling_offset_f=2.0, heating_offset_f=-2.0)` — widen deadband

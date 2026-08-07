@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.constructions.operations import (
+    add_layer_to_construction,
     assign_construction_to_surface,
     create_construction,
     create_standard_opaque_material,
@@ -74,6 +75,26 @@ def register(mcp):
 
         """
         return create_construction(name=name, material_names=parse_str_list(material_names))
+
+    @mcp.tool(tags={"geometry"}, name="add_layer_to_construction")
+    def add_layer_to_construction_tool(construction_name: str, material_name: str,
+                                       position: str = "inside",
+                                       new_construction_name: str | None = None):
+        """Add a material layer to an EXISTING construction — copies it with all
+        original layers preserved plus the inserted layer. Use this for insulation
+        upgrades instead of building a replacement construction from scratch.
+        Returns assembly R before/after for self-checking.
+
+        Args:
+            construction_name: Existing construction to upgrade
+            material_name: Material to insert (create first via create_standard_opaque_material)
+            position: "inside" (innermost face, default) or "outside" (beneath the outermost layer)
+            new_construction_name: Name for the upgraded construction (default: "<construction> + <material>")
+        """
+        return add_layer_to_construction(construction_name=construction_name,
+                                         material_name=material_name,
+                                         position=position,
+                                         new_construction_name=new_construction_name)
 
     @mcp.tool(tags={"geometry"}, name="assign_construction_to_surface")
     def assign_construction_to_surface_tool(surface_name: str, construction_name: str):

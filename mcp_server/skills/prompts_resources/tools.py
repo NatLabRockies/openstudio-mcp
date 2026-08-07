@@ -61,27 +61,33 @@ def register(mcp):
     @mcp.prompt(
         name="envelope_retrofit",
         description=(
-            "Upgrade wall insulation on an existing model — create "
-            "materials, build a construction, assign to exterior walls."
+            "Upgrade wall insulation on an existing model — add an "
+            "insulation layer to the existing construction and assign it."
         ),
     )
     def envelope_retrofit_prompt(
         r_value: str = "R-20",
         surface_type: str = "exterior walls",
     ) -> str:
+        # Lead with add_layer_to_construction: rebuilding the assembly from a
+        # hand-typed layer list silently drops the original layers (benchmark
+        # F7 — every model made the roof WORSE replacing it with a bare slab)
         return (
             f"Upgrade {surface_type} to {r_value} insulation.\n\n"
             "Steps:\n"
             "1. load_osm_model(osm_path=<your model>)\n"
-            '2. list_model_objects(object_type="Construction") — review current assemblies\n'
-            "3. list_surfaces() — find exterior walls\n"
+            "2. list_surfaces() — find the target surfaces and their "
+            "current construction\n"
+            "3. get_construction_details(construction_name=<current "
+            "construction>) — review existing layers\n"
             '4. create_standard_opaque_material(name="New_Insulation", '
             "thickness_m=0.089, conductivity_w_m_k=0.04, "
             "density_kg_m3=30, specific_heat_j_kg_k=1000)\n"
-            '5. create_construction(name="High_R_Wall", '
-            'material_names=["Exterior Finish", "New_Insulation", '
-            '"Gypsum Board"])\n'
-            "6. assign_construction_to_surface() for each exterior wall\n"
+            "5. add_layer_to_construction(construction_name=<current "
+            'construction>, material_name="New_Insulation") — keeps all '
+            "existing layers; verify assembly_r_si_after > before\n"
+            "6. assign_construction_to_surface() with the new construction "
+            "for each target surface\n"
             "7. save_osm_model()"
         )
 
@@ -315,6 +321,7 @@ def register(mcp):
                 "list_materials", "get_construction_details",
                 "create_standard_opaque_material",
                 "create_construction",
+                "add_layer_to_construction",
                 "assign_construction_to_surface",
             ],
             "schedules": [
