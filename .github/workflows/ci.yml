@@ -267,7 +267,8 @@ jobs:
           # Shard timings measured via `pytest --durations=0` on 2026-08-07 after the
           # gbXML climate-zone/roof-repair work landed (see runs/shard_timing_full.log
           # for the raw per-test breakdown). Two tests inside test_gbxml_import.py
-          # (test_..._stat_file_on_austin_fixture ~233s, test_..._wmo_lookup... ~213s)
+          # (test_..._stat_file_on_austin_fixture ~233s local / ~300s on runners,
+          # test_..._wmo_lookup... ~213s)
           # alone rivaled the runtime of an entire shard, so they're pulled out by
           # node ID into shards 2/3 below rather than moving the whole file, which
           # would just relocate the imbalance. All 5 shards land within ~50s of each
