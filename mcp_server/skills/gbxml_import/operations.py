@@ -214,7 +214,10 @@ def import_gbxml_op(
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
                 env=run_env,
-                timeout=300,  # 5 minute timeout
+                # gbxml_import_advanced is CPU-bound surface matching; the Austin
+                # fixture alone takes ~300s on 2-core CI runners (~160s locally),
+                # so 300 flaked at the boundary — 600 gives 2x headroom.
+                timeout=600,
                 check=False,
             )
 
@@ -307,7 +310,7 @@ def import_gbxml_op(
         return result
 
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "gbXML import timed out (5 min)"}
+        return {"ok": False, "error": "gbXML import timed out (10 min)"}
     except Exception as e:
         return {"ok": False, "error": f"Failed to import gbXML: {e}"}
 
