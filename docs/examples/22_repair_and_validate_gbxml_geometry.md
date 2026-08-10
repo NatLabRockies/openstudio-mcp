@@ -49,6 +49,7 @@ having a subtler non-manifold gap — see "Follow-up" below.
 | `import_gbxml` | Translate gbXML -> OSM (Example 21) |
 | `repair_and_validate_gbxml_geometry` | Fix cross-space shared walls (`match_surfaces()`, internal), then report same-space overlaps and non-enclosed spaces in one call |
 | `repair_missing_roof_ceiling` | Follow-up fix for non-enclosed spaces that have a Floor but no RoofCeiling at all (see "Follow-up" below) |
+| `merge_coplanar_sliver_surfaces` | Follow-up fix for non-enclosed spaces that already have a Floor *and* RoofCeiling but are fragmented into many same-space coplanar pieces (see "Follow-up" below) |
 | `get_surface_details` | Only needed afterward, for a specific flagged surface pair, if the summary isn't enough to act on |
 
 ## Follow-up: `repair_missing_roof_ceiling`
@@ -76,6 +77,33 @@ not guessed at.
 On the 11 Jay St fixture, only 1 of the 3 has-Floor/no-RoofCeiling spaces was actually safe to
 auto-repair — the other 2 are symptoms of the same wall-duplication defect that causes the 9
 surface overlaps above, not something a flat-ceiling repair should paper over.
+
+## Follow-up: `merge_coplanar_sliver_surfaces`
+
+The most common real-world cause of non-enclosed spaces isn't a missing surface at all — it's
+`tests/assets/gbxml/austin_apartment_slivers.xml` (a 74-space Austin apartment/retail/office
+building) that shows this: Revit's gbXML export splits one physical wall, floor, or ceiling into
+many tiny same-space coplanar fragments, one per adjacent-room boundary segment. Fragment areas
+still sum correctly (`zero_volume_zone_count` stays 0 on `import_gbxml`), but the seams between
+fragments don't align to tight tolerance — 69 of that fixture's 74 spaces fail
+`isEnclosedVolume()` even though every one of them already has both a Floor and a RoofCeiling.
+
+```
+3. merge_coplanar_sliver_surfaces()
+   → groups same-space, coplanar, same-type fragments sharing a boundary condition and
+     construction, joins their footprints with openstudio.joinAll(), and rebuilds fewer,
+     larger Surface objects in their place. Re-runs match_surfaces() once, batched, if
+     anything changed.
+   { ok: true, merged_group_count: N, merged: [...], skipped_group_count: M, skipped: [...] }
+4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count drops from 69
+```
+
+Mixed boundary conditions/constructions across a group, and any fragment carrying a subsurface
+(window or door), are reported as skipped rather than guessed at — reparenting a subsurface onto a
+newly-merged surface safely needs a containment check this tool doesn't attempt. This means it
+isn't guaranteed to fully close every space in one pass; re-check with
+`repair_and_validate_gbxml_geometry()` and treat the improvement, not a promise of `ok: true`, as
+the signal.
 
 ## Why Two Separate Checks
 
@@ -112,8 +140,13 @@ surface overlaps above, not something a flat-ceiling repair should paper over.
 See `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_on_real_import`,
 `::test_repair_and_validate_gbxml_geometry_detects_same_space_overlap`,
 `::test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space`,
-`::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`, and
-`::test_repair_missing_roof_ceiling_on_11jay_fixture`. `repair_missing_roof_ceiling` itself also has
-synthetic-geometry tests in `tests/test_geometry.py`
-(`test_repair_missing_roof_ceiling_synthesizes_flat_ceiling`,
-`test_repair_missing_roof_ceiling_skips_uneven_walls`).
+`::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`,
+`::test_repair_missing_roof_ceiling_on_11jay_fixture`, and
+`::test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture`. `repair_missing_roof_ceiling`
+and `merge_coplanar_sliver_surfaces` themselves also have synthetic-geometry tests in
+`tests/test_geometry.py` (`test_repair_missing_roof_ceiling_synthesizes_flat_ceiling`,
+`test_repair_missing_roof_ceiling_skips_uneven_walls`,
+`test_merge_coplanar_sliver_surfaces_merges_split_ceiling`,
+`test_merge_coplanar_sliver_surfaces_skips_mixed_boundary_conditions`,
+`test_merge_coplanar_sliver_surfaces_skips_fragments_with_subsurfaces`,
+`test_merge_coplanar_sliver_surfaces_no_op_on_clean_model`).

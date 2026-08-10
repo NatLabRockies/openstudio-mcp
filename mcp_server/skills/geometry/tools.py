@@ -12,7 +12,10 @@ from mcp_server.skills.geometry.operations import (
     match_surfaces,
     set_window_to_wall_ratio,
 )
-from mcp_server.skills.geometry.repair import repair_missing_roof_ceiling
+from mcp_server.skills.geometry.repair import (
+    merge_coplanar_sliver_surfaces,
+    repair_missing_roof_ceiling,
+)
 
 
 def register(mcp):
@@ -169,6 +172,21 @@ def register(mcp):
         ambiguous is reported as skipped, not guessed at.
         """
         return repair_missing_roof_ceiling()
+
+    @mcp.tool(tags={"geometry"}, name="merge_coplanar_sliver_surfaces")
+    def merge_coplanar_sliver_surfaces_tool():
+        """Merge same-space coplanar wall/floor/ceiling fragments into fewer, larger surfaces.
+
+        Fixes gbXML/Revit exports that split one physical wall, floor, or ceiling into
+        many tiny same-space fragments (one per adjacent-room boundary segment) instead
+        of one clean surface per side — the cause of Space.isEnclosedVolume() failures
+        that match_surfaces() can't fix (it only reconciles surfaces between spaces,
+        never within one). Mixed boundary conditions/constructions, and fragments
+        carrying windows or doors, are reported as skipped rather than guessed at. Run
+        repair_and_validate_gbxml_geometry() before and after to see the effect on
+        non_enclosed_spaces_count.
+        """
+        return merge_coplanar_sliver_surfaces()
 
     @mcp.tool(tags={"geometry"}, name="set_window_to_wall_ratio")
     def set_window_to_wall_ratio_tool(

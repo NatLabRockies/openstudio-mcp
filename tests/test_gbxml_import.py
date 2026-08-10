@@ -23,6 +23,7 @@ from mcp.client.stdio import stdio_client
 GBXML_PATH = "/repo/tests/assets/gbxml/25_SpacesOneZE.xml"
 GBXML_PATH_11JAY = "/repo/tests/assets/2026_11Ja_path1.xml"
 GBXML_PATH_AUSTIN = "/repo/tests/assets/gbxml/austin_office.xml"
+GBXML_PATH_AUSTIN_SLIVERS = "/repo/tests/assets/gbxml/austin_apartment_slivers.xml"
 AUSTIN_EPW_PATH = "/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.epw"
 AUSTIN_STAT_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.stat")
 AUSTIN_DDY_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.ddy")
@@ -664,5 +665,68 @@ def test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable():
                 assert reload_result["ok"] is True, reload_result
                 weather_info = unwrap(await session.call_tool("get_weather_info", {}))
                 assert weather_info["ashrae_climate_zone"] == "2A", weather_info
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture():
+    """Real-world reproduction of the sliver-fragmentation defect this feature targets."""
+    # Regression: tests/assets/gbxml/austin_apartment_slivers.xml is a 74-space Austin
+    # apartment/retail/office building whose Revit gbXML export splits walls/floors/
+    # ceilings into many same-space coplanar fragments per adjacent-room boundary segment
+    # (confirmed by inspection: sp-4stair's ceiling alone is split into a 25.21 m2 piece
+    # plus a 0.084 m2 sliver). Every fragment area still sums correctly — zero_volume_zone_count
+    # stays 0 — but the seams don't align to tight tolerance, so 69 of the 74 spaces fail
+    # isEnclosedVolume() even though each one already has both a Floor and a RoofCeiling.
+    # match_surfaces() alone (run inside repair_and_validate_gbxml_geometry) cannot fix
+    # this, since it only reconciles surfaces between spaces, never within one.
+    # merge_coplanar_sliver_surfaces must measurably reduce non_enclosed_spaces_count on
+    # this exact fixture, not just report ok=True with nothing changed.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name("austin_slivers")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH_AUSTIN_SLIVERS, "epw_path": AUSTIN_EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+                assert import_result["conditioned_zone_count"] == 74, import_result
+                assert import_result["zero_volume_zone_count"] == 0, import_result
+
+                reload_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": import_result["osm_path"]},
+                ))
+                assert reload_result["ok"] is True, reload_result
+
+                baseline = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert baseline["ok"] is False, baseline
+                assert baseline["space_count"] == 74, baseline
+                assert baseline["overlapping_surfaces_count"] == 0, baseline
+                assert baseline["non_enclosed_spaces_count"] == 69, baseline
+
+                merge_result = unwrap(await session.call_tool("merge_coplanar_sliver_surfaces", {}))
+                assert merge_result["ok"] is True, merge_result
+                # Regression: 28 groups collapse (up to 8 same-plane fragments down to 1
+                # surface, e.g. sp-14retail's ceiling), only 3 genuinely skipped (real
+                # mixed-boundary-condition/subsurface cases, not iteration-order artifacts
+                # — see the two-phase plan/apply split above).
+                assert merge_result["merged_group_count"] == 28, merge_result
+                assert merge_result["skipped_group_count"] == 3, merge_result
+
+                after = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                # Regression: same-plane fragment merging alone doesn't fully close this
+                # fixture — most of its remaining non-enclosure comes from a different
+                # defect class (sub-tolerance gaps between non-coplanar surfaces meeting
+                # at corners) this tool doesn't address. The honest result on this fixture
+                # is a modest 69 -> 67, not full closure.
+                assert after["non_enclosed_spaces_count"] == 67, after
 
     asyncio.run(_run())

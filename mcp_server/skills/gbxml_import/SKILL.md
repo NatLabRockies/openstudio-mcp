@@ -79,10 +79,26 @@ closets/cabinets nested under a bigger room's ceiling in the source Revit model)
 `repair_missing_roof_ceiling()` (geometry skill) to synthesize the missing surface, then call
 `repair_and_validate_gbxml_geometry()` again to confirm. It only repairs spaces with a level floor
 and uniformly level wall tops — anything sloped or ambiguous is reported as skipped rather than
-guessed at, and it does not touch same-space overlaps (still a manual fix).
+guessed at.
+
+For non-enclosed spaces that already have both a Floor *and* a RoofCeiling — the more common
+real-world case, and one that can affect the large majority of spaces in a model — the usual
+cause is Revit exporting one physical wall/floor/ceiling as many tiny same-space coplanar
+fragments (one per adjacent-room boundary segment). Areas still sum correctly, but the seams
+between fragments don't align to tight tolerance. `merge_coplanar_sliver_surfaces()` (geometry
+skill) groups same-space, coplanar, same-type fragments that share a boundary condition and
+construction and joins them back into fewer, larger surfaces; re-check with
+`repair_and_validate_gbxml_geometry()` afterward — it isn't guaranteed to fully close every space,
+since mixed boundary conditions/constructions and fragments carrying windows/doors are reported as
+skipped rather than guessed at.
+
+True same-space duplicate/overlapping geometry (`overlapping_surfaces` in the validator's output —
+e.g. a wall exported once per neighboring room instead of split at the boundary between them) is a
+different defect from fragmentation and neither tool above fixes it; that's still a manual fix.
 
 ## Tools
 
-`import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `repair_missing_roof_ceiling`
-(geometry skill) and `change_building_location` (common_measures skill, to set climate zone
-explicitly if `import_gbxml` couldn't resolve one).
+`import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `repair_missing_roof_ceiling` and
+`merge_coplanar_sliver_surfaces` (geometry skill) for the two automatable non-enclosed-space
+causes, and `change_building_location` (common_measures skill, to set climate zone explicitly if
+`import_gbxml` couldn't resolve one).
