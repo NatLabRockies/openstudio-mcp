@@ -1,11 +1,16 @@
 # Pilot benchmark archive (2026-08, SoftwareX reviewer response)
 
-Frozen raw data for pilots 1-5 of the LLM benchmark
-(branch `feat/llm-benchmark-realism`). Preserved here because the live
-copies are volatile: `results/` is gitignored and per-test transcripts live
-under `%TEMP%\llm-sweep\` (Windows may clean it).
+Aggregate tables for pilots 1-5 of the LLM benchmark
+(branch `feat/llm-benchmark-realism`).
 
-## Contents
+**Raw data is NOT in git** (user decision 2026-08-10: leg JSONs are too
+much data for the repo). Raw legs, sweep_meta, escape_annotations.json,
+and transcript zips live in the maintainer's local `results/` tree and
+will be deposited with the Zenodo DOI alongside the tagged release
+(WS-1 of the revision plan). This directory keeps only the small
+human-readable aggregates and this README.
+
+## Contents (of the full raw archive, at its deposit location)
 
 - `results/pilot-*/` — every leg's `benchmark.json` (per-test pass/fail,
   failure modes, token/tool stats, `run_config` with git + image identity)

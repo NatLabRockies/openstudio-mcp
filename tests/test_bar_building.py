@@ -343,7 +343,7 @@ def test_import_floorspacejs_host_path_error_names_roots():
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 res = unwrap(await s.call_tool("import_floorspacejs", {
-                    "floorplan_path": "C:\projects\floorplan.json",
+                    "floorplan_path": "C:\\projects\floorplan.json",
                 }))
                 assert res["ok"] is False
                 assert "not found" in res["error"].lower()

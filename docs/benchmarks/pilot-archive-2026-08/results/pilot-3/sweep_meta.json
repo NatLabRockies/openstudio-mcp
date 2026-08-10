@@ -1,8 +1,0 @@
-{
-  "git": "v1.1.3-20-g704eac8",
-  "image": "openstudio-mcp:dev",
-  "image_id": "sha256:b982eaf1da03c36f86f0ce4b7e1c975a00f522868d286a5fcdfb31dcbb65c162",
-  "image_created": "2026-08-05T18:06:12.576949725Z",
-  "head_committed": "2026-08-05T11:42:49-04:00",
-  "image_repo_digests": ""
-}

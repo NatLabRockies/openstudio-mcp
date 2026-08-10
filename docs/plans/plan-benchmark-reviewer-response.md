@@ -137,7 +137,7 @@ class AgentResult:            # rename of ClaudeResult; alias kept
     # normalized: messages -> tool_calls/tool_results, final_text,
     # usage fields nullable (cost_usd -> float | None; conftest sums `or 0`)
 
-def run_agent(prompt, *, model=None, timeout=120, allowed_tools=..., 
+def run_agent(prompt, *, model=None, timeout=120, allowed_tools=...,
               system_prompt=None, max_turns=None) -> AgentResult:
     provider = os.environ.get("LLM_TESTS_PROVIDER", "claude")
     return _BACKENDS[provider](...)   # claude | codex | gemini

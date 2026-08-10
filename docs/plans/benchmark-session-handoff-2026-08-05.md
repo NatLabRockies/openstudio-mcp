@@ -37,7 +37,7 @@ Branch: `feat/llm-benchmark-realism` (pushed; ~20 commits). Plans:
 ```
 python scripts/benchmark_sweep.py --sweep-id <id> --model sonnet:claude \
     --arms full --repeats 3 --image openstudio-mcp:v1.2.0 \
-    --pytest-args "tests/llm ..." 
+    --pytest-args "tests/llm ..."
 ```
 - Resume-safe: existing `<model>_<arm>_rN.json` files are skipped; run
   repeats via successive invocations if wall-clock caps bite.
