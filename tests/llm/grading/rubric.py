@@ -10,7 +10,7 @@ Class-name checks use substrings of iddObjectType().valueDescription()
 """
 from __future__ import annotations
 
-RUBRIC_VERSION = "1.1"
+RUBRIC_VERSION = "1.2"
 
 N_ZONES = 10                 # baseline fixture zone count
 NIGHT_SETPOINT_C = 15.6      # L2/L3 pinned setback value
@@ -149,6 +149,12 @@ def grade_python_ems_control(level: str, facts: dict) -> dict:
     if not stats:
         return _fail(["no Zone Thermostat Heating Setpoint Temperature rows "
                       "in grading SQL"])
+    # Require the setback on ALL zones, not whichever subset appears: a partial
+    # EMS application that scheduled one zone must not pass on that one series
+    # while the other nine are absent (rubric 1.2, PR#126 review).
+    if len(stats) != N_ZONES:
+        return _fail([f"expected setpoint series for all {N_ZONES} zones, "
+                      f"got {len(stats)} ({sorted(stats)[:3]}...)"])
     reasons = []
     for zone, buckets in stats.items():
         night = buckets.get("night", {}).get("mean")
@@ -193,6 +199,11 @@ def grade_measure_replace_terminals(level: str, facts: dict) -> dict:
     if result.get("n_zones_on_air_loops") != N_ZONES:
         reasons.append(f"only {result.get('n_zones_on_air_loops')}/{N_ZONES} "
                        "zones still connected to air loops")
+    # NOTE (rubric 2.0, PR#126 review): this grades terminal type/count and
+    # air-loop reconnection, but NOT each beam's coil->plant-loop wiring, so a
+    # measure that creates beams with orphaned coils still passes here. The
+    # coil-membership fact is not yet extracted (container_grader.py TODO);
+    # adding it needs a benchmark re-run, so it is deferred to the next epoch.
     return _verdict(reasons)
 
 
@@ -216,6 +227,34 @@ def grade_zone_equipment_priority(level: str, facts: dict) -> dict:
     return _verdict(reasons)
 
 
+def _roof_surface_ok(level: str, name: str, graded: dict | None,
+                     base_r: float | None) -> str | None:
+    """Per-surface roof verdict — reason string on failure, None on pass."""
+    if graded is None:
+        return f"roof surface {name!r} missing from graded model"
+    new_r = graded.get("assembly_r_si")
+    if base_r is None or new_r is None:
+        return f"{name}: assembly R not computable (unknown layer resistance)"
+    increase = new_r - base_r
+    if level == "L1":
+        # "Add R-30 insulation" — accept the standard reading (this surface
+        # insulated WITH an R-30 layer, better than baseline; rubric 1.1, from
+        # val-grading: sonnet swapped R-21 -> exact R-30 layer and v1.0 wrongly
+        # demanded a +R-30 assembly DELTA) or the literal add.
+        has_r30 = any(
+            layer.get("r_si") is not None
+            and abs(layer["r_si"] - R30_SI) <= R30_SI * R30_LAYER_REL_TOL
+            for layer in graded["layers"])
+        if not ((has_r30 and increase > 0) or increase >= R30_MIN_INCREASE_SI):
+            return (f"{name}: no ~R-30 layer improving the roof (assembly R "
+                    f"increase {increase:.2f} m2K/W, R-30 layer present: "
+                    f"{has_r30})")
+    elif increase < L2_MIN_R_INCREASE_SI:
+        return (f"{name}: assembly R increase {increase:.2f} m2K/W < required "
+                f"{L2_MIN_R_INCREASE_SI:.2f} (level {level})")
+    return None
+
+
 def grade_roof_insulation(level: str, facts: dict) -> dict:
     model, reasons = _loaded_model(facts)
     if model is None:
@@ -225,30 +264,19 @@ def grade_roof_insulation(level: str, facts: dict) -> dict:
     base_roofs = baseline.get("roof_surfaces", [])
     if not graded_roofs:
         return _fail(["no exterior roof surfaces in graded model"])
-    graded_rs = [r["assembly_r_si"] for r in graded_roofs]
-    base_rs = [r["assembly_r_si"] for r in base_roofs]
-    if any(r is None for r in graded_rs) or not base_rs or any(
-            r is None for r in base_rs):
-        return _fail(["assembly R not computable (unknown layer resistance)"])
-    increase = (sum(graded_rs) / len(graded_rs)) - (sum(base_rs) / len(base_rs))
-    if level == "L1":
-        # "Add R-30 insulation" — accept the standard reading (roof insulated
-        # WITH an R-30 layer, assembly better than baseline; rubric 1.1, from
-        # val-grading: sonnet swapped R-21 -> exact R-30 layer and v1.0
-        # wrongly demanded a +R-30 assembly DELTA) or the literal add.
-        has_r30_layer = any(
-            layer.get("r_si") is not None
-            and abs(layer["r_si"] - R30_SI) <= R30_SI * R30_LAYER_REL_TOL
-            for surface in graded_roofs for layer in surface["layers"])
-        if not ((has_r30_layer and increase > 0)
-                or increase >= R30_MIN_INCREASE_SI):
-            reasons.append(
-                f"no ~R-30 layer improving the roof (assembly R increase "
-                f"{increase:.2f} m2K/W, R-30 layer present: {has_r30_layer})")
-    elif increase < L2_MIN_R_INCREASE_SI:
-        reasons.append(f"roof assembly R increase {increase:.2f} m2K/W < "
-                       f"required {L2_MIN_R_INCREASE_SI:.2f} (level {level})")
-    return _verdict(reasons)
+    if not base_roofs:
+        return _fail(["baseline roof surfaces missing — cannot grade improvement"])
+    # EVERY baseline roof surface must be present and meet the criterion.
+    # Averaging (rubric <=1.1) let one upgraded surface mask others left
+    # unchanged or made worse (rubric 1.2, PR#126 review).
+    graded_by_name = {r["surface"]: r for r in graded_roofs}
+    for br in base_roofs:
+        name = br["surface"]
+        reason = _roof_surface_ok(level, name, graded_by_name.get(name),
+                                  br.get("assembly_r_si"))
+        if reason:
+            reasons.append(reason)
+    return _verdict(reasons[:6])
 
 
 _GRADERS = {

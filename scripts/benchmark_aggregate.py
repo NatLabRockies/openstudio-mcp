@@ -84,23 +84,42 @@ def _case_level(test_id: str) -> tuple[str, str] | None:
     return None
 
 
-def load_results(sweep_dir: Path, ignore_digest: bool) -> list[dict]:
+def load_results(sweep_dir: Path, ignore_digest: bool,
+                 ignore_harness: bool = False) -> list[dict]:
     files = sorted(p for p in sweep_dir.glob("*.json")
                    if p.name != "sweep_meta.json")
     if not files:
         sys.exit(f"No result files in {sweep_dir}")
     runs = []
     identities = set()
+    harnesses = set()
+    missing_git = []
     for f in files:
         data = json.loads(f.read_text(encoding="utf-8"))
         rc = data.get("run_config", {})
         identities.add((rc.get("image"), rc.get("image_id")))
+        git = rc.get("git")
+        harnesses.add(git)
+        if not git:
+            missing_git.append(f.name)
         data["_file"] = f.name
         runs.append(data)
     if len(identities) > 1 and not ignore_digest:
         sys.exit(f"ABORT: mixed image identities across results: {identities} "
                  "— a paper sweep must use one pinned artifact "
                  "(--ignore-digest to override).")
+    # The image pins the SERVER code; the grading rubric and test set live in
+    # the harness (host-mounted), so legs graded by different harness commits
+    # are not comparable even at one image. Reject missing provenance outright.
+    if missing_git and not ignore_harness:
+        sys.exit(f"ABORT: {len(missing_git)} leg(s) lack run_config.git "
+                 f"provenance: {missing_git[:5]} — cannot verify the grading "
+                 "harness (--ignore-harness to override).")
+    if len(harnesses) > 1 and not ignore_harness:
+        sys.exit(f"ABORT: mixed harness commits across results: "
+                 f"{sorted(str(h) for h in harnesses)} — the rubric/test set "
+                 "may differ between legs (--ignore-harness to override, e.g. "
+                 "when the commits differ only in docs).")
     return runs
 
 
@@ -355,11 +374,15 @@ def main() -> int:
     ap.add_argument("sweep_dir", help="results/<sweep_id> directory")
     ap.add_argument("--out", default=None,
                     help="output dir (default <sweep_dir>/paper)")
-    ap.add_argument("--ignore-digest", action="store_true")
+    ap.add_argument("--ignore-digest", action="store_true",
+                    help="pool legs built from different Docker images")
+    ap.add_argument("--ignore-harness", action="store_true",
+                    help="pool legs from different harness commits (use only "
+                         "when the commits differ in docs, not rubric/tests)")
     args = ap.parse_args()
 
     sweep_dir = Path(args.sweep_dir)
-    runs = load_results(sweep_dir, args.ignore_digest)
+    runs = load_results(sweep_dir, args.ignore_digest, args.ignore_harness)
     agg = aggregate(runs)
     out = Path(args.out) if args.out else sweep_dir / "paper"
     write_artifacts(agg, out)

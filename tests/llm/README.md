@@ -44,7 +44,18 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=2 pytest tests/llm/ -v
 | `LLM_TESTS_PROVIDER` | `claude` | Agent backend: `claude` or `codex` (codex prepends the system prompt to the user prompt; no allowed-tools/max-turns equivalent) |
 | `LLM_TESTS_CODEX_CMD` | (auto) | codex CLI path override (default: PATH, then the Windows install dir) |
 | `LLM_TESTS_IMAGE` | `openstudio-mcp:dev` | MCP server image — sweeps pin the release tag |
-| `LLM_TESTS_ARM` | `full` | `noskills` starts the server with the knowledge-layer tools removed (ablation) |
+| `LLM_TESTS_ARM` | `full` | Assistance-layer ablation (see below) |
+
+### Assistance arms (`LLM_TESTS_ARM`)
+
+| Arm | What it removes | Notes |
+|-----|-----------------|-------|
+| `full` | nothing | all assistance layers on |
+| `noskills` | server-side knowledge tools (`list_skills`/`get_skill`/`recommend_tools`) | |
+| `nodiscovery` | client-side deferred tool search (loads every schema up front) | claude only; matches codex's native schema loading |
+| `nodiscovery-noskills` | both of the above | |
+| `nohost` | host tools (Bash/Edit/Write/…) | claude only; codex sandbox cancels MCP calls if host tools are cut |
+| `codegen` | the MCP server itself | Arm C: agent scripts the SDK in a bare container (`test_11_codegen_arm.py`); opt-in, outcome-only grading |
 
 ## Test Files (253 tests total, counts from `pytest tests/llm --co`)
 

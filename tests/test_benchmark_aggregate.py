@@ -28,11 +28,11 @@ def test_wilson_known_values():
     assert hi == pytest.approx(0.2775, abs=1e-3)
 
 
-def _run(model, arm, tests, image_id="sha256:abc"):
+def _run(model, arm, tests, image_id="sha256:abc", git="v1.2.0"):
     return {
         "model": model,
         "run_config": {"arm": arm, "image": "openstudio-mcp:v1.2.0",
-                       "image_id": image_id},
+                       "image_id": image_id, "git": git},
         "tests": tests,
     }
 
@@ -251,6 +251,34 @@ def test_load_results_refuses_mixed_image_identity(tmp_path):
 
     runs = load_results(tmp_path, ignore_digest=True)
     assert len(runs) == 2
+
+
+def test_load_results_refuses_mixed_harness_commits(tmp_path):
+    # Validates: same image but different harness commits (rubric/test set may
+    # differ) aborts unless --ignore-harness is passed (Copilot PR#126 review)
+    (tmp_path / "a_full_r1.json").write_text(
+        json.dumps(_run("sonnet", "full", [], git="v1.2.0-1-gaaaaaaa")))
+    (tmp_path / "a_full_r2.json").write_text(
+        json.dumps(_run("sonnet", "full", [], git="v1.2.0-2-gbbbbbbb")))
+
+    with pytest.raises(SystemExit, match="mixed harness commits"):
+        load_results(tmp_path, ignore_digest=False)
+
+    runs = load_results(tmp_path, ignore_digest=False, ignore_harness=True)
+    assert len(runs) == 2
+
+
+def test_load_results_rejects_missing_harness_provenance(tmp_path):
+    # Validates: a leg with no run_config.git cannot be graded-provenance
+    # checked, so it aborts unless overridden
+    (tmp_path / "a_full_r1.json").write_text(
+        json.dumps(_run("sonnet", "full", [], git=None)))
+
+    with pytest.raises(SystemExit, match=r"lack run_config\.git"):
+        load_results(tmp_path, ignore_digest=False)
+
+    runs = load_results(tmp_path, ignore_digest=False, ignore_harness=True)
+    assert len(runs) == 1
 
 
 def test_outcome_pool_counts_and_recovered_exclusion(tmp_path):

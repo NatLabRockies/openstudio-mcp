@@ -232,6 +232,52 @@ def test_roof_insulation_l1_accepts_insulate_to_r30_reading():
                            bare_slab)["outcome_pass"] is True
 
 
+def _two_roofs(a_r: float, b_r: float, surfaces=("Roof A", "Roof B")) -> list[dict]:
+    return [{"surface": s, "construction": "C",
+             "layers": [{"name": "L", "class": "OS:Material", "r_si": r}],
+             "assembly_r_si": round(r, 4)}
+            for s, r in zip(surfaces, (a_r, b_r))]
+
+
+def test_roof_partial_upgrade_fails_l2_rubric_1_2():
+    # Regression (rubric 1.2, PR#126): averaging let one upgraded surface mask
+    # another left unchanged. Roof A +5, Roof B untouched -> must FAIL even
+    # though the mean increase clears the L2 threshold.
+    facts = {"load_ok": True,
+             "model": _model(roof_surfaces=_two_roofs(5.6, 0.6)),
+             "baseline": _model(roof_surfaces=_two_roofs(0.6, 0.6))}
+    verdict = rubric.evaluate("roof_insulation", "L2", facts)
+    assert verdict["outcome_pass"] is False
+    assert any("Roof B" in r for r in verdict["reasons"]), verdict["reasons"]
+    # Both upgraded -> passes
+    both = {"load_ok": True,
+            "model": _model(roof_surfaces=_two_roofs(5.6, 5.6)),
+            "baseline": _model(roof_surfaces=_two_roofs(0.6, 0.6))}
+    assert rubric.evaluate("roof_insulation", "L2", both)["outcome_pass"] is True
+
+
+def test_roof_surface_missing_from_graded_fails():
+    # Validates: a baseline roof surface absent from the graded model fails
+    # (cannot silently drop a surface and pass on the rest)
+    facts = {"load_ok": True,
+             "model": _model(roof_surfaces=_two_roofs(5.6, 5.6)[:1]),
+             "baseline": _model(roof_surfaces=_two_roofs(0.6, 0.6))}
+    verdict = rubric.evaluate("roof_insulation", "L2", facts)
+    assert verdict["outcome_pass"] is False
+    assert any("missing from graded model" in r for r in verdict["reasons"])
+
+
+def test_ems_partial_zone_application_fails_rubric_1_2():
+    # Regression (rubric 1.2, PR#126): a setback applied to only one zone must
+    # not pass on that one correct series while the other nine are absent
+    one_zone = {"saved": True, "load_ok": True, "sim_ran": True,
+                "setpoint_stats": {"ZONE 0": {
+                    "night": {"mean": 15.6}, "day": {"mean": 21.1}}}}
+    verdict = rubric.evaluate("python_ems_control", "L2", one_zone)
+    assert verdict["outcome_pass"] is False
+    assert any("all 10 zones" in r for r in verdict["reasons"]), verdict["reasons"]
+
+
 def test_roof_insulation_l1_r30_layer_must_still_improve_roof():
     # Validates: an ~R-30 layer that leaves the assembly WORSE than baseline
     # (replaced a better roof) fails despite the layer being nominally R-30

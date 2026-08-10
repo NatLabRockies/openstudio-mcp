@@ -21,6 +21,21 @@ sweep. Raw leg JSONs live outside git (local `results/`, deposited with
 the release DOI); aggregates regenerate via
 `python scripts/benchmark_aggregate.py results/<sweep-id>`.
 
+### Frozen rerun baseline (paper artifact)
+
+**The paper's benchmark is rerun against the tagged release, at rubric
+`1.2`.** After PR #126 merges to develop, the release is tagged (v1.2.0,
+Zenodo DOI) and the benchmark image is rebuilt from that tag; every paper
+rerun pins that image and that harness commit. Rubric 1.2 hardened two
+graders after external review (per-surface roof criterion instead of an
+average; the EMS setback required on all 10 zones). Re-scoring the recorded
+`prod-2026-08b` + `roof-fix-2026-08` facts under 1.2 changed **0 of 391**
+roof+EMS verdicts, so the numbers in this section are stable across the
+tightening. The aggregator now refuses to pool legs from different harness
+commits or images unless explicitly overridden (`--ignore-harness` /
+`--ignore-digest`), so a rerun that drifts off the tag fails loudly.
+Fill in the tag SHA here once cut: `v1.2.0 = <SHA>`.
+
 Full arm (all assistance layers on), outcome vs routing pass over
 attempted tasks:
 

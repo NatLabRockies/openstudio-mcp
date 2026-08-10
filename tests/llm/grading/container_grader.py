@@ -71,6 +71,12 @@ def model_facts(model) -> dict:
                       "terminals": terminals})
     facts["air_loops"] = loops
     facts["n_zones_on_air_loops"] = len(zones_on_loops)
+    # rubric 2.0 TODO (PR#126 review): the four-pipe-beam grader verifies
+    # terminal type/count and air-loop reconnection but NOT that each beam's
+    # cooling/heating coils are connected to the chilled/hot-water plant loops.
+    # Extract per-terminal coil->plantLoop membership here so a beam with
+    # orphaned coils fails gate 2. Deferred to the next benchmark epoch because
+    # adding it changes recorded facts and would need a re-run to populate.
 
     zone_equip = []
     for z in model.getThermalZones():

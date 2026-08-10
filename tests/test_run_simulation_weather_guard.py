@@ -162,3 +162,40 @@ def test_gem_weather_epws_pass_the_epw_gate():
                 )
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_companion_epw_symlink_escaping_allowlist_is_rejected(tmp_path, monkeypatch):
+    # Regression: the companion-dir weather lookup returned candidate.resolve()
+    # without re-gating, so a symlink files/weather.epw -> /outside/secret.epw
+    # would stage another tenant's / host file into the caller's run dir.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from mcp_server.skills.weather.operations import _staged_epw_by_basename
+
+    # osm_dir lives INSIDE the caller's allowed run root
+    run_root = tmp_path / "runs" / "user"
+    osm_dir = run_root / "model"
+    (osm_dir / "files").mkdir(parents=True)
+    monkeypatch.setattr("mcp_server.config.user_run_root", lambda: run_root)
+
+    # target sits OUTSIDE every allowed root
+    outside = tmp_path / "other_tenant"
+    outside.mkdir()
+    secret = outside / "secret.epw"
+    secret.write_text("another tenant's weather data")
+
+    link = osm_dir / "files" / "weather.epw"
+    link.symlink_to(secret)
+    assert link.is_file(), "symlink must resolve to the real target for the test"
+
+    got = _staged_epw_by_basename(osm_dir, "weather.epw")
+    assert got is None, f"escaping companion symlink must be rejected, got {got}"
+
+    # Control: a REAL companion EPW under the allowed run root is accepted
+    real = osm_dir / "files" / "local.epw"
+    real.write_text("legitimate companion weather")
+    got_real = _staged_epw_by_basename(osm_dir, "local.epw")
+    assert got_real == real.resolve(), (
+        f"real companion EPW under the run root must be staged, got {got_real}"
+    )

@@ -42,6 +42,26 @@ class TestEndUseBreakdown:
         heating_total = sum(v for k, v in heating_entry.items() if isinstance(v, (int, float)))
         assert heating_total > 0, f"SEB4 Heating end-use should have non-zero values: {heating_entry}"
 
+    def test_column_units_present_on_empty_end_uses(self, sql_path, tmp_path):
+        # Regression: the no-rows early return omitted column_units, so a client
+        # relying on the field crashed on models with no End Uses table
+        import shutil
+        import sqlite3
+        empty_sql = tmp_path / "empty.sql"
+        shutil.copy(sql_path, empty_sql)
+        conn = sqlite3.connect(str(empty_sql))
+        conn.execute(
+            "DELETE FROM TabularData WHERE TableNameIndex IN "
+            "(SELECT StringIndex FROM Strings WHERE Value='End Uses')")
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+        result = extract_end_use_breakdown(empty_sql, units="IP")
+        assert result["ok"] is True
+        assert result["end_uses"] == []
+        assert result["column_units"] == {}, "empty path must still return the units map"
+
     def test_happy_path_si(self, sql_path):
         # Validates: extract_end_use_breakdown SI returns end-uses with SI units note
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown

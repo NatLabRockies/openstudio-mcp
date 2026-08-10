@@ -221,9 +221,10 @@ def resolve_model_weather_epw(osm_path: Path) -> dict[str, Any]:
     only when it passes is_path_allowed — without that gate a crafted model
     could make the server stage another tenant's file into this caller's run
     dir. Otherwise the url's BASENAME (directory components stripped, so it
-    cannot escape) is checked against the OSM's companion files/ dir and own
-    dir — those travel with the staged seed — then looked up across the known
-    weather dirs (trusted, server-chosen — no gate needed).
+    cannot escape) is resolved against the OSM's companion files/ dir and own
+    dir, then the known weather dirs, by _staged_epw_by_basename — which
+    re-gates each resolved hit so a companion symlink escaping the allowlist
+    cannot be staged.
     """
     result: dict[str, Any] = {
         "loadable": False, "declared": False, "url": None, "epw": None,
@@ -252,13 +253,29 @@ def resolve_model_weather_epw(osm_path: Path) -> dict[str, Any]:
     if epw.is_file() and is_path_allowed(epw):
         result["epw"] = epw.resolve()
         return result
-    osm_dir = osm_path.resolve().parent
-    for candidate in (osm_dir / "files" / epw.name, osm_dir / epw.name):
-        if candidate.is_file():
-            result["epw"] = candidate.resolve()
-            return result
-    result["epw"] = find_epw_by_name(epw.name)
+    result["epw"] = _staged_epw_by_basename(osm_path.resolve().parent, epw.name)
     return result
+
+
+def _staged_epw_by_basename(osm_dir: Path, basename: str) -> Path | None:
+    """Resolve a bare weather-file name to a stageable EPW, gating every hit.
+
+    Looks in the OSM's companion `files/` dir, then the OSM's own dir, then
+    the known weather dirs. Each hit is re-gated through is_path_allowed on
+    its RESOLVED target before it is returned: a companion entry may be a
+    symlink whose target escapes the allowlist
+    (files/weather.epw -> /other/tenant/secret), and /inputs is walked
+    recursively so a user-planted symlink could surface via find_epw_by_name;
+    is_path_allowed resolves the link first, so an escaping target is rejected
+    rather than staged.
+    """
+    for candidate in (osm_dir / "files" / basename, osm_dir / basename):
+        if candidate.is_file() and is_path_allowed(candidate):
+            return candidate.resolve()
+    found = find_epw_by_name(basename)
+    if found is not None and is_path_allowed(found):
+        return found.resolve()
+    return None
 
 
 def _model_ashrae_climate_zone(model) -> str | None:

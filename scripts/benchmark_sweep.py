@@ -158,8 +158,16 @@ def main() -> int:
                 if dest.exists():
                     print(f"[skip] {tag} — result already present")
                     continue
+                # Fresh dir per EXECUTED repeat. dest.exists() above is the
+                # resume gate; past it we are (re)running this leg, so any
+                # residue from an aborted earlier attempt — a stale
+                # benchmark.json that would be copied as this leg's result, or
+                # leftover models/measures the agent could reuse — must be
+                # cleared, not reused.
                 runs_dir = Path(args.runs_root) / args.sweep_id / tag
-                runs_dir.mkdir(parents=True, exist_ok=True)
+                if runs_dir.exists():
+                    shutil.rmtree(runs_dir)
+                runs_dir.mkdir(parents=True)
                 env = leg_env(dict(os.environ), model=model, provider=provider,
                               arm=arm, image=args.image, runs_dir=runs_dir,
                               meta=meta, repeat=r)

@@ -188,6 +188,7 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
         """)
         if not rows:
             return {"ok": True, "end_uses": [], "totals": {},
+                    "column_units": {},
                     "source": "AnnualBuildingUtilityPerformanceSummary/End Uses"}
 
         # Collect all fuel columns and end-use rows, plus each column's
