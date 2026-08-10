@@ -6,7 +6,6 @@ Complementary to OSW-level epw_path override in simulation/operations.py.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -19,22 +18,6 @@ from mcp_server.config import (
     is_path_allowed,
 )
 from mcp_server.model_manager import get_model
-
-
-def _parse_climate_zone_from_stat(stat_path: Path) -> str | None:
-    """Extract ASHRAE climate zone from a .stat file (e.g. "5A", "2B").
-
-    Looks for line like:
-      - Climate type "5A" (ASHRAE Standard 196-2006 Climate Zone)**
-    """
-    try:
-        text = stat_path.read_text(encoding="utf-8", errors="replace")
-        m = re.search(r'Climate type "([^"]+)" \(ASHRAE Standards?', text)
-        if m:
-            return m.group(1)
-    except Exception:
-        pass
-    return None
 
 
 def _estimate_climate_zone_from_epw(epw_path: Path) -> str | None:
@@ -278,13 +261,23 @@ def resolve_model_weather_epw(osm_path: Path) -> dict[str, Any]:
     return result
 
 
+def _model_ashrae_climate_zone(model) -> str | None:
+    """Read the model's own ASHRAE climate zone value, if set."""
+    czs = model.getClimateZones().getClimateZones("ASHRAE")
+    if not czs:
+        return None
+    value = czs[0].value().strip()
+    return value or None
+
+
 def get_weather_info() -> dict[str, Any]:
     """Read weather file info from the in-memory model."""
     try:
         model = get_model()
+        ashrae_climate_zone = _model_ashrae_climate_zone(model)
         wf = model.getOptionalWeatherFile()
         if not wf.is_initialized():
-            return {"ok": True, "weather_file": None}
+            return {"ok": True, "weather_file": None, "ashrae_climate_zone": ashrae_climate_zone}
 
         weather = wf.get()
         info: dict[str, Any] = {}
@@ -309,7 +302,7 @@ def get_weather_info() -> dict[str, Any]:
         if url and url.is_initialized():
             info["url"] = str(url.get())
 
-        return {"ok": True, "weather_file": info}
+        return {"ok": True, "weather_file": info, "ashrae_climate_zone": ashrae_climate_zone}
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

@@ -443,6 +443,120 @@ def test_match_surfaces_no_adjacency():
     asyncio.run(_run())
 
 
+# ---- Missing roof/ceiling repair tests ----
+
+
+@pytest.mark.integration
+def test_repair_missing_roof_ceiling_synthesizes_flat_ceiling():
+    """Delete an extruded space's ceiling, confirm repair synthesizes a matching one."""
+    # Regression: repair_missing_roof_ceiling derives a flat RoofCeiling from a level
+    # floor + uniformly level wall tops, oriented correctly (tilt ~0 deg, facing up),
+    # and falls back to "Adiabatic" boundary when match_surfaces() finds no adjacent
+    # match (an isolated space here). A second call is a no-op (repaired_count == 0).
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+                unwrap(await s.call_tool("create_space_from_floor_print", {
+                    "name": "RepairSpace",
+                    "floor_vertices": [[0, 0], [10, 0], [10, 10], [0, 10]],
+                    "floor_to_ceiling_height": 3.0,
+                }))
+
+                ceilings = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": "RepairSpace", "surface_type": "RoofCeiling", "max_results": 0,
+                }))
+                assert ceilings["count"] == 1, ceilings
+                ceiling_name = ceilings["surfaces"][0]["name"]
+                delete_result = unwrap(await s.call_tool(
+                    "delete_object", {"object_name": ceiling_name, "object_type": "Surface"},
+                ))
+                assert delete_result["ok"] is True, delete_result
+
+                result = unwrap(await s.call_tool("repair_missing_roof_ceiling", {}))
+                assert result["ok"] is True, result
+                assert result["repaired_count"] == 1, result
+                assert result["skipped"] == [], result
+                repaired = result["repaired"][0]
+                assert repaired["space"] == "RepairSpace", repaired
+                assert repaired["area_m2"] == pytest.approx(100.0, abs=0.01), repaired
+                assert repaired["ceiling_z"] == pytest.approx(3.0, abs=0.001), repaired
+                assert repaired["final_boundary_condition"] == "Adiabatic", repaired
+                # Regression: the built-in example model has a default construction
+                # set, so the synthesized surface should resolve one through the
+                # hierarchy with no warning — the no-construction fallback path is
+                # covered separately on the constructionless 11 Jay gbXML fixture.
+                assert repaired["construction"] is not None, repaired
+                assert repaired["construction_warning"] is None, repaired
+                assert repaired["boundary_condition_warning"] is not None, repaired
+
+                new_ceilings = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": "RepairSpace", "surface_type": "RoofCeiling", "max_results": 0,
+                }))
+                assert new_ceilings["count"] == 1, new_ceilings
+                details = unwrap(await s.call_tool(
+                    "get_surface_details", {"surface_name": new_ceilings["surfaces"][0]["name"]},
+                ))
+                assert details["surface"]["tilt_deg"] == pytest.approx(0.0, abs=1e-6), details
+                assert details["surface"]["outside_boundary_condition"] == "Adiabatic", details
+
+                again = unwrap(await s.call_tool("repair_missing_roof_ceiling", {}))
+                assert again["ok"] is True, again
+                assert again["repaired_count"] == 0, again
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_repair_missing_roof_ceiling_skips_uneven_walls():
+    """A space with one short extra wall should be skipped, not given a wrong flat ceiling."""
+    # Regression: repair_missing_roof_ceiling requires every wall's own top vertices to
+    # reach the space's overall max Z within tolerance; an extra lower wall (a knee wall /
+    # partial-height partition) must not be silently capped over.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+                unwrap(await s.call_tool("create_space_from_floor_print", {
+                    "name": "UnevenSpace",
+                    "floor_vertices": [[0, 0], [10, 0], [10, 10], [0, 10]],
+                    "floor_to_ceiling_height": 3.0,
+                }))
+                ceilings = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": "UnevenSpace", "surface_type": "RoofCeiling", "max_results": 0,
+                }))
+                delete_result = unwrap(await s.call_tool(
+                    "delete_object",
+                    {"object_name": ceilings["surfaces"][0]["name"], "object_type": "Surface"},
+                ))
+                assert delete_result["ok"] is True, delete_result
+
+                # Extra short wall (top at 1.5m, well under the 3m full-height walls)
+                short_wall = unwrap(await s.call_tool("create_surface", {
+                    "name": "ShortKneeWall",
+                    "vertices": [[0, 0, 0], [1, 0, 0], [1, 0, 1.5], [0, 0, 1.5]],
+                    "space_name": "UnevenSpace",
+                    "surface_type": "Wall",
+                }))
+                assert short_wall["ok"] is True, short_wall
+
+                result = unwrap(await s.call_tool("repair_missing_roof_ceiling", {}))
+                assert result["ok"] is True, result
+                assert result["repaired_count"] == 0, result
+                assert len(result["skipped"]) == 1, result
+                skip = result["skipped"][0]
+                assert skip["space"] == "UnevenSpace", skip
+                assert "uneven wall heights" in skip["reason"], skip
+    asyncio.run(_run())
+
+
 # ---- Window-to-wall ratio tests ----
 
 

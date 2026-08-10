@@ -51,4 +51,6 @@ An engineer has a model with zones but no HVAC. They want help choosing the righ
 
 ## Integration Test
 
-See `tests/test_skill_add_hvac.py::test_skill_add_hvac_workflow`
+No dedicated integration test covers the `/add-hvac` skill workflow as a unit yet — this is a
+documentation/test gap. `add_baseline_system`, `list_air_loops`, and `list_zone_hvac_equipment` are
+each covered individually in `tests/test_hvac_systems.py`.

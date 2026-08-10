@@ -24,6 +24,17 @@ def register(mcp):
         project's own EPW is required so the resulting .osm has the real
         project location embedded, not a placeholder.
 
+        The result always has a valid ASHRAE climate zone unless truly
+        unresolvable: `climate_zone` + `climate_zone_source` ("gbxml_measure",
+        "stat_file", or "wmo_or_geographic_lookup") report where it came from;
+        if every resolution tier misses, `climate_zone_resolved` is false and
+        `climate_zone_warning` explains why — the import still succeeds
+        (`ok: true`), it just needs `change_building_location` called
+        explicitly afterward. It also reports `zero_volume_zone_count` /
+        `zero_volume_zones`: conditioned thermal zones with zero or missing
+        volume, a sign of gbXML zone-enclosure defects that make autosized
+        equipment capacities unreliable.
+
         Args:
             gbxml_path: Path to the gbXML file (e.g. under /inputs).
             epw_path: Path to the project's own EPW file (e.g. under /inputs).

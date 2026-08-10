@@ -37,6 +37,7 @@ EXPECTED_TOOLS = {
     "create_subsurface",
     "create_space_from_floor_print",
     "match_surfaces",
+    "repair_missing_roof_ceiling",
     "set_window_to_wall_ratio",
     "list_materials",
     "get_construction_details",

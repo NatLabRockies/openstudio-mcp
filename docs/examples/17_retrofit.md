@@ -15,7 +15,7 @@ An engineer has a baseline building model and wants to evaluate the energy savin
 ```
 1.  create_baseline_osm(name="retro", ashrae_sys_num="03")
 2.  load_osm_model(osm_path=<returned path>)
-3.  set_weather_file(epw_path="/inputs/weather.epw")
+3.  change_building_location(weather_file="/inputs/weather.epw")
 4.  add_design_day(name="Htg", day_type="WinterDesignDay", ...)
 5.  add_design_day(name="Clg", day_type="SummerDesignDay", ...)
 6.  save_osm_model(save_path="/runs/baseline.osm")
