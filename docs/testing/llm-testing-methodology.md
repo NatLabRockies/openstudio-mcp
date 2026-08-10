@@ -4,7 +4,14 @@
 
 > **Comparability epoch break (2026-08-05).** Realism-rework phases 0-3 changed prompts (casing preserved, weather steps added) and deepened pass criteria (tool `ok` flag, pinned args, pinned EUI outcomes from tool results); L3 trimmed to `L3_KEEP`; +16 coverage cases. Pass rates below this line are from the old criteria and are not comparable with Run 17+.
 
-> **TL;DR** — 160/167 tests passing (**95.8%**) in Run 13. Core methodology: each tool tested at three prompt specificity levels (L1 vague / L2 moderate / L3 explicit). Pass-rate gap between levels isolates tool-description problems from tool-design problems. System prompt is the single biggest lever (44% → 83% in one run).
+> **TL;DR (current, 2026-08)** — every task is scored by TWO deterministic gates: routing (accept-set tool called, first call ok) and outcome (the saved artifact is reloaded offline and graded on physical facts against a versioned rubric). Production matrix `prod-2026-08b`: 5 models, 2 vendors, up to 5 assistance arms, 18 hard tasks x 3 repeats per cell. Headline: the routing-to-outcome gap is tier-monotonic (Opus 3.7 / Sonnet 14.8 / Haiku 22.2 points); routing-only grading would rank the tiers nearly flat. Current numbers: [`llm-test-benchmark.md`](llm-test-benchmark.md). Sections 5 and later of this file describe the routing-era history and are kept for the record.
+>
+> **What changed in the 2026-08 rework (sections 2-4 below updated in place):**
+> - **Gate 2 outcome grading** (`tests/llm/grading/`): recorded facts (assembly R, loop membership, EnergyPlus results vs pinned references) scored by a versioned rubric; rows carry the full `outcome` dict in `benchmark.json`, so thresholds can be re-scored post hoc without re-running an agent. Failure modes gained `outcome_mismatch` and `wrong_args`; first-call-strict rows that later succeeded are tagged `recovered`.
+> - **Providers**: `run_agent()` dispatches on `LLM_TESTS_PROVIDER` — `claude` (Claude Code CLI) or `codex` (Codex CLI; loads all schemas natively, no system-prompt flag so it is prepended to the user prompt).
+> - **Assistance arms** (`LLM_TESTS_ARM`): `full`, `noskills` (server drops knowledge tools), `nodiscovery` (client loads every schema up front instead of deferred tool search), `nodiscovery-noskills`, `nohost` (host tools disabled, claude-only), `codegen` (Arm C: no MCP server at all; agent scripts the SDK in a bare container, `tests/llm/test_11_codegen_arm.py`).
+> - **Sweep protocol** (`scripts/benchmark_sweep.py`): one pinned Docker image + harness commit per sweep, image-freshness guard, retries forced to 0, n repeats with fresh isolated runs dirs, per-leg provenance in `run_config`. Agents run in an empty per-test cwd (no repo access, no cross-leg leakage).
+> - **Aggregation** (`scripts/benchmark_aggregate.py`): Wilson 95% CIs, outcome-vs-routing tables, per-level discovery rates, failure-mode and stability tables, behavior means (knowledge calls, ToolSearch, host calls, escapes), $/test both CLI-reported and derived from recorded tokens. `scripts/benchmark_check_leg.py` flags rate-limit-contaminated legs.
 
 ---
 
@@ -29,23 +36,27 @@ pytest (tests/llm/conftest.py)
   │
   ├─ pytest_runtest_protocol ─→ retry loop (up to LLM_TESTS_RETRIES)
   │
-  └─ run_claude(prompt, ...)   (tests/llm/runner.py)
+  └─ run_agent(prompt, ...)    (tests/llm/runner.py)
+        │  backend by LLM_TESTS_PROVIDER: claude | codex
         │
-        └─ subprocess: claude -p "<prompt>"
+        └─ subprocess: claude -p "<prompt>"        (or codex exec --json)
                          --output-format stream-json --verbose
                          --mcp-config <generated mcp.json>
-                         --max-turns N  --model sonnet
+                         --max-turns N  --model <id>
               │
               ├─ stdin ←──── NDJSON stream ────→ _parse_stream_json()
               │                                      │
-              │                                      └─→ ClaudeResult
+              │                                      └─→ AgentResult
               │                                          (tool_calls, tokens, cost,
               │                                           num_turns, final_text)
               │
               └─ MCP stdio → openstudio-mcp Docker container
                                 ├─ stdio_suppression wrapping
-                                ├─ 142 MCP tools
+                                ├─ 150+ MCP tools (LLM_TESTS_ARM ablations)
                                 └─ shared /runs volume (baseline models)
+
+  gate 2 (tests/llm/grading/): reload saved artifacts offline, record facts,
+  score against the versioned rubric, attach the outcome dict to the row
 ```
 
 ### Key implementation points
@@ -58,7 +69,7 @@ pytest (tests/llm/conftest.py)
 | Markers & auto-tagging | `conftest.py:42-53, 252-278` | `llm`, `tier1-4`, `stable`, `flaky`, `smoke`, `progressive`, `generic`. Auto-tagged via `FLAKY_TESTS` frozenset. |
 | Retry logic | `conftest.py:281-323` | Custom `pytest_runtest_protocol` hook. Each retry consumes one prompt from the budget. |
 | Benchmark collection | `conftest.py:342-412, 434-692` | `pytest_runtest_logreport` stores per-test metrics. Session end writes `benchmark.json` / `benchmark.md` / `benchmark_history.json`. |
-| Failure classification | `conftest.py:383-390` | `timeout` · `no_mcp_tool` · `wrong_tool`. |
+| Failure classification | conftest (`fail_with_mode`) | `timeout` · `no_mcp_tool` · `wrong_tool` · `wrong_args` · `tool_error` · `outcome_mismatch` (+ `recovered` tag). |
 | Prompt budget | `conftest.py` `LLM_TESTS_MAX_PROMPTS` (default 300) | Hard cap prevents runaway cost during iteration. |
 | Skill eval auto-discovery | `eval_parser.py:48-90` | Scrapes "Should trigger" / "Should NOT trigger" tables from `.claude/skills/*/eval.md`. |
 
@@ -67,11 +78,17 @@ pytest (tests/llm/conftest.py)
 | Var | Default | Purpose |
 |---|---|---|
 | `LLM_TESTS_ENABLED` | unset | Must be `1` to enable the suite |
-| `LLM_TESTS_MODEL` | `sonnet` | `sonnet` / `haiku` / `opus` |
-| `LLM_TESTS_RETRIES` | `0` | Retry count for non-determinism |
+| `LLM_TESTS_MODEL` | `sonnet` | Any model id the provider CLI accepts (e.g. `claude-sonnet-4-6`, `gpt-5.4`) |
+| `LLM_TESTS_PROVIDER` | `claude` | Agent backend: `claude` / `codex` |
+| `LLM_TESTS_ARM` | `full` | Assistance arm: `full` / `noskills` / `nodiscovery` / `nodiscovery-noskills` / `nohost` / `codegen` |
+| `LLM_TESTS_IMAGE` | `openstudio-mcp:dev` | Docker image the server runs from (pin per sweep) |
+| `LLM_TESTS_RETRIES` | `0` | Retry count — keep 0 for benchmark runs (repeats replace retries) |
+| `LLM_TESTS_TIMEOUT_BASE` | `120` | Per-task wall-clock budget in seconds |
 | `LLM_TESTS_MAX_PROMPTS` | `300` | Hard budget cap |
 | `LLM_TESTS_TIER` | `all` | `1`/`2`/`3`/`4`/`all` |
 | `LLM_TESTS_RUNS_DIR` | `/tmp/llm-test-runs` | Host path mounted as `/runs` in Docker |
+| `LLM_TESTS_MEASURES_DIR` | derived | Per-leg `/measures` volume (persists within a leg, never across legs) |
+| `LLM_TESTS_RUN_META` | unset | JSON provenance blob recorded into `benchmark.json` `run_config` (set by the sweep driver) |
 
 ---
 
@@ -89,8 +106,9 @@ Ten test files, organized by what the agent is asked to do.
 | `test_06_progressive.py` | progressive | 110 | **The core diagnostic.** 34+ operations × 3 specificity levels. | Tool description quality |
 | `test_07_fourpipe_e2e.py` | tier2 | 1 | Full retrofit on 44-zone SystemD model using natural language (no tool names). Two simulations, 40+ turns, ~5 min. | Real-user session |
 | `test_08_measure_authoring.py` | tier2 | 8 | Custom measure create/edit/test/export. Regression tests pulled from debug-session JSON exports. | Authoring workflows |
-| `test_09_tool_routing.py` | tier4 | 4 | A/B baseline: all 139 tools vs. `recommend_tools` routing. Not in CI. | Tool-routing efficiency |
+| `test_09_tool_routing.py` | tier4 | 4 | A/B baseline: full roster vs. `recommend_tools` routing. Not in CI. | Tool-routing efficiency |
 | `test_10_confusion_pairs.py` | tier4 | 8 | Prompts that could reasonably trigger either of two similar tools (`run_qaqc_checks` vs `validate_model`). | Disambiguation |
+| `test_11_codegen_arm.py` | tier2 | 6 | **Arm C baseline**: no MCP server; agent gets shell + a bare SDK/CLI/EnergyPlus container and scripts everything. Outcome-only grading. Opt-in via `LLM_TESTS_ARM=codegen`. | Is the tool layer needed at all? |
 
 ### The progressive test pattern (L1 / L2 / L3)
 
@@ -129,22 +147,28 @@ Every `run_claude()` call yields a `ClaudeResult` object. These fields are writt
 | `input_tokens` | CLI usage | Fresh tokens to model |
 | `output_tokens` | CLI usage | Tokens generated |
 | `cache_read_tokens` | CLI usage | Served from prompt cache (high = tool defs cached) |
-| `cost_usd` | CLI result | **Notional** — free on Claude Max |
-| `failure_mode` | `conftest.py:383-390` | `timeout` / `no_mcp_tool` / `wrong_tool` |
+| `cost_usd` | CLI result | Claude CLI-reported (codex reports 0 — subscription; aggregator derives $/test from recorded tokens for cross-vendor comparison) |
+| `failure_mode` | conftest | `timeout` / `no_mcp_tool` / `wrong_tool` / `wrong_args` / `tool_error` / `outcome_mismatch`; `recovered` tags first-call-strict rows where a later accepted call succeeded |
+| `outcome` | `tests/llm/grading/` | Gate-2 facts + rubric verdict (`outcome_pass`, `reasons`, `rubric_version`) — re-scorable post hoc |
+| `host_tool_counts` / `toolsearch_count` | NDJSON | Host-tool usage (escape detection) and deferred-discovery search counts |
 
-**Aggregates:** per-tier pass rate, per-L1/L2/L3 pass rate, token profile by tier, failed-test drill-down with tool sequences, run history (last 50 runs).
+**Aggregates** (`scripts/benchmark_aggregate.py` -> `paper/` per sweep): outcome-vs-routing per model/arm/case, pass rates with Wilson 95% CIs, per-L1/L2/L3 discovery rates, failure modes (with `no_mcp_tool[escape|text-only]` subclassing), repeat-stability, behavior means, $/test CLI and derived.
 
-**Explicit gaps (things we don't measure yet):**
+**Closed in the 2026-08 rework** (formerly listed as gaps): parameter correctness (pinned argument assertions), outcome correctness (gate 2), first-attempt honesty (retries forced to 0; repeats replace them), cross-model comparison (Codex backend: GPT-5.4 and GPT-5.4-mini).
 
-- **Parameter correctness** — a test passes if the right tool is called, even with wrong arguments.
-- **First-attempt pass rate** — retries mask flakiness. Only `attempt` captures it, not aggregates.
-- **Time-to-first-tool** — slow ToolSearch discovery isn't penalized.
-- **Cross-model comparison** — all runs use one model. No GPT-4 / Gemini data to validate model-agnostic tool descriptions.
-- **Error recovery rate** — when a tool returns `ok:False`, does the agent retry or give up?
+**Remaining gaps:**
+
+- **Time-to-first-tool** — slow ToolSearch discovery isn't penalized directly (duration and turn counts are recorded).
+- **Error recovery rate** — when a tool returns `ok:False`, does the agent retry or give up? (`recovered` captures one slice.)
+- **Gemini** — no runner backend; documented as a limitation.
 
 ---
 
-## 5. Results
+## 5. Results (HISTORICAL — routing-era, pre-epoch-break)
+
+Everything in this section predates outcome grading and is kept as the
+development record. Current citable numbers live in
+[`llm-test-benchmark.md`](llm-test-benchmark.md) ("Current baseline").
 
 ### Run history — 13 runs, 2026-03-05 to 2026-03-26
 
@@ -263,9 +287,18 @@ LLM_TESTS_ENABLED=1 pytest tests/llm/ -m flaky -v
 
 # Single case
 LLM_TESTS_ENABLED=1 pytest tests/llm/test_06_progressive.py -k thermostat_L1 -v
+
+# Benchmark sweep (production protocol: pinned image, repeats, provenance)
+python scripts/benchmark_sweep.py --sweep-id my-sweep --image openstudio-mcp:pinned \
+    --model claude-sonnet-4-6:claude --arms full,noskills --repeats 3 \
+    --pytest-args "tests/llm/test_01_setup.py tests/llm/test_06_progressive.py -k '<case filter>'"
+
+# After each leg: contamination check, then aggregate
+python scripts/benchmark_check_leg.py results/my-sweep/<leg>.json
+python scripts/benchmark_aggregate.py results/my-sweep
 ```
 
-Reports land in `$LLM_TESTS_RUNS_DIR/benchmark.md` / `benchmark.json`. After each run, copy results into [`llm-test-benchmark.md`](llm-test-benchmark.md) to check into version control.
+Reports land in `$LLM_TESTS_RUNS_DIR/benchmark.md` / `benchmark.json`; sweep aggregates land in `results/<sweep-id>/paper/`. Summarize headline results into [`llm-test-benchmark.md`](llm-test-benchmark.md) to check into version control (raw leg JSONs stay out of git).
 
 ---
 

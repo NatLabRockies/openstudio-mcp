@@ -9,7 +9,44 @@
 > NOT comparable with Runs <= 16 below. `export_measure` rows refer to a
 > tool since removed from the roster.
 
-## Latest Run Summary
+## Current baseline — outcome-graded production matrix (2026-08)
+
+The current citable numbers come from sweep `prod-2026-08b` (plus the
+`prod-2026-08b-t240`, `roof-fix-2026-08`, and `codegen-2026-08` companion
+sweeps), run 2026-08-07 through 2026-08-10 with two-gate grading: gate 1
+routing (accept-set tool called, first call ok) and gate 2 outcome
+(deterministic artifact grading against a versioned rubric). 18 hard tasks
+per cell, n=3 repeats, retries disabled, one pinned image + harness per
+sweep. Raw leg JSONs live outside git (local `results/`, deposited with
+the release DOI); aggregates regenerate via
+`python scripts/benchmark_aggregate.py results/<sweep-id>`.
+
+Full arm (all assistance layers on), outcome vs routing pass over
+attempted tasks:
+
+| Model | Outcome | Routing | Gap |
+|---|---|---|---|
+| Opus 4.6 | 92.6% | 96.3% | 3.7 |
+| Sonnet 4.6 | 81.5% | 96.3% | 14.8 |
+| Haiku 4.5 | 61.1% | 83.3% | 22.2 |
+| GPT-5.4 | 81.5% | 96.3% | 14.8 |
+| GPT-5.4-mini | 74.1% | 92.6% | 18.5 |
+
+Key ablation results: removing deferred tool search raises outcome pass
++16.7 points (Haiku) and +5.5 (Sonnet, Opus); a 240 s budget control
+leaves Haiku unchanged (timeouts 8 to 0, same pass rate); Opus with
+discovery and skills both removed reaches 98.1% with a zero
+routing-outcome gap. Arm C (no MCP server, agent scripts the SDK):
+Sonnet 13/18, GPT-5.4 15/18 on six simpler outcome-graded tasks.
+Methodology details: [`llm-testing-methodology.md`](llm-testing-methodology.md).
+
+---
+
+**Everything below this line is the routing-era historical record**
+(epoch break above). Those pass rates counted tool selection only and are
+NOT comparable with the outcome-graded numbers.
+
+## Latest Run Summary (historical, routing-era)
 
 | Run | Date | Model | Tests | Passed | Rate | Runtime | Notes |
 |-----|------|-------|-------|--------|------|---------|-------|
