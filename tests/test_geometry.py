@@ -23,6 +23,14 @@ async def _setup_with_space(session, model_name, space_name):
     assert sr["ok"] is True
 
 
+async def _surface_orientation(session, surface_name):
+    """(surface_type, azimuth_deg, tilt_deg) — the outward-normal facts enclosure checks can't see."""
+    details = unwrap(await session.call_tool("get_surface_details", {"surface_name": surface_name}))
+    assert details["ok"] is True, details
+    s = details["surface"]
+    return s["surface_type"], s["azimuth_deg"], s["tilt_deg"]
+
+
 @pytest.mark.integration
 def test_list_surfaces():
     """Test listing all surfaces."""
@@ -617,6 +625,57 @@ def test_merge_coplanar_sliver_surfaces_merges_split_ceiling():
                 }))
                 assert ceilings_after["count"] == 1, ceilings_after
                 assert ceilings_after["surfaces"][0]["gross_area_m2"] == pytest.approx(100.0, abs=0.01), ceilings_after
+
+                # Regression: the merged loop came back from joinAll with its winding
+                # reversed and was written facing DOWN (tilt 180) — wrong solar gains and
+                # film coefficients while every enclosure/area check above still passed.
+                surface_type, _, tilt = await _surface_orientation(s, group["survivor"])
+                assert surface_type == "RoofCeiling", f"merged ceiling type changed: {surface_type}"
+                assert tilt == pytest.approx(0.0, abs=0.5), f"merged ceiling must face up, tilt={tilt}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_merge_coplanar_sliver_surfaces_preserves_wall_orientation():
+    """Two south-facing wall fragments merge into one wall still facing south."""
+    # Regression: merge_coplanar_sliver_surfaces re-applied the local-frame winding
+    # normalization in the GLOBAL frame after mapping the joined loop back, writing
+    # merged walls flipped 180° (south wall came out facing north) — wrong azimuth,
+    # solar, and film coefficients while isEnclosedVolume()/area checks stay silent.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+
+                # Both fragments on y=0 with outward normal (0,-1,0): south, azimuth 180.
+                for frag_name, x0, x1 in (("SouthFragA", 0, 6), ("SouthFragB", 6, 10)):
+                    frag = unwrap(await s.call_tool("create_surface", {
+                        "name": frag_name,
+                        "vertices": [[x0, 0, 0], [x1, 0, 0], [x1, 0, 3], [x0, 0, 3]],
+                        "space_name": sp_name,
+                        "surface_type": "Wall",
+                        "outside_boundary_condition": "Outdoors",
+                    }))
+                    assert frag["ok"] is True, frag
+                _, azimuth_before, _ = await _surface_orientation(s, "SouthFragA")
+                assert azimuth_before == pytest.approx(180.0, abs=0.5), azimuth_before
+
+                result = unwrap(await s.call_tool("merge_coplanar_sliver_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["merged_group_count"] == 1, result
+                group = result["merged"][0]
+                assert group["surfaces_after"] == 1, group
+
+                surface_type, azimuth, tilt = await _surface_orientation(s, group["survivor"])
+                assert surface_type == "Wall", f"merged wall type changed: {surface_type}"
+                assert azimuth == pytest.approx(180.0, abs=0.5), \
+                    f"merged south wall must still face south (azimuth 180), got {azimuth}"
+                assert tilt == pytest.approx(90.0, abs=0.5), f"merged wall must stay vertical, tilt={tilt}"
     asyncio.run(_run())
 
 
@@ -917,6 +976,7 @@ def test_patch_missing_surfaces_reconstructs_deleted_wall():
                 }))
                 assert walls["count"] == 4, walls
                 target_wall = walls["surfaces"][0]["name"]
+                _, deleted_azimuth, _ = await _surface_orientation(s, target_wall)
                 delete_result = unwrap(await s.call_tool(
                     "delete_object", {"object_name": target_wall, "object_type": "Surface"},
                 ))
@@ -934,6 +994,15 @@ def test_patch_missing_surfaces_reconstructs_deleted_wall():
                 assert entry["surface_type"] == "Wall", entry
                 assert entry["area_m2"] == pytest.approx(30.0, abs=0.01), entry
                 assert entry["final_boundary_condition"] == "Adiabatic", entry
+
+                # Regression: the traced-loop winding was arbitrary, so the rebuilt wall
+                # could face INTO the space (azimuth off by 180°) — it must face outward
+                # exactly like the wall it replaces.
+                surface_type, azimuth, tilt = await _surface_orientation(s, entry["new_surface_name"])
+                assert surface_type == "Wall", f"patched surface inferred wrong type: {surface_type}"
+                assert azimuth == pytest.approx(deleted_azimuth, abs=0.5), \
+                    f"patched wall faces {azimuth}, deleted wall faced {deleted_azimuth}"
+                assert tilt == pytest.approx(90.0, abs=0.5), f"patched wall tilt: {tilt}"
 
                 after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert "PatchSpace" not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
@@ -975,6 +1044,61 @@ def test_patch_missing_surfaces_splits_non_planar_hole_into_two_facets():
                 # WallEast (4x3=12) + WallNorth (4x3=12): total reconstructed area should
                 # match the two missing walls, not something distorted by a bad split.
                 assert total_area == pytest.approx(24.0, abs=0.1), result
+
+                # Regression: each facet's traced winding was arbitrary — the rebuilt
+                # east wall (azimuth 90) and north wall (azimuth 0) must face outward,
+                # not inward at 270/180.
+                azimuths = []
+                for p in result["patched"]:
+                    surface_type, azimuth, tilt = await _surface_orientation(s, p["new_surface_name"])
+                    assert surface_type == "Wall", f"patched facet inferred wrong type: {surface_type}"
+                    assert tilt == pytest.approx(90.0, abs=0.5), f"patched facet tilt: {tilt}"
+                    azimuths.append(azimuth)
+                azimuths.sort()
+                assert azimuths[0] == pytest.approx(0.0, abs=0.5), \
+                    f"rebuilt north wall must face north (azimuth 0), got {azimuths}"
+                assert azimuths[1] == pytest.approx(90.0, abs=0.5), \
+                    f"rebuilt east wall must face east (azimuth 90), got {azimuths}"
+
+                after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert sp_name not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_patch_missing_surfaces_rebuilt_ceiling_faces_up():
+    """A deleted ceiling must be rebuilt as a RoofCeiling facing up, not a Floor facing down."""
+    # Regression: openstudio.model.Surface(vertices, model) infers surfaceType from
+    # winding (+z RoofCeiling, -z Floor) and the traced-loop winding was arbitrary — a
+    # missing ceiling could be silently rebuilt as a downward-facing "Floor" with wrong
+    # solar/film behavior, while isEnclosedVolume() (winding-insensitive) still passed.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                await _build_box(s, sp_name)
+                delete_result = unwrap(await s.call_tool(
+                    "delete_object",
+                    {"object_name": f"{sp_name}_Ceiling", "object_type": "Surface"},
+                ))
+                assert delete_result["ok"] is True, delete_result
+
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["skipped"] == [], result
+                assert result["patched_count"] == 1, result
+                entry = result["patched"][0]
+                assert entry["area_m2"] == pytest.approx(16.0, abs=0.01), entry
+
+                surface_type, _, tilt = await _surface_orientation(s, entry["new_surface_name"])
+                assert surface_type == "RoofCeiling", \
+                    f"rebuilt ceiling inferred as {surface_type} (winding flipped at construction)"
+                assert tilt == pytest.approx(0.0, abs=0.5), f"rebuilt ceiling must face up, tilt={tilt}"
 
                 after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert sp_name not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
@@ -1127,6 +1251,69 @@ def test_trim_overlapping_surfaces_trims_partial_overlap():
                 assert entry["space"] == sp_name, entry
                 areas = sorted([entry["surface_1_remaining_area_m2"], entry["surface_2_remaining_area_m2"]])
                 assert areas == [pytest.approx(3.0, abs=0.01), pytest.approx(3.0, abs=0.01)], entry
+
+                # Regression: each remainder came back from intersect() with reversed
+                # winding and was written flipped 180° (south walls facing north) — both
+                # created at azimuth 180, both must still face 180 after trimming.
+                for wall_name in ("OverlapA", "OverlapB"):
+                    surface_type, azimuth, tilt = await _surface_orientation(s, wall_name)
+                    assert surface_type == "Wall", f"{wall_name} type changed: {surface_type}"
+                    assert azimuth == pytest.approx(180.0, abs=0.5), \
+                        f"{wall_name} must still face south (azimuth 180) after trim, got {azimuth}"
+                    assert tilt == pytest.approx(90.0, abs=0.5), f"{wall_name} tilt changed: {tilt}"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_trim_overlapping_surfaces_validates_both_remainders_before_mutating():
+    """A pair where one remainder splits into disjoint pieces must be skipped with NEITHER surface changed."""
+    # Regression: surface_1's remainder was applied before surface_2's was validated —
+    # when surface_2's remainder split into two disjoint pieces the pair was reported
+    # "not attempted" but surface_1 had already been rewritten (a silent half-trim),
+    # and any_change stayed False so match_surfaces() didn't run over the mutation.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                # Tall narrow wall created FIRST (surface_1 of the pair): overlap leaves
+                # it a single clean remainder strip above the wide wall.
+                tall = unwrap(await s.call_tool("create_surface", {
+                    "name": "TallNarrow",
+                    "vertices": [[4, 0, 0], [6, 0, 0], [6, 0, 4], [4, 0, 4]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert tall["ok"] is True, tall
+                # Wide wall: the tall wall's footprint bisects it, so ITS remainder is
+                # two disjoint pieces — the unresolvable side of the pair.
+                wide = unwrap(await s.call_tool("create_surface", {
+                    "name": "WideBisected",
+                    "vertices": [[0, 0, 0], [10, 0, 0], [10, 0, 3], [0, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert wide["ok"] is True, wide
+
+                result = unwrap(await s.call_tool("trim_overlapping_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["trimmed_count"] == 0, result
+                assert result["skipped_count"] == 1, result
+                assert "disjoint" in result["skipped"][0]["reason"], result
+
+                # The pair was reported skipped, so NEITHER surface may have moved:
+                # TallNarrow keeps its full 2x4=8 m2, WideBisected its full 10x3=30 m2.
+                for wall_name, expected_area in (("TallNarrow", 8.0), ("WideBisected", 30.0)):
+                    details = unwrap(await s.call_tool("get_surface_details", {"surface_name": wall_name}))
+                    assert details["ok"] is True, details
+                    assert details["surface"]["gross_area_m2"] == pytest.approx(expected_area, abs=0.01), \
+                        f"{wall_name} was mutated despite the pair being reported as skipped: {details['surface']}"
     asyncio.run(_run())
 
 
