@@ -187,8 +187,10 @@ def test_codegen_run_simulation(sdk_container, request):
     )
 
     reported = _answer("codegen/sim/eui.txt")
-    assert float(reported) == pytest.approx(28.21, rel=0.05), (
-        f"agent reported EUI {reported} outside 5% of pinned 28.21"
+    # The prompt itself names the unit, so "28.21 kBtu/ft2" is a valid answer —
+    # grade the leading number, not the formatting
+    assert float(reported.split()[0]) == pytest.approx(28.21, rel=0.05), (
+        f"agent reported EUI {reported!r} outside 5% of pinned 28.21"
     )
 
 
