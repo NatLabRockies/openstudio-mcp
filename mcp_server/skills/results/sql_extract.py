@@ -190,8 +190,12 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
             return {"ok": True, "end_uses": [], "totals": {},
                     "source": "AnnualBuildingUtilityPerformanceSummary/End Uses"}
 
-        # Collect all fuel columns and end-use rows
+        # Collect all fuel columns and end-use rows, plus each column's
+        # RECORDED unit — the table mixes units even in SI (energy GJ, Water
+        # m3), and IP-source sqls already carry kBtu. Blanket-converting every
+        # column mis-scaled Water ~948x and double-converted IP sqls.
         data: dict[str, dict[str, float]] = {}  # row_name -> {col_name: value}
+        col_units: dict[str, str] = {}
 
         for r in rows:
             row_name = (r["RowName"] or "").strip()
@@ -199,6 +203,9 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
             val = _try_float(r["Value"])
             if not row_name or not col_name:
                 continue
+            unit = (r["Units"] or "").strip()
+            if unit:
+                col_units.setdefault(col_name, unit)
             if val is not None and val != 0.0:
                 data.setdefault(row_name, {})[col_name] = val
 
@@ -213,23 +220,38 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
             entry.update(fuels)
             end_uses.append(entry)
 
-        # Conversion: GJ -> kBtu for IP
-        units_note = "SI (original units from SQL)"
-        if units.upper() == "IP":
-            factor = 947.817  # GJ -> kBtu (1 GJ = 947.817 kBtu)
-            units_note = "Converted to kBtu"
-            for entry in end_uses:
-                for k, v in list(entry.items()):
-                    if k != "name" and isinstance(v, (int, float)):
-                        entry[k] = round(v * factor, 2)
-            if totals_row:
-                totals_row = {k: round(v * factor, 2) for k, v in totals_row.items()}
+        # Convert only energy columns, by their recorded unit; everything else
+        # keeps its recorded unit untouched
+        factor_kbtu = 947.817  # 1 GJ = 947.817 kBtu
+        want_ip = units.upper() == "IP"
+        col_factor: dict[str, float] = {}
+        for col, unit in col_units.items():
+            if want_ip and unit == "GJ":
+                col_factor[col] = factor_kbtu
+                col_units[col] = "kBtu"
+            elif not want_ip and unit == "kBtu":
+                col_factor[col] = 1.0 / factor_kbtu
+                col_units[col] = "GJ"
+
+        def _convert(row: dict[str, Any]) -> dict[str, Any]:
+            return {
+                k: round(v * col_factor[k], 2)
+                if k in col_factor and isinstance(v, (int, float)) else v
+                for k, v in row.items()
+            }
+
+        end_uses = [_convert(e) for e in end_uses]
+        if totals_row:
+            totals_row = _convert(totals_row)
+        units_note = ("Energy columns in kBtu; others keep recorded units"
+                      if want_ip else "SI (energy columns in GJ)")
 
         return {
             "ok": True,
             "end_uses": end_uses,
             "totals": totals_row or {},
             "units_note": units_note,
+            "column_units": col_units,
             "source": "AnnualBuildingUtilityPerformanceSummary/End Uses",
         }
     finally:

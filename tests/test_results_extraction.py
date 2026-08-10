@@ -61,6 +61,54 @@ class TestEndUseBreakdown:
         )
         assert abs(total_elec - sum_elec) < 0.1
 
+    def test_water_column_not_energy_converted(self, sql_path):
+        # Regression: default IP path multiplied the Water column (m3) by the
+        # GJ->kBtu factor — SEB4 Heat Rejection water 249964.47 m3 became ~236.9M
+        from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+        result = extract_end_use_breakdown(sql_path, units="IP")
+        assert result["column_units"]["Water"] == "m3"
+        assert result["column_units"]["Electricity"] == "kBtu"
+        assert result["totals"]["Water"] == pytest.approx(249964.47, abs=0.01)
+
+    def test_ip_source_sql_not_double_converted(self, sql_path, tmp_path):
+        # Regression: an IP-source sql (End Uses already kBtu) must not be
+        # multiplied by 947.817 again on the IP path, and SI must convert back
+        import shutil
+        import sqlite3
+        ip_sql = tmp_path / "ip_enduse.sql"
+        shutil.copy(sql_path, ip_sql)
+        conn = sqlite3.connect(str(ip_sql))
+        units_type = conn.execute(
+            "SELECT s.StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.UnitsIndex = s.StringIndex LIMIT 1",
+        ).fetchone()[0]
+        kbtu_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0] + 1
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'kBtu')", (kbtu_idx, units_type))
+        # Rewrite the Electricity column of End Uses to kBtu (value + unit)
+        cur = conn.execute(
+            "UPDATE TabularData SET Value = CAST(Value AS REAL) * 947.817, UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='End Uses') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Electricity') "
+            "  AND ReportNameIndex IN (SELECT StringIndex FROM Strings "
+            "       WHERE Value='AnnualBuildingUtilityPerformanceSummary')",
+            (kbtu_idx,))
+        assert cur.rowcount > 0, "no End Uses Electricity cells rewritten"
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+        si_ref = extract_end_use_breakdown(sql_path, units="IP")
+        ip_res = extract_end_use_breakdown(ip_sql, units="IP")
+        # Same building: IP output from the IP-source sql must equal the SI
+        # fixture's IP conversion, not 947.817x it
+        assert ip_res["totals"]["Electricity"] == pytest.approx(
+            si_ref["totals"]["Electricity"], rel=1e-4)
+        # And SI must convert the kBtu source back to GJ
+        si_res = extract_end_use_breakdown(ip_sql, units="SI")
+        si_orig = extract_end_use_breakdown(sql_path, units="SI")
+        assert si_res["totals"]["Electricity"] == pytest.approx(
+            si_orig["totals"]["Electricity"], rel=1e-4)
+
 
 # ---------------------------------------------------------------------------
 # Tier 1: extract_envelope_summary
