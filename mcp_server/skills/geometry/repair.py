@@ -34,6 +34,7 @@ import openstudio
 
 from mcp_server.model_manager import get_model
 from mcp_server.skills.geometry.operations import match_surfaces
+from mcp_server.skills.geometry.winding import clockwise, match_normal
 
 # Kept local (not imported from gbxml_import/operations.py's PLANE_TOLERANCE)
 # to preserve the existing one-way import direction: gbxml_import depends on
@@ -212,17 +213,6 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
         return {"ok": False, "error": f"Failed to repair missing roof/ceiling surfaces: {e}"}
 
 
-def _clockwise(points: openstudio.Point3dVector) -> openstudio.Point3dVector:
-    """Normalize a planar polygon (as produced by Transformation.alignFace) to the
-    winding order openstudio.joinAll() needs. Same reverse-if-z>0 logic as the
-    identically-named helper in gbxml_import/operations.py, kept local here rather than
-    imported to preserve the one-way geometry->gbxml_import dependency direction."""
-    normal = openstudio.getOutwardNormal(points)
-    if normal.is_initialized() and normal.get().z() > 0:
-        return openstudio.reverse(points)
-    return points
-
-
 def _group_coplanar_fragments(
     surfaces: list[openstudio.model.Surface],
 ) -> list[list[openstudio.model.Surface]]:
@@ -334,17 +324,34 @@ def merge_coplanar_sliver_surfaces() -> dict[str, Any]:
                     survivor = max(group, key=lambda s: float(s.grossArea()))
                     others = [s for s in group if s is not survivor]
 
+                    survivor_normal = openstudio.getOutwardNormal(survivor.vertices())
+                    if not survivor_normal.is_initialized():
+                        skipped.append({
+                            "space": space_name, "surface_type": surface_type,
+                            "surfaces": [s.nameString() for s in group],
+                            "reason": "could not compute the survivor's outward normal; "
+                                      "refusing to merge without an orientation reference",
+                        })
+                        continue
+
                     transform = openstudio.Transformation.alignFace(survivor.vertices()).inverse()
                     polygons = openstudio.Point3dVectorVector()
                     for s in group:
-                        polygons.append(_clockwise(transform * s.vertices()))
+                        polygons.append(clockwise(transform * s.vertices()))
 
                     joined = openstudio.joinAll(polygons, PLANE_TOLERANCE_M)
                     if len(joined) >= len(group):
                         continue  # nothing actually touches; leave the group alone
 
                     forward = transform.inverse()
-                    new_loops_3d = [_clockwise(forward * loop) for loop in joined]
+                    # Mapped back to global space, joinAll's loops face opposite the
+                    # survivor (alignFace put the survivor's outward normal at +z local,
+                    # clockwise() put the join inputs at -z) — orient each final loop to
+                    # the survivor's own pre-merge outward normal, never to a global
+                    # winding convention.
+                    new_loops_3d = [
+                        match_normal(forward * loop, survivor_normal.get()) for loop in joined
+                    ]
                     new_loops_3d.sort(
                         key=lambda v: (a.get() if (a := openstudio.getArea(v)).is_initialized() else 0.0),
                         reverse=True,
