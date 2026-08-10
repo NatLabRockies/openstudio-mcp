@@ -894,10 +894,10 @@ def test_weld_coincident_vertices_no_op_on_clean_model():
 
 
 @pytest.mark.integration
-def test_patch_missing_wall_surfaces_reconstructs_deleted_wall():
+def test_patch_missing_surfaces_reconstructs_deleted_wall():
     """Delete one wall from an otherwise-clean box; confirm the tool rebuilds it."""
     # Regression: Space.polyhedron().edgesNotTwo() finds the deleted wall's 4 unpaired
-    # edges tracing a single planar rectangle; patch_missing_wall_surfaces must
+    # edges tracing a single planar rectangle; patch_missing_surfaces must
     # reconstruct exactly that surface and leave the space enclosed afterward.
     if not integration_enabled():
         pytest.skip("integration disabled")
@@ -925,7 +925,7 @@ def test_patch_missing_wall_surfaces_reconstructs_deleted_wall():
                 baseline = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert "PatchSpace" in [ns["space"] for ns in baseline["non_enclosed_spaces"]], baseline
 
-                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
                 assert result["ok"] is True, result
                 assert result["patched_count"] == 1, result
                 assert result["skipped"] == [], result
@@ -941,14 +941,15 @@ def test_patch_missing_wall_surfaces_reconstructs_deleted_wall():
 
 
 @pytest.mark.integration
-def test_patch_missing_wall_surfaces_skips_non_planar_hole():
-    """Two adjacent walls deleted together trace one loop, but it isn't planar."""
+def test_patch_missing_surfaces_splits_non_planar_hole_into_two_facets():
+    """Two adjacent walls deleted together trace one loop, but it isn't planar — split it."""
     # Regression: removing two walls that share a vertical edge (WallEast + WallNorth,
     # meeting at the box's far corner) leaves a single connected 6-edge loop of unpaired
     # edges (non-branching, consumes cleanly) — but the loop bends around the missing
-    # corner and isn't flat. patch_missing_wall_surfaces must recognize that and refuse
-    # to paper over it with one flat surface, rather than reconstructing a geometrically
-    # wrong patch.
+    # corner and isn't flat. patch_missing_surfaces must recognize the bend and
+    # split the loop into two planar facets via a chord (the shared vertical corner
+    # edge), reconstructing both walls, rather than forcing one wrong flat patch or
+    # giving up entirely.
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -966,23 +967,28 @@ def test_patch_missing_wall_surfaces_skips_non_planar_hole():
                     ))
                     assert delete_result["ok"] is True, delete_result
 
-                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
                 assert result["ok"] is True, result
-                assert result["patched_count"] == 0, result
-                assert result["skipped_count"] == 1, result
-                skip = result["skipped"][0]
-                assert skip["space"] == sp_name, skip
-                assert "not planar" in skip["reason"], skip
+                assert result["skipped"] == [], result
+                assert result["patched_count"] == 2, result
+                total_area = sum(p["area_m2"] for p in result["patched"])
+                # WallEast (4x3=12) + WallNorth (4x3=12): total reconstructed area should
+                # match the two missing walls, not something distorted by a bad split.
+                assert total_area == pytest.approx(24.0, abs=0.1), result
+
+                after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert sp_name not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
     asyncio.run(_run())
 
 
 @pytest.mark.integration
-def test_patch_missing_wall_surfaces_skips_multiple_disjoint_holes():
-    """Two opposite walls deleted leave two separate holes, not one loop."""
+def test_patch_missing_surfaces_patches_multiple_disjoint_holes_independently():
+    """Two opposite walls deleted leave two separate holes — patch each on its own."""
     # Regression: removing non-adjacent walls (WallEast + WallWest) leaves two disjoint
-    # 4-edge rectangles among the unpaired edges — no branch point, but they don't chain
-    # into a single walk. patch_missing_wall_surfaces must not guess which one to
-    # reconstruct (or merge them); both get reported as skipped together.
+    # 4-edge rectangles among the unpaired edges — two independent connected components,
+    # not one combined loop. patch_missing_surfaces must not require the whole
+    # space's unpaired edges to form a single loop; each component is resolved on its
+    # own, so both get reconstructed.
     if not integration_enabled():
         pytest.skip("integration disabled")
 
@@ -1000,20 +1006,22 @@ def test_patch_missing_wall_surfaces_skips_multiple_disjoint_holes():
                     ))
                     assert delete_result["ok"] is True, delete_result
 
-                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
                 assert result["ok"] is True, result
-                assert result["patched_count"] == 0, result
-                assert result["skipped_count"] == 1, result
-                skip = result["skipped"][0]
-                assert skip["space"] == sp_name, skip
-                assert "single simple closed loop" in skip["reason"], skip
+                assert result["skipped"] == [], result
+                assert result["patched_count"] == 2, result
+                components = {p["component"] for p in result["patched"]}
+                assert components == {0, 1}, result
+
+                after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert sp_name not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
     asyncio.run(_run())
 
 
 @pytest.mark.integration
-def test_patch_missing_wall_surfaces_skips_same_space_overlap():
+def test_patch_missing_surfaces_skips_same_space_overlap():
     """An edge shared by three surfaces is a same-space overlap, not a missing surface."""
-    # Regression: patch_missing_wall_surfaces must not mistake a duplicate/overlapping
+    # Regression: patch_missing_surfaces must not mistake a duplicate/overlapping
     # edge (used 3+ times) for a missing-surface boundary (used exactly once) — that's a
     # different defect (see repair_and_validate_gbxml_geometry's overlapping_surfaces),
     # not something this tool attempts to fix.
@@ -1036,18 +1044,24 @@ def test_patch_missing_wall_surfaces_skips_same_space_overlap():
                     }))
                     assert res["ok"] is True, res
 
-                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
                 assert result["ok"] is True, result
                 assert result["patched_count"] == 0, result
-                assert result["skipped_count"] == 1, result
-                skip = result["skipped"][0]
-                assert skip["space"] == sp_name, skip
-                assert "3+ times" in skip["reason"], skip
+                # Two independent reasons, not guessed away: the shared edge itself (used
+                # 3+ times) is excluded from consideration as its own space-level finding,
+                # and excluding it leaves the origin vertex at degree 3 (odd) among the
+                # three wings' remaining edges — an unresolvable branch point, reported
+                # separately rather than silently folded into the overlap finding.
+                assert result["skipped_count"] == 2, result
+                reasons = [sk["reason"] for sk in result["skipped"]]
+                assert any(sk["space"] == sp_name for sk in result["skipped"]), result
+                assert any("3+ times" in r for r in reasons), result
+                assert any("branch point" in r for r in reasons), result
     asyncio.run(_run())
 
 
 @pytest.mark.integration
-def test_patch_missing_wall_surfaces_no_op_on_clean_model():
+def test_patch_missing_surfaces_no_op_on_clean_model():
     """A model with no missing surfaces should patch nothing."""
     # Regression: guards against the loop-tracing/reconstruction logic false-positiving
     # on a normal, already-enclosed model and mutating geometry that never needed it.
@@ -1060,9 +1074,134 @@ def test_patch_missing_wall_surfaces_no_op_on_clean_model():
                 await s.initialize()
                 await setup_example(s, _unique_name())
 
-                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
                 assert result["ok"] is True, result
                 assert result["patched_count"] == 0, result
+                assert result["skipped_count"] == 0, result
+    asyncio.run(_run())
+
+
+# ---- Overlapping surface trimming tests ----
+
+
+@pytest.mark.integration
+def test_trim_overlapping_surfaces_trims_partial_overlap():
+    """Two coplanar walls with a genuine 2D overlap get trimmed to their non-overlap remainder."""
+    # Regression: a wall exported once per neighboring room instead of split at the
+    # boundary between them (the historical "11 Jay St" pattern) leaves two same-space
+    # surfaces genuinely overlapping in area, not just touching along an edge.
+    # trim_overlapping_surfaces must replace each with its own non-overlapping
+    # remainder, not guess which one is "right." The space (just two overlapping walls,
+    # nothing else) is trivially non-enclosed, satisfying the tool's scoping.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                wall_a = unwrap(await s.call_tool("create_surface", {
+                    "name": "OverlapA",
+                    "vertices": [[0, 0, 0], [3, 0, 0], [3, 0, 3], [0, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert wall_a["ok"] is True, wall_a
+                wall_b = unwrap(await s.call_tool("create_surface", {
+                    "name": "OverlapB",
+                    "vertices": [[1, 0, 0], [4, 0, 0], [4, 0, 3], [1, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert wall_b["ok"] is True, wall_b
+
+                result = unwrap(await s.call_tool("trim_overlapping_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["skipped"] == [], result
+                assert result["trimmed_count"] == 1, result
+                entry = result["trimmed"][0]
+                assert entry["space"] == sp_name, entry
+                areas = sorted([entry["surface_1_remaining_area_m2"], entry["surface_2_remaining_area_m2"]])
+                assert areas == [pytest.approx(3.0, abs=0.01), pytest.approx(3.0, abs=0.01)], entry
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_trim_overlapping_surfaces_removes_fully_contained_duplicate():
+    """A small surface fully inside a bigger one is a pure duplicate — remove it, not the container."""
+    # Regression: full containment is asymmetric, not a case for symmetric trimming —
+    # the small surface is entirely redundant; the big one was never wrong and must come
+    # out of this untouched, not carved a hole into.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                big = unwrap(await s.call_tool("create_surface", {
+                    "name": "BigWall",
+                    "vertices": [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert big["ok"] is True, big
+                # Touches Big's own left edge (x=0) rather than floating fully in its
+                # interior — keeps Big's own would-be remainder a simple notched polygon,
+                # not an untested donut/hole topology (moot here since the container is
+                # left untouched either way, but avoids relying on that at all).
+                small = unwrap(await s.call_tool("create_surface", {
+                    "name": "SmallDuplicateWall",
+                    "vertices": [[0, 0, 1], [2, 0, 1], [2, 0, 2], [0, 0, 2]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert small["ok"] is True, small
+
+                result = unwrap(await s.call_tool("trim_overlapping_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["skipped"] == [], result
+                assert result["trimmed_count"] == 1, result
+                entry = result["trimmed"][0]
+                assert entry["space"] == sp_name, entry
+                assert entry["removed"] == "SmallDuplicateWall", entry
+                assert entry["kept_unchanged"] == "BigWall", entry
+
+                remaining = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": sp_name, "surface_type": "Wall", "max_results": 0,
+                }))
+                assert remaining["count"] == 1, remaining
+                assert remaining["surfaces"][0]["name"] == "BigWall", remaining
+                assert remaining["surfaces"][0]["gross_area_m2"] == pytest.approx(12.0, abs=0.01), remaining
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_trim_overlapping_surfaces_no_op_when_no_non_enclosed_spaces_have_overlaps():
+    """A clean, enclosed model should be left alone even if it isn't perfectly optimized."""
+    # Regression: trim_overlapping_surfaces is scoped to spaces failing
+    # isEnclosedVolume() — a coplanar sliver elsewhere existing peacefully alongside an
+    # already-enclosed space must not be touched just because it exists.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+
+                result = unwrap(await s.call_tool("trim_overlapping_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["trimmed_count"] == 0, result
                 assert result["skipped_count"] == 0, result
     asyncio.run(_run())
 

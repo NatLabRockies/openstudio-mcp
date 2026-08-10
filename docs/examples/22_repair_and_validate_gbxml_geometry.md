@@ -51,7 +51,8 @@ having a subtler non-manifold gap — see "Follow-up" below.
 | `repair_missing_roof_ceiling` | Follow-up fix for non-enclosed spaces that have a Floor but no RoofCeiling at all (see "Follow-up" below) |
 | `merge_coplanar_sliver_surfaces` | Follow-up fix for non-enclosed spaces fragmented into many same-space coplanar pieces (see "Follow-up" below) |
 | `weld_coincident_vertices` | Follow-up fix for non-enclosed spaces with sub-centimeter corner gaps between non-coplanar surfaces (see "Follow-up" below) |
-| `patch_missing_wall_surfaces` | Follow-up fix for non-enclosed spaces missing a surface (usually a partition wall) outright (see "Follow-up" below) |
+| `patch_missing_surfaces` | Follow-up fix for non-enclosed spaces missing a surface (usually a partition wall) outright (see "Follow-up" below) |
+| `trim_overlapping_surfaces` | Follow-up fix for non-enclosed spaces with a genuine same-space surface overlap (see "Follow-up" below) |
 | `get_surface_details` | Only needed afterward, for a specific flagged surface pair, if the summary isn't enough to act on |
 
 ## Follow-up: `repair_missing_roof_ceiling`
@@ -141,43 +142,88 @@ fixture, but causes zero regressions either (confirmed space-by-space, not just 
 assume running every available repair tool is strictly additive; measure the actual before/after on
 your own model.
 
-## Follow-up: `patch_missing_wall_surfaces`
+## Follow-up: `patch_missing_surfaces`
 
 After the two tools above, 67 of the Austin fixture's 74 spaces were still non-enclosed. A direct
-investigation into why — `Space.polyhedron().edgesNotTwo()`, the same manifold check
-`isEnclosedVolume()` runs internally — found that 394 of 397 "bad" edges across those 67 spaces are
-used by exactly **one** surface, not the two a closed volume requires: a genuinely missing surface,
-not a tolerance gap (there's nothing to weld or join when the surface doesn't exist at all). In 58
-of the 67 spaces, those unpaired edges chain into exactly one simple, non-branching loop — the
-literal outline of whatever's missing. `patch_missing_wall_surfaces()` reconstructs it directly
-from that loop.
+investigation into why — `Space.polyhedron().edgesNotTwo(True)`, the same manifold check
+`isEnclosedVolume()` runs internally (note the `True` — `edgesNotTwo(False)` hides edges
+Polyhedron's own internal colinear-point auto-heal step creates, understating the real defect on
+some spaces) — found that 394 of 397 "bad" edges across those 67 spaces are used by exactly **one**
+surface, not the two a closed volume requires: a genuinely missing surface, not a tolerance gap
+(there's nothing to weld or join when the surface doesn't exist at all).
 
 ```
-3. patch_missing_wall_surfaces()
-   → per space with unpaired edges, checks they're all used exactly once (not the
-     same-space-overlap pattern of 3+ uses), chains them into a loop, confirms it's a
-     single non-branching walk and planar, then constructs a Surface from it — surface
-     type is inferred from the loop's own geometry, not assumed to be a wall. Re-runs
-     match_surfaces() once, batched; anything still unmatched afterward is set Adiabatic.
-   { ok: true, patched_count: 35, patched: [...], skipped_count: 32, skipped: [...] }
-4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 67 -> 32
+3. patch_missing_surfaces()
+   → per space, finds every connected component of unpaired (count==1) edges
+     independently (a space can have more than one separate hole), traces each into a
+     loop, recursively splits a non-planar loop into planar facets via chords, and
+     resolves a branch point (more than one missing surface meeting at a vertex) via a
+     bounded search over ways to pair up its edges. Surface type is inferred from each
+     facet's own geometry, not assumed to be a wall. Edges used 3+ times (a same-space
+     overlap — a different defect) are excluded and reported separately, not allowed to
+     block the rest of the space. Re-runs match_surfaces() once, batched; anything still
+     unmatched afterward is set Adiabatic; every space is re-checked afterward rather
+     than trusted, in case a new internal chord edge happens to coincide with an
+     already-ambiguous pre-existing one.
+   { ok: true, patched_count: 119, patched: [...], skipped_count: 5, skipped: [...] }
+4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 67 -> ~4
 ```
 
-On the Austin fixture this reconstructs 35 of the 67 remaining spaces — mostly missing partition
-walls, but one (`sp-1stair`) turned out to be a missing RoofCeiling, confirming the surface type
-really is inferred, not hardcoded. The other 32 are honestly skipped: 23 because the loop isn't
-planar (a real bent/multi-segment hole a flat patch would misrepresent), 7 because the unpaired
-edges don't form one simple loop (a branch point, or more than one separate hole — e.g.
-`sp-6retail`, `sp-3restuarant`), and 2 for a genuine same-space overlap (edges used 3+ times — a
-different defect, see "Why Two Separate Checks" below). 35 + 32 = 67 — every space that entered this
-step gets a definitive patch-or-skip decision, none silently fall through. Interestingly, many of
-the reconstructed walls' footprints recur identically across several spaces (e.g. the same missing
-wall in four different apartments) — the same unit type repeated across floors, all missing the
-same wall *type* in the source export, not four unrelated one-off defects.
+On the Austin fixture this reconstructs the large majority of the 67 remaining spaces' holes —
+mostly missing partition walls, but one (`sp-1stair`) turned out to be a missing RoofCeiling,
+confirming the surface type really is inferred, not hardcoded. Only a handful of components are
+honestly skipped now (down from 32 in the tool's first version, before multi-component/chord-
+splitting/branch-decomposition support): a same-space overlap (a different defect, see
+"Follow-up: `trim_overlapping_surfaces`" below), a component whose edges don't form one simple
+loop, and rarely a space where every component reported success but the post-patch re-check still
+found it non-enclosed. Interestingly, many of the reconstructed walls' footprints recur identically
+across several spaces (e.g. the same missing wall in four different apartments) — the same unit
+type repeated across floors, all missing the same wall *type* in the source export, not several
+unrelated one-off defects.
 
-Combined total on this fixture: 69 -> 67 (weld + merge) -> 32 (+ patch) — more than half of the
-original non-enclosed spaces closed by these three tools together, with the honest remainder
-(branching/multi-loop/overlap cases) reported rather than guessed at.
+**A measured, honest caveat**: the exact `patched_count`/`skipped_count` on this fixture shift by
+exactly 1 in either direction on a small fraction of runs (119/5 most often, occasionally 118/6) —
+genuine run-to-run non-determinism, most likely in `Polyhedron`'s own internal edge ordering (C++,
+not something this tool controls), tipping one borderline chord/pairing search to a different but
+still-valid choice. The final `non_enclosed_spaces_count` and which specific spaces remain has been
+stable across repeated runs regardless.
+
+## Follow-up: `trim_overlapping_surfaces`
+
+The flip side of a missing surface: a genuine same-space 2D overlap, either the historical "11 Jay
+St" pattern (a wall exported once per neighboring room instead of split at the boundary between
+them) or, occasionally, a byproduct of `patch_missing_surfaces()` reconstructing a surface that
+happens to coincide with something already there. Scoped to spaces currently failing
+`isEnclosedVolume()` — a coplanar sliver artifact coexisting peacefully with an already-enclosed
+space is not this tool's concern.
+
+```
+5. trim_overlapping_surfaces()
+   → detects coincident-plane pairs with true 2D overlap area (the same
+     openstudio.intersect() approach repair_and_validate_gbxml_geometry already uses for
+     overlapping_surfaces), then replaces each surface's vertices with its own
+     non-overlapping remainder, or removes it outright if fully contained within the
+     other (full containment is asymmetric — the container is left untouched, not
+     carved a hole into). A remainder splitting into multiple disjoint pieces is
+     reported as skipped rather than guessed at.
+   { ok: true, trimmed_count: 12, trimmed: [...], skipped_count: 16, skipped: [...] }
+6. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count ~4
+```
+
+On the Austin fixture, most trims are pure duplicates fully contained within another surface. A
+same-run safety guard skips (rather than risks compounding) a second overlap touching a surface
+already handled earlier in the same call — call it again to pick up the next one; it converges to
+zero further trims.
+
+**Combined total on this fixture: 69 -> 67 (weld + merge) -> 4 (patch + trim)** — all but 4 of the
+original non-enclosed spaces closed by four automated, verified repair tools. The honest remainder
+— `sp-14retail`, `sp-21restuarant`, `sp-35apartment`, `sp-6retail` — was checked directly, not
+assumed: running `patch_missing_surfaces()` and `trim_overlapping_surfaces()` repeatedly
+against each other reaches a **stable oscillation**, each pass's fix creating exactly the input the
+other pass "fixes" right back, rather than converging further. These 4 spaces have a structurally
+ambiguous mix of missing and duplicate geometry that neither tool can resolve alone — that's a
+genuinely different, harder problem than anything the four tools above address, not a case to keep
+looping against.
 
 ## Why Two Separate Checks
 
@@ -217,11 +263,12 @@ See `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_on_real
 `::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`,
 `::test_repair_missing_roof_ceiling_on_11jay_fixture`, and
 `::test_geometry_repair_pipeline_on_austin_apartment_fixture` (covers
-`merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, and `patch_missing_wall_surfaces`
-together on the same real fixture — the 69/67/67/32 numbers above come from this test).
-`repair_missing_roof_ceiling`, `merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, and
-`patch_missing_wall_surfaces` themselves also have synthetic-geometry tests in
-`tests/test_geometry.py` (`test_repair_missing_roof_ceiling_synthesizes_flat_ceiling`,
+`merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, `patch_missing_surfaces`, and
+`trim_overlapping_surfaces` together on the same real fixture — the 69/67/4 numbers above come from
+this test). `repair_missing_roof_ceiling`, `merge_coplanar_sliver_surfaces`,
+`weld_coincident_vertices`, `patch_missing_surfaces`, and `trim_overlapping_surfaces`
+themselves also have synthetic-geometry tests in `tests/test_geometry.py`
+(`test_repair_missing_roof_ceiling_synthesizes_flat_ceiling`,
 `test_repair_missing_roof_ceiling_skips_uneven_walls`,
 `test_merge_coplanar_sliver_surfaces_merges_split_ceiling`,
 `test_merge_coplanar_sliver_surfaces_skips_mixed_boundary_conditions`,
@@ -231,8 +278,11 @@ together on the same real fixture — the 69/67/67/32 numbers above come from th
 `test_weld_coincident_vertices_leaves_large_offset_alone`,
 `test_weld_coincident_vertices_skips_degenerate_same_surface_collapse`,
 `test_weld_coincident_vertices_no_op_on_clean_model`,
-`test_patch_missing_wall_surfaces_reconstructs_deleted_wall`,
-`test_patch_missing_wall_surfaces_skips_non_planar_hole`,
-`test_patch_missing_wall_surfaces_skips_multiple_disjoint_holes`,
-`test_patch_missing_wall_surfaces_skips_same_space_overlap`,
-`test_patch_missing_wall_surfaces_no_op_on_clean_model`).
+`test_patch_missing_surfaces_reconstructs_deleted_wall`,
+`test_patch_missing_surfaces_splits_non_planar_hole_into_two_facets`,
+`test_patch_missing_surfaces_patches_multiple_disjoint_holes_independently`,
+`test_patch_missing_surfaces_skips_same_space_overlap`,
+`test_patch_missing_surfaces_no_op_on_clean_model`,
+`test_trim_overlapping_surfaces_trims_partial_overlap`,
+`test_trim_overlapping_surfaces_removes_fully_contained_duplicate`,
+`test_trim_overlapping_surfaces_no_op_when_no_non_enclosed_spaces_have_overlaps`).

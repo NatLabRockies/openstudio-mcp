@@ -12,12 +12,13 @@ from mcp_server.skills.geometry.operations import (
     match_surfaces,
     set_window_to_wall_ratio,
 )
-from mcp_server.skills.geometry.patch_missing_surfaces import patch_missing_wall_surfaces
+from mcp_server.skills.geometry.patch_missing_surfaces import patch_missing_surfaces
 from mcp_server.skills.geometry.repair import (
     merge_coplanar_sliver_surfaces,
     repair_missing_roof_ceiling,
     weld_coincident_vertices,
 )
+from mcp_server.skills.geometry.trim_overlapping_surfaces import trim_overlapping_surfaces
 
 
 def register(mcp):
@@ -207,23 +208,46 @@ def register(mcp):
         """
         return weld_coincident_vertices()
 
-    @mcp.tool(tags={"geometry"}, name="patch_missing_wall_surfaces")
-    def patch_missing_wall_surfaces_tool():
+    @mcp.tool(tags={"geometry"}, name="patch_missing_surfaces")
+    def patch_missing_surfaces_tool():
         """Reconstruct a space's missing surfaces from its own unpaired polyhedron edges.
 
-        Fixes gbXML/Revit exports that dropped a surface (usually an interior partition
-        wall) outright — a different defect from either merge_coplanar_sliver_surfaces
+        Fixes gbXML/Revit exports that dropped a surface outright — usually an interior
+        partition wall, but not always: surface type is inferred from each reconstructed
+        facet's own geometry, not assumed, so a missing Floor or RoofCeiling is handled
+        exactly the same way. A different defect from either merge_coplanar_sliver_surfaces
         (same-plane fragments) or weld_coincident_vertices (corner gaps): here there's
         nothing to snap or join because the surface simply doesn't exist. Uses
-        Space.polyhedron().edgesNotTwo() to find edges used by only one surface, then
-        reconstructs the missing one when those edges chain into exactly one simple,
-        non-branching, planar loop. A branch point, more than one loop, edges used 3+
-        times (a same-space overlap — a different defect), or a degenerate result are
-        reported as skipped rather than guessed at. Run
+        Space.polyhedron().edgesNotTwo(True) to find edges used by only one surface, then
+        reconstructs the missing surface(s) — independently per separate hole in the same
+        space, splitting a non-planar hole into planar facets via chords, and resolving a
+        branch point (more than one missing surface meeting at a vertex) via a bounded
+        search over ways to pair up its edges. Edges used 3+ times (a same-space overlap —
+        a different defect, see trim_overlapping_surfaces) are excluded and reported
+        separately rather than blocking the rest of the space. Run
         repair_and_validate_gbxml_geometry() before and after to see the effect on
         non_enclosed_spaces_count.
         """
-        return patch_missing_wall_surfaces()
+        return patch_missing_surfaces()
+
+    @mcp.tool(tags={"geometry"}, name="trim_overlapping_surfaces")
+    def trim_overlapping_surfaces_tool():
+        """Trim same-space surfaces with a genuine 2D overlap to their non-overlap remainder.
+
+        Fixes the historical "wall exported once per neighboring room instead of split at
+        the boundary between them" defect (and any similar same-space duplicate/overlap)
+        — a different problem from a missing or fragmented surface: here there's too much
+        material, not too little. Scoped to spaces currently failing
+        Space.isEnclosedVolume() — a coplanar sliver artifact elsewhere doesn't need
+        touching just because it exists. Detects coincident-plane pairs with true 2D
+        overlap area (not just a shared edge), then replaces each surface's vertices with
+        its own non-overlapping remainder, or removes it outright if fully contained
+        within the other. A remainder that splits into multiple disjoint pieces is
+        reported as skipped rather than guessed at. Run
+        repair_and_validate_gbxml_geometry() before and after to see the effect on
+        overlapping_surfaces_count and non_enclosed_spaces_count.
+        """
+        return trim_overlapping_surfaces()
 
     @mcp.tool(tags={"geometry"}, name="set_window_to_wall_ratio")
     def set_window_to_wall_ratio_tool(

@@ -82,7 +82,7 @@ and uniformly level wall tops — anything sloped or ambiguous is reported as sk
 guessed at.
 
 For non-enclosed spaces that already have both a Floor *and* a RoofCeiling — the more common
-real-world case, and one that can affect the large majority of spaces in a model — three distinct
+real-world case, and one that can affect the large majority of spaces in a model — four distinct
 defects cause this, and none are fixed by `match_surfaces()`:
 
 - **Same-plane fragmentation**: Revit exporting one physical wall/floor/ceiling as many tiny
@@ -99,36 +99,42 @@ defects cause this, and none are fixed by `match_surfaces()`:
   relied on to be forgiving.
 - **Missing surfaces**: a surface (usually an interior partition wall) dropped outright from the
   export — often systematically, e.g. the same wall missing from every stacked instance of a
-  repeated apartment unit type across floors, not a random one-off. `patch_missing_wall_surfaces()`
-  (geometry skill) uses `Space.polyhedron().edgesNotTwo()` — the same manifold check
-  `isEnclosedVolume()` runs internally — to find edges used by only one surface (a missing
-  partner, not a tolerance gap), and reconstructs the surface when those edges chain into exactly
-  one simple, planar loop.
+  repeated apartment unit type across floors, not a random one-off.
+  `patch_missing_surfaces()` (geometry skill) uses `Space.polyhedron().edgesNotTwo(True)` —
+  the same manifold check `isEnclosedVolume()` runs internally, with `includeCreatedEdges=True`;
+  `False` hides edges Polyhedron's own internal auto-heal step creates and understates the real
+  defect — to find edges used by only one surface (a missing partner, not a tolerance gap), and
+  reconstructs the surface(s) independently per separate hole: splitting a non-planar loop into
+  planar facets via chords, and resolving a branch point (more than one missing surface meeting at
+  a vertex) via a bounded search over ways to pair up its edges.
+- **Same-space overlaps**: the flip side of a missing surface — a surface duplicated (the
+  historical "11 Jay St" pattern: a wall exported once per neighboring room instead of split at the
+  boundary between them), or a byproduct of patching a missing surface that happens to coincide
+  with something already there. `trim_overlapping_surfaces()` (geometry skill) trims each side of a
+  genuine 2D overlap to its own non-overlapping remainder, or removes it outright if fully
+  contained within the other. Scoped to spaces currently failing `isEnclosedVolume()` — it never
+  touches an overlap that coexists peacefully with an already-enclosed space.
 
-Re-check with `repair_and_validate_gbxml_geometry()` after any of these (order doesn't matter
-between `merge_coplanar_sliver_surfaces()` and `weld_coincident_vertices()` — they touch different
-surface pairs; `patch_missing_wall_surfaces()` works from whatever edges are still unpaired, so run
-it after the other two have closed what they can). **None guarantee full closure**, and combining
-them isn't necessarily additive: on the real fixture used in this project's own tests (74 spaces,
-69 non-enclosed), `merge_coplanar_sliver_surfaces()` alone fixes 2, `weld_coincident_vertices()`
-alone fixes 0 (it does real work — 22 spaces get vertices snapped — but the spaces it touches have
-other simultaneous defects a 2cm weld doesn't close), and running both nets the same 2 as merge
-alone, with zero regressions either way — 69 -> 67.
-`patch_missing_wall_surfaces()` on top of that closes the large majority of what's left: 67 -> 32,
-reconstructing 35 spaces' missing surfaces (mostly walls, but surface type is inferred from the
-loop's own geometry — one turned out to be a missing RoofCeiling) and honestly skipping 32 (23 for
-a non-planar loop, 7 for edges that don't form one simple loop — branch points or multiple separate
-holes — and 2 for a genuine same-space overlap, a different defect entirely). Ambiguous cases are
-reported as skipped rather than guessed at in all three tools.
-
-True same-space duplicate/overlapping geometry (`overlapping_surfaces` in the validator's output,
-and the edges-used-3+-times case `patch_missing_wall_surfaces()` detects and declines to touch —
-e.g. a wall exported once per neighboring room instead of split at the boundary between them) is a
-fourth, different defect that none of these tools fix; that's still a manual fix.
+Re-check with `repair_and_validate_gbxml_geometry()` after any of these. Order matters less between
+`merge_coplanar_sliver_surfaces()` and `weld_coincident_vertices()` (they touch different surface
+pairs) than for the other two: run `patch_missing_surfaces()` after those two have closed what
+they can, and `trim_overlapping_surfaces()` after that, since it's scoped to still-non-enclosed
+spaces. **None guarantee full closure**, and combining them isn't necessarily additive: on the real
+fixture used in this project's own tests (74 spaces, 69 non-enclosed),
+`merge_coplanar_sliver_surfaces()` alone fixes 2, `weld_coincident_vertices()` alone fixes 0 (real
+work — 22 spaces get vertices snapped — but the spaces it touches have other simultaneous defects a
+2cm weld doesn't close), and running both nets the same 2 as merge alone, with zero regressions
+either way — 69 -> 67. `patch_missing_surfaces()` and `trim_overlapping_surfaces()` together
+close all but 4 of what's left: 67 -> 4. The honest remainder on this fixture is a confirmed
+patch/trim oscillation — each pass's fix creates exactly the input the other pass "fixes" right
+back (verified directly by running repeated rounds, not assumed) — or a structurally ambiguous mix
+of missing and duplicate geometry neither tool can resolve alone. Ambiguous cases are reported as
+skipped, with the specific reason, rather than guessed at in every one of these four tools.
 
 ## Tools
 
 `import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `repair_missing_roof_ceiling`,
-`merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, and `patch_missing_wall_surfaces`
-(geometry skill) for the four automatable non-enclosed-space causes, and `change_building_location`
-(common_measures skill, to set climate zone explicitly if `import_gbxml` couldn't resolve one).
+`merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, `patch_missing_surfaces`, and
+`trim_overlapping_surfaces` (geometry skill) for the five automatable non-enclosed-space causes,
+and `change_building_location` (common_measures skill, to set climate zone explicitly if
+`import_gbxml` couldn't resolve one).
