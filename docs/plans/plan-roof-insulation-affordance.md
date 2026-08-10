@@ -153,7 +153,8 @@ legs pass `scripts/benchmark_check_leg.py` (detector's permanent home now).
    knowledge, so both the new tool and the description steering are invisible
    to them, and their totals are unchanged. The fix's remaining gap is not the
    tool, it is tool DISCOVERY for mid/small tiers (same lever as F3's
-   nodiscovery arms; a nodiscovery re-run would likely close it — untested).
+   nodiscovery arms; CONFIRMED 2026-08-10: sonnet 4/9 -> 8/9, haiku 3/9 ->
+   8/9 under nodiscovery — see the re-run section below; prediction upheld).
 3. **Response-time warnings lose to plan momentum; L3 prompts lose to
    compliance.** The v1 legs proved warnings in tool responses go unread when
    agents batch calls. And L3 ("Use create_standard_opaque_material, then
@@ -170,6 +171,19 @@ Plan target: L2/L3 >80% for sonnet/opus, R-decrease signature gone. Opus:
 gone from every row where the new tool was used (21/45) and from all codex
 L2 rows; it persists in sonnet/haiku L2/L3 replacement rows. Do NOT cite this
 as "fixed everywhere"; cite the L2 line and the discovery-regime split.
+
+### Nodiscovery re-run (2026-08-10) — finding 2 confirmed causally
+
+The untested lever was run: sonnet/haiku/opus x3, arm `nodiscovery`, same
+image/rubric, into this sweep. Roof rows out of 9, full vs nodiscovery:
+sonnet 4 -> **8**, haiku 3 -> **8**, opus 9 -> 7. With schemas loaded up
+front the tool-search tiers adopt the additive path (sonnet L1 used
+add_layer_to_construction; its passing L2/L3 rebuilt the construction but
+kept every layer — the create_construction description steering works once
+the description is actually seen). Finding 2 is no longer an inference:
+discovery, not capability, was the sonnet/haiku bottleneck. Opus's two
+misses are roof-L1 physics slips (added a layer named "R-30 Upgrade" at ~1
+inch -> r_si 0.98, not 5.28) caught by gate 2 — n=3, observation only.
 
 ### Data hygiene
 

@@ -30,7 +30,7 @@ reproducible from `results/prod-2026-08b*/` — none is carried over from pilots
 | prod-2026-08b | gpt-5.4-mini (codex) | full, noskills | 6 |
 | prod-2026-08b-t240 | claude-haiku-4-5-20251001 | full, nodiscovery @240s | 6 |
 | prod-2026-08b-t240 | claude-sonnet-4-6 | full, noskills @240s | 6 |
-| prod-2026-08b | claude-opus-4-6 | full, noskills | 6 |
+| prod-2026-08b | claude-opus-4-6 | full, noskills, nodiscovery, nohost, nodiscovery-noskills | 15 |
 
 **RUN COMPLETE 2026-08-07: 66/66 legs, all pass the contamination check.**
 Anthropic spend $144.62 (54 claude legs); 12 codex legs billed to a ChatGPT
@@ -38,8 +38,15 @@ subscription. Aggregated into `results/prod-2026-08b/paper/` and
 `results/prod-2026-08b-t240/paper/`.
 
 Opus scope was EXPANDED beyond the brief (user decision 2026-08-07, motivated
-by F3): nodiscovery x3 and nohost x3 added. Opus lacks only
-nodiscovery-noskills.
+by F3): nodiscovery x3 and nohost x3 added. ~~Opus lacks only
+nodiscovery-noskills~~ — **completed 2026-08-10** (user request): 3 legs at
+the ORIGINAL harness e602374 + image bench-2026-08 via a pinned worktree, so
+provenance matches every other prod leg. 53/54 = **98.1% outcome, 98.1%
+routing, gap 0.0 — zero outcome mismatches**, the only zero-gap cell in the
+run. The 1 miss is a `wrong_tool` on roof L1 (opus edited the construction
+via generic get_object_fields/set_object_property — a legitimate alternate
+route the accept set doesn't credit; note for the accept-set-design
+limitations paragraph). $18.09. Opus 5-arm ladder complete.
 
 ### Tool-search penalty scales inversely with capability (F3 completed)
 
@@ -62,6 +69,7 @@ sonnet 0.07.
 | opus-4-6 | full | 92.6% | 96.3% | 3.7 |
 | opus-4-6 | noskills | 83.3% | 92.6% | 9.3 |
 | opus-4-6 | nodiscovery | **98.1%** | **100.0%** | 1.9 |
+| opus-4-6 | nodiscovery-noskills | **98.1%** | 98.1% | **0.0** |
 | opus-4-6 | nohost | 87.0% | 98.1% | 11.1 |
 | sonnet-4-6 | full | 81.5% | 96.3% | 14.8 |
 | sonnet-4-6 | noskills | 74.1% | 87.0% | 13.0 |
@@ -316,6 +324,72 @@ Remaining gap in the design: opus has no `nodiscovery-noskills` cell (3 legs,
    include transcript/droppings zips and the quarantined `_invalid/` leg.
 5. Re-score check: rubric is versioned per row (`RUBRIC_VERSION`), so any
    threshold change re-scores from recorded facts with NO re-run.
+
+## Addendum 2026-08-10 — three run batches (user request)
+
+All contamination-checked, n=3 per cell. Claude spend this session $29.00
+(opus nd-ns $18.09 + roof-nd $9.25 + codegen $1.66); codex $0 (subscription).
+
+### 1. Opus nodiscovery-noskills (into prod-2026-08b)
+
+See the F3 section above — 98.1% outcome / 98.1% routing / gap 0.0, zero
+outcome mismatches. Completes the opus 5-arm ladder.
+
+### 2. Roof-case nodiscovery arms (into roof-fix-2026-08, post-fix image)
+
+Roof rows out of 9, full (tool search) vs nodiscovery (schemas up front):
+
+| model | full | nodiscovery |
+|---|---|---|
+| sonnet-4-6 | 4/9 | **8/9** |
+| haiku-4.5 | 3/9 | **8/9** |
+| opus-4-6 | 9/9 | 7/9 |
+
+The F7-fix finding 2 is now CAUSAL, not inferred: give sonnet/haiku the
+schemas and they adopt the additive path (sonnet L1 even used
+add_layer_to_construction; its L2/L3 passed via a rebuilt-but-complete
+construction — the description steering works once the description is seen).
+Opus's 2 nodiscovery misses are both roof L1 and are genuine physics slips
+caught by outcome grading: it added a layer NAMED "R-30 Upgrade" built ~1
+inch thick (r_si 0.98, not 5.28). n=3 — report as an observation, not a
+regression.
+
+### 3. Arm C codegen baseline (sweep codegen-2026-08) — R1's "is MCP needed"
+
+`tests/llm/test_11_codegen_arm.py`: no MCP server; agent gets shell + a
+container with the SDK/CLI/E+ and scripts everything. 6 outcome-only tasks.
+First-ever execution of this arm; final harness `ac238d6`, image
+roof-fix-2026-08 (stale-image override documented in `_meta/` — the delta
+since its build is host-side grading only).
+
+| task | sonnet-4-6 | gpt-5.4 |
+|---|---|---|
+| create 2-story 4-zone OSM from scratch | 1/3 (2x 300s timeout) | 3/3 (~84s) |
+| count zones in 44-zone OSM | 3/3 | 3/3 |
+| load-modify-save | 3/3 | 3/3 |
+| count err warnings (261) | 0/3 (says 263) | 0/3 (says 0) |
+| annual sim + EUI vs 28.21 pin | 3/3 | 3/3 |
+| OSM -> IDF | 3/3 | 3/3 |
+| **total** | **13/18** | **15/18** |
+
+Reading for the paper: unscaffolded agents are decent at inspect / modify /
+simulate / convert, but creation-from-scratch is unreliable under a time
+budget (sonnet 1/3 at 300s vs near-ceiling with MCP tools at 120s) and
+exact parsing fails for BOTH vendors (sonnet counts the 2 banner-recap
+`** Warning **` lines; gpt answers 0). MCP's value = creation + reliability,
+not raw capability. Caveats: 6 simpler tasks, not the 18-case set; codex
+always has native shell (allowed_tools no-op) — footnote both.
+
+**Shakedown found a second real product defect**: `extract_eui`
+(mcp_server/skills/results/sql_extract.py) read the E+ tabular Units strings
+but assumed SI — gpt-5.4's self-authored OSW produced an InchPound sql and
+its CORRECT sim (28.23 kBtu/ft2) graded as 2485 kBtu/ft2 (~88x). Fixed +
+regression tests in `ac238d6` (IP-rewritten fixture must equal the SI
+fixture's EUI; unknown units yield None, never a guess). The MCP arms never
+hit this because the server's own OSW always requests SI. Second instance of
+"outcome grading found a defect routing grading could not see" — this time
+in the GRADER'S own extraction path, i.e., in product code. Quarantine
+history (7 legs incl. one lost file): `results/codegen-2026-08/_invalid/README.md`.
 
 ## Claims that must NOT be carried into the paper
 
