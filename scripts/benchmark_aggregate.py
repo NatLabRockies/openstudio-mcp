@@ -32,6 +32,35 @@ from pathlib import Path
 # shows the consultation/substitution mechanism, not just pass-rate deltas
 KNOWLEDGE_TOOLS = ("list_skills", "get_skill", "recommend_tools")
 
+# List prices per Mtok (input, output, cache_read), checked 2026-08-10.
+# opus-4-6 $15/$75 refuted against data: derived would EXCEED CLI-reported,
+# impossible while cache writes are missing from the derivation.
+PRICES = {
+    "claude-sonnet-4-6": (3.00, 15.00, 0.30),
+    "claude-haiku-4-5-20251001": (1.00, 5.00, 0.10),
+    "claude-opus-4-6": (5.00, 25.00, 0.50),
+    "gpt-5.4": (2.50, 15.00, 0.25),
+    "gpt-5.4-mini": (0.75, 4.50, 0.075),
+}
+# codex reports input_tokens INCLUDING cached reads; claude's excludes them
+CODEX_INPUT_INCLUDES_CACHED = ("gpt-",)
+
+
+def derived_cost_usd(model: str, inp: int, out: int, cache_read: int) -> float | None:
+    """Cost from recorded tokens at list prices; None for unknown models.
+
+    Claude cache WRITES (1.25x input) are not recorded per test, so claude
+    derived cost understates CLI-reported by ~40-60% — behavior.md carries
+    both columns and says so. Codex CLI reports cost_usd=0 (subscription);
+    derived is the only cross-vendor dollar figure for it.
+    """
+    prices = PRICES.get(model)
+    if prices is None:
+        return None
+    pi, po, pc = prices
+    uncached = inp - cache_read if model.startswith(CODEX_INPUT_INCLUDES_CACHED) else inp
+    return (uncached * pi + out * po + cache_read * pc) / 1e6
+
 
 def wilson(s: int, n: int, z: float = 1.96) -> tuple[float, float]:
     """Wilson score interval for s successes of n trials."""
@@ -89,7 +118,9 @@ def aggregate(runs: list[dict]) -> dict:
     repeats = defaultdict(int)                            # (model, arm)
     behav = defaultdict(lambda: {"tests": 0, "knowledge": 0, "toolsearch": 0,
                                  "tool_calls": 0, "duration_s": 0.0,
-                                 "input_tokens": 0, "output_tokens": 0})
+                                 "input_tokens": 0, "output_tokens": 0,
+                                 "cache_read_tokens": 0, "cost_usd": 0.0,
+                                 "host_calls": 0, "escapes": 0})
     skips = defaultdict(int)                              # (model, arm)
     outcome_pool = defaultdict(lambda: {"graded": 0, "outcome_pass": 0,
                                         "ungradable": 0})  # (model, arm, case)
@@ -113,6 +144,13 @@ def aggregate(runs: list[dict]) -> dict:
             b["duration_s"] += t.get("duration_s", 0.0)
             b["input_tokens"] += t.get("input_tokens", 0)
             b["output_tokens"] += t.get("output_tokens", 0)
+            b["cache_read_tokens"] += t.get("cache_read_tokens", 0)
+            b["cost_usd"] += t.get("cost_usd", 0.0)
+            b["host_calls"] += t.get("host_tool_call_count", 0)
+            # Escape (F8): the trial used host tools without a single MCP call
+            if (t.get("num_tool_calls", 0) == 0
+                    and t.get("host_tool_call_count", 0) > 0):
+                b["escapes"] += 1
             tiers[(model, arm, t.get("tier", "?"))]["s"] += int(passed)
             tiers[(model, arm, t.get("tier", "?"))]["n"] += 1
             tasks[(model, arm, t["test_id"])].append(passed)
@@ -122,6 +160,12 @@ def aggregate(runs: list[dict]) -> dict:
                 levels[(model, arm, cl[1])]["n"] += 1
             if not passed:
                 mode = t.get("failure_mode", "unknown")
+                # Subclassify no_mcp_tool: escaped to host tools vs produced
+                # text only — distinguishable from host_tool_call_count
+                if mode == "no_mcp_tool":
+                    sub = ("escape" if t.get("host_tool_call_count", 0) > 0
+                           else "text-only")
+                    mode += f"[{sub}]"
                 # First-call-strict verdicts where a later accepted-tool call
                 # succeeded — reported separately so strictness is visible
                 if t.get("recovered"):
@@ -169,12 +213,23 @@ def write_artifacts(agg: dict, out: Path) -> None:
     lines = ["# Pass rates ± Wilson 95% CI (pooled trials: tasks x repeats)", "",
              "| Model | Arm | " + " | ".join(tier_names) + " |",
              "|" + "---|" * (2 + len(tier_names))]
+    escaped_combos = []
     for model, arm in combos:
         cells = []
         for t in tier_names:
             c = agg["tiers"].get((model, arm, t), {"s": 0, "n": 0})
             cells.append(_pct_ci(c["s"], c["n"]))
-        lines.append(f"| {model} | {arm} | " + " | ".join(cells) + " |")
+        esc = agg["behavior"].get((model, arm), {}).get("escapes", 0)
+        mark = ""
+        if esc:
+            mark = " \\*"
+            escaped_combos.append((model, arm, esc))
+        lines.append(f"| {model} | {arm}{mark} | " + " | ".join(cells) + " |")
+    if escaped_combos:
+        lines += ["", "\\* includes escape trials (zero MCP calls, host tools "
+                      "used instead):"]
+        for model, arm, esc in escaped_combos:
+            lines.append(f"- {model}/{arm}: {esc}")
     if agg["skips"]:
         lines += ["", "Skipped trials (unmet dependency, excluded from rates):"]
         for (model, arm), n in sorted(agg["skips"].items()):
@@ -201,15 +256,29 @@ def write_artifacts(agg: dict, out: Path) -> None:
 
     lines = ["# Agent behavior — means per test, per model/arm", "",
              "| Model | Arm | Tests | Knowledge calls | ToolSearch | Tool calls "
-             "| Duration s | Input tok | Output tok |",
-             "|---|---|---|---|---|---|---|---|---|"]
+             "| Host calls | Escapes | Duration s | Input tok | Output tok "
+             "| $/test CLI | $/test derived |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for (model, arm), b in sorted(agg["behavior"].items()):
         n = b["tests"] or 1
+        dc = derived_cost_usd(model, b["input_tokens"], b["output_tokens"],
+                              b["cache_read_tokens"])
+        dc_cell = f"{dc / n:.3f}" if dc is not None else "—"
         lines.append(
             f"| {model} | {arm} | {b['tests']} | {b['knowledge'] / n:.2f} "
             f"| {b['toolsearch'] / n:.2f} | {b['tool_calls'] / n:.2f} "
+            f"| {b['host_calls'] / n:.2f} | {b['escapes']} "
             f"| {b['duration_s'] / n:.1f} | {b['input_tokens'] / n:.0f} "
-            f"| {b['output_tokens'] / n:.0f} |")
+            f"| {b['output_tokens'] / n:.0f} | {b['cost_usd'] / n:.3f} "
+            f"| {dc_cell} |")
+    lines += ["",
+              "$/test CLI: as reported by the agent CLI (codex reports 0 — "
+              "subscription).",
+              "$/test derived: recorded tokens x list prices (PRICES in "
+              "benchmark_aggregate.py). Codex input_tokens includes cached "
+              "reads (subtracted before pricing); claude cache WRITES are "
+              "unrecorded, so claude derived understates CLI-reported by "
+              "~40-60% — compare vendors on derived, claude tiers on CLI."]
     (out / "behavior.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     lines = ["# Paired task flips — full vs noskills discordance per model", "",

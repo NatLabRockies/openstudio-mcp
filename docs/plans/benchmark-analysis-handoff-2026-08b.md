@@ -400,3 +400,8 @@ Everything in the brief's superseded-claims register, plus:
 - The val-grading legs (`results/val-grading/`) are n=1 machinery validation,
   not findings.
 - "Haiku's inversion is a 120s budget race" — **disproven by F4**.
+- Defect-discovery framing ("the benchmark found our own bugs" — F7 tool
+  gap, extract_eui units) as a CONTRIBUTION — user ruling 2026-08-10: not
+  useful to the industry. Cite only the generalizable lessons: routing-only
+  grading passes wrong artifacts, discovery-regime blindness to new tools,
+  selection-time vs response-time guidance placement.

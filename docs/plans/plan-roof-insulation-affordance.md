@@ -94,10 +94,15 @@ which is why the bug was visible at all.
 
 ## Paper angle
 
-This is the strongest "benchmark found a real product defect" story in the run:
-outcome grading (gate 2) detected an affordance gap that routing-only grading
-could never see, because every one of these runs called an accepted tool with
-valid arguments and got `ok: True`. Worth a short subsection.
+**OVERRULED 2026-08-10 (user):** do not frame this as "the benchmark found
+our own defect" — self-found bugs are not a contribution to the industry.
+Use the material only for what generalizes: (a) routing-only grading passes
+runs that produce wrong artifacts (every failing run here called an accepted
+tool and got `ok: True`); (b) tool-search agents can be blind to new tools
+(discovery-regime effect); (c) affordance guidance must live at selection
+time (descriptions), not response time. Original note kept for history:
+~~This is the strongest "benchmark found a real product defect" story in the
+run ... Worth a short subsection.~~
 
 ---
 

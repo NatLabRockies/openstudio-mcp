@@ -94,7 +94,8 @@ def test_aggregate_pools_tiers_levels_modes_stability():
 
     assert agg["modes"][("sonnet", "full", "wrong_tool")] == 1
     assert agg["modes"][("sonnet", "full", "outcome_mismatch")] == 1
-    assert agg["modes"][("sonnet", "noskills", "no_mcp_tool")] == 1
+    # no_mcp_tool is subclassified from host_tool_call_count (0 -> text-only)
+    assert agg["modes"][("sonnet", "noskills", "no_mcp_tool[text-only]")] == 1
 
     unstable = agg["unstable"]
     assert unstable[("sonnet", "full", f"{PROG}[thermostat_L1]")] == (1, 2)
@@ -160,6 +161,48 @@ def test_skipped_trials_excluded_from_pools(tmp_path):
     write_artifacts(agg, tmp_path)
     table = (tmp_path / "table4.md").read_text(encoding="utf-8")
     assert "Skipped trials" in table and "opus/full: 1" in table
+
+
+def test_derived_cost_from_tokens():
+    # Validates: cross-vendor $/test derivation — claude input_tokens EXCLUDES
+    # cached reads, codex INCLUDES them (must subtract before pricing);
+    # unknown models yield None, never a guessed price
+    from benchmark_aggregate import derived_cost_usd
+    # 1M in x $3 + 0.1M out x $15 + 0.5M cache x $0.30
+    assert derived_cost_usd("claude-sonnet-4-6", 1_000_000, 100_000,
+                            500_000) == pytest.approx(4.65)
+    # (1M - 0.4M cached) x $2.50 + 0.1M x $15 + 0.4M x $0.25
+    assert derived_cost_usd("gpt-5.4", 1_000_000, 100_000,
+                            400_000) == pytest.approx(3.10)
+    assert derived_cost_usd("gemini-3", 1_000_000, 0, 0) is None
+
+
+def test_escape_detection_and_no_mcp_subclass(tmp_path):
+    # Validates: F8 escape metric (zero MCP calls + host tools used) reaches
+    # behavior pools, asterisks the table4 row, and splits no_mcp_tool into
+    # [escape] vs [text-only] in failure_modes.md
+    runs = [_run("haiku", "full", [
+        _t(f"{PROG}[thermostat_L1]", False, mode="no_mcp_tool",
+           num_tool_calls=0, host_tool_call_count=3,
+           host_tool_counts={"Bash": 3}),
+        _t(f"{PROG}[thermostat_L2]", False, mode="no_mcp_tool",
+           num_tool_calls=0, host_tool_call_count=0),
+        _t(f"{PROG}[thermostat_L3]", True, num_tool_calls=4,
+           host_tool_call_count=1),
+    ])]
+    agg = aggregate(runs)
+    b = agg["behavior"][("haiku", "full")]
+    assert b["escapes"] == 1, "only the zero-MCP + host-tools trial escapes"
+    assert b["host_calls"] == 4
+    assert agg["modes"][("haiku", "full", "no_mcp_tool[escape]")] == 1
+    assert agg["modes"][("haiku", "full", "no_mcp_tool[text-only]")] == 1
+
+    write_artifacts(agg, tmp_path)
+    table = (tmp_path / "table4.md").read_text(encoding="utf-8")
+    assert "haiku | full \\*" in table
+    assert "haiku/full: 1" in table
+    behavior = (tmp_path / "behavior.md").read_text(encoding="utf-8")
+    assert "$/test derived" in behavior
 
 
 def test_flips_lists_only_discordant_tasks(tmp_path):
