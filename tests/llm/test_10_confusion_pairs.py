@@ -187,3 +187,26 @@ def test_apply_measure_vs_create_measure():
     assert any(t in valid for t in result.tool_names), (
         f"Expected apply_measure or list_measure_arguments, got: {result.tool_names}"
     )
+
+
+def test_search_before_create_measure():
+    """'I need a measure that does X' → search existing measures, not author one."""
+    # Validates: Claude searches BCL/bundled measures before authoring from
+    # scratch when an off-the-shelf measure likely exists
+    tier = get_tier()
+    if tier not in ("all", "4"):
+        pytest.skip("Tier 4 not selected")
+
+    result = run_claude(
+        "I need a measure that adds daylighting controls to my model. "
+        "Find one for me. Use MCP tools only.",
+        timeout=120,
+    )
+    search_tools = {"search_bcl_measures", "find_measure", "list_comstock_measures"}
+    assert any(t in search_tools for t in result.tool_names), (
+        f"Expected a measure-search tool, got: {result.tool_names}"
+    )
+    assert "create_measure" not in result.tool_names, (
+        "Agent authored a measure from scratch instead of searching for an "
+        f"existing one. Tools: {result.tool_names}"
+    )

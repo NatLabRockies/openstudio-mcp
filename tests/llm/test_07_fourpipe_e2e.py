@@ -11,11 +11,11 @@ Expected results (SystemD_baseline + Boston weather):
 """
 from __future__ import annotations
 
-import re
-
 import pytest
 
+from .conftest import fail_with_mode, summary_metric_euis
 from .runner import run_claude
+from .verify import assert_sim_valid, verify_run
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 
@@ -24,7 +24,7 @@ SYSTEMD = "/inputs/SystemD_baseline.osm"
 BOSTON_EPW = "/inputs/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 
 
-def test_fourpipe_beam_retrofit_e2e():
+def test_fourpipe_beam_retrofit_e2e(request):
     """Full retrofit: load → weather → baseline sim → measure → apply → sim → compare."""
     # Validates: Claude completes full 4-pipe beam retrofit workflow with measure authoring, 2 sims, and comparison
     prompt = (
@@ -54,7 +54,6 @@ def test_fourpipe_beam_retrofit_e2e():
 
     result = run_claude(prompt, timeout=900, max_turns=45)
     tool_names = result.tool_names
-    final = result.final_text.lower()
 
     # --- 1. Tool chain ---
     for tool in ["load_osm_model", "change_building_location",
@@ -100,17 +99,43 @@ def test_fourpipe_beam_retrofit_e2e():
         f"No argument has description field. Args: {args}"
     )
 
-    # --- 5. EUI plausibility from final text ---
-    eui_numbers = re.findall(r'(\d+\.?\d*)\s*(?:kbtu|kbtu/ft)', final)
-    if not eui_numbers:
-        eui_numbers = re.findall(r'eui[^0-9]*(\d+\.?\d*)', final)
-    if eui_numbers:
-        for eui_str in eui_numbers:
-            eui = float(eui_str)
-            assert 15 <= eui <= 60, (
-                f"EUI {eui} outside plausible range [15-60] kBtu/ft2. "
-                f"Text: {result.final_text[:500]}"
-            )
+    # --- 5. EUI pinned references from tool results (not agent prose) ---
+    # SystemD_baseline + Boston, measured 2026-03-13 Claude Desktop session:
+    # baseline 28.21 kBtu/ft2, four-pipe-beam retrofit 28.44 (+0.8%).
+    # Re-pin on OpenStudio version bump only.
+    euis = summary_metric_euis(result)
+    if len(euis) < 2:
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Expected baseline + retrofit EUIs from extract_summary_metrics "
+            f"results, got {euis} — a simulation likely failed. "
+            f"Text: {result.final_text[:300]}",
+        )
+    if euis[0] != pytest.approx(28.21, rel=0.05):
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Baseline EUI {euis[0]:.2f} outside 5% of pinned 28.21 kBtu/ft2",
+        )
+    if euis[-1] != pytest.approx(28.44, rel=0.05):
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Retrofit EUI {euis[-1]:.2f} outside 5% of pinned 28.44 kBtu/ft2",
+        )
+
+    # --- 5b. D6 verifier: both sims independently valid (non-LLM session).
+    # SystemD unmet hours stay well under 300 (pinned 58.5 -> 34.5).
+    run_ids = [r.get("run_id") for r in result.results_for("run_simulation")
+               if r.get("ok") and r.get("run_id")]
+    if len(run_ids) < 2:
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"Expected 2 successful sims to verify, got run_ids: {run_ids}",
+        )
+    try:
+        assert_sim_valid(verify_run(run_ids[0]), eui_ref=28.21, max_unmet=300)
+        assert_sim_valid(verify_run(run_ids[-1]), eui_ref=28.44, max_unmet=300)
+    except AssertionError as e:
+        fail_with_mode(request, "outcome_mismatch", f"D6 verifier: {e}")
 
     # --- 6. No error ---
     assert not result.is_error, f"Claude reported error: {result.final_text[:500]}"

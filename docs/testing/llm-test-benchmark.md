@@ -1,6 +1,67 @@
 # LLM Test Benchmark Report
 
-## Latest Run Summary
+> **Comparability epoch break (2026-08-05).** Realism-rework phases 0-3
+> landed on `feat/llm-benchmark-realism`: prompts no longer lowercased,
+> pass criteria deepened (tool `ok` flag, pinned argument values, pinned
+> EUI outcomes), L3 trimmed to `L3_KEEP` (29 of 60 cases), +16 coverage
+> cases, full-chain prompts gained an explicit weather step (their sims
+> silently failed before). Runs from the next baseline (Run 17) onward are
+> NOT comparable with Runs <= 16 below. `export_measure` rows refer to a
+> tool since removed from the roster.
+
+## Current baseline — outcome-graded production matrix (2026-08)
+
+The current citable numbers come from sweep `prod-2026-08b` (plus the
+`prod-2026-08b-t240`, `roof-fix-2026-08`, and `codegen-2026-08` companion
+sweeps), run 2026-08-07 through 2026-08-10 with two-gate grading: gate 1
+routing (accept-set tool called, first call ok) and gate 2 outcome
+(deterministic artifact grading against a versioned rubric). 18 hard tasks
+per cell, n=3 repeats, retries disabled, one pinned image + harness per
+sweep. Raw leg JSONs live outside git (local `results/`, deposited with
+the release DOI); aggregates regenerate via
+`python scripts/benchmark_aggregate.py results/<sweep-id>`.
+
+### Frozen rerun baseline (paper artifact)
+
+**The paper's benchmark is rerun against the tagged release, at rubric
+`1.2`.** After PR #126 merges to develop, the release is tagged (v1.2.0,
+Zenodo DOI) and the benchmark image is rebuilt from that tag; every paper
+rerun pins that image and that harness commit. Rubric 1.2 hardened two
+graders after external review (per-surface roof criterion instead of an
+average; the EMS setback required on all 10 zones). Re-scoring the recorded
+`prod-2026-08b` + `roof-fix-2026-08` facts under 1.2 changed **0 of 391**
+roof+EMS verdicts, so the numbers in this section are stable across the
+tightening. The aggregator now refuses to pool legs from different harness
+commits or images unless explicitly overridden (`--ignore-harness` /
+`--ignore-digest`), so a rerun that drifts off the tag fails loudly.
+Fill in the tag SHA here once cut: `v1.2.0 = <SHA>`.
+
+Full arm (all assistance layers on), outcome vs routing pass over
+attempted tasks:
+
+| Model | Outcome | Routing | Gap |
+|---|---|---|---|
+| Opus 4.6 | 92.6% | 96.3% | 3.7 |
+| Sonnet 4.6 | 81.5% | 96.3% | 14.8 |
+| Haiku 4.5 | 61.1% | 83.3% | 22.2 |
+| GPT-5.4 | 81.5% | 96.3% | 14.8 |
+| GPT-5.4-mini | 74.1% | 92.6% | 18.5 |
+
+Key ablation results: removing deferred tool search raises outcome pass
++16.7 points (Haiku) and +5.5 (Sonnet, Opus); a 240 s budget control
+leaves Haiku unchanged (timeouts 8 to 0, same pass rate); Opus with
+discovery and skills both removed reaches 98.1% with a zero
+routing-outcome gap. Arm C (no MCP server, agent scripts the SDK):
+Sonnet 13/18, GPT-5.4 15/18 on six simpler outcome-graded tasks.
+Methodology details: [`llm-testing-methodology.md`](llm-testing-methodology.md).
+
+---
+
+**Everything below this line is the routing-era historical record**
+(epoch break above). Those pass rates counted tool selection only and are
+NOT comparable with the outcome-graded numbers.
+
+## Latest Run Summary (historical, routing-era)
 
 | Run | Date | Model | Tests | Passed | Rate | Runtime | Notes |
 |-----|------|-------|-------|--------|------|---------|-------|
@@ -62,7 +123,7 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | list_measures | list_custom_measures | PASS | PASS | PASS | — | Run 8 | Measure authoring |
 | create_measure | create_measure | PASS | PASS | PASS | — | Run 8 | |
 | test_measure | test_measure | PASS | PASS | PASS | — | Run 8 | |
-| export_measure | export_measure | FAIL | FAIL | PASS | L1+L2 | Run 8 | Agent can't discover export without explicit name |
+| export_measure | export_measure (REMOVED from roster) | FAIL | FAIL | PASS | L1+L2 | Run 8 | Historical; tool no longer registered |
 | edit_measure | edit_measure | PASS | PASS | PASS | — | Run 8 | |
 | replace_terminals_cooled_beam | replace_air_terminals | PASS | PASS | PASS | — | Run 8 | CooledBeam 2-pipe docstring works well |
 | measure_replace_terminals | create_measure | PASS | PASS | PASS | — | Run 8 | Agent chose measure authoring path at L1 |

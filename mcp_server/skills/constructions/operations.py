@@ -16,6 +16,7 @@ from mcp_server.osm_helpers import (
     fetch_object,
     list_paginated,
 )
+from mcp_server.skills.constructions.construction_r import _assembly_r_si
 
 
 def _extract_material(model, material) -> dict[str, Any]:
@@ -214,6 +215,13 @@ def create_standard_opaque_material(name: str, roughness: str = "Smooth",
         return {"ok": False, "error": f"Failed to create material: {e}"}
 
 
+def _fetch_material(model, material_name: str):
+    material = fetch_object(model, "Material", name=material_name)
+    if material is None:
+        material = fetch_object(model, "StandardOpaqueMaterial", name=material_name)
+    return material
+
+
 def create_construction(name: str, material_names: list[str]) -> dict[str, Any]:
     """Create a construction from layers of materials.
 
@@ -230,11 +238,7 @@ def create_construction(name: str, material_names: list[str]) -> dict[str, Any]:
         # Verify all materials exist
         materials = []
         for material_name in material_names:
-            # Try to fetch as Material (base class)
-            material = fetch_object(model, "Material", name=material_name)
-            if material is None:
-                # Try StandardOpaqueMaterial
-                material = fetch_object(model, "StandardOpaqueMaterial", name=material_name)
+            material = _fetch_material(model, material_name)
             if material is None:
                 return {"ok": False, "error": f"Material '{material_name}' not found"}
             materials.append(material)
@@ -279,18 +283,52 @@ def assign_construction_to_surface(surface_name: str, construction_name: str) ->
         if construction is None:
             return {"ok": False, "error": f"Construction '{construction_name}' not found"}
 
+        # Effective construction before the swap (may come from a default
+        # construction set) — basis for the R-decrease hint
+        previous = surface.construction()
+        prev_name = previous.get().nameString() if previous.is_initialized() else None
+        prev_r = _assembly_r_si(previous.get()) if previous.is_initialized() else None
+        new_r = _assembly_r_si(construction)
+
         # Assign construction to surface
         surface.setConstruction(construction)
 
-        return {
+        result = {
             "ok": True,
             "surface": {
                 "name": surface.nameString(),
                 "construction": construction.nameString(),
             },
         }
+        if new_r is not None:
+            result["assembly_r_si"] = new_r
+        if prev_name is not None and prev_name != construction.nameString():
+            result["previous_construction"] = prev_name
+            if prev_r is not None:
+                result["previous_assembly_r_si"] = prev_r
+            # Benchmark F7: every model "insulated" roofs by replacing the whole
+            # assembly with a bare insulation slab, LOWERING assembly R. Warn
+            # (not fail — lowering R is legitimate in some studies) and point at
+            # the additive path.
+            if prev_r is not None and new_r is not None and new_r < prev_r - 1e-6:
+                result["warning"] = (
+                    f"assembly R decreased {prev_r:.2f} -> {new_r:.2f} m2K/W; "
+                    "if the goal was to ADD insulation, use "
+                    "add_layer_to_construction to keep the existing layers "
+                    "instead of replacing the whole assembly")
+        return result
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to assign construction: {e}"}
+
+
+# Re-exported from construction_layers so callers keep importing it from here.
+# Imported at the bottom so this module's _extract_construction/_fetch_material
+# are already defined when construction_layers imports them (breaks the cycle).
+from mcp_server.skills.constructions.construction_layers import (  # noqa: E402
+    add_layer_to_construction,
+)
+
+__all__ = ["add_layer_to_construction"]

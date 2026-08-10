@@ -42,6 +42,26 @@ class TestEndUseBreakdown:
         heating_total = sum(v for k, v in heating_entry.items() if isinstance(v, (int, float)))
         assert heating_total > 0, f"SEB4 Heating end-use should have non-zero values: {heating_entry}"
 
+    def test_column_units_present_on_empty_end_uses(self, sql_path, tmp_path):
+        # Regression: the no-rows early return omitted column_units, so a client
+        # relying on the field crashed on models with no End Uses table
+        import shutil
+        import sqlite3
+        empty_sql = tmp_path / "empty.sql"
+        shutil.copy(sql_path, empty_sql)
+        conn = sqlite3.connect(str(empty_sql))
+        conn.execute(
+            "DELETE FROM TabularData WHERE TableNameIndex IN "
+            "(SELECT StringIndex FROM Strings WHERE Value='End Uses')")
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+        result = extract_end_use_breakdown(empty_sql, units="IP")
+        assert result["ok"] is True
+        assert result["end_uses"] == []
+        assert result["column_units"] == {}, "empty path must still return the units map"
+
     def test_happy_path_si(self, sql_path):
         # Validates: extract_end_use_breakdown SI returns end-uses with SI units note
         from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
@@ -60,6 +80,54 @@ class TestEndUseBreakdown:
             e.get("Electricity", 0) for e in result["end_uses"]
         )
         assert abs(total_elec - sum_elec) < 0.1
+
+    def test_water_column_not_energy_converted(self, sql_path):
+        # Regression: default IP path multiplied the Water column (m3) by the
+        # GJ->kBtu factor — SEB4 Heat Rejection water 249964.47 m3 became ~236.9M
+        from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+        result = extract_end_use_breakdown(sql_path, units="IP")
+        assert result["column_units"]["Water"] == "m3"
+        assert result["column_units"]["Electricity"] == "kBtu"
+        assert result["totals"]["Water"] == pytest.approx(249964.47, abs=0.01)
+
+    def test_ip_source_sql_not_double_converted(self, sql_path, tmp_path):
+        # Regression: an IP-source sql (End Uses already kBtu) must not be
+        # multiplied by 947.817 again on the IP path, and SI must convert back
+        import shutil
+        import sqlite3
+        ip_sql = tmp_path / "ip_enduse.sql"
+        shutil.copy(sql_path, ip_sql)
+        conn = sqlite3.connect(str(ip_sql))
+        units_type = conn.execute(
+            "SELECT s.StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.UnitsIndex = s.StringIndex LIMIT 1",
+        ).fetchone()[0]
+        kbtu_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0] + 1
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'kBtu')", (kbtu_idx, units_type))
+        # Rewrite the Electricity column of End Uses to kBtu (value + unit)
+        cur = conn.execute(
+            "UPDATE TabularData SET Value = CAST(Value AS REAL) * 947.817, UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='End Uses') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Electricity') "
+            "  AND ReportNameIndex IN (SELECT StringIndex FROM Strings "
+            "       WHERE Value='AnnualBuildingUtilityPerformanceSummary')",
+            (kbtu_idx,))
+        assert cur.rowcount > 0, "no End Uses Electricity cells rewritten"
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
+        si_ref = extract_end_use_breakdown(sql_path, units="IP")
+        ip_res = extract_end_use_breakdown(ip_sql, units="IP")
+        # Same building: IP output from the IP-source sql must equal the SI
+        # fixture's IP conversion, not 947.817x it
+        assert ip_res["totals"]["Electricity"] == pytest.approx(
+            si_ref["totals"]["Electricity"], rel=1e-4)
+        # And SI must convert the kBtu source back to GJ
+        si_res = extract_end_use_breakdown(ip_sql, units="SI")
+        si_orig = extract_end_use_breakdown(sql_path, units="SI")
+        assert si_res["totals"]["Electricity"] == pytest.approx(
+            si_orig["totals"]["Electricity"], rel=1e-4)
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +397,82 @@ class TestExtractEui:
         result = extract_eui(decoy_sql)
         # Must still return the real 10000 m², not the decoy 99.0
         assert result["total_building_area"] == pytest.approx(10000.0, abs=1.0)
+
+    def test_ip_units_sql_normalized(self, sql_path, tmp_path):
+        # Regression: codegen-2026-08 gpt r1 — an InchPound tabular sql (kBtu/ft2)
+        # was graded 2485 kBtu/ft2 because extract_eui assumed GJ/m2; the recorded
+        # Units strings must drive normalization
+        import shutil
+        import sqlite3
+        ip_sql = tmp_path / "ip.sql"
+        shutil.copy(sql_path, ip_sql)
+        conn = sqlite3.connect(str(ip_sql))
+        units_type = conn.execute(
+            "SELECT s.StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.UnitsIndex = s.StringIndex LIMIT 1",
+        ).fetchone()[0]
+        max_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0]
+        kbtu_idx, ft2_idx = max_idx + 1, max_idx + 2
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'kBtu')", (kbtu_idx, units_type))
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'ft2')", (ft2_idx, units_type))
+        # Rewrite exactly the two cells extract_eui reads into IP values + units.
+        # rowid is unusable here: this fixture's TabularDataIndex is 0 for EVERY
+        # row, so a rowid-based UPDATE clobbers arbitrary rows — match the
+        # Strings index columns instead and assert exactly one row changed.
+        cur = conn.execute(
+            "UPDATE TabularData SET Value = CAST(Value AS REAL) * 947.817, UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Site and Source Energy') "
+            "  AND RowNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Site Energy') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Energy')",
+            (kbtu_idx,))
+        assert cur.rowcount == 1, f"energy cell update hit {cur.rowcount} rows"
+        cur = conn.execute(
+            "UPDATE TabularData SET Value = CAST(Value AS REAL) * 10.7639, UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Building Area') "
+            "  AND RowNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Building Area') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Area')",
+            (ft2_idx,))
+        assert cur.rowcount == 1, f"area cell update hit {cur.rowcount} rows"
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(ip_sql)
+        assert result["total_site_energy_units"] == "kBtu"
+        assert result["total_building_area_units"] == "ft2"
+        # Same building as the SI fixture — normalized EUI must match it exactly
+        assert result["computed_eui"] == pytest.approx(0.696532, rel=1e-3)
+        assert result["eui_MJ_m2"] == pytest.approx(696.532, rel=1e-3)
+        assert result["eui_kBtu_ft2"] == pytest.approx(61.34, rel=1e-2)
+
+    def test_unknown_units_not_guessed(self, sql_path, tmp_path):
+        # Validates: unrecognized Units strings yield eui None, never an SI guess
+        import shutil
+        import sqlite3
+        odd_sql = tmp_path / "odd.sql"
+        shutil.copy(sql_path, odd_sql)
+        conn = sqlite3.connect(str(odd_sql))
+        units_type = conn.execute(
+            "SELECT s.StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.UnitsIndex = s.StringIndex LIMIT 1",
+        ).fetchone()[0]
+        therm_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0] + 1
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'therm')", (therm_idx, units_type))
+        cur = conn.execute(
+            "UPDATE TabularData SET UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Site and Source Energy') "
+            "  AND RowNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Site Energy') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Energy')",
+            (therm_idx,))
+        assert cur.rowcount == 1, f"energy cell update hit {cur.rowcount} rows"
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(odd_sql)
+        assert result["total_site_energy_units"] == "therm"
+        assert result["computed_eui"] is None
+        assert result["eui_kBtu_ft2"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -28,18 +28,47 @@ import pytest
 
 from .conftest import (
     BASELINE_MODEL, BASELINE_HVAC_MODEL,
-    baseline_model_exists, baseline_hvac_model_exists, get_tier,
-    get_sim_run_id,
+    baseline_model_exists, baseline_hvac_model_exists, fail_with_mode,
+    get_sim_run_id, get_tier, summary_metric_euis,
 )
 from .runner import run_claude
+from .verify import assert_sim_valid, verify_run
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier2]
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
 
-SYSTEMD = "/repo/tests/assets/SystemD_baseline.osm"
-BOSTON_EPW_DIR = "/repo/tests/assets"
+# /inputs is the harness mount of tests/assets — the old /repo/... paths were
+# never mounted by the LLM harness, so this e2e case could not even load.
+SYSTEMD = "/inputs/SystemD_baseline.osm"
+BOSTON_EPW_DIR = "/inputs"
+
+# Boston EPW with .stat/.ddy companions (same as test_01_setup)
+BOSTON_EPW = (
+    "/opt/comstock-measures/ChangeBuildingLocation"
+    "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+)
+
+# Pinned baseline EUI for llm-test-baseline-hvac + Boston weather (kBtu/ft2).
+# Measured 2026-08-05 via direct MCP client on openstudio-mcp:dev:
+# load -> change_building_location(Boston) -> save -> run_simulation ->
+# extract_summary_metrics. Re-pin on OpenStudio version bump only.
+# NOTE: without a weather step the baseline sim exits in ~1s with status
+# "failed" and extract_summary_metrics returns ok:true with null metrics —
+# which is why the full-chain prompts set weather explicitly and the EUI
+# assert exists.
+BASELINE_HVAC_EUI_REF = 57.41
+
+_CHAIN_STEPS_1_2 = (
+    "Do these steps in order:\n"
+    f"1. Set the weather using change_building_location with weather_file "
+    f"{BOSTON_EPW}.\n"
+    "2. Save the model and run a baseline simulation. "
+    "Extract summary_metrics and note the total EUI.\n"
+    f"3. Reload the model from {BASELINE_HVAC_MODEL} and set the weather "
+    "again as in step 1.\n"
+)
 
 WORKFLOW_CASES = [
     {
@@ -54,7 +83,7 @@ WORKFLOW_CASES = [
             "After that, create a measure for me that changes the air terminals "
             "to 4-pipe chilled beams, apply that measure to the model, "
             "run the model, and compare the results for me. "
-            "Save the measure in the same location as the model so I have a copy."
+            "Save the measure under /runs so I have a copy."
         ),
         "required_tools": ["load_osm_model", "change_building_location",
                            "save_osm_model", "run_simulation",
@@ -340,80 +369,74 @@ WORKFLOW_CASES = [
     {
         # Full chain: baseline sim → write measure → apply → retrofit sim → compare
         "id": "measure_set_lights_full_chain",
-        "prompt": LOAD_HVAC + (
-            "Do these steps in order:\n"
-            "1. Save the model and run a baseline simulation. "
-            "Extract summary_metrics and note the total EUI.\n"
-            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
-            "3. Write a Ruby ModelMeasure that sets all LightsDefinition "
+        "prompt": LOAD_HVAC + _CHAIN_STEPS_1_2 + (
+            "4. Write a Ruby ModelMeasure that sets all LightsDefinition "
             "objects to 8 W/m2 using setWattsperSpaceFloorArea.\n"
-            "4. Create it with create_measure, test with test_measure, "
+            "5. Create it with create_measure, test with test_measure, "
             "apply with apply_measure.\n"
-            "5. Save the model and run a second simulation. "
+            "6. Save the model and run a second simulation. "
             "Extract summary_metrics.\n"
-            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "7. Compare baseline vs retrofit EUI and report the difference.\n"
             "Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+        "required_tools": ["load_osm_model", "change_building_location",
+                           "create_measure", "test_measure",
                            "apply_measure", "save_osm_model", "run_simulation"],
         "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
         "min_calls": {"run_simulation": 2},
+        "eui_baseline_ref": BASELINE_HVAC_EUI_REF,
         "max_turns": 35,
         "timeout": 600,
     },
     {
         # Full chain: baseline sim → write measure → apply → retrofit sim → compare
         "id": "measure_set_infiltration_full_chain",
-        "prompt": LOAD_HVAC + (
-            "Do these steps in order:\n"
-            "1. Save the model and run a baseline simulation. "
-            "Extract summary_metrics and note the total EUI.\n"
-            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
-            "3. Write a Ruby ModelMeasure that sets all "
+        "prompt": LOAD_HVAC + _CHAIN_STEPS_1_2 + (
+            "4. Write a Ruby ModelMeasure that sets all "
             "SpaceInfiltrationDesignFlowRate objects to use "
             "Flow/ExteriorArea method at 0.0003 m3/s-m2 "
             "(setFlowperExteriorSurfaceArea).\n"
-            "4. Create it with create_measure, test with test_measure, "
+            "5. Create it with create_measure, test with test_measure, "
             "apply with apply_measure.\n"
-            "5. Save the model and run a second simulation. "
+            "6. Save the model and run a second simulation. "
             "Extract summary_metrics.\n"
-            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "7. Compare baseline vs retrofit EUI and report the difference.\n"
             "Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+        "required_tools": ["load_osm_model", "change_building_location",
+                           "create_measure", "test_measure",
                            "apply_measure", "save_osm_model", "run_simulation"],
         "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
         "min_calls": {"run_simulation": 2},
+        "eui_baseline_ref": BASELINE_HVAC_EUI_REF,
         "max_turns": 35,
         "timeout": 600,
     },
     {
         # Full chain: baseline sim → write measure → apply → retrofit sim → compare
         "id": "measure_replace_terminals_full_chain",
-        "prompt": LOAD_HVAC + (
-            "Do these steps in order:\n"
-            "1. Save the model and run a baseline simulation. "
-            "Extract summary_metrics and note the total EUI.\n"
-            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
-            "3. Write a Ruby ModelMeasure that replaces all air terminals "
+        "prompt": LOAD_HVAC + _CHAIN_STEPS_1_2 + (
+            "4. Write a Ruby ModelMeasure that replaces all air terminals "
             "on every air loop with 4-pipe active chilled beam terminals. "
             "For each air loop, iterate thermalZones, removeBranchForZone, "
             "create CoilCoolingFourPipeBeam + CoilHeatingFourPipeBeam, "
             "wire coils to the CHW and HW plant loops, create "
             "AirTerminalSingleDuctConstantVolumeFourPipeBeam, and reconnect "
             "via addBranchForZone.\n"
-            "4. Create it with create_measure, test with test_measure, "
+            "5. Create it with create_measure, test with test_measure, "
             "apply with apply_measure.\n"
-            "5. Save the model and run a second simulation. "
+            "6. Save the model and run a second simulation. "
             "Extract summary_metrics or end use breakdown.\n"
-            "6. Compare baseline vs retrofit results and report the "
+            "7. Compare baseline vs retrofit results and report the "
             "difference.\n"
             "Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+        "required_tools": ["load_osm_model", "change_building_location",
+                           "create_measure", "test_measure",
                            "apply_measure", "save_osm_model", "run_simulation"],
         "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
         "min_calls": {"run_simulation": 2},
+        "eui_baseline_ref": BASELINE_HVAC_EUI_REF,
         "max_turns": 40,
         "timeout": 720,
     },
@@ -432,25 +455,23 @@ WORKFLOW_CASES = [
     {
         # Full chain: baseline sim → write measure → apply → retrofit sim → compare
         "id": "measure_add_baseboards_full_chain",
-        "prompt": LOAD_HVAC + (
-            "Do these steps in order:\n"
-            "1. Save the model and run a baseline simulation. "
-            "Extract summary_metrics and note the total EUI.\n"
-            f"2. Reload the model from {BASELINE_HVAC_MODEL}.\n"
-            "3. Write a Ruby ModelMeasure that adds a "
+        "prompt": LOAD_HVAC + _CHAIN_STEPS_1_2 + (
+            "4. Write a Ruby ModelMeasure that adds a "
             "ZoneHVACBaseboardConvectiveElectric to every thermal zone "
             "using addToThermalZone. Name each baseboard after its zone.\n"
-            "4. Create it with create_measure, test with test_measure, "
+            "5. Create it with create_measure, test with test_measure, "
             "apply with apply_measure.\n"
-            "5. Save the model and run a second simulation. "
+            "6. Save the model and run a second simulation. "
             "Extract summary_metrics.\n"
-            "6. Compare baseline vs retrofit EUI and report the difference.\n"
+            "7. Compare baseline vs retrofit EUI and report the difference.\n"
             "Use MCP tools only."
         ),
-        "required_tools": ["load_osm_model", "create_measure", "test_measure",
+        "required_tools": ["load_osm_model", "change_building_location",
+                           "create_measure", "test_measure",
                            "apply_measure", "save_osm_model", "run_simulation"],
         "any_of": ["extract_end_use_breakdown", "extract_summary_metrics"],
         "min_calls": {"run_simulation": 2},
+        "eui_baseline_ref": BASELINE_HVAC_EUI_REF,
         "max_turns": 35,
         "timeout": 600,
     },
@@ -589,7 +610,7 @@ SYSTEMD_MODEL = SYSTEMD  # alias for the standalone test below
 
 
 @pytest.mark.parametrize("case", WORKFLOW_CASES, ids=[c["id"] for c in WORKFLOW_CASES])
-def test_workflow(case):
+def test_workflow(case, request):
     """Agent loads model and completes a multi-step workflow."""
     # Validates: Claude chains all required MCP tools for multi-step BEM workflows
     tier = get_tier()
@@ -637,6 +658,41 @@ def test_workflow(case):
                 f"Expected {tool} >= {min_count} times, got {actual}. "
                 f"Tools: {tool_names}"
             )
+
+    if "eui_baseline_ref" in case:
+        euis = summary_metric_euis(result)
+        if not euis:
+            fail_with_mode(
+                request, "outcome_mismatch",
+                "No extract_summary_metrics result carried an EUI — "
+                f"simulations likely failed. Tools: {tool_names}",
+            )
+        if euis[0] != pytest.approx(case["eui_baseline_ref"], rel=0.05):
+            fail_with_mode(
+                request, "outcome_mismatch",
+                f"Baseline EUI {euis[0]:.2f} kBtu/ft2 outside 5% of pinned "
+                f"{case['eui_baseline_ref']} (llm-test-baseline-hvac + Boston)",
+            )
+
+        # D6: independently verify the agent's runs via a direct non-LLM MCP
+        # session — pass requires successful E+ termination + clean err file,
+        # not the agent's claims. max_unmet=None: llm-test-baseline-hvac is
+        # knowingly undersized (~561 unmet heating hours); EUI pin guards it.
+        run_ids = [r.get("run_id")
+                   for r in result.results_for("run_simulation")
+                   if r.get("ok") and r.get("run_id")]
+        if not run_ids:
+            fail_with_mode(
+                request, "outcome_mismatch",
+                f"No successful run_simulation launches. Tools: {tool_names}",
+            )
+        try:
+            assert_sim_valid(verify_run(run_ids[0]),
+                             eui_ref=case["eui_baseline_ref"], max_unmet=None)
+            if len(run_ids) > 1:
+                assert_sim_valid(verify_run(run_ids[-1]), max_unmet=None)
+        except AssertionError as e:
+            fail_with_mode(request, "outcome_mismatch", f"D6 verifier: {e}")
 
 
 def test_create_measure_with_args_quality():

@@ -13,7 +13,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import is_path_allowed, user_run_root
+from mcp_server.config import is_path_allowed, path_denied_hint, user_run_root
 from mcp_server.model_manager import get_model
 from mcp_server.osm_helpers import (
     build_list_response,
@@ -470,10 +470,15 @@ def import_floorspacejs(
     """
     try:
         fp = Path(floorplan_path)
+        # Host-side paths hit the not-found branch (they don't exist in the
+        # server's filesystem) before the allowlist — both need the hint
         if not fp.is_file():
-            return {"ok": False, "error": f"FloorspaceJS file not found: {floorplan_path}"}
+            return {"ok": False, "error": (
+                f"FloorspaceJS file not found: {floorplan_path}. "
+                f"{path_denied_hint()}")}
         if not is_path_allowed(fp):
-            return {"ok": False, "error": f"Path not allowed: {floorplan_path}"}
+            return {"ok": False, "error": (
+                f"Path not allowed: {floorplan_path}. {path_denied_hint()}")}
 
         # Read JSON
         json_str = fp.read_text(encoding="utf-8")

@@ -215,6 +215,16 @@ _SHARED_READ_ROOTS = [
     SKILLS_DIR.resolve(),
 ]
 
+# Server-bundled weather data (openstudio-standards gem). list_weather_files
+# advertises these paths, so the read allowlist must accept them — a tool
+# must not list paths a sibling tool's gate rejects (issue #121). Read-only
+# baked image data; same version-proof glob the weather skill uses.
+_SHARED_READ_ROOTS += [
+    p.resolve()
+    for p in Path(OSCLI_GEM_PATH).glob(
+        "ruby/*/gems/openstudio-standards-*/data/weather")
+]
+
 
 def user_run_root() -> Path:
     """The caller's private run root, created if missing.
@@ -315,6 +325,22 @@ def is_path_allowed_for(key: str, p: Path, *, write: bool = False) -> bool:
 
 def _under(p: Path, root: Path) -> bool:
     return p == root or str(p).startswith(str(root) + os.sep)
+
+
+def path_denied_hint() -> str:
+    """One-line hint appended to file-path error messages.
+
+    Agents on filesystem-capable clients routinely pass HOST-side paths
+    (C:\\..., /home/...) that don't exist in the server's filesystem, then
+    burn their turn budget retrying variants — a terse "not found"/"not
+    allowed" never tells them the path namespace is wrong (issue #119).
+    """
+    shared = ", ".join(sorted(str(r) for r in _SHARED_READ_ROOTS))
+    return (
+        "Paths are SERVER-side — a path from your local machine will not "
+        f"resolve here. Readable roots: {shared}. Your writable run area is "
+        f"under {RUN_ROOT}. Use list_files to enumerate available files."
+    )
 
 
 def is_path_allowed(p: Path, *, write: bool = False) -> bool:

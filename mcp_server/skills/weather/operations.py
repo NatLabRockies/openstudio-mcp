@@ -203,8 +203,13 @@ def make_weather_url_portable(model: Any) -> str | None:
     return None
 
 
-def resolve_model_weather_epw(osm_path: Path) -> Path | None:
-    """Resolve a saved OSM's OS:WeatherFile url to a readable EPW, or None.
+def resolve_model_weather_epw(osm_path: Path) -> dict[str, Any]:
+    """Resolve a saved OSM's OS:WeatherFile url to a readable EPW.
+
+    Returns {"loadable": bool, "declared": bool, "url": str | None,
+    "epw": Path | None, "run_periods_requested": bool} so run_simulation can
+    distinguish "no weather set" (fail fast) from "weather set but not found"
+    from a design-day-only model that legitimately needs no EPW.
 
     Lets run_simulation stage the model's own weather when no epw_path
     override is given — required since change_building_location writes the
@@ -215,23 +220,62 @@ def resolve_model_weather_epw(osm_path: Path) -> Path | None:
     The url is caller-controlled model content, so an absolute url is honored
     only when it passes is_path_allowed — without that gate a crafted model
     could make the server stage another tenant's file into this caller's run
-    dir. Unresolvable urls fall back to bare-filename lookup across the known
-    weather dirs (trusted, server-chosen — no gate needed).
+    dir. Otherwise the url's BASENAME (directory components stripped, so it
+    cannot escape) is resolved against the OSM's companion files/ dir and own
+    dir, then the known weather dirs, by _staged_epw_by_basename — which
+    re-gates each resolved hit so a companion symlink escaping the allowlist
+    cannot be staged.
     """
+    result: dict[str, Any] = {
+        "loadable": False, "declared": False, "url": None, "epw": None,
+        "run_periods_requested": True,
+    }
     loaded = openstudio.osversion.VersionTranslator().loadModel(
         openstudio.toPath(str(osm_path)))
     if not loaded.is_initialized():
-        return None
-    wf = loaded.get().weatherFile()
+        return result
+    model = loaded.get()
+    result["loadable"] = True
+    # Throwaway loaded copy — getSimulationControl may create the unique
+    # object, which is fine because this model is never saved.
+    result["run_periods_requested"] = (
+        model.getSimulationControl().runSimulationforWeatherFileRunPeriods())
+    wf = model.weatherFile()
     if not wf.is_initialized():
-        return None
+        return result
     url = wf.get().path()
     if not url.is_initialized():
-        return None
-    epw = Path(str(url.get()))
+        return result
+    raw = str(url.get())
+    result["declared"] = True
+    result["url"] = raw
+    epw = Path(raw)
     if epw.is_file() and is_path_allowed(epw):
-        return epw.resolve()
-    return find_epw_by_name(epw.name)
+        result["epw"] = epw.resolve()
+        return result
+    result["epw"] = _staged_epw_by_basename(osm_path.resolve().parent, epw.name)
+    return result
+
+
+def _staged_epw_by_basename(osm_dir: Path, basename: str) -> Path | None:
+    """Resolve a bare weather-file name to a stageable EPW, gating every hit.
+
+    Looks in the OSM's companion `files/` dir, then the OSM's own dir, then
+    the known weather dirs. Each hit is re-gated through is_path_allowed on
+    its RESOLVED target before it is returned: a companion entry may be a
+    symlink whose target escapes the allowlist
+    (files/weather.epw -> /other/tenant/secret), and /inputs is walked
+    recursively so a user-planted symlink could surface via find_epw_by_name;
+    is_path_allowed resolves the link first, so an escaping target is rejected
+    rather than staged.
+    """
+    for candidate in (osm_dir / "files" / basename, osm_dir / basename):
+        if candidate.is_file() and is_path_allowed(candidate):
+            return candidate.resolve()
+    found = find_epw_by_name(basename)
+    if found is not None and is_path_allowed(found):
+        return found.resolve()
+    return None
 
 
 def _model_ashrae_climate_zone(model) -> str | None:

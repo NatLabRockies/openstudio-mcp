@@ -22,20 +22,27 @@ For different ratios per orientation, bin surfaces by azimuth:
 - East: 45-135 degrees
 - West: 225-315 degrees
 
-## Change Wall Insulation
+## Change Wall/Roof Insulation
+
+Add a layer to the EXISTING construction — do not rebuild the assembly from a
+hand-typed material list (that silently drops the original membrane/decking
+layers and can make the envelope worse):
 
 ```
 create_standard_opaque_material(
     name="R20_Insulation", thickness_m=0.089,
     conductivity_w_m_k=0.04, density_kg_m3=30, specific_heat_j_kg_k=1000)
-create_construction(
-    name="High_R_Wall",
-    material_names=["Exterior Finish", "R20_Insulation", "Gypsum Board"])
+add_layer_to_construction(
+    construction_name="ASHRAE 90.1 Ext Wall", material_name="R20_Insulation")
+    # keeps all existing layers; verify assembly_r_si_after > assembly_r_si_before
 assign_construction_to_surface(
-    surface_name="South Wall", construction_name="High_R_Wall")
+    surface_name="South Wall", construction_name="ASHRAE 90.1 Ext Wall + R20_Insulation")
 ```
 
-Repeat `assign_construction_to_surface` for each exterior wall, or use `replace_window_constructions` for bulk window replacement.
+Repeat `assign_construction_to_surface` for each target surface, or use
+`replace_window_constructions` for bulk window replacement. Reserve
+`create_construction(material_names=[...])` for building NEW assemblies from
+scratch, where you specify every layer deliberately.
 
 ## Add Internal Loads to a Space
 

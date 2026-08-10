@@ -1009,12 +1009,26 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         # portable form change_building_location writes — issue #104) is
         # unresolvable by the CLI alone, and a container-absolute /inputs url
         # is unreadable by the sandboxed sim child; staging fixes both.
-        # Unresolvable stays None — the CLI then fails with its own weather
-        # error, unchanged from before.
         from mcp_server.skills.weather.operations import resolve_model_weather_epw
         resolved = resolve_model_weather_epw(osm)
-        if resolved is not None:
-            epw_abs = str(resolved)
+        if resolved["epw"] is not None:
+            epw_abs = str(resolved["epw"])
+        elif resolved["loadable"] and resolved["run_periods_requested"]:
+            # An annual (weather-file run period) sim with no resolvable EPW
+            # dies in EnergyPlus within ~1s — fail fast with guidance instead
+            # of launching a run the caller must poll to see fail. Design-day-
+            # only models (run_periods_requested False) legitimately run
+            # without an EPW and are not blocked. An unloadable OSM defers to
+            # the CLI for its authoritative load error.
+            if resolved["declared"]:
+                return {"ok": False, "error": (
+                    f"Model's weather file '{resolved['url']}' was not found. "
+                    "Pass epw_path, or re-run change_building_location with a "
+                    "valid EPW.")}
+            return {"ok": False, "error": (
+                "Model has no weather file — an annual simulation would fail "
+                "immediately. Set weather with change_building_location or "
+                "pass epw_path.")}
 
     # Stage the minimal OSW in a throwaway temp dir. run_osw() copies the staged
     # files into the real per-user run dir before it returns, so nothing here

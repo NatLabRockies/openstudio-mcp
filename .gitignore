@@ -24,6 +24,10 @@ analyses/
 
 # Test artifacts — generated OSM files from integration test runs
 /runs/
+
+# Benchmark sweep outputs (scripts/benchmark_sweep.py) — sweep data is
+# archived with the paper (Zenodo), not in git
+/results/
 /analyses/
 /analysis_outputs/
 /measures/

@@ -675,3 +675,21 @@ class TestRunOswAccessControl:
         result = run_osw(str(stage / "workflow.osw"), _internal=True)
         assert "not allowed" not in result.get("error", "").lower(), result
         assert len(list(run_root.iterdir())) == 1, f"internal staging should create a run dir: {result}"
+
+
+class TestPathDeniedHint:
+    """path_denied_hint — self-describing file-path errors (issue #119)."""
+
+    def test_hint_names_roots_and_discovery_tool(self):
+        # Regression: benchmark pilot-4 — agents passed host-side paths
+        # (C:\..., /c/...) and got terse not-found errors with no hint the
+        # path namespace is server-side; haiku burned its full turn budget
+        # retrying path variants and reading server source to debug it
+        from mcp_server.config import _SHARED_READ_ROOTS, RUN_ROOT, path_denied_hint
+
+        hint = path_denied_hint()
+        assert "SERVER-side" in hint
+        assert "list_files" in hint
+        assert str(RUN_ROOT) in hint
+        for root in _SHARED_READ_ROOTS:
+            assert str(root) in hint, f"hint must name shared root {root}"

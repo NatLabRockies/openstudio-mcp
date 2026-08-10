@@ -54,7 +54,7 @@ def test_tool_selection_baseline(case_id, prompt, expected):
     # Some prompts need model loaded first
     full_prompt = prompt + ". Use MCP tools only."
     if expected in ("add_baseline_system",):
-        full_prompt = LOAD + prompt.lower() + ". Use MCP tools only."
+        full_prompt = LOAD + prompt + ". Use MCP tools only."
 
     result = run_claude(full_prompt, timeout=180)
 

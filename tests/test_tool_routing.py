@@ -93,7 +93,7 @@ ROUTING_CASES = [
     ("create a 2-story office building", "core", "create_new_building"),
     ("run an annual simulation", "simulation", "run_simulation"),
     ("set weather to Boston", "simulation", "change_building_location"),
-    ("add R-30 roof insulation", "geometry", "create_construction"),
+    ("add R-30 roof insulation", "geometry", "add_layer_to_construction"),
     ("set window to wall ratio to 40%", "geometry", "set_window_to_wall_ratio"),
     ("add 50 W/m2 plug loads", "loads", "create_electric_equipment"),
     ("show me a 3D view of the building", "core", "view_model"),

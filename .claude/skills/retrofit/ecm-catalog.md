@@ -4,7 +4,7 @@
 
 | ECM | Tool | Typical Savings |
 |-----|------|-----------------|
-| Upgrade wall insulation | `create_standard_opaque_material` + `create_construction` + `assign_construction_to_surface` | 5-15% heating |
+| Upgrade wall insulation | `create_standard_opaque_material` + `add_layer_to_construction` (keeps existing layers) + `assign_construction_to_surface` | 5-15% heating |
 | Replace windows | `replace_window_constructions` | 5-20% heating/cooling |
 | Add roof insulation | Same as wall upgrade, target roof surfaces | 5-10% heating/cooling |
 | Set adiabatic boundaries | `set_adiabatic_boundaries` | Varies (modeling technique) |

@@ -15,19 +15,23 @@ don't need one.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from .conftest import (
-    BASELINE_MODEL, BASELINE_HVAC_MODEL,
-    baseline_model_exists, baseline_hvac_model_exists, get_tier,
-    get_retrofit_run_id, get_sim_run_id,
+    BASELINE_MODEL, BASELINE_HVAC_MODEL, EMS_MODEL,
+    baseline_model_exists, baseline_hvac_model_exists, ems_model_exists,
+    fail_with_mode, get_retrofit_run_id, get_sim_run_id, get_tier,
 )
+from .grading import host as grading_host
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
 
 LOAD = f"Load the model at {BASELINE_MODEL} using load_osm_model. Then "
 LOAD_HVAC = f"Load the model at {BASELINE_HVAC_MODEL} using load_osm_model. Then "
+LOAD_EMS = f"Load the model at {EMS_MODEL} using load_osm_model. Then "
 
 # Boston EPW with .stat/.ddy companions
 BOSTON_EPW = (
@@ -35,9 +39,17 @@ BOSTON_EPW = (
     "/tests/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
 )
 
-FLOORPLAN = "/test-assets/sddc_office/floorplan.json"
+# /inputs (not /test-assets): both mount tests/assets, but only /inputs is in
+# the server's _SHARED_READ_ROOTS — /test-assets paths fail is_path_allowed
+# (pilot-3 finding; historically masked by tool-name-only asserts)
+FLOORPLAN = "/inputs/sddc_office/floorplan.json"
 
 # (id, needs_model, expected_tools, L1_prompt, L2_prompt, L3_prompt)
+#
+# Optional "expected_args": {level: {tool: {arg: value | (value, rel_tol)}}}.
+# Asserted on the FIRST call to that tool, only at levels whose prompt states
+# the value unambiguously, and only when that tool was the one called (cases
+# satisfied via an alternative accepted tool skip the arg check).
 PROGRESSIVE_CASES = [
     {
         "id": "import_floorplan",
@@ -55,6 +67,10 @@ PROGRESSIVE_CASES = [
         "L1": "Add HVAC to the building.",
         "L2": "Add a VAV reheat system (System 7) to all zones.",
         "L3": "Add System 7 VAV reheat to all zones using add_baseline_system.",
+        "expected_args": {
+            "L2": {"add_baseline_system": {"system_type": 7}},
+            "L3": {"add_baseline_system": {"system_type": 7}},
+        },
     },
     {
         "id": "view_model",
@@ -71,15 +87,19 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "expected": ["create_python_plugin", "list_ems_actuators"],
         "L1": "Add custom control logic that sets the heating setpoint back at night.",
-        "L2": "Create a Python EMS plugin that overrides the heating setpoint "
-              "schedule to 15.6 C outside 6am-6pm.",
-        "L3": "Use create_python_plugin with the schedule_override template to set "
-              "the heating schedule to 15.6 outside hours 6-18.",
+        # Explicit names at L2/L3: agents sometimes save their plugin into the
+        # shared baseline model, and a later level reusing the same default
+        # name hits "already exists" (pilot-3 state-leak finding)
+        "L2": "Create a Python EMS plugin named 'ems_setback_l2' that overrides "
+              "the heating setpoint schedule to 15.6 C outside 6am-6pm.",
+        "L3": "Use create_python_plugin (name 'ems_setback_l3') with the "
+              "schedule_override template to set the heating schedule to 15.6 "
+              "outside hours 6-18.",
     },
     {
         "id": "set_weather",
         "needs_model": True,
-        "expected": ["change_building_location", "set_weather_file"],
+        "expected": ["change_building_location"],
         "L1": "Set the weather to Boston.",
         "L2": f"Set the weather file to {BOSTON_EPW}.",
         "L3": f"Set the weather using change_building_location with weather_file {BOSTON_EPW}.",
@@ -124,6 +144,10 @@ PROGRESSIVE_CASES = [
         "L2": "Raise the cooling setpoint by 2 degrees F.",
         "L3": "Adjust the thermostat setpoints using adjust_thermostat_setpoints. "
               "Raise cooling by 2F.",
+        "expected_args": {
+            "L2": {"adjust_thermostat_setpoints": {"cooling_offset_f": (2.0, 0.001)}},
+            "L3": {"adjust_thermostat_setpoints": {"cooling_offset_f": (2.0, 0.001)}},
+        },
     },
     {
         "id": "list_spaces",
@@ -160,6 +184,10 @@ PROGRESSIVE_CASES = [
         "L2": "Set the boiler's nominal thermal efficiency to 0.92.",
         "L3": "Use set_object_property to set nominalThermalEfficiency to 0.92 "
               "on the BoilerHotWater.",
+        "expected_args": {
+            "L2": {"set_object_property": {"value": (0.92, 0.001)}},
+            "L3": {"set_object_property": {"value": (0.92, 0.001)}},
+        },
     },
     {
         "id": "list_dynamic_type",
@@ -256,6 +284,10 @@ PROGRESSIVE_CASES = [
         "L1": "Add windows to the building.",
         "L2": "Set the window-to-wall ratio to 40% on all facades.",
         "L3": "Set the window to wall ratio to 0.4 using set_window_to_wall_ratio.",
+        "expected_args": {
+            "L2": {"set_window_to_wall_ratio": {"ratio": (0.4, 0.001)}},
+            "L3": {"set_window_to_wall_ratio": {"ratio": (0.4, 0.001)}},
+        },
     },
     {
         "id": "replace_windows",
@@ -289,9 +321,14 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "expected": ["create_people_definition", "create_lights_definition"],
         "L1": "Add people and lighting to the office spaces.",
-        "L2": "Create a people load of 0.05 people/sqft and lighting at 10 W/sqft.",
+        "L2": "Create a people load of 0.05 people per square meter and "
+              "lighting at 10 W per square meter.",
         "L3": "Create a people definition using create_people_definition with "
-              "people_per_floor_area 0.05.",
+              "people_per_area 0.05.",
+        "expected_args": {
+            "L2": {"create_people_definition": {"people_per_area": (0.05, 0.001)}},
+            "L3": {"create_people_definition": {"people_per_area": (0.05, 0.001)}},
+        },
     },
     # --- Plant loops ---
     {
@@ -301,6 +338,11 @@ PROGRESSIVE_CASES = [
         "L1": "Create a hot water heating loop.",
         "L2": "Create a plant loop for hot water heating with a 82C design temp.",
         "L3": "Create a plant loop using create_plant_loop with loop_type heating.",
+        "expected_args": {
+            "L2": {"create_plant_loop": {"loop_type": "Heating",
+                                         "design_exit_temp_c": (82.0, 0.001)}},
+            "L3": {"create_plant_loop": {"loop_type": "Heating"}},
+        },
     },
     # --- Schedules & space types ---
     {
@@ -327,6 +369,12 @@ PROGRESSIVE_CASES = [
         "L1": "Set the simulation to run for a full year.",
         "L2": "Set the run period from January 1 to December 31.",
         "L3": "Set the run period using set_run_period with start 1/1 end 12/31.",
+        "expected_args": {
+            "L2": {"set_run_period": {"begin_month": 1, "begin_day": 1,
+                                      "end_month": 12, "end_day": 31}},
+            "L3": {"set_run_period": {"begin_month": 1, "begin_day": 1,
+                                      "end_month": 12, "end_day": 31}},
+        },
     },
     {
         "id": "ideal_air",
@@ -381,13 +429,16 @@ PROGRESSIVE_CASES = [
               "/measures/local/custom/my_measure.",
     },
     {
+        # /inputs is the allowed-read mount of tests/assets (the old /repo
+        # and /test-assets paths both fail in the harness: /repo unmounted,
+        # /test-assets not in _SHARED_READ_ROOTS).
         "id": "apply_existing_measure",
         "needs_model": True,
         "expected": ["apply_measure", "list_measure_arguments"],
-        "L1": "Apply the set_building_name measure from /repo/tests/assets/measures/.",
-        "L2": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+        "L1": "Apply the set_building_name measure from /inputs/measures/.",
+        "L2": "Apply the measure at /inputs/measures/set_building_name "
               "with building_name 'New Name'.",
-        "L3": "Apply the measure at /repo/tests/assets/measures/set_building_name "
+        "L3": "Apply the measure at /inputs/measures/set_building_name "
               "using apply_measure with arguments {building_name: 'New Name'}.",
     },
     # --- CooledBeam + zone priority ---
@@ -399,6 +450,11 @@ PROGRESSIVE_CASES = [
         "L1": "Replace the air terminals with cooling-only chilled beams.",
         "L2": "Replace the air terminals on the air loop with CooledBeam type using replace_air_terminals.",
         "L3": "Use replace_air_terminals with terminal_type='CooledBeam'.",
+        "expected_args": {
+            "L1": {"replace_air_terminals": {"terminal_type": "CooledBeam"}},
+            "L2": {"replace_air_terminals": {"terminal_type": "CooledBeam"}},
+            "L3": {"replace_air_terminals": {"terminal_type": "CooledBeam"}},
+        },
     },
     {
         "id": "replace_terminals_four_pipe_beam",
@@ -408,6 +464,11 @@ PROGRESSIVE_CASES = [
         "L1": "Replace the air terminals with 4-pipe chilled beams that provide both heating and cooling.",
         "L2": "Replace the air terminals on the air loop with FourPipeBeam type using replace_air_terminals.",
         "L3": "Use replace_air_terminals with terminal_type='FourPipeBeam'.",
+        "expected_args": {
+            "L1": {"replace_air_terminals": {"terminal_type": "FourPipeBeam"}},
+            "L2": {"replace_air_terminals": {"terminal_type": "FourPipeBeam"}},
+            "L3": {"replace_air_terminals": {"terminal_type": "FourPipeBeam"}},
+        },
     },
     {
         "id": "measure_replace_terminals",
@@ -438,14 +499,208 @@ PROGRESSIVE_CASES = [
         "L3": "Edit measure my_measure using edit_measure with run_body "
               "'    runner.registerInfo(\"updated\")'.",
     },
+    # --- Phase 3 coverage cases (previously untested tools) ---
+    {
+        "id": "sim_errors",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["extract_simulation_errors", "get_run_logs"],
+        "L1": "My simulation had problems. Why?",
+        "L2": "Show the errors and warnings from the simulation output.",
+        "L3": "Extract the simulation errors using extract_simulation_errors.",
+    },
+    {
+        "id": "compare_runs",
+        "needs_model": False,
+        "needs_retrofit": True,
+        "expected": ["compare_runs"],
+        "L1": "Did the retrofit help? Compare the two runs.",
+        "L2": "Compare the baseline and retrofit simulation results and "
+              "report the EUI difference.",
+        "L3": "Compare the two simulation runs using compare_runs.",
+    },
+    {
+        "id": "output_variables",
+        "needs_model": True,
+        "expected": ["add_output_variable", "list_output_variables"],
+        "L1": "I need hourly zone temperatures in the results.",
+        "L2": "Add an hourly output variable for Zone Mean Air Temperature.",
+        "L3": "Add it using add_output_variable with variable name "
+              "'Zone Mean Air Temperature' and hourly frequency.",
+    },
+    {
+        "id": "timeseries",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["query_timeseries", "view_simulation_data"],
+        "L1": "Plot the hourly cooling energy for July.",
+        "L2": "Query the hourly cooling electricity timeseries for July "
+              "from the simulation results.",
+        "L3": "Query the cooling timeseries using query_timeseries.",
+    },
+    {
+        "id": "air_loop_details",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_air_loop_details"],
+        "L1": "What equipment is on the air handler?",
+        "L2": "Show the supply-side components of the air loop in order.",
+        "L3": "Get the air loop details using get_air_loop_details.",
+    },
+    {
+        "id": "plant_loop_details",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_plant_loop_details"],
+        "L1": "Trace the chilled water loop.",
+        "L2": "Show the supply and demand components of the chilled water "
+              "plant loop.",
+        "L3": "Get the plant loop details using get_plant_loop_details.",
+    },
+    {
+        # get_thermal_zone_details is accepted: it returns air_loop_hvac +
+        # equipment count, a legitimate answer path (pilot-1 finding —
+        # sonnet consistently chose it). The bare zone LIST is not accepted.
+        "id": "zone_hvac",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["list_zone_hvac_equipment", "get_zone_hvac_details",
+                     "get_air_loop_details", "list_air_loops",
+                     "get_thermal_zone_details"],
+        "L1": "What HVAC serves the first zone?",
+        "L2": "List the zone HVAC equipment and the terminal serving the "
+              "first thermal zone.",
+        "L3": "List zone equipment using list_zone_hvac_equipment.",
+    },
+    {
+        "id": "economizer",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["set_economizer_properties"],
+        "L1": "Add an airside economizer.",
+        "L2": "Enable a differential dry bulb airside economizer on the "
+              "air loop.",
+        "L3": "Set the economizer using set_economizer_properties with "
+              "economizer_control_type DifferentialDryBulb.",
+    },
+    {
+        "id": "setpoint_manager",
+        "needs_model": True,
+        "needs_hvac": True,
+        "expected": ["get_setpoint_manager_properties",
+                     "set_setpoint_manager_properties"],
+        "L1": "Change the supply air temperature reset.",
+        "L2": "Show the setpoint manager on the air loop supply outlet and "
+              "its temperature setpoints.",
+        "L3": "Get the setpoint manager properties using "
+              "get_setpoint_manager_properties.",
+    },
+    {
+        "id": "roof_insulation",
+        "needs_model": True,
+        # add_layer_to_construction added 2026-08-07 (F7 affordance fix) —
+        # prompts unchanged so roof-fix-* sweeps stay comparable to prod-2026-08b
+        "expected": ["create_standard_opaque_material", "create_construction",
+                     "add_layer_to_construction",
+                     "assign_construction_to_surface"],
+        "L1": "Add R-30 insulation to the roof.",
+        "L2": "Create an insulation material and construction for the roof "
+              "and assign it to the roof surfaces.",
+        "L3": "Use create_standard_opaque_material, then create_construction, "
+              "then assign_construction_to_surface on the roof surfaces.",
+    },
+    {
+        "id": "infiltration",
+        "needs_model": True,
+        "expected": ["create_infiltration"],
+        "L1": "Tighten the envelope to 0.3 ACH.",
+        "L2": "Set space infiltration to 0.3 air changes per hour in all "
+              "spaces.",
+        "L3": "Create infiltration using create_infiltration with 0.3 ACH.",
+    },
+    {
+        "id": "plug_loads",
+        "needs_model": True,
+        "expected": ["create_electric_equipment"],
+        "L1": "Add plug loads to the offices.",
+        "L2": "Add electric equipment plug loads at 10 W per square meter.",
+        "L3": "Create plug loads using create_electric_equipment.",
+    },
+    {
+        "id": "shift_schedule",
+        "needs_model": True,
+        "expected": ["shift_schedule_time", "get_schedule_details"],
+        "L1": "Occupancy starts at 7 now, not 9.",
+        "L2": "Shift the occupancy schedule 2 hours earlier.",
+        "L3": "Shift the schedule using shift_schedule_time.",
+    },
+    {
+        "id": "bcl_search",
+        "needs_model": False,
+        "expected": ["search_bcl_measures", "find_measure",
+                     "list_comstock_measures"],
+        "L1": "Is there an existing measure that adds daylighting controls?",
+        "L2": "Search the BCL and bundled measures for a daylighting "
+              "controls measure.",
+        "L3": "Search for a daylighting measure using search_bcl_measures.",
+    },
+    {
+        "id": "ems_edit",
+        "needs_model": False,
+        "needs_ems": True,
+        "expected": ["get_python_plugin", "edit_python_plugin"],
+        "L1": "My Python plugin has a bug in its schedule override values. "
+              "Show me its source.",
+        "L2": "Show the source of the Python plugin "
+              "'llm-test-sched-override' so I can check its override rules.",
+        "L3": "Get the plugin source using get_python_plugin for "
+              "'llm-test-sched-override'.",
+    },
+    # LAST on purpose: touches run lifecycle (pin/cleanup). cleanup_runs
+    # defaults to dry_run and never deletes pinned runs, but keep it after
+    # every case that consumes the baseline/retrofit run_ids anyway.
+    {
+        "id": "run_lifecycle",
+        "needs_model": False,
+        "needs_run": True,
+        "expected": ["pin_run", "cleanup_runs"],
+        "L1": "Clean up old simulation runs but keep the baseline.",
+        "L2": "Pin the baseline run so it is kept, then preview a cleanup "
+              "of old simulation runs.",
+        "L3": "Pin the baseline run using pin_run, then preview cleanup "
+              "with cleanup_runs.",
+    },
 ]
 
 SUFFIX = " Use MCP tools only."
+
+# L3 (tool name in the prompt) is a near-tautology for most cases. Kept only
+# for tools that historically failed at/near L3, have complex arg shapes L3
+# exercises, or sit in confusion pairs. New coverage cases keep L3 for 3 runs,
+# then trim if 3/3 stable. See docs/plans/plan-llm-benchmark-realism.md Phase 2.
+L3_KEEP = {
+    # historical L3/near-L3 failures
+    "edit_measure", "zone_equipment_priority", "test_measure",
+    # complex-arg tools — L3 exercises API shape
+    "create_measure", "measure_replace_terminals", "apply_existing_measure",
+    "replace_terminals_cooled_beam", "replace_terminals_four_pipe_beam",
+    "python_ems_control", "create_plant_loop", "create_loads",
+    # confusion-pair members
+    "run_qaqc", "thermostat",
+    # Phase 3 coverage cases (added 2026-08-05) — keep L3 for 3 runs, then
+    # trim each id that goes 3/3 stable
+    "sim_errors", "compare_runs", "output_variables", "timeseries",
+    "air_loop_details", "plant_loop_details", "zone_hvac", "economizer",
+    "setpoint_manager", "roof_insulation", "infiltration", "plug_loads",
+    "shift_schedule", "bcl_search", "ems_edit", "run_lifecycle",
+}
 
 # Flatten into parametrized cases: (case_id, level, prompt, expected)
 _FLAT_CASES = []
 for case in PROGRESSIVE_CASES:
     for level in ("L1", "L2", "L3"):
+        if level == "L3" and case["id"] not in L3_KEEP:
+            continue
         _FLAT_CASES.append({
             "id": f"{case['id']}_{level}",
             "case_id": case["id"],
@@ -453,8 +708,11 @@ for case in PROGRESSIVE_CASES:
             "needs_model": case["needs_model"],
             "needs_hvac": case.get("needs_hvac", False),
             "needs_run": case.get("needs_run", False),
+            "needs_retrofit": case.get("needs_retrofit", False),
+            "needs_ems": case.get("needs_ems", False),
             "prompt": case[level],
             "expected": case["expected"],
+            "expected_args": case.get("expected_args", {}).get(level, {}),
         })
 
 
@@ -463,7 +721,7 @@ _GENERIC_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
 
 @pytest.mark.progressive
 @pytest.mark.parametrize("case", _FLAT_CASES, ids=[c["id"] for c in _FLAT_CASES])
-def test_progressive(case):
+def test_progressive(case, request):
     """Test tool discovery at varying prompt specificity levels."""
     # Validates: Claude routes L1/L2/L3 prompts to correct tools — lower levels passing = better discoverability
     tier = get_tier()
@@ -471,26 +729,156 @@ def test_progressive(case):
         pytest.skip("Tier 1 not selected")
 
     prompt = case["prompt"]
-    if case.get("needs_run"):
+    if case.get("needs_retrofit"):
+        base_id, retro_id = get_sim_run_id(), get_retrofit_run_id()
+        if not (base_id and retro_id):
+            pytest.skip("Baseline+retrofit run_ids not found — run test_01_setup first")
+        prompt = (
+            f"Baseline run_id '{base_id}', retrofit run_id '{retro_id}'. "
+        ) + prompt
+    elif case.get("needs_run"):
         run_id = get_sim_run_id()
         if not run_id:
             pytest.skip("No simulation run_id — run test_01_setup first")
         prompt = f"Use run_id '{run_id}'. " + prompt
+    elif case.get("needs_ems"):
+        if not ems_model_exists():
+            pytest.skip("EMS model not found — run test_01_setup first")
+        prompt = LOAD_EMS + prompt
     elif case.get("needs_hvac"):
         if not baseline_hvac_model_exists():
             pytest.skip("Baseline+HVAC model not found — run test_01_setup first")
-        prompt = LOAD_HVAC + prompt.lower()
+        prompt = LOAD_HVAC + prompt
     elif case["needs_model"]:
         if not baseline_model_exists():
             pytest.skip("Baseline model not found — run test_01_setup first")
-        prompt = LOAD + prompt.lower()
+        prompt = LOAD + prompt
+    # Outcome-graded mutation cases must leave an artifact: no autosave
+    # exists, and save-AS (not save-in-place) keeps shared fixtures clean
+    if (case["case_id"] in grading_host.SAVE_REQUIRED
+            and (case["case_id"], case["level"]) not in grading_host.ROUTING_ONLY):
+        prompt += grading_host.save_instruction(case["case_id"], case["level"])
     prompt += SUFFIX
 
-    timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else 120
+    # 120s base is a load-bearing benchmark parameter (L1 multi-step rows run
+    # 84-120s); LLM_TESTS_TIMEOUT_BASE overrides it for timeout-sensitivity cells
+    base_timeout = int(os.environ.get("LLM_TESTS_TIMEOUT_BASE", "120"))
+    timeout = 300 if case.get("needs_run") or case["case_id"] == "run_simulation" else base_timeout
     result = run_claude(prompt, timeout=timeout)
     tool_names = result.tool_names
 
-    assert any(t in case["expected"] for t in tool_names), (
-        f"[{case['case_id']} {case['level']}] "
-        f"Expected one of {case['expected']}, got: {tool_names}"
-    )
+    matched = [t for t in tool_names if t in case["expected"]]
+    if not matched:
+        fail_with_mode(
+            request,
+            "wrong_tool" if tool_names else "no_mcp_tool",
+            f"[{case['case_id']} {case['level']}] "
+            f"Expected one of {case['expected']}, got: {tool_names}",
+        )
+
+    # Right tool called AND some accepted path succeeded. With multi-tool
+    # accept sets, any called accepted tool whose FIRST call did not fail
+    # counts — penalizing only the first-called member scored valid richer
+    # workflows as failures (pilot-3: skill guidance led codex through
+    # list_ems_actuators, which errors informatively on a no-design-days
+    # model, before create_python_plugin succeeded).
+    if all(result.tool_ok(t) is False for t in matched):
+        # Secondary honesty metric: the pass/fail verdict stays first-call
+        # strict, but record whether a LATER call of an accepted tool
+        # succeeded (agent recovered and likely completed the task) so the
+        # paper can report how many tool_error failures were recoveries.
+        if any(r.get("ok") is True for t in matched for r in result.results_for(t)):
+            request.node.user_properties.append(("recovered", True))
+            _record_outcome_facts(case, result, request)
+        fail_with_mode(
+            request, "tool_error",
+            f"[{case['case_id']} {case['level']}] accepted tool(s) "
+            f"{matched} called but every first call returned ok:false",
+        )
+
+    _assert_expected_args(case, result, request)
+    _grade_outcome(case, result, request)
+
+
+def _assert_expected_args(case, result, request):
+    """Check pinned argument values on the first call to each spec'd tool.
+
+    Skips tools the agent never called — the case may have been satisfied
+    via an alternative accepted tool, which the expected-tool assert covers.
+    """
+    prefix = "mcp__openstudio__"
+    for tool, spec in case["expected_args"].items():
+        calls = [c for c in result.mcp_tool_calls
+                 if c["tool"].removeprefix(prefix) == tool]
+        if not calls:
+            continue
+        got_input = calls[0]["input"]
+        for arg, want in spec.items():
+            got = got_input.get(arg)
+            label = f"[{case['case_id']} {case['level']}] {tool}.{arg}"
+            if isinstance(want, tuple):
+                target, rel = want
+                try:
+                    got_num = float(got)
+                except (TypeError, ValueError):
+                    got_num = None
+                if got_num != pytest.approx(target, rel=rel):
+                    fail_with_mode(request, "wrong_args",
+                                   f"{label} expected ~{target}, got {got!r}")
+            elif isinstance(want, str) and isinstance(got, str):
+                # Case-insensitive: casing correctness is the TOOL's contract —
+                # a casing the tool rejects already fails the tool_error check.
+                if got.lower() != want.lower():
+                    fail_with_mode(request, "wrong_args",
+                                   f"{label} expected {want!r}, got {got!r}")
+            elif got != want:
+                fail_with_mode(request, "wrong_args",
+                               f"{label} expected {want!r}, got {got!r}")
+
+
+def _create_measure_name(result) -> str | None:
+    """Name argument of the agent's first create_measure call (any outcome)."""
+    prefix = "mcp__openstudio__"
+    for call in result.mcp_tool_calls:
+        if call["tool"].removeprefix(prefix) == "create_measure":
+            name = call["input"].get("name")
+            if name:
+                return str(name)
+    return None
+
+
+def _outcome_for(case, result):
+    measure_name = None
+    if case["case_id"] == "measure_replace_terminals":
+        measure_name = _create_measure_name(result)
+    return grading_host.grade_case(case["case_id"], case["level"],
+                                   measure_name=measure_name)
+
+
+def _record_outcome_facts(case, result, request):
+    """Facts-only recording for recovered rows — verdict stays tool_error."""
+    if case["case_id"] not in grading_host.GRADED_CASES:
+        return
+    outcome = _outcome_for(case, result)
+    if outcome is not None:
+        request.node.user_properties.append(("outcome", outcome))
+
+
+def _grade_outcome(case, result, request):
+    """Gate 2: deterministic artifact grading (plan-outcome-grading.md).
+
+    Runs only after the routing gates pass; facts + verdict land in the
+    benchmark row via the "outcome" user property either way.
+    """
+    if case["case_id"] not in grading_host.GRADED_CASES:
+        return
+    outcome = _outcome_for(case, result)
+    if outcome is None:
+        return  # routing-only (case, level)
+    request.node.user_properties.append(("outcome", outcome))
+    if not outcome["outcome_pass"]:
+        fail_with_mode(
+            request, "outcome_mismatch",
+            f"[{case['case_id']} {case['level']}] outcome: "
+            + "; ".join(outcome["reasons"]),
+        )

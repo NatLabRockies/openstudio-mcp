@@ -60,6 +60,10 @@ import_floorspacejs(
 ```
 Creates spaces, zones with thermostats, surfaces, and runs matching.
 
+Paths are SERVER-side. If no floorplan path was given, check
+`list_files(directory="/inputs")` for staged floorplan JSONs before asking
+or uploading — do not pass paths from the client machine.
+
 Step 2 — Weather + design days (same as Workflow B steps 2-3)
 
 Step 3 — Typical building (same as Workflow B step 4)
@@ -95,7 +99,8 @@ Ask the user for:
   Warehouse, PrimarySchool, Hospital, etc.
 - **Size:** floor area in ft2, number of stories
 - **Location:** city or climate zone (for weather file + ASHRAE climate zone)
-- **Custom geometry?** If yes, ask for FloorspaceJS JSON file path
+- **Custom geometry?** If yes, find the FloorspaceJS JSON:
+  `list_files(directory="/inputs")` first; ask only if nothing is staged
 
 ## Climate Zone Format
 

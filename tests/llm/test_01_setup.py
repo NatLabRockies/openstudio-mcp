@@ -21,13 +21,16 @@ import re
 
 import pytest
 
-from .conftest import BASELINE_MODEL, save_retrofit_run_id, save_sim_run_id
+from .conftest import (
+    BASELINE_MODEL, fail_with_mode, save_retrofit_run_id, save_sim_run_id,
+)
+from .grading import host as grading_host
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
 
 
-def test_create_baseline_model():
+def test_create_baseline_model(request):
     """Create a 10-zone baseline model and save it for later tests."""
     # Validates: Claude uses create_baseline_osm (not create_example_osm or raw IDF) for baseline models
     result = run_claude(
@@ -42,9 +45,10 @@ def test_create_baseline_model():
     )
 
     assert not result.is_error, f"Claude reported error: {result.final_text}"
+    _grade_setup(request, "create_baseline_model")
 
 
-def test_create_baseline_with_hvac():
+def test_create_baseline_with_hvac(request):
     """Create baseline + System 7 HVAC for component inspection tests."""
     # Validates: Claude uses create_baseline_osm with ashrae_sys_num for HVAC-equipped baseline
     result = run_claude(
@@ -56,6 +60,16 @@ def test_create_baseline_with_hvac():
         f"create_baseline_osm not called. Tools: {result.tool_names}"
     )
     assert not result.is_error, f"Claude reported error: {result.final_text}"
+    _grade_setup(request, "create_baseline_with_hvac")
+
+
+def _grade_setup(request, case_id: str):
+    """Gate 2 for setup creation cases — see plan-outcome-grading.md."""
+    outcome = grading_host.grade_case(case_id, "setup")
+    request.node.user_properties.append(("outcome", outcome))
+    if not outcome["outcome_pass"]:
+        fail_with_mode(request, "outcome_mismatch",
+                       f"[{case_id}] outcome: " + "; ".join(outcome["reasons"]))
 
 
 def test_create_example_model():
@@ -92,6 +106,62 @@ def test_load_baseline_model():
     )
 
 
+def test_create_seed_measure():
+    """Seed custom measure 'my_measure' — edit_measure/test_measure cases reference it."""
+    # Validates: Claude seeds the my_measure fixture via create_measure so later
+    # edit_measure/test_measure prompts refer to a measure that actually exists
+    result = run_claude(
+        "Create a Ruby ModelMeasure named 'my_measure' that logs the building "
+        "name with runner.registerInfo. Use create_measure with name "
+        "'my_measure', language Ruby. Use MCP tools only.",
+        timeout=180,
+    )
+    assert "create_measure" in result.tool_names, (
+        f"create_measure not called. Tools: {result.tool_names}"
+    )
+    assert result.tool_ok("create_measure") is not False, (
+        "create_measure returned ok:false — seed measure missing"
+    )
+    assert not result.is_error, f"Claude reported error: {result.final_text}"
+
+
+def test_create_ems_plugin_model():
+    """Seed baseline + schedule_override Python plugin, saved for ems_edit cases."""
+    # Validates: Claude seeds the EMS-plugin model (create_python_plugin +
+    # save) that ems_edit progressive cases load and modify
+    # Order matters: the plugin script lands in <loaded-model-dir>/files/, and
+    # save_osm_model does not retarget the loaded path — so save a copy, RELOAD
+    # it, then create the plugin so script + model live together under
+    # /runs/examples/llm-test-ems/.
+    result = run_claude(
+        f"Do these steps in order: "
+        f"1. Load the model at {BASELINE_MODEL} using load_osm_model. "
+        "2. Save it using save_osm_model to /runs/examples/llm-test-ems/model.osm. "
+        "3. Load /runs/examples/llm-test-ems/model.osm using load_osm_model. "
+        "4. Create a Python EMS plugin using create_python_plugin with "
+        "name 'llm-test-sched-override', template 'schedule_override', "
+        "schedule_name of the model's heating setpoint schedule, "
+        "default_value 21.1, and exactly these two rules (no wrap-around "
+        "rules — split overnight into two): "
+        "[{days: 'all', start_hour: 0, end_hour: 6, value: 15.6}, "
+        "{days: 'all', start_hour: 18, end_hour: 24, value: 15.6}]. "
+        "5. Save the model again with save_osm_model to the same path.",
+        timeout=240,
+        max_turns=25,
+    )
+    tool_names = result.tool_names
+    assert "create_python_plugin" in tool_names, (
+        f"create_python_plugin not called. Tools: {tool_names}"
+    )
+    assert result.tool_ok("create_python_plugin") is not False, (
+        "create_python_plugin returned ok:false — EMS seed failed"
+    )
+    assert "save_osm_model" in tool_names, (
+        f"save_osm_model not called. Tools: {tool_names}"
+    )
+    assert not result.is_error, f"Claude reported error: {result.final_text}"
+
+
 def test_run_baseline_simulation():
     """Set weather and run simulation on the baseline model, save run_id."""
     # Validates: Claude chains load → weather → run_simulation → get_run_status for full sim workflow
@@ -115,6 +185,16 @@ def test_run_baseline_simulation():
         f"run_simulation not called. Tools: {tool_names}"
     )
 
+    # The run must actually SUCCEED — downstream needs_run cases consume this
+    # run_id, and a failed run previously slipped through (tool-call-only
+    # asserts) leaving every results case pointed at garbage.
+    statuses = result.results_for("get_run_status")
+    final_state = ((statuses[-1].get("run", {}).get("status") or "unknown")
+                   if statuses else "unknown").lower()
+    assert final_state == "success", (
+        f"Baseline simulation did not succeed (last status: {final_state})"
+    )
+
     # Extract run_id from the tool call inputs
     run_id = None
     for call in result.mcp_tool_calls:
@@ -131,8 +211,8 @@ def test_run_baseline_simulation():
         if match:
             run_id = match.group(0)
 
-    if run_id:
-        save_sim_run_id(run_id)
+    assert run_id, "No run_id extractable from tool calls or final text"
+    save_sim_run_id(run_id)
 
     assert not result.is_error, f"Simulation failed: {result.final_text}"
 
@@ -162,6 +242,14 @@ def test_run_retrofit_simulation():
         f"run_simulation not called. Tools: {tool_names}"
     )
 
+    # Same success gate as the baseline sim — compare_runs consumes this
+    statuses = result.results_for("get_run_status")
+    final_state = ((statuses[-1].get("run", {}).get("status") or "unknown")
+                   if statuses else "unknown").lower()
+    assert final_state == "success", (
+        f"Retrofit simulation did not succeed (last status: {final_state})"
+    )
+
     # Extract run_id from tool call inputs
     run_id = None
     for call in result.mcp_tool_calls:
@@ -175,7 +263,7 @@ def test_run_retrofit_simulation():
         if match:
             run_id = match.group(0)
 
-    if run_id:
-        save_retrofit_run_id(run_id)
+    assert run_id, "No run_id extractable from tool calls or final text"
+    save_retrofit_run_id(run_id)
 
     assert not result.is_error, f"Retrofit simulation failed: {result.final_text}"

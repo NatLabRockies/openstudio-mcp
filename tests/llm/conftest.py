@@ -11,7 +11,7 @@ This conftest provides:
 
 Environment variables:
   LLM_TESTS_ENABLED  — set to "1" to enable LLM tests (default: disabled)
-  LLM_TESTS_MAX_PROMPTS — hard cap on Claude invocations per run (default: 180)
+  LLM_TESTS_MAX_PROMPTS — hard cap on Claude invocations per run (default: 300)
   LLM_TESTS_TIER — filter to run specific tier: "1", "2", "3", "4", or "all"
   LLM_TESTS_RETRIES — retry count for failed tests (default: 0)
   LLM_TESTS_MODEL — model to use: "sonnet", "haiku", "opus" (default: "sonnet")
@@ -73,11 +73,28 @@ FLAKY_TESTS = frozenset({
     # Measure authoring — L1 may trigger related tools instead
     "test_measure_L1",
     "edit_measure_L1",
-    # Phase 10 — L1 prompts ambiguous for new results/validation tools
-    "extract_errors_L1",
-    "validate_model_L1",
-    "compare_runs_L1",
-    "list_variables_L1",
+    # Phase 3 coverage cases — quarantined until 3 stable runs ("_L" suffix
+    # matches all levels of the case without matching other tests)
+    "sim_errors_L",
+    "compare_runs_L",
+    "output_variables_L",
+    "timeseries_L",
+    "air_loop_details_L",
+    "plant_loop_details_L",
+    "zone_hvac_L",
+    "economizer_L",
+    "setpoint_manager_L",
+    "roof_insulation_L",
+    "infiltration_L",
+    "plug_loads_L",
+    "shift_schedule_L",
+    "bcl_search_L",
+    "ems_edit_L",
+    "run_lifecycle_L",
+    # Phase 3 seed steps + confusion pair — same quarantine window
+    "test_create_seed_measure",
+    "test_create_ems_plugin_model",
+    "test_search_before_create_measure",
 })
 
 
@@ -98,6 +115,8 @@ def claude_cli_available() -> bool:
 BASELINE_MODEL = "/runs/examples/llm-test-baseline/baseline_model.osm"
 BASELINE_HVAC_MODEL = "/runs/examples/llm-test-baseline-hvac/baseline_model.osm"
 EXAMPLE_MODEL = "/runs/examples/llm-test-example/example_model.osm"
+# Baseline + seeded schedule_override Python plugin (for ems_edit cases)
+EMS_MODEL = "/runs/examples/llm-test-ems/model.osm"
 
 # Host-side runs dir — used to verify model files exist before tests.
 # On Windows, Python Path("/tmp") resolves to C:\tmp, not the real temp dir.
@@ -117,6 +136,11 @@ def baseline_hvac_model_exists() -> bool:
     """Check if the baseline+HVAC model exists on the host filesystem."""
     host_path = _RUNS_DIR / "examples" / "llm-test-baseline-hvac" / "baseline_model.osm"
     return host_path.exists()
+
+
+def ems_model_exists() -> bool:
+    """Check if the EMS-plugin-seeded model exists on the host filesystem."""
+    return (_RUNS_DIR / "examples" / "llm-test-ems" / "model.osm").exists()
 
 
 # File where test_01_setup saves the simulation run_id for troubleshoot tests
@@ -143,6 +167,22 @@ def sim_run_exists() -> bool:
     return get_sim_run_id() is not None
 
 
+def summary_metric_euis(result) -> list[float]:
+    """EUI values (kBtu/ft2) from extract_summary_metrics calls, in call order.
+
+    Reads actual tool RESULTS (ClaudeResult.results_for), not the agent's
+    prose — a failed sim yields null metrics and is excluded, so callers can
+    assert real simulation outcomes.
+    """
+    euis = []
+    for r in result.results_for("extract_summary_metrics"):
+        metrics = r.get("metrics")
+        eui = metrics.get("eui_kBtu_ft2") if isinstance(metrics, dict) else None
+        if isinstance(eui, (int, float)):
+            euis.append(float(eui))
+    return euis
+
+
 # File where test_01_setup saves the retrofit run_id for compare_runs tests
 _RETROFIT_RUN_ID_FILE = _RUNS_DIR / "llm-test-retrofit-run-id.txt"
 RETROFIT_RUN_ID_FILE = "/runs/llm-test-retrofit-run-id.txt"
@@ -165,7 +205,7 @@ def get_retrofit_run_id() -> str | None:
 # ---------------------------------------------------------------------------
 # Prevents runaway test runs from burning through too many Claude invocations.
 # Each test_* function consumes 1 prompt. Retries also consume prompts.
-MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "180"))
+MAX_PROMPTS = int(os.environ.get("LLM_TESTS_MAX_PROMPTS", "300"))
 _prompt_count = 0
 
 
@@ -220,6 +260,18 @@ def get_tier() -> str:
 MAX_RETRIES = int(os.environ.get("LLM_TESTS_RETRIES", "0"))
 
 
+def fail_with_mode(request, mode: str, msg: str) -> None:
+    """Tag the test with an explicit failure-mode classification, then fail.
+
+    Modes: wrong_tool | no_mcp_tool | timeout | tool_error | wrong_args |
+    outcome_mismatch. pytest_runtest_logreport reads the tag from
+    report.user_properties, falling back to the _last_result heuristics for
+    untagged failures.
+    """
+    request.node.user_properties.append(("failure_mode", mode))
+    pytest.fail(msg)
+
+
 def _is_flaky(nodeid: str) -> bool:
     """Check if a test nodeid matches any known flaky pattern."""
     return any(pattern in nodeid for pattern in FLAKY_TESTS)
@@ -234,14 +286,14 @@ def _is_setup(nodeid: str) -> bool:
 _GENERIC_CASE_IDS = {"inspect_component", "modify_component", "list_dynamic_type"}
 
 # Smoke subset — fast validation of key tools (~10 tests)
+# L2 ids (not L3): most L3 rows were trimmed via L3_KEEP in test_06.
 _SMOKE_IDS = {
     # setup
     "test_create_baseline_model", "test_create_baseline_with_hvac",
-    # progressive L3 (most reliable)
-    "list_spaces_L3", "add_hvac_L3", "view_model_L3",
-    "inspect_component_L3", "list_dynamic_type_L3",
-    # new progressive L3
-    "get_eui_L3", "set_wwr_L3", "save_model_L3",
+    # progressive L2
+    "list_spaces_L2", "add_hvac_L2", "view_model_L2",
+    "inspect_component_L2", "list_dynamic_type_L2",
+    "get_eui_L2", "set_wwr_L2", "save_model_L2",
     # workflow
     "inspect_and_modify_boiler",
     # guardrail
@@ -365,6 +417,8 @@ def pytest_runtest_logreport(report):
         tier = "progressive"
     elif "test_07" in report.nodeid:
         tier = "tier2"
+    elif "test_11" in report.nodeid:
+        tier = "codegen"
 
     # Check for retry info
     attempt = 1
@@ -375,13 +429,36 @@ def pytest_runtest_logreport(report):
             except (IndexError, ValueError):
                 pass
 
+    # Call-phase skips (e.g. needs_model with no baseline seeded) never invoke
+    # the runner — recording them via _last_result heuristics copied the
+    # PREVIOUS test's stats/tool_calls into their rows (found in pilot-4 when
+    # a failed setup cascaded 8 skips). Record as skipped, no stats, and let
+    # the aggregator exclude them from pass rates.
+    if report.skipped:
+        _benchmark_results.append({
+            "test_id": report.nodeid, "passed": False, "skipped": True,
+            "duration_s": round(duration, 1), "tier": tier, "attempt": 1,
+        })
+        return
+
     # Pull token/cost stats from the last run_claude result
     from .runner import _last_result
     stats = _last_result.stats if _last_result else {}
 
-    # Classify failure mode for failed tests
+    # Classify failure mode: explicit fail_with_mode tag wins, then heuristics.
+    # "outcome" (facts + rubric verdict, tests/llm/grading/) is recorded for
+    # passed AND failed rows — passing-row facts enable post-hoc re-scoring.
     failure_mode = None
-    if not report.passed and _last_result:
+    recovered = False
+    outcome = None
+    for prop_name, prop_value in getattr(report, "user_properties", []):
+        if prop_name == "outcome":
+            outcome = prop_value
+        elif not report.passed and prop_name == "failure_mode":
+            failure_mode = prop_value
+        elif not report.passed and prop_name == "recovered":
+            recovered = bool(prop_value)
+    if failure_mode is None and not report.passed and _last_result:
         if _last_result.is_error and "Timed out" in _last_result.final_text:
             failure_mode = "timeout"
         elif not _last_result.tool_names:
@@ -399,6 +476,10 @@ def pytest_runtest_logreport(report):
     }
     if failure_mode:
         entry["failure_mode"] = failure_mode
+    if recovered:
+        entry["recovered"] = True
+    if outcome is not None:
+        entry["outcome"] = outcome
     _benchmark_results.append(entry)
 
     # Persist NDJSON log for debugging
@@ -466,9 +547,27 @@ def pytest_sessionfinish(session, exitstatus):
     code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
     code_mode_tests = sum(1 for r in _benchmark_results if r.get("code_mode_active"))
 
+    # Sweep-provided provenance (git SHA, image digest, repeat index — set by
+    # scripts/benchmark_sweep.py via LLM_TESTS_RUN_META) + the env knobs that
+    # define this run's arm. The aggregator refuses to merge mismatched digests.
+    try:
+        run_meta = json.loads(os.environ.get("LLM_TESTS_RUN_META", "{}"))
+        if not isinstance(run_meta, dict):
+            run_meta = {"_bad_run_meta": str(run_meta)}
+    except json.JSONDecodeError:
+        run_meta = {"_bad_run_meta": os.environ.get("LLM_TESTS_RUN_META", "")}
+    run_config = run_meta | {
+        "provider": os.environ.get("LLM_TESTS_PROVIDER", "claude"),
+        "arm": os.environ.get("LLM_TESTS_ARM", "full"),
+        "image": os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev"),
+        "retries": MAX_RETRIES,
+        "timeout_base": int(os.environ.get("LLM_TESTS_TIMEOUT_BASE", "120")),
+    }
+
     summary = {
         "timestamp": ts,
         "model": model,
+        "run_config": run_config,
         "retries": MAX_RETRIES,
         "code_mode": code_mode == "1",
         "code_mode_tests": code_mode_tests,
@@ -640,6 +739,9 @@ def pytest_sessionfinish(session, exitstatus):
             "wrong_tool": "MCP tool called but not the expected one",
             "no_mcp_tool": "No MCP tool called (stuck in builtins)",
             "timeout": "Timed out before completing",
+            "tool_error": "Expected tool called but returned ok:false",
+            "wrong_args": "Expected tool called with wrong argument values",
+            "outcome_mismatch": "Tools ran but outcome checks failed (EUI/verifier)",
             "unknown": "Failure mode not classified",
         }
         for m, count in sorted(modes.items(), key=lambda x: -x[1]):
