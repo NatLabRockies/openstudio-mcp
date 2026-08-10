@@ -670,19 +670,30 @@ def test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable():
 
 
 @pytest.mark.integration
-def test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture():
-    """Real-world reproduction of the sliver-fragmentation defect this feature targets."""
+def test_geometry_repair_pipeline_on_austin_apartment_fixture():
+    """Real-world reproduction of both the sliver-fragmentation and corner-gap defects."""
     # Regression: tests/assets/gbxml/austin_apartment_slivers.xml is a 74-space Austin
-    # apartment/retail/office building whose Revit gbXML export splits walls/floors/
-    # ceilings into many same-space coplanar fragments per adjacent-room boundary segment
-    # (confirmed by inspection: sp-4stair's ceiling alone is split into a 25.21 m2 piece
-    # plus a 0.084 m2 sliver). Every fragment area still sums correctly — zero_volume_zone_count
-    # stays 0 — but the seams don't align to tight tolerance, so 69 of the 74 spaces fail
-    # isEnclosedVolume() even though each one already has both a Floor and a RoofCeiling.
-    # match_surfaces() alone (run inside repair_and_validate_gbxml_geometry) cannot fix
-    # this, since it only reconciles surfaces between spaces, never within one.
-    # merge_coplanar_sliver_surfaces must measurably reduce non_enclosed_spaces_count on
-    # this exact fixture, not just report ok=True with nothing changed.
+    # apartment/retail/office building whose Revit gbXML export both (a) splits walls/
+    # floors/ceilings into many same-space coplanar fragments per adjacent-room boundary
+    # segment (confirmed by inspection: sp-4stair's ceiling alone is split into a 25.21 m2
+    # piece plus a 0.084 m2 sliver), and (b) leaves sub-centimeter gaps between non-coplanar
+    # surfaces meeting at corners. Every fragment area still sums correctly —
+    # zero_volume_zone_count stays 0 — but the seams don't align to tight tolerance, so 69
+    # of the 74 spaces fail isEnclosedVolume() even though each one already has both a
+    # Floor and a RoofCeiling. match_surfaces() alone (run inside
+    # repair_and_validate_gbxml_geometry) cannot fix either defect, since it only
+    # reconciles surfaces between spaces, never within one.
+    #
+    # Honest result on this fixture, confirmed both ways (see tmp diagnostic run, not
+    # committed): weld_coincident_vertices() alone does real, verified work (22 spaces,
+    # real vertex snaps — see the synthetic tests in test_geometry.py) but doesn't flip
+    # any space to enclosed by itself here (69 -> 69), because the spaces it touches have
+    # *other* simultaneous non-manifold edges beyond what a 2cm weld closes.
+    # merge_coplanar_sliver_surfaces() alone fixes 2 (69 -> 67: sp-4stair, sp-7stair —
+    # the exact ceiling-fragmentation case this feature was built to diagnose). Running
+    # both, in either order, lands at the same 67 with zero regressions — weld doesn't add
+    # closures beyond what merge already achieves on this specific fixture, but it isn't
+    # harmful either. Most of the remaining 67 is neither defect this session addressed.
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -712,21 +723,25 @@ def test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture():
                 assert baseline["overlapping_surfaces_count"] == 0, baseline
                 assert baseline["non_enclosed_spaces_count"] == 69, baseline
 
+                weld_result = unwrap(await session.call_tool("weld_coincident_vertices", {}))
+                assert weld_result["ok"] is True, weld_result
+                assert weld_result["welded_space_count"] == 22, weld_result
+                assert weld_result["skipped_surface_count"] == 8, weld_result
+
                 merge_result = unwrap(await session.call_tool("merge_coplanar_sliver_surfaces", {}))
                 assert merge_result["ok"] is True, merge_result
                 # Regression: 28 groups collapse (up to 8 same-plane fragments down to 1
                 # surface, e.g. sp-14retail's ceiling), only 3 genuinely skipped (real
                 # mixed-boundary-condition/subsurface cases, not iteration-order artifacts
-                # — see the two-phase plan/apply split above).
+                # — see the two-phase plan/apply split in merge_coplanar_sliver_surfaces).
                 assert merge_result["merged_group_count"] == 28, merge_result
                 assert merge_result["skipped_group_count"] == 3, merge_result
 
                 after = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
-                # Regression: same-plane fragment merging alone doesn't fully close this
-                # fixture — most of its remaining non-enclosure comes from a different
-                # defect class (sub-tolerance gaps between non-coplanar surfaces meeting
-                # at corners) this tool doesn't address. The honest result on this fixture
-                # is a modest 69 -> 67, not full closure.
+                # 67, not fewer — see the honest accounting above. Weld contributes zero
+                # *additional* closures beyond merge on this fixture, but causes zero
+                # regressions either (verified space-by-space, not just by count, in the
+                # diagnostic that produced these numbers).
                 assert after["non_enclosed_spaces_count"] == 67, after
 
     asyncio.run(_run())

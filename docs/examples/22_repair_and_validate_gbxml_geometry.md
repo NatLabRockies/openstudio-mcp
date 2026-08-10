@@ -49,7 +49,8 @@ having a subtler non-manifold gap — see "Follow-up" below.
 | `import_gbxml` | Translate gbXML -> OSM (Example 21) |
 | `repair_and_validate_gbxml_geometry` | Fix cross-space shared walls (`match_surfaces()`, internal), then report same-space overlaps and non-enclosed spaces in one call |
 | `repair_missing_roof_ceiling` | Follow-up fix for non-enclosed spaces that have a Floor but no RoofCeiling at all (see "Follow-up" below) |
-| `merge_coplanar_sliver_surfaces` | Follow-up fix for non-enclosed spaces that already have a Floor *and* RoofCeiling but are fragmented into many same-space coplanar pieces (see "Follow-up" below) |
+| `merge_coplanar_sliver_surfaces` | Follow-up fix for non-enclosed spaces fragmented into many same-space coplanar pieces (see "Follow-up" below) |
+| `weld_coincident_vertices` | Follow-up fix for non-enclosed spaces with sub-centimeter corner gaps between non-coplanar surfaces (see "Follow-up" below) |
 | `get_surface_details` | Only needed afterward, for a specific flagged surface pair, if the summary isn't enough to act on |
 
 ## Follow-up: `repair_missing_roof_ceiling`
@@ -94,8 +95,8 @@ fragments don't align to tight tolerance — 69 of that fixture's 74 spaces fail
      construction, joins their footprints with openstudio.joinAll(), and rebuilds fewer,
      larger Surface objects in their place. Re-runs match_surfaces() once, batched, if
      anything changed.
-   { ok: true, merged_group_count: N, merged: [...], skipped_group_count: M, skipped: [...] }
-4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count drops from 69
+   { ok: true, merged_group_count: 28, merged: [...], skipped_group_count: 3, skipped: [...] }
+4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 69 -> 67
 ```
 
 Mixed boundary conditions/constructions across a group, and any fragment carrying a subsurface
@@ -104,6 +105,40 @@ newly-merged surface safely needs a containment check this tool doesn't attempt.
 isn't guaranteed to fully close every space in one pass; re-check with
 `repair_and_validate_gbxml_geometry()` and treat the improvement, not a promise of `ok: true`, as
 the signal.
+
+## Follow-up: `weld_coincident_vertices`
+
+A different, more common defect than either of the above: surfaces that are *not* coplanar (two
+perpendicular walls, or a wall and the floor) whose shared corner is off by sub-centimeter float
+noise. `Space.isEnclosedVolume()` (via `openstudio.model.Polyhedron` internally) has its own
+undocumented, non-configurable internal vertex-merge tolerance — a synthetic box test found it
+silently collapses a 0.012m corner offset (still reports enclosed) but not a 0.013m one — so this
+snaps vertices *before* that check ever runs rather than relying on it being forgiving.
+
+```
+3. weld_coincident_vertices()
+   → per space, runs every vertex of every surface through openstudio.getCombinedPoint()
+     against a running per-space point pool, snapping each to an existing pool point
+     within tolerance or adding it as a new one. Only rewrites a surface if welding
+     actually moved one of its points. Re-runs match_surfaces() once, batched, if
+     anything changed.
+   { ok: true, welded_space_count: 22, welded: [...], skipped_surface_count: 8, skipped: [...] }
+4. repair_and_validate_gbxml_geometry()   # confirm the effect on non_enclosed_spaces_count
+```
+
+Two of a surface's own vertices snapping onto the same point (a degenerate edge — happens on
+naturally hairline-thin fragments) and near-zero resulting area are reported as skipped rather than
+corrupted.
+
+**On the Austin apartment fixture, this tool alone doesn't reduce `non_enclosed_spaces_count`
+(69 -> 69)** even though it does real, verified work (22 spaces, real vertex snaps — see
+`test_geometry.py`'s synthetic tests for proof the mechanism works in isolation): the spaces it
+touches here have *other* simultaneous non-manifold edges beyond what a 2cm weld closes. Combined
+with `merge_coplanar_sliver_surfaces()`, in either order, the fixture lands at the same 67 as
+`merge_coplanar_sliver_surfaces()` alone — weld adds no *additional* closures on this specific
+fixture, but causes zero regressions either (confirmed space-by-space, not just by count). Don't
+assume running every available repair tool is strictly additive; measure the actual before/after on
+your own model.
 
 ## Why Two Separate Checks
 
@@ -142,11 +177,17 @@ See `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_on_real
 `::test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space`,
 `::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`,
 `::test_repair_missing_roof_ceiling_on_11jay_fixture`, and
-`::test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture`. `repair_missing_roof_ceiling`
-and `merge_coplanar_sliver_surfaces` themselves also have synthetic-geometry tests in
-`tests/test_geometry.py` (`test_repair_missing_roof_ceiling_synthesizes_flat_ceiling`,
+`::test_geometry_repair_pipeline_on_austin_apartment_fixture` (covers both
+`merge_coplanar_sliver_surfaces` and `weld_coincident_vertices` on the same real fixture — the
+69/67/67 numbers above come from this test). `repair_missing_roof_ceiling`,
+`merge_coplanar_sliver_surfaces`, and `weld_coincident_vertices` themselves also have
+synthetic-geometry tests in `tests/test_geometry.py` (`test_repair_missing_roof_ceiling_synthesizes_flat_ceiling`,
 `test_repair_missing_roof_ceiling_skips_uneven_walls`,
 `test_merge_coplanar_sliver_surfaces_merges_split_ceiling`,
 `test_merge_coplanar_sliver_surfaces_skips_mixed_boundary_conditions`,
 `test_merge_coplanar_sliver_surfaces_skips_fragments_with_subsurfaces`,
-`test_merge_coplanar_sliver_surfaces_no_op_on_clean_model`).
+`test_merge_coplanar_sliver_surfaces_no_op_on_clean_model`,
+`test_weld_coincident_vertices_closes_corner_gap`,
+`test_weld_coincident_vertices_leaves_large_offset_alone`,
+`test_weld_coincident_vertices_skips_degenerate_same_surface_collapse`,
+`test_weld_coincident_vertices_no_op_on_clean_model`).

@@ -273,18 +273,19 @@ jobs:
           # node ID into shards 2/3 below rather than moving the whole file, which
           # would just relocate the imbalance. All 5 shards land within ~50s of each
           # other (~795-850s) instead of the prior 613-1468s spread.
-          # A third heavy gbXML test (test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture,
-          # ~230s local, added 2026-08-09 for the merge_coplanar_sliver_surfaces feature)
-          # got the same node-ID treatment into shard 1, which had no gbXML weight yet —
-          # but this was placed by inspection, not a fresh full-suite timing run. Re-measure
-          # with `pytest --durations=0` next time shard balance is revisited.
+          # A third heavy gbXML test (test_geometry_repair_pipeline_on_austin_apartment_fixture,
+          # ~230s local, added 2026-08-09 for merge_coplanar_sliver_surfaces, extended
+          # 2026-08-10 to also cover weld_coincident_vertices — same fixture, no added
+          # import cost) got the same node-ID treatment into shard 1, which had no gbXML
+          # weight yet — but this was placed by inspection, not a fresh full-suite timing
+          # run. Re-measure with `pytest --durations=0` next time shard balance is revisited.
           EXTRA_PYTEST_ARGS=""
           case ${{ matrix.shard }} in
             1)
               # sim test + component/weather + loop ops + skill_retrofit
               # + load/save model & file listing tools (moved from shard 4 to balance runtime)
               # + merge_coplanar_sliver_surfaces real-fixture regression (moved from shard 4, see timing note above)
-              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py tests/test_load_save_model.py tests/test_gbxml_import.py::test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture"
+              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py tests/test_load_save_model.py tests/test_gbxml_import.py::test_geometry_repair_pipeline_on_austin_apartment_fixture"
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
             2)
@@ -309,7 +310,7 @@ jobs:
               # + validate_osw/run_osw file_paths resolution (issue #99)
               FILES="tests/test_vrf_system.py tests/test_radiant_system.py tests/test_loads.py tests/test_spaces.py tests/test_space_types.py tests/test_schedules.py tests/test_constructions.py tests/test_create_space.py tests/test_create_thermal_zone.py tests/test_add_air_loop.py tests/test_create_schedule_ruleset.py tests/test_add_output_variable.py tests/test_add_output_meter.py tests/test_versions.py tests/test_create_example_osm.py tests/test_inspect_osm_summary.py tests/test_copy_file.py tests/test_replace_air_terminals.py tests/test_results_extraction.py tests/test_swig_memleak_cleanup.py tests/test_skill_tools_integration.py tests/test_stdio_smoke.py tests/test_response_sizes.py tests/test_response_guard.py tests/test_gbxml_import.py tests/test_space_type_assignment.py tests/test_validate_osw.py"
               EXTRA_ENV=""
-              EXTRA_PYTEST_ARGS="--deselect tests/test_gbxml_import.py::test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture --deselect tests/test_gbxml_import.py::test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable --deselect tests/test_gbxml_import.py::test_merge_coplanar_sliver_surfaces_fixes_austin_apartment_fixture"
+              EXTRA_PYTEST_ARGS="--deselect tests/test_gbxml_import.py::test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture --deselect tests/test_gbxml_import.py::test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable --deselect tests/test_gbxml_import.py::test_geometry_repair_pipeline_on_austin_apartment_fixture"
               ;;
             5)
               # HVAC supply sim smoke tests + hvac_validation + bar_building + concurrent regression

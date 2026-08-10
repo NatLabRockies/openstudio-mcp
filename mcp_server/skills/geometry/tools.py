@@ -15,6 +15,7 @@ from mcp_server.skills.geometry.operations import (
 from mcp_server.skills.geometry.repair import (
     merge_coplanar_sliver_surfaces,
     repair_missing_roof_ceiling,
+    weld_coincident_vertices,
 )
 
 
@@ -187,6 +188,23 @@ def register(mcp):
         non_enclosed_spaces_count.
         """
         return merge_coplanar_sliver_surfaces()
+
+    @mcp.tool(tags={"geometry"}, name="weld_coincident_vertices")
+    def weld_coincident_vertices_tool():
+        """Snap each space's near-coincident vertices to a shared point, closing corner gaps.
+
+        Fixes gbXML/Revit exports that leave sub-centimeter float noise between vertices
+        that are supposed to coincide — e.g. two perpendicular walls, or a wall and the
+        floor, whose shared corner is a few millimeters off between the two surfaces.
+        This is a different defect from merge_coplanar_sliver_surfaces (that one only
+        handles same-plane fragments); these surfaces aren't coplanar, so grouping/joining
+        doesn't apply. A surface is only rewritten if welding actually moved one of its
+        points; degenerate results (a surface's own vertices collapsing onto each other,
+        or near-zero resulting area) are reported as skipped rather than corrupted. Run
+        repair_and_validate_gbxml_geometry() before and after to see the effect on
+        non_enclosed_spaces_count.
+        """
+        return weld_coincident_vertices()
 
     @mcp.tool(tags={"geometry"}, name="set_window_to_wall_ratio")
     def set_window_to_wall_ratio_tool(

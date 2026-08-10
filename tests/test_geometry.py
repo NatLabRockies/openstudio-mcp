@@ -739,6 +739,157 @@ def test_merge_coplanar_sliver_surfaces_no_op_on_clean_model():
     asyncio.run(_run())
 
 
+# ---- Coincident vertex welding tests ----
+
+
+def _box_vertices(east_x_offset=0.0):
+    """A 4x4x3 box's 6 surfaces, with the east wall optionally shifted in x."""
+    east_x = 4.0 + east_x_offset
+    return {
+        "Floor": [[0, 0, 0], [0, 4, 0], [4, 4, 0], [4, 0, 0]],
+        "Ceiling": [[0, 0, 3], [4, 0, 3], [4, 4, 3], [0, 4, 3]],
+        "WallSouth": [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]],
+        "WallNorth": [[4, 4, 0], [0, 4, 0], [0, 4, 3], [4, 4, 3]],
+        "WallWest": [[0, 4, 0], [0, 0, 0], [0, 0, 3], [0, 4, 3]],
+        "WallEast": [[east_x, 0, 0], [east_x, 4, 0], [east_x, 4, 3], [east_x, 0, 3]],
+    }
+
+
+async def _build_box(session, space_name, east_x_offset=0.0):
+    surface_types = {
+        "Floor": "Floor", "Ceiling": "RoofCeiling", "WallSouth": "Wall",
+        "WallNorth": "Wall", "WallWest": "Wall", "WallEast": "Wall",
+    }
+    for surface_name, vertices in _box_vertices(east_x_offset).items():
+        res = unwrap(await session.call_tool("create_surface", {
+            "name": f"{space_name}_{surface_name}",
+            "vertices": vertices,
+            "space_name": space_name,
+            "surface_type": surface_types[surface_name],
+            "outside_boundary_condition": "Outdoors",
+        }))
+        assert res["ok"] is True, res
+
+
+@pytest.mark.integration
+def test_weld_coincident_vertices_closes_corner_gap():
+    """A wall shifted 1.5cm off its true corner should snap back and close the space."""
+    # Regression: gbXML/Revit exports commonly leave sub-centimeter float noise between
+    # vertices that are supposed to coincide (non-coplanar surfaces meeting at a corner —
+    # a different defect from merge_coplanar_sliver_surfaces' same-plane fragmentation).
+    # weld_coincident_vertices must close the resulting manifold gap. Which surface ends
+    # up moved is arbitrary — getCombinedPoint()'s pool snaps whichever point it sees
+    # second onto whichever it saw first for that corner, and space.surfaces() iteration
+    # order isn't guaranteed, so this asserts the outcome that actually matters (the space
+    # becomes enclosed) rather than which specific surface was rewritten.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                await _build_box(s, sp_name, east_x_offset=0.015)
+
+                before = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert sp_name in [ns["space"] for ns in before["non_enclosed_spaces"]], before
+
+                result = unwrap(await s.call_tool("weld_coincident_vertices", {}))
+                assert result["ok"] is True, result
+                assert result["skipped"] == [], result
+                welded_names = [w["space"] for w in result["welded"]]
+                assert sp_name in welded_names, result
+                entry = next(w for w in result["welded"] if w["space"] == sp_name)
+                assert len(entry["surfaces_modified"]) >= 1, entry
+                assert entry["vertices_snapped"] >= 4, entry
+
+                after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert sp_name not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_weld_coincident_vertices_leaves_large_offset_alone():
+    """A wall shifted 5cm off (past WELD_TOLERANCE_M) must not get silently snapped."""
+    # Regression: a gap larger than the weld tolerance is a real, distinct geometry
+    # problem — snapping it anyway would misrepresent the model's actual (broken) shape
+    # rather than report a false "fixed."
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                await _build_box(s, sp_name, east_x_offset=0.05)
+
+                result = unwrap(await s.call_tool("weld_coincident_vertices", {}))
+                assert result["ok"] is True, result
+                welded_names = [w["space"] for w in result["welded"]]
+                assert sp_name not in welded_names, result
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_weld_coincident_vertices_skips_degenerate_same_surface_collapse():
+    """A surface whose own vertices are naturally within tolerance must not be corrupted."""
+    # Regression: welding must not silently collapse two of a single surface's own
+    # vertices onto the same point (a zero-length edge / degenerate polygon) — that's a
+    # bug in the input surface (e.g. a hairline sliver), not something to paper over.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                thin = unwrap(await s.call_tool("create_surface", {
+                    "name": "HairlineWall",
+                    "vertices": [[0, 0, 0], [0.005, 0, 0], [0.005, 0, 3], [0, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert thin["ok"] is True, thin
+
+                result = unwrap(await s.call_tool("weld_coincident_vertices", {}))
+                assert result["ok"] is True, result
+                assert result["welded"] == [], result
+                assert result["skipped_surface_count"] == 1, result
+                skip = result["skipped"][0]
+                assert skip["space"] == sp_name, skip
+                assert skip["surface"] == "HairlineWall", skip
+                assert "degenerate" in skip["reason"], skip
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_weld_coincident_vertices_no_op_on_clean_model():
+    """A model with no vertex-level gaps should weld nothing."""
+    # Regression: guards against the welding logic false-positiving on a normal,
+    # already-clean model and mutating geometry that never needed it.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+
+                result = unwrap(await s.call_tool("weld_coincident_vertices", {}))
+                assert result["ok"] is True, result
+                assert result["welded_space_count"] == 0, result
+                assert result["skipped_surface_count"] == 0, result
+    asyncio.run(_run())
+
+
 # ---- Window-to-wall ratio tests ----
 
 
