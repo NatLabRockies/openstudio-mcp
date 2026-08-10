@@ -34,20 +34,11 @@ import openstudio
 
 from mcp_server.model_manager import get_model
 from mcp_server.skills.geometry.operations import match_surfaces
+from mcp_server.skills.geometry.winding import clockwise, match_normal
 
 PLANE_TOLERANCE_M = 0.01
 MIN_OVERLAP_AREA_M2 = 0.01
 MIN_REMAINDER_AREA_M2 = 0.0001
-
-
-def _clockwise(points: openstudio.Point3dVector) -> openstudio.Point3dVector:
-    """Same winding-normalization helper as gbxml_import/operations.py and
-    geometry/repair.py — openstudio.intersect() silently returns an uninitialized result
-    for correctly-overlapping polygons given the "wrong" winding, with no error raised."""
-    normal = openstudio.getOutwardNormal(points)
-    if normal.is_initialized() and normal.get().z() > 0:
-        return openstudio.reverse(points)
-    return points
 
 
 def _to_vector(points: Any) -> openstudio.Point3dVector:
@@ -79,9 +70,12 @@ def _find_overlapping_pairs(space: openstudio.model.Space) -> list[tuple[Any, An
         if not (p1.equal(p2, PLANE_TOLERANCE_M) or p1.reverseEqual(p2, PLANE_TOLERANCE_M)):
             continue
 
+        # clockwise() is required here: openstudio.intersect() silently returns an
+        # uninitialized result for correctly-overlapping polygons given the "wrong"
+        # local-frame winding, with no error raised.
         to_local = openstudio.Transformation.alignFace(s1.vertices()).inverse()
-        face1 = _clockwise(to_local * s1.vertices())
-        face2 = _clockwise(to_local * s2.vertices())
+        face1 = clockwise(to_local * s1.vertices())
+        face2 = clockwise(to_local * s2.vertices())
         result = openstudio.intersect(face1, face2, PLANE_TOLERANCE_M)
         if not result.is_initialized():
             continue
@@ -101,22 +95,33 @@ def _find_overlapping_pairs(space: openstudio.model.Space) -> list[tuple[Any, An
     return pairs
 
 
-def _apply_remainder(
+def _validate_remainder(
     surface: openstudio.model.Surface, remainder_polys: list[Any], forward: openstudio.Transformation,
-) -> tuple[bool, float | None]:
-    """Replace a surface's vertices with its non-overlap remainder (never empty here —
-    the fully-contained case is handled by the caller before this is invoked)."""
+) -> tuple[openstudio.Point3dVector, float] | None:
+    """Compute a surface's validated replacement vertices WITHOUT mutating anything.
+
+    Returns (global_points, area_m2), or None if the remainder splits into disjoint
+    pieces or is degenerate. Validation is separated from application so a pair is only
+    ever trimmed when BOTH sides validate — never a half-trim where one surface is
+    rewritten and the other's failure gets the pair reported "not attempted".
+
+    The remainder is oriented to this surface's OWN current outward normal (s1 and s2
+    may legitimately face opposite ways), never to a global winding convention.
+    """
     if len(remainder_polys) != 1:
-        return False, None  # splits into disjoint pieces — ambiguous, not attempted
+        return None  # splits into disjoint pieces — ambiguous, not attempted
 
     local_points = _to_vector(remainder_polys[0])
     area = openstudio.getArea(local_points)
     if not area.is_initialized() or area.get() <= MIN_REMAINDER_AREA_M2:
-        return False, None
+        return None
 
-    global_points = _clockwise(forward * local_points)
-    surface.setVertices(global_points)
-    return True, round(area.get(), 4)
+    own_normal = openstudio.getOutwardNormal(surface.vertices())
+    if not own_normal.is_initialized():
+        return None  # no orientation reference — refuse rather than guess
+
+    global_points = match_normal(forward * local_points, own_normal.get())
+    return global_points, round(area.get(), 4)
 
 
 def trim_overlapping_surfaces() -> dict[str, Any]:
@@ -187,8 +192,10 @@ def trim_overlapping_surfaces() -> dict[str, Any]:
                     })
                     continue
 
-                ok1, area1 = _apply_remainder(s1, remainder1, forward)
-                if not ok1:
+                # Validate BOTH remainders before mutating either — a pair reported
+                # "not attempted" must leave both surfaces exactly as they were.
+                validated1 = _validate_remainder(s1, remainder1, forward)
+                if validated1 is None:
                     skipped.append({
                         "space": name, "surface_1": s1_name, "surface_2": s2_name,
                         "reason": "surface_1's non-overlap remainder splits into multiple "
@@ -196,8 +203,8 @@ def trim_overlapping_surfaces() -> dict[str, Any]:
                     })
                     continue
 
-                ok2, area2 = _apply_remainder(s2, remainder2, forward)
-                if not ok2:
+                validated2 = _validate_remainder(s2, remainder2, forward)
+                if validated2 is None:
                     skipped.append({
                         "space": name, "surface_1": s1_name, "surface_2": s2_name,
                         "reason": "surface_2's non-overlap remainder splits into multiple "
@@ -205,6 +212,10 @@ def trim_overlapping_surfaces() -> dict[str, Any]:
                     })
                     continue
 
+                new_points1, area1 = validated1
+                new_points2, area2 = validated2
+                s1.setVertices(new_points1)
+                s2.setVertices(new_points2)
                 any_change = True
                 already_handled.update((s1_name, s2_name))
                 trimmed.append({
