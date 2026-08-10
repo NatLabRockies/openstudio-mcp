@@ -707,12 +707,22 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
     # problem: edges used three or more times (a genuine same-space duplicate, the
     # historical "11 Jay St" pattern) — trims each surface to its non-overlap remainder, or
     # removes it outright if fully contained within the other. Together they close all but
-    # 4 of the original 69 non-enclosed spaces on this fixture — the honest remainder
-    # (sp-14retail, sp-21restuarant, sp-35apartment, sp-6retail) has a structurally
-    # ambiguous mix of missing and duplicate geometry where patch and trim provably
-    # oscillate (each pass's fix creates exactly the input the other pass "fixes" right
-    # back), not a case either tool can resolve alone — confirmed directly, not assumed,
-    # by running repeated rounds.
+    # 5 of the original 69 non-enclosed spaces on this fixture — the honest remainder
+    # (sp-14retail, sp-21restuarant, sp-35apartment, sp-6retail, sp-20office) has a
+    # structurally ambiguous mix of missing and duplicate geometry where patch and trim
+    # provably oscillate (each pass's fix creates exactly the input the other pass "fixes"
+    # right back), not a case either tool can resolve alone — confirmed directly, not
+    # assumed, by running repeated rounds.
+    #
+    # sp-20office is in that remainder only since the winding-orientation fix, and that is
+    # the fix working, not a regression: before it, this space's tiny missing FLOOR sliver
+    # (0.008 m2) was patched with arbitrary winding as an upward-facing "RoofCeiling" that
+    # then paired into the space above — a geometrically fake closure produced by the bug
+    # itself (confirmed by running the pipeline on the pre-fix code and inspecting the
+    # patched surface's type/normal/boundary directly). Correctly oriented, the sliver is
+    # a down-facing Floor, match_surfaces() legitimately re-splits the floor interface,
+    # and one ~7cm count-3 edge remains — honestly flagged, and below
+    # trim_overlapping_surfaces' MIN_OVERLAP_AREA_M2 so trim rightly leaves it alone.
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -767,13 +777,14 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
                 assert patch_result["ok"] is True, patch_result
                 # Regression: the large majority of the 67 still-broken spaces'
                 # components get reconstructed (119 in the typical run) with only a
-                # handful honestly skipped (typically 5: 2 same-space overlaps, 1
-                # component whose edges don't form a single simple loop, and 2 spaces
+                # handful honestly skipped (typically 6: 2 same-space overlaps, 1
+                # component whose edges don't form a single simple loop, and 3 spaces
                 # where every component reported success but a new internal chord edge
                 # still left the space non-enclosed — the post-patch verification safety
-                # net catching its own rare side effect). Observed directly across
-                # repeated runs: this specific count occasionally shifts by exactly 1 in
-                # either direction (119/5 most often, occasionally 118/6) — genuine
+                # net catching its own rare side effect; sp-20office joined that bucket
+                # with the winding-orientation fix, see the docstring). Observed directly
+                # across repeated runs: this specific count occasionally shifts by
+                # exactly 1 in either direction — genuine
                 # run-to-run non-determinism, most likely in Polyhedron's own internal
                 # edge ordering (C++, not something this Python code controls), tipping
                 # one borderline chord/pairing search to a different but still-valid
@@ -785,32 +796,36 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
                 trim_result = unwrap(await session.call_tool("trim_overlapping_surfaces", {}))
                 assert trim_result["ok"] is True, trim_result
                 # Bounded, not pinned, for the same reason as patch_result above: observed
-                # directly across repeated runs to vary (6, 9, 12) with how many
+                # directly across repeated runs to vary (6, 9, 12, 13) with how many
                 # overlaps patch_missing_surfaces' own borderline decomposition choices
                 # happen to create upstream.
                 assert trim_result["trimmed_count"] >= 5, trim_result
 
                 after = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
-                # 69 -> 67 (weld+merge) -> 4 (patch+trim): all but 4 of the original
+                # 69 -> 67 (weld+merge) -> 5 (patch+trim): all but 5 of the original
                 # non-enclosed spaces closed by purely automated, verified repair tools.
                 # The honest remainder is a confirmed patch/trim oscillation (each pass's
                 # fix creates exactly the input the other pass "fixes" right back,
                 # verified directly by running repeated rounds) or a structurally
                 # ambiguous mix of missing and duplicate geometry neither tool can
                 # resolve alone, on a fixed set of hard spaces: sp-14retail,
-                # sp-21restuarant, sp-35apartment, sp-6retail.
+                # sp-21restuarant, sp-35apartment, sp-6retail, sp-20office (the last
+                # flagged only since the winding-orientation fix — its pre-fix "closure"
+                # was a flipped 0.008 m2 floor sliver patched as an upward-facing
+                # RoofCeiling pairing into the space above; see the docstring).
                 #
-                # The exact final count varies by one across runs (3 or 4 observed
-                # directly, repeatedly) — the same borderline-decomposition
-                # non-determinism as patch_result/trim_result above occasionally lets one
-                # of these four resolve favorably instead of not. Bounded above, and
-                # constrained to a subset of the known-hard set, rather than pinned
-                # exactly: a same-or-better outcome on this fixed set isn't a regression,
-                # but any *other* space unexpectedly failing here would be.
-                assert after["non_enclosed_spaces_count"] <= 4, after
+                # The exact final count varies by one across runs (4 or 5 observed
+                # directly, repeatedly — sp-35apartment occasionally resolves favorably)
+                # — the same borderline-decomposition non-determinism as
+                # patch_result/trim_result above. Bounded above, and constrained to a
+                # subset of the known-hard set, rather than pinned exactly: a
+                # same-or-better outcome on this fixed set isn't a regression, but any
+                # *other* space unexpectedly failing here would be.
+                assert after["non_enclosed_spaces_count"] <= 5, after
                 remaining = {ns["space"] for ns in after["non_enclosed_spaces"]}
                 assert remaining <= {
                     "sp-14retail", "sp-21restuarant", "sp-35apartment", "sp-6retail",
+                    "sp-20office",
                 }, after
 
     asyncio.run(_run())

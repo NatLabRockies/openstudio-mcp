@@ -125,11 +125,17 @@ fixture used in this project's own tests (74 spaces, 69 non-enclosed),
 work — 22 spaces get vertices snapped — but the spaces it touches have other simultaneous defects a
 2cm weld doesn't close), and running both nets the same 2 as merge alone, with zero regressions
 either way — 69 -> 67. `patch_missing_surfaces()` and `trim_overlapping_surfaces()` together
-close all but 4 of what's left: 67 -> 4. The honest remainder on this fixture is a confirmed
+close all but 5 of what's left: 67 -> 5. The honest remainder on this fixture is a confirmed
 patch/trim oscillation — each pass's fix creates exactly the input the other pass "fixes" right
 back (verified directly by running repeated rounds, not assumed) — or a structurally ambiguous mix
 of missing and duplicate geometry neither tool can resolve alone. Ambiguous cases are reported as
 skipped, with the specific reason, rather than guessed at in every one of these four tools.
+
+All four repair tools preserve surface orientation: a merged, trimmed, or reconstructed surface
+faces the same way as the geometry it replaces (outward, for reconstructed facets), never flipped
+by an intermediate winding convention — `isEnclosedVolume()` is winding-insensitive, so a flipped
+surface would pass every enclosure check while simulating with wrong solar gains and film
+coefficients.
 
 ## Tools
 

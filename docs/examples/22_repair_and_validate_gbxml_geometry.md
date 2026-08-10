@@ -165,8 +165,8 @@ surface, not the two a closed volume requires: a genuinely missing surface, not 
      unmatched afterward is set Adiabatic; every space is re-checked afterward rather
      than trusted, in case a new internal chord edge happens to coincide with an
      already-ambiguous pre-existing one.
-   { ok: true, patched_count: 119, patched: [...], skipped_count: 5, skipped: [...] }
-4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 67 -> ~4
+   { ok: true, patched_count: 119, patched: [...], skipped_count: 6, skipped: [...] }
+4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 67 -> ~5
 ```
 
 On the Austin fixture this reconstructs the large majority of the 67 remaining spaces' holes —
@@ -182,11 +182,11 @@ type repeated across floors, all missing the same wall *type* in the source expo
 unrelated one-off defects.
 
 **A measured, honest caveat**: the exact `patched_count`/`skipped_count` on this fixture shift by
-exactly 1 in either direction on a small fraction of runs (119/5 most often, occasionally 118/6) —
-genuine run-to-run non-determinism, most likely in `Polyhedron`'s own internal edge ordering (C++,
-not something this tool controls), tipping one borderline chord/pairing search to a different but
-still-valid choice. The final `non_enclosed_spaces_count` and which specific spaces remain has been
-stable across repeated runs regardless.
+exactly 1 in either direction on a small fraction of runs (119/6 most often) — genuine run-to-run
+non-determinism, most likely in `Polyhedron`'s own internal edge ordering (C++, not something this
+tool controls), tipping one borderline chord/pairing search to a different but still-valid choice.
+The final `non_enclosed_spaces_count` varies between 4 and 5 for the same reason, always within
+the same fixed set of hard spaces.
 
 ## Follow-up: `trim_overlapping_surfaces`
 
@@ -206,8 +206,8 @@ space is not this tool's concern.
      other (full containment is asymmetric — the container is left untouched, not
      carved a hole into). A remainder splitting into multiple disjoint pieces is
      reported as skipped rather than guessed at.
-   { ok: true, trimmed_count: 12, trimmed: [...], skipped_count: 16, skipped: [...] }
-6. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count ~4
+   { ok: true, trimmed_count: 13, trimmed: [...], skipped_count: 17, skipped: [...] }
+6. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count ~5
 ```
 
 On the Austin fixture, most trims are pure duplicates fully contained within another surface. A
@@ -215,15 +215,25 @@ same-run safety guard skips (rather than risks compounding) a second overlap tou
 already handled earlier in the same call — call it again to pick up the next one; it converges to
 zero further trims.
 
-**Combined total on this fixture: 69 -> 67 (weld + merge) -> 4 (patch + trim)** — all but 4 of the
+**Combined total on this fixture: 69 -> 67 (weld + merge) -> 5 (patch + trim)** — all but 5 of the
 original non-enclosed spaces closed by four automated, verified repair tools. The honest remainder
-— `sp-14retail`, `sp-21restuarant`, `sp-35apartment`, `sp-6retail` — was checked directly, not
-assumed: running `patch_missing_surfaces()` and `trim_overlapping_surfaces()` repeatedly
-against each other reaches a **stable oscillation**, each pass's fix creating exactly the input the
-other pass "fixes" right back, rather than converging further. These 4 spaces have a structurally
-ambiguous mix of missing and duplicate geometry that neither tool can resolve alone — that's a
-genuinely different, harder problem than anything the four tools above address, not a case to keep
-looping against.
+— `sp-14retail`, `sp-21restuarant`, `sp-35apartment`, `sp-6retail`, `sp-20office` — was checked
+directly, not assumed: running `patch_missing_surfaces()` and `trim_overlapping_surfaces()`
+repeatedly against each other reaches a **stable oscillation**, each pass's fix creating exactly
+the input the other pass "fixes" right back, rather than converging further. These spaces have a
+structurally ambiguous mix of missing and duplicate geometry that neither tool can resolve alone —
+that's a genuinely different, harder problem than anything the four tools above address, not a
+case to keep looping against.
+
+`sp-20office` joined this remainder when orientation preservation was added to the repair tools —
+and that's the hardening working, not a regression: its earlier "closure" was a 0.008 m2 floor
+sliver patched with flipped winding as an upward-facing RoofCeiling that paired into the space
+above. Correctly oriented, the sliver is a down-facing Floor and one ~7 cm sliver edge remains
+honestly flagged (below `trim_overlapping_surfaces`' minimum overlap area, so trim rightly leaves
+it alone). All four repair tools preserve orientation: a merged, trimmed, or reconstructed surface
+faces the same way as the geometry it replaces — `isEnclosedVolume()` is winding-insensitive, so a
+flipped surface passes every enclosure check while simulating with wrong solar gains and film
+coefficients.
 
 ## Why Two Separate Checks
 
