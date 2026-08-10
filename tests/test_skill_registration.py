@@ -40,6 +40,7 @@ EXPECTED_TOOLS = {
     "repair_missing_roof_ceiling",
     "merge_coplanar_sliver_surfaces",
     "weld_coincident_vertices",
+    "patch_missing_wall_surfaces",
     "set_window_to_wall_ratio",
     "list_materials",
     "get_construction_details",

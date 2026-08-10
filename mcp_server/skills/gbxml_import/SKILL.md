@@ -82,8 +82,8 @@ and uniformly level wall tops — anything sloped or ambiguous is reported as sk
 guessed at.
 
 For non-enclosed spaces that already have both a Floor *and* a RoofCeiling — the more common
-real-world case, and one that can affect the large majority of spaces in a model — two distinct
-defects cause this, and neither is fixed by `match_surfaces()`:
+real-world case, and one that can affect the large majority of spaces in a model — three distinct
+defects cause this, and none are fixed by `match_surfaces()`:
 
 - **Same-plane fragmentation**: Revit exporting one physical wall/floor/ceiling as many tiny
   same-space coplanar fragments (one per adjacent-room boundary segment). Areas still sum
@@ -97,24 +97,38 @@ defects cause this, and neither is fixed by `match_surfaces()`:
   shared point before `Space.isEnclosedVolume()` (via `openstudio.model.Polyhedron`) ever runs —
   that check has its own undocumented, non-configurable internal snap tolerance, so it can't be
   relied on to be forgiving.
+- **Missing surfaces**: a surface (usually an interior partition wall) dropped outright from the
+  export — often systematically, e.g. the same wall missing from every stacked instance of a
+  repeated apartment unit type across floors, not a random one-off. `patch_missing_wall_surfaces()`
+  (geometry skill) uses `Space.polyhedron().edgesNotTwo()` — the same manifold check
+  `isEnclosedVolume()` runs internally — to find edges used by only one surface (a missing
+  partner, not a tolerance gap), and reconstructs the surface when those edges chain into exactly
+  one simple, planar loop.
 
-Re-check with `repair_and_validate_gbxml_geometry()` after either (or both — order doesn't matter,
-they touch different surface pairs). **Neither guarantees full closure**, and combining them isn't
-necessarily additive: on the real fixture used in this project's own tests (74 spaces, 69
-non-enclosed), `merge_coplanar_sliver_surfaces()` alone fixes 2, `weld_coincident_vertices()` alone
-fixes 0 (it does real work — 22 spaces get vertices snapped — but the spaces it touches have other
-simultaneous defects a 2cm weld doesn't close), and running both nets the same 2 as merge alone,
-with zero regressions either way. Ambiguous cases (mixed boundary conditions/constructions,
-fragments or corners with subsurfaces, degenerate results) are reported as skipped rather than
-guessed at in both tools.
+Re-check with `repair_and_validate_gbxml_geometry()` after any of these (order doesn't matter
+between `merge_coplanar_sliver_surfaces()` and `weld_coincident_vertices()` — they touch different
+surface pairs; `patch_missing_wall_surfaces()` works from whatever edges are still unpaired, so run
+it after the other two have closed what they can). **None guarantee full closure**, and combining
+them isn't necessarily additive: on the real fixture used in this project's own tests (74 spaces,
+69 non-enclosed), `merge_coplanar_sliver_surfaces()` alone fixes 2, `weld_coincident_vertices()`
+alone fixes 0 (it does real work — 22 spaces get vertices snapped — but the spaces it touches have
+other simultaneous defects a 2cm weld doesn't close), and running both nets the same 2 as merge
+alone, with zero regressions either way — 69 -> 67.
+`patch_missing_wall_surfaces()` on top of that closes the large majority of what's left: 67 -> 32,
+reconstructing 35 spaces' missing surfaces (mostly walls, but surface type is inferred from the
+loop's own geometry — one turned out to be a missing RoofCeiling) and honestly skipping 32 (23 for
+a non-planar loop, 7 for edges that don't form one simple loop — branch points or multiple separate
+holes — and 2 for a genuine same-space overlap, a different defect entirely). Ambiguous cases are
+reported as skipped rather than guessed at in all three tools.
 
-True same-space duplicate/overlapping geometry (`overlapping_surfaces` in the validator's output —
+True same-space duplicate/overlapping geometry (`overlapping_surfaces` in the validator's output,
+and the edges-used-3+-times case `patch_missing_wall_surfaces()` detects and declines to touch —
 e.g. a wall exported once per neighboring room instead of split at the boundary between them) is a
-third, different defect that none of the three tools above fix; that's still a manual fix.
+fourth, different defect that none of these tools fix; that's still a manual fix.
 
 ## Tools
 
 `import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `repair_missing_roof_ceiling`,
-`merge_coplanar_sliver_surfaces`, and `weld_coincident_vertices` (geometry skill) for the three
-automatable non-enclosed-space causes, and `change_building_location` (common_measures skill, to
-set climate zone explicitly if `import_gbxml` couldn't resolve one).
+`merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, and `patch_missing_wall_surfaces`
+(geometry skill) for the four automatable non-enclosed-space causes, and `change_building_location`
+(common_measures skill, to set climate zone explicitly if `import_gbxml` couldn't resolve one).

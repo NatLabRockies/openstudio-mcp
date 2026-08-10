@@ -12,6 +12,7 @@ from mcp_server.skills.geometry.operations import (
     match_surfaces,
     set_window_to_wall_ratio,
 )
+from mcp_server.skills.geometry.patch_missing_surfaces import patch_missing_wall_surfaces
 from mcp_server.skills.geometry.repair import (
     merge_coplanar_sliver_surfaces,
     repair_missing_roof_ceiling,
@@ -205,6 +206,24 @@ def register(mcp):
         non_enclosed_spaces_count.
         """
         return weld_coincident_vertices()
+
+    @mcp.tool(tags={"geometry"}, name="patch_missing_wall_surfaces")
+    def patch_missing_wall_surfaces_tool():
+        """Reconstruct a space's missing surfaces from its own unpaired polyhedron edges.
+
+        Fixes gbXML/Revit exports that dropped a surface (usually an interior partition
+        wall) outright — a different defect from either merge_coplanar_sliver_surfaces
+        (same-plane fragments) or weld_coincident_vertices (corner gaps): here there's
+        nothing to snap or join because the surface simply doesn't exist. Uses
+        Space.polyhedron().edgesNotTwo() to find edges used by only one surface, then
+        reconstructs the missing one when those edges chain into exactly one simple,
+        non-branching, planar loop. A branch point, more than one loop, edges used 3+
+        times (a same-space overlap — a different defect), or a degenerate result are
+        reported as skipped rather than guessed at. Run
+        repair_and_validate_gbxml_geometry() before and after to see the effect on
+        non_enclosed_spaces_count.
+        """
+        return patch_missing_wall_surfaces()
 
     @mcp.tool(tags={"geometry"}, name="set_window_to_wall_ratio")
     def set_window_to_wall_ratio_tool(

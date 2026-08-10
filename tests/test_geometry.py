@@ -890,6 +890,183 @@ def test_weld_coincident_vertices_no_op_on_clean_model():
     asyncio.run(_run())
 
 
+# ---- Missing wall surface patching tests ----
+
+
+@pytest.mark.integration
+def test_patch_missing_wall_surfaces_reconstructs_deleted_wall():
+    """Delete one wall from an otherwise-clean box; confirm the tool rebuilds it."""
+    # Regression: Space.polyhedron().edgesNotTwo() finds the deleted wall's 4 unpaired
+    # edges tracing a single planar rectangle; patch_missing_wall_surfaces must
+    # reconstruct exactly that surface and leave the space enclosed afterward.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+                unwrap(await s.call_tool("create_space_from_floor_print", {
+                    "name": "PatchSpace",
+                    "floor_vertices": [[0, 0], [10, 0], [10, 10], [0, 10]],
+                    "floor_to_ceiling_height": 3.0,
+                }))
+                walls = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": "PatchSpace", "surface_type": "Wall", "max_results": 0,
+                }))
+                assert walls["count"] == 4, walls
+                target_wall = walls["surfaces"][0]["name"]
+                delete_result = unwrap(await s.call_tool(
+                    "delete_object", {"object_name": target_wall, "object_type": "Surface"},
+                ))
+                assert delete_result["ok"] is True, delete_result
+
+                baseline = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert "PatchSpace" in [ns["space"] for ns in baseline["non_enclosed_spaces"]], baseline
+
+                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["patched_count"] == 1, result
+                assert result["skipped"] == [], result
+                entry = result["patched"][0]
+                assert entry["space"] == "PatchSpace", entry
+                assert entry["surface_type"] == "Wall", entry
+                assert entry["area_m2"] == pytest.approx(30.0, abs=0.01), entry
+                assert entry["final_boundary_condition"] == "Adiabatic", entry
+
+                after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert "PatchSpace" not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_patch_missing_wall_surfaces_skips_non_planar_hole():
+    """Two adjacent walls deleted together trace one loop, but it isn't planar."""
+    # Regression: removing two walls that share a vertical edge (WallEast + WallNorth,
+    # meeting at the box's far corner) leaves a single connected 6-edge loop of unpaired
+    # edges (non-branching, consumes cleanly) — but the loop bends around the missing
+    # corner and isn't flat. patch_missing_wall_surfaces must recognize that and refuse
+    # to paper over it with one flat surface, rather than reconstructing a geometrically
+    # wrong patch.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                await _build_box(s, sp_name)
+                for wall in ("WallEast", "WallNorth"):
+                    delete_result = unwrap(await s.call_tool(
+                        "delete_object",
+                        {"object_name": f"{sp_name}_{wall}", "object_type": "Surface"},
+                    ))
+                    assert delete_result["ok"] is True, delete_result
+
+                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["patched_count"] == 0, result
+                assert result["skipped_count"] == 1, result
+                skip = result["skipped"][0]
+                assert skip["space"] == sp_name, skip
+                assert "not planar" in skip["reason"], skip
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_patch_missing_wall_surfaces_skips_multiple_disjoint_holes():
+    """Two opposite walls deleted leave two separate holes, not one loop."""
+    # Regression: removing non-adjacent walls (WallEast + WallWest) leaves two disjoint
+    # 4-edge rectangles among the unpaired edges — no branch point, but they don't chain
+    # into a single walk. patch_missing_wall_surfaces must not guess which one to
+    # reconstruct (or merge them); both get reported as skipped together.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                await _build_box(s, sp_name)
+                for wall in ("WallEast", "WallWest"):
+                    delete_result = unwrap(await s.call_tool(
+                        "delete_object",
+                        {"object_name": f"{sp_name}_{wall}", "object_type": "Surface"},
+                    ))
+                    assert delete_result["ok"] is True, delete_result
+
+                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["patched_count"] == 0, result
+                assert result["skipped_count"] == 1, result
+                skip = result["skipped"][0]
+                assert skip["space"] == sp_name, skip
+                assert "single simple closed loop" in skip["reason"], skip
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_patch_missing_wall_surfaces_skips_same_space_overlap():
+    """An edge shared by three surfaces is a same-space overlap, not a missing surface."""
+    # Regression: patch_missing_wall_surfaces must not mistake a duplicate/overlapping
+    # edge (used 3+ times) for a missing-surface boundary (used exactly once) — that's a
+    # different defect (see repair_and_validate_gbxml_geometry's overlapping_surfaces),
+    # not something this tool attempts to fix.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                for i, (dx, dy) in enumerate([(1, 0), (0, 1), (-1, -1)]):
+                    res = unwrap(await s.call_tool("create_surface", {
+                        "name": f"Wing{i}",
+                        "vertices": [[0, 0, 0], [dx, dy, 0], [dx, dy, 3], [0, 0, 3]],
+                        "space_name": sp_name,
+                        "surface_type": "Wall",
+                        "outside_boundary_condition": "Outdoors",
+                    }))
+                    assert res["ok"] is True, res
+
+                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["patched_count"] == 0, result
+                assert result["skipped_count"] == 1, result
+                skip = result["skipped"][0]
+                assert skip["space"] == sp_name, skip
+                assert "3+ times" in skip["reason"], skip
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_patch_missing_wall_surfaces_no_op_on_clean_model():
+    """A model with no missing surfaces should patch nothing."""
+    # Regression: guards against the loop-tracing/reconstruction logic false-positiving
+    # on a normal, already-enclosed model and mutating geometry that never needed it.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+
+                result = unwrap(await s.call_tool("patch_missing_wall_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["patched_count"] == 0, result
+                assert result["skipped_count"] == 0, result
+    asyncio.run(_run())
+
+
 # ---- Window-to-wall ratio tests ----
 
 
