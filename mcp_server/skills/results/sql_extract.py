@@ -50,6 +50,14 @@ def extract_unmet_hours(sql_path: Path) -> dict:
     finally:
         conn.close()
 
+# E+ writes tabular values in the report's requested unit system — SI sqls
+# carry GJ + m2, InchPound sqls carry kBtu + ft2 (JtoKWH/JtoMJ give kWh/MJ).
+# The recorded Units strings are authoritative: assuming SI mis-scales an IP
+# report's EUI ~88x. Unknown non-empty units yield None, never a guess.
+_ENERGY_TO_GJ = {"GJ": 1.0, "MJ": 0.001, "kWh": 0.0036, "kBtu": 0.001055056}
+_AREA_TO_M2 = {"m2": 1.0, "ft2": 0.09290304}
+
+
 def extract_eui(sql_path: Path) -> dict:
     conn = sqlite3.connect(str(sql_path))
     try:
@@ -87,8 +95,12 @@ def extract_eui(sql_path: Path) -> dict:
         eui_gj_m2 = None
         eui_mj_m2 = None
         eui_kbtu_ft2 = None
-        if total_site is not None and area not in (None, 0):
-            eui_gj_m2 = total_site / area  # GJ / m²
+        # Empty/missing units = legacy SI assumption; unrecognized units = None
+        e_factor = _ENERGY_TO_GJ.get(total_site_units) if total_site_units else 1.0
+        a_factor = _AREA_TO_M2.get(area_units) if area_units else 1.0
+        if (total_site is not None and area not in (None, 0)
+                and e_factor is not None and a_factor is not None):
+            eui_gj_m2 = (total_site * e_factor) / (area * a_factor)  # GJ / m²
             eui_mj_m2 = eui_gj_m2 * 1000.0  # MJ / m²
             eui_kbtu_ft2 = eui_gj_m2 * 947.817 / 10.7639  # kBtu / ft²
 

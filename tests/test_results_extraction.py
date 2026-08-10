@@ -330,6 +330,82 @@ class TestExtractEui:
         # Must still return the real 10000 m², not the decoy 99.0
         assert result["total_building_area"] == pytest.approx(10000.0, abs=1.0)
 
+    def test_ip_units_sql_normalized(self, sql_path, tmp_path):
+        # Regression: codegen-2026-08 gpt r1 — an InchPound tabular sql (kBtu/ft2)
+        # was graded 2485 kBtu/ft2 because extract_eui assumed GJ/m2; the recorded
+        # Units strings must drive normalization
+        import shutil
+        import sqlite3
+        ip_sql = tmp_path / "ip.sql"
+        shutil.copy(sql_path, ip_sql)
+        conn = sqlite3.connect(str(ip_sql))
+        units_type = conn.execute(
+            "SELECT s.StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.UnitsIndex = s.StringIndex LIMIT 1",
+        ).fetchone()[0]
+        max_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0]
+        kbtu_idx, ft2_idx = max_idx + 1, max_idx + 2
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'kBtu')", (kbtu_idx, units_type))
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'ft2')", (ft2_idx, units_type))
+        # Rewrite exactly the two cells extract_eui reads into IP values + units.
+        # rowid is unusable here: this fixture's TabularDataIndex is 0 for EVERY
+        # row, so a rowid-based UPDATE clobbers arbitrary rows — match the
+        # Strings index columns instead and assert exactly one row changed.
+        cur = conn.execute(
+            "UPDATE TabularData SET Value = CAST(Value AS REAL) * 947.817, UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Site and Source Energy') "
+            "  AND RowNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Site Energy') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Energy')",
+            (kbtu_idx,))
+        assert cur.rowcount == 1, f"energy cell update hit {cur.rowcount} rows"
+        cur = conn.execute(
+            "UPDATE TabularData SET Value = CAST(Value AS REAL) * 10.7639, UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Building Area') "
+            "  AND RowNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Building Area') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Area')",
+            (ft2_idx,))
+        assert cur.rowcount == 1, f"area cell update hit {cur.rowcount} rows"
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(ip_sql)
+        assert result["total_site_energy_units"] == "kBtu"
+        assert result["total_building_area_units"] == "ft2"
+        # Same building as the SI fixture — normalized EUI must match it exactly
+        assert result["computed_eui"] == pytest.approx(0.696532, rel=1e-3)
+        assert result["eui_MJ_m2"] == pytest.approx(696.532, rel=1e-3)
+        assert result["eui_kBtu_ft2"] == pytest.approx(61.34, rel=1e-2)
+
+    def test_unknown_units_not_guessed(self, sql_path, tmp_path):
+        # Validates: unrecognized Units strings yield eui None, never an SI guess
+        import shutil
+        import sqlite3
+        odd_sql = tmp_path / "odd.sql"
+        shutil.copy(sql_path, odd_sql)
+        conn = sqlite3.connect(str(odd_sql))
+        units_type = conn.execute(
+            "SELECT s.StringTypeIndex FROM Strings s "
+            "JOIN TabularData td ON td.UnitsIndex = s.StringIndex LIMIT 1",
+        ).fetchone()[0]
+        therm_idx = conn.execute("SELECT MAX(StringIndex) FROM Strings").fetchone()[0] + 1
+        conn.execute("INSERT INTO Strings VALUES (?, ?, 'therm')", (therm_idx, units_type))
+        cur = conn.execute(
+            "UPDATE TabularData SET UnitsIndex = ? "
+            "WHERE TableNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Site and Source Energy') "
+            "  AND RowNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Site Energy') "
+            "  AND ColumnNameIndex IN (SELECT StringIndex FROM Strings WHERE Value='Total Energy')",
+            (therm_idx,))
+        assert cur.rowcount == 1, f"energy cell update hit {cur.rowcount} rows"
+        conn.commit()
+        conn.close()
+
+        from mcp_server.skills.results.sql_extract import extract_eui
+        result = extract_eui(odd_sql)
+        assert result["total_site_energy_units"] == "therm"
+        assert result["computed_eui"] is None
+        assert result["eui_kBtu_ft2"] is None
+
 
 # ---------------------------------------------------------------------------
 # Regression: extract_unmet_hours — must not return None/None
