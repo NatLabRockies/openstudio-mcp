@@ -41,6 +41,7 @@ import openstudio
 
 from mcp_server.model_manager import get_model
 from mcp_server.skills.geometry.operations import match_surfaces
+from mcp_server.skills.geometry.winding import match_normal
 
 # Kept local (not imported from repair.py's constants) to match this skill's existing
 # one-way-dependency policy: each geometry-repair module owns its own tolerances.
@@ -360,6 +361,28 @@ def _resolve_component(pairs: list[PointPair]) -> tuple[list[list[Point3d]] | No
     return facets, None
 
 
+def _space_interior_point(space: openstudio.model.Space) -> Point3d | None:
+    """Average of the space's existing surface vertices — an interior reference point.
+
+    Computed from the pre-patch surfaces (call BEFORE adding any reconstructed facet)
+    and used to orient each new facet's outward normal away from the space's inside.
+    Heuristic, not exact: for a strongly concave space the vertex average can fall
+    outside the volume and misorient a facet near the concavity — accepted limitation,
+    still strictly better than the arbitrary traced-loop winding it replaces.
+    """
+    x = y = z = 0.0
+    count = 0
+    for surface in space.surfaces():
+        for p in surface.vertices():
+            x += p.x()
+            y += p.y()
+            z += p.z()
+            count += 1
+    if count == 0:
+        return None
+    return openstudio.Point3d(x / count, y / count, z / count)
+
+
 def _donor_construction(model: openstudio.model.Model, surface_type: str):
     return next(
         (c.get() for s in model.getSurfaces()
@@ -370,6 +393,7 @@ def _donor_construction(model: openstudio.model.Model, surface_type: str):
 
 def _build_surface(
     model: openstudio.model.Model, space: openstudio.model.Space, points: list[Point3d],
+    interior_point: Point3d | None,
 ) -> tuple[bool, Any, float | None]:
     """Construct and place one reconstructed surface, or return a skip reason."""
     candidate = openstudio.Point3dVector()
@@ -379,6 +403,20 @@ def _build_surface(
     if not area.is_initialized() or area.get() <= MIN_PATCHED_SURFACE_AREA_M2:
         area_val = area.get() if area.is_initialized() else 0.0
         return False, f"degenerate reconstructed polygon (area={area_val:.4f} m2)", None
+
+    # The traced loop's winding is arbitrary, but openstudio.model.Surface(vertices,
+    # model) infers surfaceType from it (+z RoofCeiling, -z Floor) and the winding IS
+    # the outward normal — left arbitrary, a missing ceiling can come back as a
+    # downward-facing "Floor" and a wall can face into the space, with wrong solar and
+    # film behavior isEnclosedVolume() can't detect. Orient the facet away from the
+    # space's interior before constructing.
+    if interior_point is not None:
+        facet_centroid = openstudio.Point3d(
+            sum(p.x() for p in points) / len(points),
+            sum(p.y() for p in points) / len(points),
+            sum(p.z() for p in points) / len(points),
+        )
+        candidate = match_normal(candidate, facet_centroid - interior_point)
 
     try:
         surface = openstudio.model.Surface(candidate, model)
@@ -441,6 +479,8 @@ def patch_missing_surfaces() -> dict[str, Any]:
             if space.isEnclosedVolume():
                 continue
             attempted_spaces.append(space)
+            # From the pre-patch surfaces only — adding facets below would drift it.
+            interior_point = _space_interior_point(space)
 
             bad_edges = list(space.polyhedron().edgesNotTwo(True))
             overlap_edges = [e for e in bad_edges if e.count() > 2]
@@ -492,7 +532,7 @@ def patch_missing_surfaces() -> dict[str, Any]:
                     continue
 
                 for facet in facets:
-                    ok, result, area_val = _build_surface(model, space, facet)
+                    ok, result, area_val = _build_surface(model, space, facet, interior_point)
                     if not ok:
                         skipped.append({"space": name, "component": comp_idx, "reason": result})
                         continue
