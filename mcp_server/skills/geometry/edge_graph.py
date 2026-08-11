@@ -108,5 +108,3 @@ def connected_components(pairs: list[PointPair]) -> list[list[int]]:
     for i in range(n):
         groups[find(i)].append(i)
     return sorted(groups.values(), key=lambda g: g[0])
-
-
