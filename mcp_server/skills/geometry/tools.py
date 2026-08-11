@@ -1,6 +1,7 @@
 """MCP tool definitions for geometry (surfaces and subsurfaces)."""
 from __future__ import annotations
 
+from mcp_server.skills.geometry.boundary_conditions import set_surface_boundary_conditions
 from mcp_server.skills.geometry.merge_coplanar_sliver_surfaces import (
     merge_coplanar_sliver_surfaces,
 )
@@ -227,8 +228,56 @@ def register(mcp):
         separately rather than blocking the rest of the space. Run
         repair_and_validate_gbxml_geometry() before and after to see the effect on
         non_enclosed_spaces_count.
+
+        A reconstructed surface that finds no partner is set Adiabatic (NoSun/NoWind)
+        and reported with boundary_condition_ambiguous, counted in
+        ambiguous_boundary_condition_count — an assumption made visible, since these
+        facets are topological closures that need not correspond to a real building
+        element. Override any that are genuinely exterior with
+        set_surface_boundary_conditions.
         """
         return patch_missing_surfaces()
+
+    @mcp.tool(tags={"geometry"}, name="set_surface_boundary_conditions")
+    def set_surface_boundary_conditions_tool(
+        surface_names: list[str] | str,
+        outside_boundary_condition: str,
+        sun_exposure: str | None = None,
+        wind_exposure: str | None = None,
+    ):
+        """Set the outside boundary condition on a batch of named surfaces.
+
+        Built for acting on the surfaces patch_missing_surfaces flags as
+        boundary_condition_ambiguous, which can be a hundred or more on a badly broken
+        gbXML import. set_adiabatic_boundaries can't do this — it works wholesale by
+        surface class and cardinal orientation, with no way to name a surface.
+
+        Sun and wind exposure follow the boundary condition automatically unless you
+        pass them explicitly: Outdoors implies SunExposed/WindExposed, everything else
+        implies NoSun/NoWind. Leaving a surface SunExposed while setting it Adiabatic or
+        Ground is incoherent, and leaving it SunExposed while setting it Outdoors when it
+        is really an interior partition invents solar gain.
+
+        Every name is resolved before anything is modified, so one bad name fails the
+        whole batch rather than applying it halfway. "Surface" is rejected — it means
+        "adjacent to a specific other surface" and needs that partner; use
+        match_surfaces() for that.
+
+        Args:
+            surface_names: Names of the surfaces to modify.
+            outside_boundary_condition: e.g. "Outdoors", "Adiabatic", "Ground".
+                Validated against the SDK's own list; an invalid value returns
+                did_you_mean suggestions plus the full valid set.
+            sun_exposure: "SunExposed" or "NoSun". Derived from the boundary
+                condition when omitted.
+            wind_exposure: "WindExposed" or "NoWind". Derived when omitted.
+        """
+        return set_surface_boundary_conditions(
+            surface_names=surface_names,
+            outside_boundary_condition=outside_boundary_condition,
+            sun_exposure=sun_exposure,
+            wind_exposure=wind_exposure,
+        )
 
     @mcp.tool(tags={"geometry"}, name="trim_overlapping_surfaces")
     def trim_overlapping_surfaces_tool():

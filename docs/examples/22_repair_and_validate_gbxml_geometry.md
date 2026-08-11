@@ -208,9 +208,22 @@ Adiabatic is a deliberate assumption, not a determination. These facets are *top
 closures*: traced from a hole's outline to make `isEnclosedVolume()` pass, so on geometry this
 broken one need not correspond to any real building element. Zero heat flux keeps a surface the
 tool cannot physically identify from either inventing or destroying load. It is wrong for a
-genuinely exterior wall or roof that the export dropped — override those to `Outdoors` with
-`SunExposed`/`WindExposed`. Nothing here distinguishes envelope from interstitial geometry, which
-is why the count exists rather than a claim of correctness.
+genuinely exterior wall or roof that the export dropped. Nothing here distinguishes envelope from
+interstitial geometry, which is why the count exists rather than a claim of correctness.
+
+Override the ones you know are exterior with `set_surface_boundary_conditions`, which takes the
+flagged names in one call:
+
+```
+set_surface_boundary_conditions(
+    surface_names=[e["new_surface_name"] for e in result["patched"]
+                   if e["boundary_condition_ambiguous"]],
+    outside_boundary_condition="Outdoors")
+```
+
+Sun and wind exposure follow the boundary condition unless passed explicitly, so this cannot leave
+a surface `Adiabatic` but still `SunExposed`. Every name is resolved before anything is written, so
+one bad name fails the batch instead of applying it halfway.
 
 **Exposure has to follow the boundary condition.** A new `Surface` defaults to
 `SunExposed`/`WindExposed`, and this codebase never used to change it. That was harmless while the
@@ -367,4 +380,7 @@ themselves also have synthetic-geometry tests in `tests/test_geometry.py`
 `test_patch_missing_surfaces_skips_high_degree_branch_point`,
 `test_merge_coplanar_sliver_surfaces_preserves_roof_normal`,
 `test_patch_missing_surfaces_pairs_near_coincident_patches`,
-`test_patch_missing_surfaces_refuses_to_pair_mismatched_areas`).
+`test_patch_missing_surfaces_refuses_to_pair_mismatched_areas`,
+`test_set_surface_boundary_conditions_derives_coherent_exposure`,
+`test_set_surface_boundary_conditions_explicit_exposure_wins`,
+`test_set_surface_boundary_conditions_rejects_bad_input_without_mutating`).

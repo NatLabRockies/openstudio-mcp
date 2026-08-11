@@ -125,7 +125,8 @@ defects cause this, and none are fixed by `match_surfaces()`:
   left `Outdoors`. Before assuming, a fallback pass pairs any two still-unmatched surfaces
   overlapping ≥99% of *both* their areas — `matchSurfaces()` uses an internal ~0.0125 m tolerance
   and misses patches that land a few centimetres off their counterpart (2 such pairs on the Austin
-  fixture; a third candidate at 72% overlap is correctly declined).
+  fixture; a third candidate at 72% overlap is correctly declined). Override the remainder with
+  `set_surface_boundary_conditions`, which takes the flagged names in one call.
 - **Same-space overlaps** (aka shared-wall duplication): the flip side of a missing surface — a
   wall exported once per neighboring room instead of split at the boundary between them, leaving
   a surface duplicated, or a byproduct of patching a missing surface that happens to coincide

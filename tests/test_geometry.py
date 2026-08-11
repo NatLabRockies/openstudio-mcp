@@ -1533,6 +1533,154 @@ def test_patch_missing_surfaces_refuses_to_pair_mismatched_areas():
     asyncio.run(_run())
 
 
+# ---- set_surface_boundary_conditions ----
+
+
+@pytest.mark.integration
+def test_set_surface_boundary_conditions_derives_coherent_exposure():
+    """Setting Adiabatic in bulk also forces NoSun/NoWind; Outdoors restores exposure."""
+    # Regression: exposure has to follow the boundary condition. A Surface defaults to
+    # SunExposed/WindExposed, so a bulk tool that changed only the boundary condition
+    # would reproduce the exact defect this PR fixed in patch_missing_surfaces —
+    # fictitious solar gain on surfaces that have no outdoor face.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                names = ["BcBatchWallA", "BcBatchWallB"]
+                for idx, surface_name in enumerate(names):
+                    y = idx * 2.0
+                    assert unwrap(await s.call_tool("create_surface", {
+                        "name": surface_name,
+                        "vertices": [[0, y, 0], [4, y, 0], [4, y, 3], [0, y, 3]],
+                        "space_name": sp_name,
+                        "surface_type": "Wall",
+                        "outside_boundary_condition": "Outdoors",
+                    }))["ok"] is True
+
+                result = unwrap(await s.call_tool("set_surface_boundary_conditions", {
+                    "surface_names": names, "outside_boundary_condition": "Adiabatic",
+                }))
+                assert result["ok"] is True, result
+                assert result["updated_count"] == 2, result
+                assert result["exposure_derived"] is True, result
+                assert result["sun_exposure"] == "NoSun", result
+                for surface_name in names:
+                    details = unwrap(await s.call_tool("get_surface_details", {
+                        "surface_name": surface_name,
+                    }))["surface"]
+                    assert details["outside_boundary_condition"] == "Adiabatic", details
+                    assert details["sun_exposure"] == "NoSun", details
+                    assert details["wind_exposure"] == "NoWind", details
+
+                back = unwrap(await s.call_tool("set_surface_boundary_conditions", {
+                    "surface_names": names, "outside_boundary_condition": "Outdoors",
+                }))
+                assert back["ok"] is True, back
+                restored = unwrap(await s.call_tool("get_surface_details", {
+                    "surface_name": names[0],
+                }))["surface"]
+                assert restored["sun_exposure"] == "SunExposed", restored
+                assert restored["wind_exposure"] == "WindExposed", restored
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_set_surface_boundary_conditions_explicit_exposure_wins():
+    """An explicit exposure argument overrides the value derived from the condition."""
+    # Validates: a shaded or sheltered exterior surface is a legitimate model, so the
+    # derived default must be a default, not a rule.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                assert unwrap(await s.call_tool("create_surface", {
+                    "name": "BcShadedWall",
+                    "vertices": [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))["ok"] is True
+
+                result = unwrap(await s.call_tool("set_surface_boundary_conditions", {
+                    "surface_names": ["BcShadedWall"],
+                    "outside_boundary_condition": "Outdoors",
+                    "sun_exposure": "NoSun",
+                }))
+                assert result["ok"] is True, result
+                assert result["exposure_derived"] is False, result
+                details = unwrap(await s.call_tool("get_surface_details", {
+                    "surface_name": "BcShadedWall",
+                }))["surface"]
+                assert details["outside_boundary_condition"] == "Outdoors", details
+                assert details["sun_exposure"] == "NoSun", details
+                # wind was not specified, so it follows the boundary condition
+                assert details["wind_exposure"] == "WindExposed", details
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_set_surface_boundary_conditions_rejects_bad_input_without_mutating():
+    """An unknown surface or invalid condition fails the whole batch, changing nothing."""
+    # Regression: a partially-applied batch is worse than a rejected one — the caller
+    # cannot tell which surfaces changed. Every name is resolved before anything is
+    # written, so the real surface here must come out untouched.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                assert unwrap(await s.call_tool("create_surface", {
+                    "name": "BcUntouchedWall",
+                    "vertices": [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))["ok"] is True
+
+                missing = unwrap(await s.call_tool("set_surface_boundary_conditions", {
+                    "surface_names": ["BcUntouchedWall", "NoSuchSurfaceAtAll"],
+                    "outside_boundary_condition": "Adiabatic",
+                }))
+                assert missing["ok"] is False, missing
+                assert missing["missing_surfaces"] == ["NoSuchSurfaceAtAll"], missing
+
+                bad_value = unwrap(await s.call_tool("set_surface_boundary_conditions", {
+                    "surface_names": ["BcUntouchedWall"],
+                    "outside_boundary_condition": "Adiabatik",
+                }))
+                assert bad_value["ok"] is False, bad_value
+                assert "Adiabatic" in bad_value["did_you_mean"], bad_value
+
+                paired = unwrap(await s.call_tool("set_surface_boundary_conditions", {
+                    "surface_names": ["BcUntouchedWall"],
+                    "outside_boundary_condition": "Surface",
+                }))
+                assert paired["ok"] is False, paired
+                assert "match_surfaces" in paired["error"], paired
+
+                details = unwrap(await s.call_tool("get_surface_details", {
+                    "surface_name": "BcUntouchedWall",
+                }))["surface"]
+                assert details["outside_boundary_condition"] == "Outdoors", details
+                assert details["sun_exposure"] == "SunExposed", details
+    asyncio.run(_run())
+
+
 # ---- Window-to-wall ratio tests ----
 
 

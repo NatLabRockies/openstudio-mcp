@@ -41,6 +41,7 @@ EXPECTED_TOOLS = {
     "merge_coplanar_sliver_surfaces",
     "weld_coincident_vertices",
     "patch_missing_surfaces",
+    "set_surface_boundary_conditions",
     "trim_overlapping_surfaces",
     "set_window_to_wall_ratio",
     "list_materials",
