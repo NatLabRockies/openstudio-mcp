@@ -1,6 +1,9 @@
 """MCP tool definitions for geometry (surfaces and subsurfaces)."""
 from __future__ import annotations
 
+from mcp_server.skills.geometry.merge_coplanar_sliver_surfaces import (
+    merge_coplanar_sliver_surfaces,
+)
 from mcp_server.skills.geometry.operations import (
     create_space_from_floor_print,
     create_subsurface,
@@ -13,12 +16,9 @@ from mcp_server.skills.geometry.operations import (
     set_window_to_wall_ratio,
 )
 from mcp_server.skills.geometry.patch_missing_surfaces import patch_missing_surfaces
-from mcp_server.skills.geometry.repair import (
-    merge_coplanar_sliver_surfaces,
-    repair_missing_roof_ceiling,
-    weld_coincident_vertices,
-)
+from mcp_server.skills.geometry.repair import repair_missing_roof_ceiling
 from mcp_server.skills.geometry.trim_overlapping_surfaces import trim_overlapping_surfaces
+from mcp_server.skills.geometry.weld_coincident_vertices import weld_coincident_vertices
 
 
 def register(mcp):

@@ -702,17 +702,18 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
     # tolerance gap. patch_missing_surfaces() reconstructs a missing surface whenever a
     # space's unpaired edges resolve (independently per separate hole) into one simple loop —
     # splitting a non-planar loop into planar facets via chords, and resolving a branch
-    # point (more than one missing surface meeting at a vertex) via a bounded search over
-    # ways to pair up its edges. trim_overlapping_surfaces() then handles the opposite
+    # point (more than one missing surface meeting at a vertex) via a cost-bounded search
+    # over ways to pair up its edges. trim_overlapping_surfaces() then handles the opposite
     # problem: edges used three or more times (a genuine same-space duplicate —
     # shared-wall duplication) — trims each surface to its non-overlap remainder, or
-    # removes it outright if fully contained within the other. Together they close all but
-    # 4 of the original 69 non-enclosed spaces on this fixture — the honest remainder
-    # (sp-14retail, sp-21restuarant, sp-35apartment, sp-6retail) has a structurally
-    # ambiguous mix of missing and duplicate geometry where patch and trim provably
-    # oscillate (each pass's fix creates exactly the input the other pass "fixes" right
-    # back), not a case either tool can resolve alone — confirmed directly, not assumed,
-    # by running repeated rounds.
+    # removes it outright if fully contained within the other, but only for pairs that are
+    # genuinely the same thing twice (matching type/boundary condition/construction,
+    # neither carrying a subsurface). Together they close all but 4 of the original 69
+    # non-enclosed spaces on this fixture — the honest remainder (sp-14retail, sp-20office,
+    # sp-21restuarant, sp-6retail) has a structurally ambiguous mix of missing and
+    # duplicate geometry where patch and trim provably oscillate (each pass's fix creates
+    # exactly the input the other pass "fixes" right back), not a case either tool can
+    # resolve alone — confirmed directly, not assumed, by running repeated rounds.
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -765,52 +766,57 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
 
                 patch_result = unwrap(await session.call_tool("patch_missing_surfaces", {}))
                 assert patch_result["ok"] is True, patch_result
-                # Regression: the large majority of the 67 still-broken spaces'
-                # components get reconstructed (119 in the typical run) with only a
-                # handful honestly skipped (typically 5: 2 same-space overlaps, 1
-                # component whose edges don't form a single simple loop, and 2 spaces
-                # where every component reported success but a new internal chord edge
-                # still left the space non-enclosed — the post-patch verification safety
-                # net catching its own rare side effect). Observed directly across
-                # repeated runs: this specific count occasionally shifts by exactly 1 in
-                # either direction (119/5 most often, occasionally 118/6) — genuine
-                # run-to-run non-determinism, most likely in Polyhedron's own internal
-                # edge ordering (C++, not something this Python code controls), tipping
-                # one borderline chord/pairing search to a different but still-valid
-                # choice. Bounded rather than pinned exactly for that reason; the stable,
-                # meaningful signal is the final non_enclosed_spaces_count below.
-                assert patch_result["patched_count"] >= 115, patch_result
-                assert patch_result["skipped_count"] <= 8, patch_result
+                # Regression: the large majority of the 67 still-broken spaces' components
+                # get reconstructed, with only a handful honestly skipped. These are now
+                # pinned exactly rather than bounded: they used to shift by one between
+                # runs (119/5 most often, occasionally 118/6) because
+                # Space.polyhedron().edgesNotTwo() emission order — a C++ implementation
+                # detail — reached every downstream tracing and chord decision. Edges are
+                # now canonically ordered at the source (canonical_edge_order), so a
+                # repeated run reconstructs the same surfaces. Verified by running this
+                # pipeline three times and getting byte-identical counts.
+                assert patch_result["patched_count"] == 117, patch_result
+                assert patch_result["skipped_count"] == 5, patch_result
+                # Most reconstructed surfaces find no partner on the other side, because
+                # the mirroring space's own copy of that partition is missing too. They
+                # stay Outdoors and are flagged rather than silently forced to Adiabatic —
+                # a large count here is expected on a fixture this broken, and is exactly
+                # the disclosure the old unconditional-Adiabatic behavior suppressed.
+                assert patch_result["ambiguous_boundary_condition_count"] == 107, patch_result
 
                 trim_result = unwrap(await session.call_tool("trim_overlapping_surfaces", {}))
                 assert trim_result["ok"] is True, trim_result
-                # Bounded, not pinned, for the same reason as patch_result above: observed
-                # directly across repeated runs to vary (6, 9, 12) with how many
-                # overlaps patch_missing_surfaces' own borderline decomposition choices
-                # happen to create upstream.
-                assert trim_result["trimmed_count"] >= 5, trim_result
+                # Only 1 pair is safe to trim; 18 are correctly declined. The tool used to
+                # trim any coincident-plane pair with no compatibility check, which on this
+                # real fixture meant blending 12 pairs with mismatched boundary conditions
+                # (9 Outdoors-vs-Surface, 3 Ground-vs-Surface — i.e. an interior matched
+                # surface against an exterior or below-grade one), 7 with different
+                # constructions, and 1 Floor against a RoofCeiling. Declining those costs
+                # nothing in closure: the final count below is unchanged.
+                assert trim_result["trimmed_count"] == 1, trim_result
+                assert trim_result["skipped_count"] == 18, trim_result
 
                 after = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
                 # 69 -> 67 (weld+merge) -> 4 (patch+trim): all but 4 of the original
                 # non-enclosed spaces closed by purely automated, verified repair tools.
-                # The honest remainder is a confirmed patch/trim oscillation (each pass's
-                # fix creates exactly the input the other pass "fixes" right back,
-                # verified directly by running repeated rounds) or a structurally
-                # ambiguous mix of missing and duplicate geometry neither tool can
-                # resolve alone, on a fixed set of hard spaces: sp-14retail,
-                # sp-21restuarant, sp-35apartment, sp-6retail.
+                # The honest remainder is a structurally ambiguous mix of missing and
+                # duplicate geometry neither tool can resolve alone — patch and trim
+                # provably oscillate on it, each pass's fix creating exactly the input the
+                # other pass "fixes" right back (confirmed directly by running repeated
+                # rounds, not assumed).
                 #
-                # The exact final count varies by one across runs (3 or 4 observed
-                # directly, repeatedly) — the same borderline-decomposition
-                # non-determinism as patch_result/trim_result above occasionally lets one
-                # of these four resolve favorably instead of not. Bounded above, and
-                # constrained to a subset of the known-hard set, rather than pinned
-                # exactly: a same-or-better outcome on this fixed set isn't a regression,
-                # but any *other* space unexpectedly failing here would be.
-                assert after["non_enclosed_spaces_count"] <= 4, after
+                # Both the count and the exact membership are now pinned. This used to be
+                # bounded (<= 4, subset of a 4-space set) to tolerate run-to-run drift;
+                # canonical edge ordering removed that drift, so the stronger assertion is
+                # available and any change here is a real behavior change worth seeing.
+                # The membership differs from the pre-canonicalization set (sp-20office in
+                # place of sp-35apartment) because deterministic ordering picks a different
+                # but equally valid decomposition for those two — same count, and every
+                # other space still closes.
+                assert after["non_enclosed_spaces_count"] == 4, after
                 remaining = {ns["space"] for ns in after["non_enclosed_spaces"]}
-                assert remaining <= {
-                    "sp-14retail", "sp-21restuarant", "sp-35apartment", "sp-6retail",
+                assert remaining == {
+                    "sp-14retail", "sp-20office", "sp-21restuarant", "sp-6retail",
                 }, after
 
     asyncio.run(_run())

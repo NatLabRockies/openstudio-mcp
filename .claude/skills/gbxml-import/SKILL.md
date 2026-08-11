@@ -20,7 +20,7 @@ description: Translate a Revit-exported gbXML file into an OpenStudio model, the
 
 ## Fixing non-enclosed spaces
 
-Four distinct causes, each needing a different tool — none are fixed automatically by
+Five distinct causes, each needing a different tool — none are fixed automatically by
 `repair_and_validate_gbxml_geometry()`'s internal `match_surfaces()` call. Work through them in
 this order, re-checking with `repair_and_validate_gbxml_geometry()` after each:
 
@@ -50,6 +50,19 @@ left once merge and weld have closed what they can.
   geometry (each pass recreates the other's input). Re-run
   `repair_and_validate_gbxml_geometry()` to confirm actual progress rather than assuming success.
 - Ambiguous cases are always reported as skipped with a specific reason, never guessed at.
+  That includes geometry too tangled to resolve affordably — a hole converging on a very
+  high-degree vertex is reported rather than searched, so these tools stay bounded on
+  arbitrarily malformed input.
+- **Check `ambiguous_boundary_condition_count` after `patch_missing_surfaces()`.** A
+  reconstructed surface that `match_surfaces()` couldn't pair stays `Outdoors` and is
+  flagged `boundary_condition_ambiguous`, because it could equally be an interior partition
+  whose opposite face is still missing (wants Adiabatic) or a genuinely exterior surface
+  (correct as-is). Set those explicitly — leaving an interior partition exposed to weather,
+  or making a real exterior wall adiabatic, both distort simulation results.
+- `trim_overlapping_surfaces()` only trims a pair that is genuinely the same thing twice
+  (matching type, boundary condition, and construction, neither carrying a window or door).
+  Anything else is reported as skipped — resolve those by hand rather than expecting the
+  tool to pick a winner.
 - `repair_and_validate_gbxml_geometry()` mutates the model (via `match_surfaces()`) before
   reporting — if you need to inspect pre-match state, save a copy of the model first.
 - After geometry is clean, spaces still need standards space types — see the

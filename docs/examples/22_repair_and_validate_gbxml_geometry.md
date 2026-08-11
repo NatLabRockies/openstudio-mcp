@@ -158,15 +158,17 @@ surface, not the two a closed volume requires: a genuinely missing surface, not 
      independently (a space can have more than one separate hole), traces each into a
      loop, recursively splits a non-planar loop into planar facets via chords, and
      resolves a branch point (more than one missing surface meeting at a vertex) via a
-     bounded search over ways to pair up its edges. Surface type is inferred from each
+     cost-bounded search over ways to pair up its edges. Surface type is inferred from each
      facet's own geometry, not assumed to be a wall. Edges used 3+ times (a same-space
      overlap — a different defect) are excluded and reported separately, not allowed to
      block the rest of the space. Re-runs match_surfaces() once, batched; anything still
-     unmatched afterward is set Adiabatic; every space is re-checked afterward rather
+     unmatched afterward stays Outdoors and is flagged rather than guessed at (see
+     "Boundary conditions" below); every space is re-checked afterward rather
      than trusted, in case a new internal chord edge happens to coincide with an
      already-ambiguous pre-existing one.
-   { ok: true, patched_count: 119, patched: [...], skipped_count: 5, skipped: [...] }
-4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 67 -> ~4
+   { ok: true, patched_count: 117, patched: [...], skipped_count: 5, skipped: [...],
+     ambiguous_boundary_condition_count: 107 }
+4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 67 -> 4
 ```
 
 On the Austin fixture this reconstructs the large majority of the 67 remaining spaces' holes —
@@ -181,12 +183,41 @@ across several spaces (e.g. the same missing wall in four different apartments) 
 type repeated across floors, all missing the same wall *type* in the source export, not several
 unrelated one-off defects.
 
-**A measured, honest caveat**: the exact `patched_count`/`skipped_count` on this fixture shift by
-exactly 1 in either direction on a small fraction of runs (119/5 most often, occasionally 118/6) —
-genuine run-to-run non-determinism, most likely in `Polyhedron`'s own internal edge ordering (C++,
-not something this tool controls), tipping one borderline chord/pairing search to a different but
-still-valid choice. The final `non_enclosed_spaces_count` and which specific spaces remain has been
-stable across repeated runs regardless.
+### Boundary conditions on a patched surface
+
+A reconstructed surface starts `Outdoors`; `match_surfaces()` then pairs it with whatever sits on
+the other side, if anything does. One that finds no partner **stays `Outdoors`** and is reported
+with `boundary_condition_ambiguous: true`, counted in `ambiguous_boundary_condition_count`.
+
+On this fixture that count is **107 of 117** patches — most reconstructed partitions have no
+partner because the mirroring space's own copy of the same wall was missing from the export too.
+Expect to resolve those in bulk rather than one at a time: for a genuine interior partition
+`Adiabatic` is usually right, which is what the tool used to apply to all 107 automatically. The
+change is not that Adiabatic is wrong — it's that the tool no longer decides silently, because
+some of those 107 are real exterior surfaces and it cannot tell which from geometry alone.
+
+This tool used to force those to `Adiabatic`. That was wrong often enough to matter: surface type
+is inferred from each facet's geometry, so patches include Floors and RoofCeilings (`sp-1stair`
+above was a missing RoofCeiling), and an unmatched patch is just as likely to be a genuinely
+exterior surface as an interior partition whose opposite face is still missing. Adiabatic zeroes
+conduction *and* solar/wind exposure, so guessing it on a real exterior surface silently deletes
+envelope load — a first-order error on a wall or roof of any size. The ambiguity is now surfaced
+instead of resolved by assumption; set those surfaces explicitly before simulating.
+
+### Bounded searches
+
+Both searches inside `patch_missing_surfaces` are explicitly cost-bounded, because they run on
+imported geometry and a tool call has no timeout and cannot be cancelled once started:
+
+- Pairing a branch vertex's incident edges enumerates perfect matchings — `(deg-1)!!`, which is 105
+  at degree 8 but **654,729,075** at degree 20. `MAX_BRANCH_DEGREE` (8; observed real gbXML degrees
+  are 4 and 6) rejects anything higher before enumeration starts, and `MAX_PAIRING_CANDIDATES`
+  caps candidates actually evaluated.
+- Chord-splitting a non-planar loop was depth-bounded but not cost-bounded: each level considers
+  O(n²) chords, so depth 4 alone permits ~1.3e9 planarity checks on a 20-vertex loop.
+  `MAX_FACET_SPLIT_CANDIDATES` bounds the real work, shared across every attempt for a component.
+
+Either limit being hit is reported as a skipped component naming the specific limit.
 
 ## Follow-up: `trim_overlapping_surfaces`
 
@@ -205,25 +236,46 @@ space is not this tool's concern.
      non-overlapping remainder, or removes it outright if fully contained within the
      other (full containment is asymmetric — the container is left untouched, not
      carved a hole into). A remainder splitting into multiple disjoint pieces is
-     reported as skipped rather than guessed at.
-   { ok: true, trimmed_count: 12, trimmed: [...], skipped_count: 16, skipped: [...] }
-6. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count ~4
+     reported as skipped rather than guessed at, as is any pair that isn't genuinely
+     the same thing twice: mismatched surface type, boundary condition, or
+     construction, or either surface carrying a window or door. Both sides are
+     validated before either is written, so a pair is trimmed completely or not at all.
+   { ok: true, trimmed_count: 1, trimmed: [...], skipped_count: 18, skipped: [...] }
+6. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 4
 ```
 
-On the Austin fixture, most trims are pure duplicates fully contained within another surface. A
-same-run safety guard skips (rather than risks compounding) a second overlap touching a surface
-already handled earlier in the same call — call it again to pick up the next one; it converges to
-zero further trims.
+On the Austin fixture only **1 of 19** candidate pairs is actually safe to trim. The other 18 are
+declined, and the breakdown is worth reading as evidence rather than noise — before these guards
+existed, every one of them was silently trimmed or removed:
+
+| Declined | Why |
+|---|---|
+| 9 | mismatched boundary conditions, `Outdoors` vs `Surface` — blending an exterior surface into an interior matched one |
+| 7 | different constructions across the pair |
+| 3 | mismatched boundary conditions, `Ground` vs `Surface` — blending a below-grade surface into an interior one |
+| 1 | different surface types — a `Floor` against a `RoofCeiling` |
+| 3 | one surface already handled earlier in the same call (pre-existing same-run safety guard) |
+
+Declining them costs nothing: the final closure below is identical either way. The same-run guard
+skips (rather than risks compounding) a second overlap touching a surface already handled in the
+same call — call it again to pick up the next one; it converges to zero further trims.
 
 **Combined total on this fixture: 69 -> 67 (weld + merge) -> 4 (patch + trim)** — all but 4 of the
 original non-enclosed spaces closed by four automated, verified repair tools. The honest remainder
-— `sp-14retail`, `sp-21restuarant`, `sp-35apartment`, `sp-6retail` — was checked directly, not
+— `sp-14retail`, `sp-20office`, `sp-21restuarant`, `sp-6retail` — was checked directly, not
 assumed: running `patch_missing_surfaces()` and `trim_overlapping_surfaces()` repeatedly
 against each other reaches a **stable oscillation**, each pass's fix creating exactly the input the
 other pass "fixes" right back, rather than converging further. These 4 spaces have a structurally
 ambiguous mix of missing and duplicate geometry that neither tool can resolve alone — that's a
 genuinely different, harder problem than anything the four tools above address, not a case to keep
 looping against.
+
+Every number on this page is now reproducible run to run. They used to drift by one
+(`patched_count` 119/5 most often, occasionally 118/6) because
+`Space.polyhedron().edgesNotTwo()`'s C++ emission order fed every downstream tracing and chord
+decision; edges are canonically ordered at the source now, and three consecutive full-pipeline runs
+produce identical counts. That is also why `tests/test_gbxml_import.py`'s assertions here are
+pinned exactly instead of bounded.
 
 ## Why Two Separate Checks
 
@@ -285,4 +337,8 @@ themselves also have synthetic-geometry tests in `tests/test_geometry.py`
 `test_patch_missing_surfaces_no_op_on_clean_model`,
 `test_trim_overlapping_surfaces_trims_partial_overlap`,
 `test_trim_overlapping_surfaces_removes_fully_contained_duplicate`,
-`test_trim_overlapping_surfaces_no_op_when_no_non_enclosed_spaces_have_overlaps`).
+`test_trim_overlapping_surfaces_no_op_when_no_non_enclosed_spaces_have_overlaps`,
+`test_trim_overlapping_surfaces_skips_mismatched_boundary_conditions`,
+`test_trim_overlapping_surfaces_skips_surface_carrying_a_window`,
+`test_patch_missing_surfaces_skips_high_degree_branch_point`,
+`test_merge_coplanar_sliver_surfaces_preserves_roof_normal`).

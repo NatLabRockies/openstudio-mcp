@@ -109,14 +109,26 @@ defects cause this, and none are fixed by `match_surfaces()`:
   defect — to find edges used by only one surface (a missing partner, not a tolerance gap), and
   reconstructs the surface(s) independently per separate hole: splitting a non-planar loop into
   planar facets via chords, and resolving a branch point (more than one missing surface meeting at
-  a vertex) via a bounded search over ways to pair up its edges.
+  a vertex) by pairing up its edges. Both searches are explicitly cost-bounded
+  (`MAX_BRANCH_DEGREE`, `MAX_PAIRING_CANDIDATES`, `MAX_FACET_SPLIT_CANDIDATES` in
+  `geometry/edge_topology.py` and `geometry/planar_facets.py`) — pairing a branch vertex's edges
+  enumerates `(deg-1)!!` matchings, which is 105 at degree 8 but 654,729,075 at degree 20, and
+  tool calls have no timeout and run on a thread that can't be cancelled. Anything past the caps
+  is reported as skipped. A patched surface that `match_surfaces()` can't pair is left `Outdoors`
+  and flagged `boundary_condition_ambiguous` (counted in `ambiguous_boundary_condition_count`)
+  rather than forced to `Adiabatic`: it may be an interior partition whose other face is still
+  missing, or genuinely exterior, and guessing silently deletes envelope load in the latter case.
 - **Same-space overlaps** (aka shared-wall duplication): the flip side of a missing surface — a
   wall exported once per neighboring room instead of split at the boundary between them, leaving
   a surface duplicated, or a byproduct of patching a missing surface that happens to coincide
   with something already there. `trim_overlapping_surfaces()` (geometry skill) trims each side of a
   genuine 2D overlap to its own non-overlapping remainder, or removes it outright if fully
   contained within the other. Scoped to spaces currently failing `isEnclosedVolume()` — it never
-  touches an overlap that coexists peacefully with an already-enclosed space.
+  touches an overlap that coexists peacefully with an already-enclosed space. Only pairs that are
+  genuinely the same thing twice are trimmed (same surface type, boundary condition, and
+  construction, neither carrying a subsurface) — the same guards
+  `merge_coplanar_sliver_surfaces()` uses, and for the same reason: `Surface.remove()` cascades
+  to child windows/doors, and shrinking a parent strands them outside it.
 
 Re-check with `repair_and_validate_gbxml_geometry()` after any of these. Order matters less between
 `merge_coplanar_sliver_surfaces()` and `weld_coincident_vertices()` (they touch different surface

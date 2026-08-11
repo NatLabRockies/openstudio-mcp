@@ -933,7 +933,13 @@ def test_patch_missing_surfaces_reconstructs_deleted_wall():
                 assert entry["space"] == "PatchSpace", entry
                 assert entry["surface_type"] == "Wall", entry
                 assert entry["area_m2"] == pytest.approx(30.0, abs=0.01), entry
-                assert entry["final_boundary_condition"] == "Adiabatic", entry
+                # Regression: this wall is genuinely exterior (a free-standing box), so
+                # forcing it Adiabatic — as this tool used to — silently deleted its
+                # conduction and solar/wind exposure. An unmatched patch stays Outdoors
+                # and is flagged for the caller to resolve instead of being guessed at.
+                assert entry["final_boundary_condition"] == "Outdoors", entry
+                assert entry["boundary_condition_ambiguous"] is True, entry
+                assert result["ambiguous_boundary_condition_count"] == 1, result
 
                 after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert "PatchSpace" not in [ns["space"] for ns in after["non_enclosed_spaces"]], after
@@ -1203,6 +1209,207 @@ def test_trim_overlapping_surfaces_no_op_when_no_non_enclosed_spaces_have_overla
                 assert result["ok"] is True, result
                 assert result["trimmed_count"] == 0, result
                 assert result["skipped_count"] == 0, result
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_trim_overlapping_surfaces_skips_mismatched_boundary_conditions():
+    """Two overlapping walls with different boundary conditions must not be blended."""
+    # Regression: overlapping in space does not make two surfaces interchangeable. The
+    # tool used to trim any coincident-plane pair with no compatibility check at all, so
+    # a shared-wall duplicate whose copy was still "Outdoors" could be blended against a
+    # "Ground"-facing surface, silently misrepresenting one side. Must be reported as
+    # skipped with a reason, and both surfaces must survive untouched.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                for surface_name, bc in (("BcWallOutdoors", "Outdoors"), ("BcWallGround", "Ground")):
+                    x_offset = 0 if bc == "Outdoors" else 1
+                    res = unwrap(await s.call_tool("create_surface", {
+                        "name": surface_name,
+                        "vertices": [
+                            [x_offset, 0, 0], [x_offset + 3, 0, 0],
+                            [x_offset + 3, 0, 3], [x_offset, 0, 3],
+                        ],
+                        "space_name": sp_name,
+                        "surface_type": "Wall",
+                        "outside_boundary_condition": bc,
+                    }))
+                    assert res["ok"] is True, res
+
+                result = unwrap(await s.call_tool("trim_overlapping_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["trimmed_count"] == 0, result
+                assert result["skipped_count"] == 1, result
+                assert "mixed boundary conditions" in result["skipped"][0]["reason"], result
+
+                after = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": sp_name, "surface_type": "Wall", "max_results": 0,
+                }))
+                assert after["count"] == 2, after
+                assert all(
+                    srf["gross_area_m2"] == pytest.approx(9.0, abs=0.01) for srf in after["surfaces"]
+                ), after
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_trim_overlapping_surfaces_skips_surface_carrying_a_window():
+    """A surface with a subsurface must not be trimmed or removed — its window would be lost."""
+    # Regression: Surface is an OpenStudio ParentObject, so remove() cascades and deletes
+    # child subsurfaces outright, and setVertices() on a shrinking parent leaves its
+    # window stranded outside it. The tool previously did neither check, so a duplicate
+    # fully containing a windowed wall silently destroyed the window. Both surfaces and
+    # the window must survive, with the pair reported as skipped.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                host = unwrap(await s.call_tool("create_surface", {
+                    "name": "WindowedWall",
+                    "vertices": [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert host["ok"] is True, host
+                win = unwrap(await s.call_tool("create_subsurface", {
+                    "name": "TrimGuardWindow",
+                    "vertices": [[1, 0, 1], [3, 0, 1], [3, 0, 2], [1, 0, 2]],
+                    "parent_surface_name": "WindowedWall",
+                    "subsurface_type": "FixedWindow",
+                }))
+                assert win["ok"] is True, win
+                dupe = unwrap(await s.call_tool("create_surface", {
+                    "name": "DuplicateOfWindowedWall",
+                    "vertices": [[2, 0, 0], [5, 0, 0], [5, 0, 3], [2, 0, 3]],
+                    "space_name": sp_name,
+                    "surface_type": "Wall",
+                    "outside_boundary_condition": "Outdoors",
+                }))
+                assert dupe["ok"] is True, dupe
+
+                result = unwrap(await s.call_tool("trim_overlapping_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["trimmed_count"] == 0, result
+                assert result["skipped_count"] == 1, result
+                assert "subsurfaces" in result["skipped"][0]["reason"], result
+
+                walls_after = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": sp_name, "surface_type": "Wall", "max_results": 0,
+                }))
+                assert walls_after["count"] == 2, walls_after
+                # Scoped to this wall — the example model this is built on has windows of
+                # its own, so a model-wide listing would say nothing about whether THIS
+                # window survived.
+                subs_after = unwrap(await s.call_tool("list_subsurfaces", {
+                    "surface_name": "WindowedWall", "max_results": 0,
+                }))
+                assert [sub["name"] for sub in subs_after["subsurfaces"]] == ["TrimGuardWindow"], subs_after
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_patch_missing_surfaces_skips_high_degree_branch_point():
+    """A high-degree branch vertex is rejected immediately, not searched factorially."""
+    # Regression: _try_branch_decomposition enumerated every perfect matching of a branch
+    # vertex's incident edges — (deg-1)!! candidates, i.e. 654,729,075 at degree 20, each
+    # costing O(edges) to trace. Nothing capped the degree, tool calls have no timeout,
+    # and they run in a thread that cannot be cancelled, so one malformed imported model
+    # could occupy a worker indefinitely. Exercised directly against the topology module
+    # rather than through a model: building a degree-20 vertex out of real Surfaces would
+    # obscure exactly the property under test, which is that the cap is enforced before
+    # any enumeration starts.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    import math
+    import time
+
+    import openstudio
+
+    from mcp_server.skills.geometry.edge_topology import MAX_BRANCH_DEGREE, resolve_component
+
+    hub = openstudio.Point3d(0, 0, 0)
+    degree = 20
+    spokes = [
+        (hub, openstudio.Point3d(math.cos(2 * math.pi * k / degree), math.sin(2 * math.pi * k / degree), 0))
+        for k in range(degree)
+    ]
+
+    started = time.perf_counter()
+    facets, reason, valid_count = resolve_component(spokes)
+    elapsed = time.perf_counter() - started
+
+    assert facets is None, facets
+    assert valid_count == 0, valid_count
+    assert f"degree {degree}" in reason, reason
+    assert str(MAX_BRANCH_DEGREE) in reason, reason
+    # The unbounded version would not have returned within the life of this test run;
+    # a second is many orders of magnitude of headroom over the ~0.1ms the cap costs.
+    assert elapsed < 1.0, f"took {elapsed:.3f}s — the degree cap is not being enforced"
+
+
+@pytest.mark.integration
+def test_merge_coplanar_sliver_surfaces_preserves_roof_normal():
+    """A merged RoofCeiling must keep facing upward, not be flipped by the join."""
+    # Regression: the winding helper reversed any polygon whose normal had z > 0, which is
+    # the correct test only in an alignFace local frame. It was also applied to the joined
+    # loops AFTER transforming them back to global coordinates, where both branches leave
+    # a horizontal surface facing downward — silently inverting every merged ceiling and
+    # roof. tilt_deg is the observable: 0 is upward-facing, 180 is inverted.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                fragments = {
+                    "RoofNormalFragA": [[0, 0, 3], [10, 0, 3], [10, 6, 3], [0, 6, 3]],
+                    "RoofNormalFragB": [[0, 6, 3], [10, 6, 3], [10, 10, 3], [0, 10, 3]],
+                }
+                for surface_name, vertices in fragments.items():
+                    frag = unwrap(await s.call_tool("create_surface", {
+                        "name": surface_name,
+                        "vertices": vertices,
+                        "space_name": sp_name,
+                        "surface_type": "RoofCeiling",
+                        "outside_boundary_condition": "Outdoors",
+                    }))
+                    assert frag["ok"] is True, frag
+
+                before = unwrap(await s.call_tool("get_surface_details", {
+                    "surface_name": "RoofNormalFragA",
+                }))
+                assert before["surface"]["tilt_deg"] == pytest.approx(0.0, abs=0.5), before
+
+                result = unwrap(await s.call_tool("merge_coplanar_sliver_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["merged_group_count"] == 1, result
+
+                merged = unwrap(await s.call_tool("list_surfaces", {
+                    "space_name": sp_name, "surface_type": "RoofCeiling", "max_results": 0,
+                }))
+                assert merged["count"] == 1, merged
+                assert merged["surfaces"][0]["gross_area_m2"] == pytest.approx(100.0, abs=0.01), merged
+                after = unwrap(await s.call_tool("get_surface_details", {
+                    "surface_name": merged["surfaces"][0]["name"],
+                }))
+                assert after["surface"]["tilt_deg"] == pytest.approx(0.0, abs=0.5), after
     asyncio.run(_run())
 
 
