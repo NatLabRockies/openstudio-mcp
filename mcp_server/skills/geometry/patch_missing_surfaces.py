@@ -148,14 +148,15 @@ def patch_missing_surfaces() -> dict[str, Any]:
     branch vertex is too high-degree to search affordably — is reported as skipped with the
     specific reason rather than guessed at.
 
-    Reconstructed surfaces are left "Outdoors" unless match_surfaces() pairs them with a
-    real surface on the other side. A patch that finds no partner is reported with
-    `boundary_condition_ambiguous: true` (and counted in
-    `ambiguous_boundary_condition_count`) rather than being reassigned: it may be an
-    interior partition whose opposite face is still missing, or a genuinely exterior
-    surface, and the two want opposite boundary conditions. Guessing "Adiabatic" would
-    silently delete the envelope load of every patch that was actually exterior, so the
-    ambiguity is surfaced for the caller to resolve.
+    Reconstructed surfaces start "Outdoors" so match_surfaces() can pair them with a real
+    surface on the other side. A patch that finds no partner is set "Adiabatic" with
+    NoSun/NoWind, and reported with `boundary_condition_ambiguous: true` (counted in
+    `ambiguous_boundary_condition_count`) so the assumption is visible rather than silent.
+    Adiabatic because these facets are topological closures traced from a hole's outline —
+    on badly broken geometry one need not correspond to any real building element, and zero
+    heat flux keeps a surface the tool cannot physically identify from either inventing or
+    destroying load. It is wrong for a genuinely exterior wall or roof missing from the
+    export; those need overriding, which is what the flag and count are for.
 
     Every space attempted is re-checked at the end, not just trusted from the per-component
     decisions above: chord-splitting or branch decomposition introduces new internal
@@ -252,15 +253,27 @@ def patch_missing_surfaces() -> dict[str, Any]:
                 matched = surface.outsideBoundaryCondition() == "Surface"
                 if not matched:
                     ambiguous_bc_count += 1
+                    surface.setOutsideBoundaryCondition("Adiabatic")
+                    # Exposure must follow the boundary condition. A Surface defaults to
+                    # SunExposed/WindExposed, and nothing else in this codebase has ever
+                    # changed that — harmless while the outside face is adiabatic (no heat
+                    # transfer for exposure to modify) but a live error the moment the
+                    # surface is left facing Outdoors: full solar gain, wind convection,
+                    # and sky longwave on a surface that may not exist physically at all.
+                    surface.setSunExposure("NoSun")
+                    surface.setWindExposure("NoWind")
                 entry["final_boundary_condition"] = surface.outsideBoundaryCondition()
                 entry["boundary_condition_ambiguous"] = not matched
                 entry["boundary_condition_warning"] = (
                     None if matched
-                    else "Left as Outdoors — no surface was found on the other side, so "
-                         "this is either an interior partition whose opposite face is "
-                         "still missing (wants Adiabatic or a matched pair) or a genuinely "
-                         "exterior surface (correct as-is). Set it explicitly before "
-                         "trusting simulation results."
+                    else "Assumed Adiabatic (NoSun/NoWind) — no surface was found on the "
+                         "other side. These facets are topological closures traced from a "
+                         "hole's outline, so on badly broken geometry one need not "
+                         "correspond to a real building element; zero heat flux keeps a "
+                         "surface the tool cannot identify from inventing or destroying "
+                         "load. Wrong if this is genuinely an exterior wall or roof missing "
+                         "from the export — override those to Outdoors (with SunExposed/"
+                         "WindExposed) before trusting simulation results."
                 )
 
         already_flagged_spaces = {s["space"] for s in skipped}

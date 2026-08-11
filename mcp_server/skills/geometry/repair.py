@@ -49,10 +49,12 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
     is only synthesized when the geometry actually supports one. New
     surfaces start "Outdoors"; match_surfaces() then runs once to pair any
     that truly coincide with a floor above in an adjacent space, and
-    whatever's still unmatched afterward is set to "Adiabatic" rather than
-    left facing outdoor weather it almost certainly isn't exposed to —
-    defensible here specifically because this tool only ever fires on the
-    nested-under-another-room's-ceiling case its preconditions describe.
+    whatever's still unmatched afterward is set "Adiabatic" with
+    NoSun/NoWind rather than left facing outdoor weather it almost
+    certainly isn't exposed to — defensible here specifically because this
+    tool only ever fires on the nested-under-another-room's-ceiling case
+    its preconditions describe. That assumption is still reported per
+    surface via boundary_condition_ambiguous.
     """
     try:
         model = get_model()
@@ -180,12 +182,20 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
                 matched_space_above = surface.outsideBoundaryCondition() == "Surface"
                 if not matched_space_above:
                     surface.setOutsideBoundaryCondition("Adiabatic")
+                    # Exposure has to follow the boundary condition — a Surface defaults to
+                    # SunExposed/WindExposed, which is incoherent against an adiabatic
+                    # outside face and becomes a live error if anything later flips this
+                    # surface back to Outdoors.
+                    surface.setSunExposure("NoSun")
+                    surface.setWindExposure("NoWind")
                 entry["final_boundary_condition"] = surface.outsideBoundaryCondition()
+                entry["boundary_condition_ambiguous"] = not matched_space_above
                 entry["boundary_condition_warning"] = (
                     None if matched_space_above
-                    else "Set Adiabatic (no matching space above) — correct for a nested space "
-                         "under another room's ceiling, but wrong if this space is genuinely "
-                         "top-floor with a missing roof; verify before trusting simulation results."
+                    else "Set Adiabatic (NoSun/NoWind) — no matching space above. Correct for "
+                         "a nested space under another room's ceiling, which is the case this "
+                         "repair targets, but wrong if this space is genuinely top-floor with "
+                         "a missing roof; verify before trusting simulation results."
                 )
 
         return {

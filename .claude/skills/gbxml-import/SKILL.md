@@ -54,11 +54,13 @@ left once merge and weld have closed what they can.
   high-degree vertex is reported rather than searched, so these tools stay bounded on
   arbitrarily malformed input.
 - **Check `ambiguous_boundary_condition_count` after `patch_missing_surfaces()`.** A
-  reconstructed surface that `match_surfaces()` couldn't pair stays `Outdoors` and is
-  flagged `boundary_condition_ambiguous`, because it could equally be an interior partition
-  whose opposite face is still missing (wants Adiabatic) or a genuinely exterior surface
-  (correct as-is). Set those explicitly — leaving an interior partition exposed to weather,
-  or making a real exterior wall adiabatic, both distort simulation results.
+  reconstructed surface that `match_surfaces()` couldn't pair is set `Adiabatic` with
+  `NoSun`/`NoWind` and flagged `boundary_condition_ambiguous`. That is an assumption, not a
+  determination: these facets are topological closures traced from a hole's outline, so zero
+  heat flux keeps a surface the tool can't physically identify from inventing or destroying
+  load. It is wrong for a genuinely exterior wall or roof the export dropped — override those
+  to `Outdoors` with `SunExposed`/`WindExposed`. Expect this count to be large on a badly
+  broken export; on the project's own test fixture it is 107 of 117 patches.
 - `trim_overlapping_surfaces()` only trims a pair that is genuinely the same thing twice
   (matching type, boundary condition, and construction, neither carrying a window or door).
   Anything else is reported as skipped — resolve those by hand rather than expecting the

@@ -933,13 +933,21 @@ def test_patch_missing_surfaces_reconstructs_deleted_wall():
                 assert entry["space"] == "PatchSpace", entry
                 assert entry["surface_type"] == "Wall", entry
                 assert entry["area_m2"] == pytest.approx(30.0, abs=0.01), entry
-                # Regression: this wall is genuinely exterior (a free-standing box), so
-                # forcing it Adiabatic — as this tool used to — silently deleted its
-                # conduction and solar/wind exposure. An unmatched patch stays Outdoors
-                # and is flagged for the caller to resolve instead of being guessed at.
-                assert entry["final_boundary_condition"] == "Outdoors", entry
+                # Regression: an unmatched patch is assumed Adiabatic, and the assumption
+                # is now reported (boundary_condition_ambiguous) instead of being silent —
+                # that silence was the actual review finding. Exposure must follow the
+                # boundary condition: a Surface defaults to SunExposed/WindExposed and
+                # nothing used to change it, which is incoherent against an adiabatic
+                # outside face and becomes a live error (fictitious solar + wind on 100+
+                # surfaces of a real fixture) if the surface is instead left Outdoors.
+                assert entry["final_boundary_condition"] == "Adiabatic", entry
                 assert entry["boundary_condition_ambiguous"] is True, entry
                 assert result["ambiguous_boundary_condition_count"] == 1, result
+                patched_surface = unwrap(await s.call_tool("get_surface_details", {
+                    "surface_name": entry["new_surface_name"],
+                }))
+                assert patched_surface["surface"]["sun_exposure"] == "NoSun", patched_surface
+                assert patched_surface["surface"]["wind_exposure"] == "NoWind", patched_surface
 
                 after = unwrap(await s.call_tool("repair_and_validate_gbxml_geometry", {}))
                 assert "PatchSpace" not in [ns["space"] for ns in after["non_enclosed_spaces"]], after

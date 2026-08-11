@@ -777,12 +777,28 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
                 # pipeline three times and getting byte-identical counts.
                 assert patch_result["patched_count"] == 117, patch_result
                 assert patch_result["skipped_count"] == 5, patch_result
-                # Most reconstructed surfaces find no partner on the other side, because
-                # the mirroring space's own copy of that partition is missing too. They
-                # stay Outdoors and are flagged rather than silently forced to Adiabatic —
-                # a large count here is expected on a fixture this broken, and is exactly
-                # the disclosure the old unconditional-Adiabatic behavior suppressed.
+                # Most reconstructed surfaces find no partner on the other side — measured
+                # directly, 101 of these 107 have no surface in any other space sharing
+                # their plane at all, so they bound a void rather than a missing partner.
+                # They are assumed Adiabatic and the assumption is reported; a large count
+                # here is expected on a fixture this broken, and is exactly the disclosure
+                # the old (equally Adiabatic but silent) behavior suppressed.
                 assert patch_result["ambiguous_boundary_condition_count"] == 107, patch_result
+                # Regression: exposure must follow the boundary condition. Every patch is
+                # created Outdoors so match_surfaces() can pair it, and a Surface defaults
+                # to SunExposed/WindExposed — so any patch left Outdoors afterward would
+                # take fictitious solar gain and wind convection. On this fixture that was
+                # 107 surfaces, including 6 Floors and 2 RoofCeilings, worth roughly tens
+                # of kW of invented cooling load. Nothing may be left in that state.
+                for patched_entry in patch_result["patched"]:
+                    details = unwrap(await session.call_tool("get_surface_details", {
+                        "surface_name": patched_entry["new_surface_name"],
+                    }))
+                    surface = details["surface"]
+                    assert surface["outside_boundary_condition"] in ("Surface", "Adiabatic"), surface
+                    if surface["outside_boundary_condition"] == "Adiabatic":
+                        assert surface["sun_exposure"] == "NoSun", surface
+                        assert surface["wind_exposure"] == "NoWind", surface
 
                 trim_result = unwrap(await session.call_tool("trim_overlapping_surfaces", {}))
                 assert trim_result["ok"] is True, trim_result

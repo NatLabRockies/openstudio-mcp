@@ -114,10 +114,15 @@ defects cause this, and none are fixed by `match_surfaces()`:
   `geometry/edge_topology.py` and `geometry/planar_facets.py`) — pairing a branch vertex's edges
   enumerates `(deg-1)!!` matchings, which is 105 at degree 8 but 654,729,075 at degree 20, and
   tool calls have no timeout and run on a thread that can't be cancelled. Anything past the caps
-  is reported as skipped. A patched surface that `match_surfaces()` can't pair is left `Outdoors`
-  and flagged `boundary_condition_ambiguous` (counted in `ambiguous_boundary_condition_count`)
-  rather than forced to `Adiabatic`: it may be an interior partition whose other face is still
-  missing, or genuinely exterior, and guessing silently deletes envelope load in the latter case.
+  is reported as skipped. A patched surface that `match_surfaces()` can't pair is set `Adiabatic`
+  with `NoSun`/`NoWind` and flagged `boundary_condition_ambiguous` (counted in
+  `ambiguous_boundary_condition_count`) — an assumption made visible rather than silently, which
+  was the actual review finding. Adiabatic because these facets are topological closures traced
+  from a hole's outline and need not correspond to a real building element; measured on the Austin
+  fixture, 101 of 107 such patches have no surface in any other space sharing their plane at all.
+  Exposure must follow the boundary condition: a new `Surface` defaults to
+  `SunExposed`/`WindExposed`, harmless against an adiabatic face but a live error (fictitious
+  solar/wind on 100+ surfaces) if one is left `Outdoors`.
 - **Same-space overlaps** (aka shared-wall duplication): the flip side of a missing surface — a
   wall exported once per neighboring room instead of split at the boundary between them, leaving
   a surface duplicated, or a byproduct of patching a missing surface that happens to coincide

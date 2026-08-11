@@ -162,8 +162,8 @@ surface, not the two a closed volume requires: a genuinely missing surface, not 
      facet's own geometry, not assumed to be a wall. Edges used 3+ times (a same-space
      overlap — a different defect) are excluded and reported separately, not allowed to
      block the rest of the space. Re-runs match_surfaces() once, batched; anything still
-     unmatched afterward stays Outdoors and is flagged rather than guessed at (see
-     "Boundary conditions" below); every space is re-checked afterward rather
+     unmatched afterward is set Adiabatic/NoSun/NoWind and flagged so the assumption is
+     visible (see "Boundary conditions" below); every space is re-checked rather
      than trusted, in case a new internal chord edge happens to coincide with an
      already-ambiguous pre-existing one.
    { ok: true, patched_count: 117, patched: [...], skipped_count: 5, skipped: [...],
@@ -185,16 +185,31 @@ unrelated one-off defects.
 
 ### Boundary conditions on a patched surface
 
-A reconstructed surface starts `Outdoors`; `match_surfaces()` then pairs it with whatever sits on
-the other side, if anything does. One that finds no partner **stays `Outdoors`** and is reported
+A reconstructed surface starts `Outdoors` so `match_surfaces()` can pair it with whatever sits on
+the other side. One that finds no partner is set **`Adiabatic` with `NoSun`/`NoWind`** and reported
 with `boundary_condition_ambiguous: true`, counted in `ambiguous_boundary_condition_count`.
 
-On this fixture that count is **107 of 117** patches — most reconstructed partitions have no
-partner because the mirroring space's own copy of the same wall was missing from the export too.
-Expect to resolve those in bulk rather than one at a time: for a genuine interior partition
-`Adiabatic` is usually right, which is what the tool used to apply to all 107 automatically. The
-change is not that Adiabatic is wrong — it's that the tool no longer decides silently, because
-some of those 107 are real exterior surfaces and it cannot tell which from geometry alone.
+On this fixture that is **107 of 117** patches. Measured directly, **101 of those 107 have no
+surface in any other space sharing their plane at all** — they bound a void, not a missing partner.
+(Measuring this correctly requires normalizing winding before `openstudio.intersect`; a first pass
+using bare `openstudio.intersects` undercounted, because an interior pair has opposite winding —
+exactly the false negative documented under "Why Two Separate Checks" below.)
+
+Adiabatic is a deliberate assumption, not a determination. These facets are *topological
+closures*: traced from a hole's outline to make `isEnclosedVolume()` pass, so on geometry this
+broken one need not correspond to any real building element. Zero heat flux keeps a surface the
+tool cannot physically identify from either inventing or destroying load. It is wrong for a
+genuinely exterior wall or roof that the export dropped — override those to `Outdoors` with
+`SunExposed`/`WindExposed`. Nothing here distinguishes envelope from interstitial geometry, which
+is why the count exists rather than a claim of correctness.
+
+**Exposure has to follow the boundary condition.** A new `Surface` defaults to
+`SunExposed`/`WindExposed`, and this codebase never used to change it. That was harmless while the
+outside face was adiabatic — exposure has no heat transfer to modify — but it made an earlier
+revision of this tool, which left unmatched patches `Outdoors`, materially wrong: 107 surfaces
+(including 6 Floors and 2 RoofCeilings) taking full solar gain, wind convection, and sky longwave
+exchange, on the order of tens of kW of invented cooling load. `NoSun`/`NoWind` is now set
+alongside `Adiabatic`, and `tests/test_gbxml_import.py` asserts no patch is ever left `Outdoors`.
 
 This tool used to force those to `Adiabatic`. That was wrong often enough to matter: surface type
 is inferred from each facet's geometry, so patches include Floors and RoofCeilings (`sp-1stair`
