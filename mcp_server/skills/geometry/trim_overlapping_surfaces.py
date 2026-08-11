@@ -104,8 +104,16 @@ def _find_overlapping_pairs(space: openstudio.model.Space) -> list[tuple[Any, An
 
     Returns (surface1, surface2, forward_transform, IntersectionResult) — the transform
     maps the intersection result's local-frame points back to the model's global frame.
+
+    Surfaces are taken in name order rather than whatever order the model hands back.
+    `space.surfaces()` is ultimately handle-ordered, and handles are UUIDs minted afresh
+    on every import, so the enumeration order is not reproducible run to run. That
+    matters here specifically because `already_handled` makes this first-come-first-served:
+    whichever overlap is seen first is trimmed, and any later pair touching those surfaces
+    is skipped. Without a stable order the same model can yield a different trim count on
+    different runs. Names come from the source gbXML and are stable.
     """
-    surfaces = list(space.surfaces())
+    surfaces = sorted(space.surfaces(), key=lambda s: s.nameString())
     planes: list[Any] = []
     for s in surfaces:
         try:
@@ -207,7 +215,8 @@ def trim_overlapping_surfaces() -> dict[str, Any]:
         skipped: list[dict[str, Any]] = []
         any_change = False
 
-        for space in model.getSpaces():
+        # Name order, not model order — see _find_overlapping_pairs for why.
+        for space in sorted(model.getSpaces(), key=lambda sp: sp.nameString()):
             if space.isEnclosedVolume():
                 continue  # scoped to spaces that actually need it — see docstring
             name = space.nameString()
