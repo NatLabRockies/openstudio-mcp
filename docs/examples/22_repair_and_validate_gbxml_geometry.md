@@ -38,7 +38,7 @@ Two calls total, replacing what would otherwise be dozens.
 On a messier real-world Revit export (`tests/assets/2026_11Ja_path1.xml`, a residential floor
 plan — a second fixture, imported the same way as Example 21 but not covered there), the same call
 also finds 9 same-space surface overlaps — a genuine source-geometry defect, not a false positive
-(see `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`).
+(see `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_detects_shared_wall_duplication_overlaps`).
 Of that fixture's 14 non-enclosed spaces, 3 are missing a RoofCeiling surface entirely rather than
 having a subtler non-manifold gap — see "Follow-up" below.
 
@@ -77,7 +77,7 @@ not guessed at.
 4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 14 -> 13
 ```
 
-On the 11 Jay St fixture, only 1 of the 3 has-Floor/no-RoofCeiling spaces was actually safe to
+On this residential fixture, only 1 of the 3 has-Floor/no-RoofCeiling spaces was actually safe to
 auto-repair — the other 2 are symptoms of the same wall-duplication defect that causes the 9
 surface overlaps above, not something a flat-ceiling repair should paper over.
 
@@ -190,8 +190,8 @@ stable across repeated runs regardless.
 
 ## Follow-up: `trim_overlapping_surfaces`
 
-The flip side of a missing surface: a genuine same-space 2D overlap, either the historical "11 Jay
-St" pattern (a wall exported once per neighboring room instead of split at the boundary between
+The flip side of a missing surface: a genuine same-space 2D overlap, either shared-wall
+duplication (a wall exported once per neighboring room instead of split at the boundary between
 them) or, occasionally, a byproduct of `patch_missing_surfaces()` reconstructing a surface that
 happens to coincide with something already there. Scoped to spaces currently failing
 `isEnclosedVolume()` — a coplanar sliver artifact coexisting peacefully with an already-enclosed
@@ -260,8 +260,8 @@ looping against.
 See `tests/test_gbxml_import.py::test_repair_and_validate_gbxml_geometry_on_real_import`,
 `::test_repair_and_validate_gbxml_geometry_detects_same_space_overlap`,
 `::test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space`,
-`::test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps`,
-`::test_repair_missing_roof_ceiling_on_11jay_fixture`, and
+`::test_repair_and_validate_gbxml_geometry_detects_shared_wall_duplication_overlaps`,
+`::test_repair_missing_roof_ceiling_on_shared_wall_duplication_fixture`, and
 `::test_geometry_repair_pipeline_on_austin_apartment_fixture` (covers
 `merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, `patch_missing_surfaces`, and
 `trim_overlapping_surfaces` together on the same real fixture — the 69/67/4 numbers above come from

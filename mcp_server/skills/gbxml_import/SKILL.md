@@ -107,8 +107,8 @@ defects cause this, and none are fixed by `match_surfaces()`:
   reconstructs the surface(s) independently per separate hole: splitting a non-planar loop into
   planar facets via chords, and resolving a branch point (more than one missing surface meeting at
   a vertex) via a bounded search over ways to pair up its edges.
-- **Same-space overlaps**: the flip side of a missing surface — a surface duplicated (the
-  historical "11 Jay St" pattern: a wall exported once per neighboring room instead of split at the
+- **Same-space overlaps**: the flip side of a missing surface — a surface duplicated (shared-wall
+  duplication: a wall exported once per neighboring room instead of split at the
   boundary between them), or a byproduct of patching a missing surface that happens to coincide
   with something already there. `trim_overlapping_surfaces()` (geometry skill) trims each side of a
   genuine 2D overlap to its own non-overlapping remainder, or removes it outright if fully
@@ -119,17 +119,17 @@ Re-check with `repair_and_validate_gbxml_geometry()` after any of these. Order m
 `merge_coplanar_sliver_surfaces()` and `weld_coincident_vertices()` (they touch different surface
 pairs) than for the other two: run `patch_missing_surfaces()` after those two have closed what
 they can, and `trim_overlapping_surfaces()` after that, since it's scoped to still-non-enclosed
-spaces. **None guarantee full closure**, and combining them isn't necessarily additive: on the real
-fixture used in this project's own tests (74 spaces, 69 non-enclosed),
-`merge_coplanar_sliver_surfaces()` alone fixes 2, `weld_coincident_vertices()` alone fixes 0 (real
-work — 22 spaces get vertices snapped — but the spaces it touches have other simultaneous defects a
-2cm weld doesn't close), and running both nets the same 2 as merge alone, with zero regressions
-either way — 69 -> 67. `patch_missing_surfaces()` and `trim_overlapping_surfaces()` together
-close all but 4 of what's left: 67 -> 4. The honest remainder on this fixture is a confirmed
-patch/trim oscillation — each pass's fix creates exactly the input the other pass "fixes" right
-back (verified directly by running repeated rounds, not assumed) — or a structurally ambiguous mix
-of missing and duplicate geometry neither tool can resolve alone. Ambiguous cases are reported as
-skipped, with the specific reason, rather than guessed at in every one of these four tools.
+spaces.
+
+**None guarantee full closure, and combining them isn't necessarily additive** — a space can
+carry more than one of these four defects at once, so closing one doesn't guarantee the others
+clear in the same pass. `patch_missing_surfaces()` and `trim_overlapping_surfaces()` can also
+oscillate against each other on a structurally ambiguous mix of missing and duplicate geometry
+(each pass's fix recreates the other's input) rather than converge — re-running the pair is a
+legitimate way to confirm that before giving up on a space. Ambiguous cases are reported as
+skipped, with the specific reason, rather than guessed at, in every one of these four tools. See
+`docs/examples/22_repair_and_validate_gbxml_geometry.md` for a worked example with exact
+before/after counts on a real fixture.
 
 ## Tools
 

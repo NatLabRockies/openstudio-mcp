@@ -1,7 +1,7 @@
 """Trim same-space surfaces that genuinely overlap, instead of leaving a duplicate.
 
 A different defect from anything else in this skill: two surfaces in the same space
-occupying (some of) the same footprint on the same plane — the historical "11 Jay St"
+occupying (some of) the same footprint on the same plane — the shared-wall-duplication
 pattern of a wall exported once per neighboring room instead of split at the boundary
 between them, and also how a chord-based reconstruction in patch_missing_surfaces()
 can occasionally end up sharing an edge with an already-ambiguous pre-existing sliver.

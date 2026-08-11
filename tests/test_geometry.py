@@ -489,7 +489,7 @@ def test_repair_missing_roof_ceiling_synthesizes_flat_ceiling():
                 # Regression: the built-in example model has a default construction
                 # set, so the synthesized surface should resolve one through the
                 # hierarchy with no warning — the no-construction fallback path is
-                # covered separately on the constructionless 11 Jay gbXML fixture.
+                # covered separately on the constructionless residential shared-wall-duplication gbXML fixture.
                 assert repaired["construction"] is not None, repaired
                 assert repaired["construction_warning"] is None, repaired
                 assert repaired["boundary_condition_warning"] is not None, repaired
@@ -1088,7 +1088,7 @@ def test_patch_missing_surfaces_no_op_on_clean_model():
 def test_trim_overlapping_surfaces_trims_partial_overlap():
     """Two coplanar walls with a genuine 2D overlap get trimmed to their non-overlap remainder."""
     # Regression: a wall exported once per neighboring room instead of split at the
-    # boundary between them (the historical "11 Jay St" pattern) leaves two same-space
+    # boundary between them (shared-wall duplication) leaves two same-space
     # surfaces genuinely overlapping in area, not just touching along an edge.
     # trim_overlapping_surfaces must replace each with its own non-overlapping
     # remainder, not guess which one is "right." The space (just two overlapping walls,

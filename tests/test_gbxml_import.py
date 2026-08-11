@@ -21,7 +21,7 @@ from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
 GBXML_PATH = "/repo/tests/assets/gbxml/25_SpacesOneZE.xml"
-GBXML_PATH_11JAY = "/repo/tests/assets/2026_11Ja_path1.xml"
+GBXML_PATH_SHARED_WALL_DUPES = "/repo/tests/assets/2026_11Ja_path1.xml"
 GBXML_PATH_AUSTIN = "/repo/tests/assets/gbxml/austin_office.xml"
 GBXML_PATH_AUSTIN_SLIVERS = "/repo/tests/assets/gbxml/austin_apartment_slivers.xml"
 AUSTIN_EPW_PATH = "/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.epw"
@@ -322,8 +322,8 @@ def test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space():
 
 
 @pytest.mark.integration
-def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
-    """Test repair_and_validate_gbxml_geometry's exact output on the 11 Jay St residential fixture."""
+def test_repair_and_validate_gbxml_geometry_detects_shared_wall_duplication_overlaps():
+    """Test repair_and_validate_gbxml_geometry's exact output on the residential shared-wall-duplication fixture."""
     # Regression: 2026_11Ja_path1.xml (a Revit-exported residential floor plan)
     # produces 9 real same-space surface overlaps that match_surfaces() cannot
     # fix — walls that border more than one neighboring room along their run
@@ -355,7 +355,7 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
 
                 import_result = unwrap(await session.call_tool(
                     "import_gbxml",
-                    {"gbxml_path": GBXML_PATH_11JAY, "epw_path": EPW_PATH, "run_name": run_name},
+                    {"gbxml_path": GBXML_PATH_SHARED_WALL_DUPES, "epw_path": EPW_PATH, "run_name": run_name},
                 ))
                 assert import_result["ok"] is True, import_result
                 assert import_result["total_errors"] == 0, import_result
@@ -431,14 +431,14 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
 
 
 @pytest.mark.integration
-def test_repair_missing_roof_ceiling_on_11jay_fixture():
-    """Test repair_missing_roof_ceiling's exact output on the 11 Jay St residential fixture."""
+def test_repair_missing_roof_ceiling_on_shared_wall_duplication_fixture():
+    """Test repair_missing_roof_ceiling's exact output on the residential shared-wall-duplication fixture."""
     # Regression: of the 3 spaces flagged has_floor=True/has_roofceiling=False on this
     # fixture, only sp-9diningroomcloset actually gets an auto-repaired flat ceiling.
     # sp-11mastercloset is correctly skipped for uneven wall heights and
     # sp-4masterbedroom for having 3 Floor surfaces instead of 1 — both symptomatic of
     # the same wall-duplication defect documented in
-    # test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps, not something this
+    # test_repair_and_validate_gbxml_geometry_detects_shared_wall_duplication_overlaps, not something this
     # targeted repair should guess its way through. The repaired ceiling gets
     # "Adiabatic" (no adjacent-space match found), and non_enclosed_spaces_count drops
     # from 14 to 13 — the overlap count (9) and cross_space_surfaces_matched (128) are
@@ -455,7 +455,7 @@ def test_repair_missing_roof_ceiling_on_11jay_fixture():
 
                 import_result = unwrap(await session.call_tool(
                     "import_gbxml",
-                    {"gbxml_path": GBXML_PATH_11JAY, "epw_path": EPW_PATH, "run_name": run_name},
+                    {"gbxml_path": GBXML_PATH_SHARED_WALL_DUPES, "epw_path": EPW_PATH, "run_name": run_name},
                 ))
                 assert import_result["ok"] is True, import_result
 
@@ -704,8 +704,8 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
     # splitting a non-planar loop into planar facets via chords, and resolving a branch
     # point (more than one missing surface meeting at a vertex) via a bounded search over
     # ways to pair up its edges. trim_overlapping_surfaces() then handles the opposite
-    # problem: edges used three or more times (a genuine same-space duplicate, the
-    # historical "11 Jay St" pattern) — trims each surface to its non-overlap remainder, or
+    # problem: edges used three or more times (a genuine same-space duplicate —
+    # shared-wall duplication) — trims each surface to its non-overlap remainder, or
     # removes it outright if fully contained within the other. Together they close all but
     # 4 of the original 69 non-enclosed spaces on this fixture — the honest remainder
     # (sp-14retail, sp-21restuarant, sp-35apartment, sp-6retail) has a structurally
