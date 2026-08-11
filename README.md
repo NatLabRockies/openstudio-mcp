@@ -62,6 +62,7 @@ Replace `/path/to/openstudio-mcp` with your absolute path to the repository (e.g
         "-v", "/path/to/openstudio-mcp/runs:/runs",
         "-v", "/path/to/openstudio-mcp/measures:/measures",
         "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
+        "-e", "OSMCP_SANDBOX=posix",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
         "openstudio-mcp:dev", "openstudio-mcp"
       ]
@@ -86,6 +87,7 @@ args = [
   "-v", "/path/to/openstudio-mcp/runs:/runs",
   "-v", "/path/to/openstudio-mcp/measures:/measures",
   "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
+  "-e", "OSMCP_SANDBOX=posix",
   "-e", "OPENSTUDIO_MCP_MODE=prod",
   "openstudio-mcp:dev", "openstudio-mcp"
 ]

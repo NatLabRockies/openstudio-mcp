@@ -43,6 +43,8 @@ def silence_openstudio_stdout_logger():
     Uses the intended OpenStudio Logger API — no fd manipulation.
     Call at process startup before any SDK operations.
     """
+    if os.environ.get("OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE", "").lower() in {"1", "true", "yes"}:
+        return
     import openstudio
     openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
 
