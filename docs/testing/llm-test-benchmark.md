@@ -23,37 +23,49 @@ the release DOI); aggregates regenerate via
 
 ### Frozen rerun baseline (paper artifact)
 
-**The paper's benchmark is rerun against the tagged release, at rubric
-`1.2`.** After PR #126 merges to develop, the release is tagged (v1.2.0,
-Zenodo DOI) and the benchmark image is rebuilt from that tag; every paper
-rerun pins that image and that harness commit. Rubric 1.2 hardened two
-graders after external review (per-surface roof criterion instead of an
-average; the EMS setback required on all 10 zones). Re-scoring the recorded
-`prod-2026-08b` + `roof-fix-2026-08` facts under 1.2 changed **0 of 391**
-roof+EMS verdicts, so the numbers in this section are stable across the
-tightening. The aggregator now refuses to pool legs from different harness
-commits or images unless explicitly overridden (`--ignore-harness` /
-`--ignore-digest`), so a rerun that drifts off the tag fails loudly.
-Fill in the tag SHA here once cut: `v1.2.0 = <SHA>`.
+**The paper's benchmark is a fresh 75-leg rerun against the tagged release
+`v1.2.0 = 80670cf`, at rubric `1.2`.** The benchmark image was rebuilt from
+the tag and every leg pins that image and that harness commit; all 75 legs
+carry a single provenance (`git=v1.2.0`, image `sha256:7b76b28f`) and passed
+the contamination detector. The aggregator refuses to pool legs from
+different harness commits or images unless explicitly overridden
+(`--ignore-harness` / `--ignore-digest`), so a rerun that drifts off the tag
+fails loudly. Rubric 1.2 hardened two graders after external review
+(per-surface roof criterion instead of an average; the EMS setback required
+on all 10 zones); the tightening had been validated as **0 of 391** verdict
+flips on the prior recorded roof+EMS facts, so it closes grading loopholes
+without moving the numbers.
 
-Full arm (all assistance layers on), outcome vs routing pass over
-attempted tasks:
+Three sweeps: `paper-v1.2.0` (57 legs — three claude tiers x five arms x3,
+plus GPT-5.4 and GPT-5.4-mini x {full, noskills} x3), `paper-v1.2.0-t240`
+(12 legs, 240 s budget control), and `paper-v1.2.0-codegen` (6 legs, Arm C).
+Raw legs are deposited with the release DOI; aggregates regenerate via
+`python scripts/benchmark_aggregate.py results/paper-v1.2.0`.
+
+Full arm (all assistance layers on), outcome versus routing pass over the
+progressive tasks (16 tasks x 3 repeats = 48 trials per cell):
 
 | Model | Outcome | Routing | Gap |
 |---|---|---|---|
-| Opus 4.6 | 92.6% | 96.3% | 3.7 |
-| Sonnet 4.6 | 81.5% | 96.3% | 14.8 |
-| Haiku 4.5 | 61.1% | 83.3% | 22.2 |
-| GPT-5.4 | 81.5% | 96.3% | 14.8 |
-| GPT-5.4-mini | 74.1% | 92.6% | 18.5 |
+| Opus 4.6 | 85.4% | 89.6% | 4.2 |
+| Sonnet 4.6 | 83.3% | 91.7% | 8.3 |
+| Haiku 4.5 | 54.2% | 79.2% | 25.0 |
+| GPT-5.4 | 89.6% | 97.9% | 8.3 |
+| GPT-5.4-mini | 77.1% | 91.7% | 14.6 |
 
-Key ablation results: removing deferred tool search raises outcome pass
-+16.7 points (Haiku) and +5.5 (Sonnet, Opus); a 240 s budget control
-leaves Haiku unchanged (timeouts 8 to 0, same pass rate); Opus with
-discovery and skills both removed reaches 98.1% with a zero
-routing-outcome gap. Arm C (no MCP server, agent scripts the SDK):
-Sonnet 13/18, GPT-5.4 15/18 on six simpler outcome-graded tasks.
-Methodology details: [`llm-testing-methodology.md`](llm-testing-methodology.md).
+The routing-to-outcome gap widens as capability drops: routing pass alone
+would credit Haiku at 79% while only 54% of its artifacts are correct.
+
+Key ablation results: removing deferred tool search (full to nodiscovery,
+all schemas loaded up front) raises outcome pass +37.5 points for Haiku,
++8.3 for Opus, and +2.1 for Sonnet — the discovery lever scales inversely
+with model capability. A 240 s budget control leaves the full-arm pass
+rates essentially unchanged, so the discovery gap is structural, not a
+timeout race. Opus with discovery and skills both removed
+(nodiscovery-noskills) reaches 97.9%. Arm C (no MCP server, agent scripts
+the SDK directly): Sonnet 13/18, GPT-5.4 15/18 on six simpler
+outcome-graded tasks. Methodology details:
+[`llm-testing-methodology.md`](llm-testing-methodology.md).
 
 ---
 
