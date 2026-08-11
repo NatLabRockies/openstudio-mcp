@@ -1,9 +1,9 @@
 """Trim same-space surfaces that genuinely overlap, instead of leaving a duplicate.
 
 A different defect from anything else in this skill: two surfaces in the same space
-occupying (some of) the same footprint on the same plane — the shared-wall-duplication
-pattern of a wall exported once per neighboring room instead of split at the boundary
-between them, and also how a chord-based reconstruction in patch_missing_surfaces()
+occupying (some of) the same footprint on the same plane. Typically a wall exported
+once per neighboring room instead of split at the boundary between them
+(shared-wall duplication); also how a chord-based reconstruction in patch_missing_surfaces()
 can occasionally end up sharing an edge with an already-ambiguous pre-existing sliver.
 match_surfaces() can't fix this (it only reconciles surfaces between spaces, never
 within one), and neither can anything additive — there's too much material here, not

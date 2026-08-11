@@ -190,9 +190,9 @@ stable across repeated runs regardless.
 
 ## Follow-up: `trim_overlapping_surfaces`
 
-The flip side of a missing surface: a genuine same-space 2D overlap, either shared-wall
-duplication (a wall exported once per neighboring room instead of split at the boundary between
-them) or, occasionally, a byproduct of `patch_missing_surfaces()` reconstructing a surface that
+The flip side of a missing surface: a genuine same-space 2D overlap. Either a wall exported once
+per neighboring room instead of split at the boundary between them (shared-wall duplication), or,
+occasionally, a byproduct of `patch_missing_surfaces()` reconstructing a surface that
 happens to coincide with something already there. Scoped to spaces currently failing
 `isEnclosedVolume()` — a coplanar sliver artifact coexisting peacefully with an already-enclosed
 space is not this tool's concern.

@@ -15,7 +15,10 @@ exactly as that pipeline would build it — without ever invoking EnergyPlus.
    EPW's companion `.stat` and `.ddy` files (same directory, same filename stem as the EPW).
 2. `import_gbxml(gbxml_path, epw_path[, osm_path, run_name])`
 3. Steps run: `ChangeBuildingLocation` → `gbxml_import` → `gbxml_import_advanced` →
-   `gbxml_import_hvac` → `set_simulation_control` → `gbxml_postprocess`.
+   `gbxml_import_hvac` → `set_simulation_control` → `gbxml_postprocess`. These are vendored
+   measure names from `NatLabRockies/gbxml-to-openstudio`, not this skill or its
+   `import_gbxml`/`repair_and_validate_gbxml_geometry` tools — the `gbxml_import` measure step
+   is a coincidentally-identical name, not a self-reference.
    `ChangeBuildingLocation` always runs, even though no simulation ever does —
    `gbxml_import_advanced` reads the model's WeatherFile timezone while building
    schedules and errors out without one. This is also what embeds the project's
@@ -107,9 +110,9 @@ defects cause this, and none are fixed by `match_surfaces()`:
   reconstructs the surface(s) independently per separate hole: splitting a non-planar loop into
   planar facets via chords, and resolving a branch point (more than one missing surface meeting at
   a vertex) via a bounded search over ways to pair up its edges.
-- **Same-space overlaps**: the flip side of a missing surface — a surface duplicated (shared-wall
-  duplication: a wall exported once per neighboring room instead of split at the
-  boundary between them), or a byproduct of patching a missing surface that happens to coincide
+- **Same-space overlaps** (aka shared-wall duplication): the flip side of a missing surface — a
+  wall exported once per neighboring room instead of split at the boundary between them, leaving
+  a surface duplicated, or a byproduct of patching a missing surface that happens to coincide
   with something already there. `trim_overlapping_surfaces()` (geometry skill) trims each side of a
   genuine 2D overlap to its own non-overlapping remainder, or removes it outright if fully
   contained within the other. Scoped to spaces currently failing `isEnclosedVolume()` — it never
