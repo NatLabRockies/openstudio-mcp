@@ -940,6 +940,13 @@ def test_patch_missing_surfaces_reconstructs_deleted_wall():
                 # nothing used to change it, which is incoherent against an adiabatic
                 # outside face and becomes a live error (fictitious solar + wind on 100+
                 # surfaces of a real fixture) if the surface is instead left Outdoors.
+                #
+                # Also guards the scope of the fallback pairing pass: PatchSpace is built
+                # on top of the example model, so this patched wall IS coincident with
+                # pre-existing example-model geometry. An earlier version of that pass
+                # searched every surface in the model and paired them, silently converting
+                # someone else's exterior wall into an interior boundary. It only ever
+                # considers surfaces from the same patch run now, so this stays Adiabatic.
                 assert entry["final_boundary_condition"] == "Adiabatic", entry
                 assert entry["boundary_condition_ambiguous"] is True, entry
                 assert result["ambiguous_boundary_condition_count"] == 1, result
@@ -1418,6 +1425,111 @@ def test_merge_coplanar_sliver_surfaces_preserves_roof_normal():
                     "surface_name": merged["surfaces"][0]["name"],
                 }))
                 assert after["surface"]["tilt_deg"] == pytest.approx(0.0, abs=0.5), after
+    asyncio.run(_run())
+
+
+async def _build_open_box(session, space_name, x0, y0, width, depth, omit, height=3.0):
+    """A box at an arbitrary origin/size with one face left out, so the space is open.
+
+    The shared _build_box helper is fixed at 0..4 and always complete; these tests need
+    two boxes at different origins, each missing the face they would share.
+    """
+    x1, y1 = x0 + width, y0 + depth
+    faces = {
+        "Floor": ([[x0, y0, 0], [x0, y1, 0], [x1, y1, 0], [x1, y0, 0]], "Floor"),
+        "Ceiling": ([[x0, y0, height], [x1, y0, height], [x1, y1, height], [x0, y1, height]], "RoofCeiling"),
+        "WallSouth": ([[x0, y0, 0], [x1, y0, 0], [x1, y0, height], [x0, y0, height]], "Wall"),
+        "WallNorth": ([[x1, y1, 0], [x0, y1, 0], [x0, y1, height], [x1, y1, height]], "Wall"),
+        "WallWest": ([[x0, y1, 0], [x0, y0, 0], [x0, y0, height], [x0, y1, height]], "Wall"),
+        "WallEast": ([[x1, y0, 0], [x1, y1, 0], [x1, y1, height], [x1, y0, height]], "Wall"),
+    }
+    for face_name, (vertices, surface_type) in faces.items():
+        if face_name == omit:
+            continue
+        res = unwrap(await session.call_tool("create_surface", {
+            "name": f"{space_name}_{face_name}",
+            "vertices": vertices,
+            "space_name": space_name,
+            "surface_type": surface_type,
+            "outside_boundary_condition": "Outdoors",
+        }))
+        assert res["ok"] is True, res
+
+
+@pytest.mark.integration
+def test_patch_missing_surfaces_pairs_near_coincident_patches():
+    """Two patches 5cm apart — too far for the SDK — get paired by the fallback."""
+    # Regression: openstudio.model.matchSurfaces() compares vertices against an
+    # internal, non-configurable tolerance of roughly 0.0125m, so two reconstructed
+    # surfaces that are plainly the same partition but land a few centimetres apart
+    # come back unmatched and were then assumed Adiabatic. Measured on the Austin
+    # fixture, 6 of 107 "ambiguous" patches actually had a coincident counterpart in
+    # another space. Here two adjacent boxes are offset by 0.05m and each is missing
+    # the wall they share: both get patched, the SDK misses the pair, and the fallback
+    # must join them so both report "Surface".
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+                left, right = _unique_name("left"), _unique_name("right")
+                for space_name in (left, right):
+                    assert unwrap(await s.call_tool("create_space", {"name": space_name}))["ok"] is True
+                await _build_open_box(s, left, 0.0, 0.0, 4.0, 4.0, omit="WallEast")
+                await _build_open_box(s, right, 4.05, 0.0, 4.0, 4.0, omit="WallWest")
+
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["paired_by_fallback_count"] == 1, result
+                pair = result["paired_by_fallback"][0]
+                assert pair["overlap_fraction"] == pytest.approx(1.0, abs=0.01), pair
+                assert {pair["space"], pair["paired_with_space"]} == {left, right}, pair
+
+                patched_here = [e for e in result["patched"] if e["space"] in (left, right)]
+                assert len(patched_here) == 2, patched_here
+                for entry in patched_here:
+                    assert entry["final_boundary_condition"] == "Surface", entry
+                    assert entry["boundary_condition_ambiguous"] is False, entry
+                    assert entry["paired_by_fallback"] is True, entry
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_patch_missing_surfaces_refuses_to_pair_mismatched_areas():
+    """Two patches that merely overlap are left unpaired, not forced together."""
+    # Regression: the fallback above must not become a blanket "pair anything coplanar."
+    # On the Austin fixture a 1474 m2 floor plate overlaps a 1059 m2 one by 72% — two
+    # genuinely different surfaces that matchSurfaces() was right to decline, where
+    # forcing adjacency would invent an interzone pair with a 415 m2 area mismatch.
+    # Same shape in miniature: a 12 m2 hole against a 6 m2 one, 50% of the larger, must
+    # stay unpaired and fall through to the Adiabatic assumption.
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+                big, small = _unique_name("big"), _unique_name("small")
+                for space_name in (big, small):
+                    assert unwrap(await s.call_tool("create_space", {"name": space_name}))["ok"] is True
+                await _build_open_box(s, big, 0.0, 0.0, 4.0, 4.0, omit="WallEast")
+                # Half the depth, so its missing west wall is 6 m2 against the other's 12.
+                await _build_open_box(s, small, 4.05, 0.0, 4.0, 2.0, omit="WallWest")
+
+                result = unwrap(await s.call_tool("patch_missing_surfaces", {}))
+                assert result["ok"] is True, result
+                assert result["paired_by_fallback_count"] == 0, result
+                patched_here = [e for e in result["patched"] if e["space"] in (big, small)]
+                assert len(patched_here) == 2, patched_here
+                for entry in patched_here:
+                    assert entry["final_boundary_condition"] == "Adiabatic", entry
+                    assert entry["boundary_condition_ambiguous"] is True, entry
+                    assert entry["paired_by_fallback"] is False, entry
     asyncio.run(_run())
 
 

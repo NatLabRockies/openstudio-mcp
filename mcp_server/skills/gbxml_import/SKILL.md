@@ -119,10 +119,13 @@ defects cause this, and none are fixed by `match_surfaces()`:
   `ambiguous_boundary_condition_count`) — an assumption made visible rather than silently, which
   was the actual review finding. Adiabatic because these facets are topological closures traced
   from a hole's outline and need not correspond to a real building element; measured on the Austin
-  fixture, 101 of 107 such patches have no surface in any other space sharing their plane at all.
-  Exposure must follow the boundary condition: a new `Surface` defaults to
-  `SunExposed`/`WindExposed`, harmless against an adiabatic face but a live error (fictitious
-  solar/wind on 100+ surfaces) if one is left `Outdoors`.
+  fixture, 101 of them have no surface in any other space sharing their plane at all. Exposure must
+  follow the boundary condition: a new `Surface` defaults to `SunExposed`/`WindExposed`, harmless
+  against an adiabatic face but a live error (fictitious solar/wind on 100+ surfaces) if one is
+  left `Outdoors`. Before assuming, a fallback pass pairs any two still-unmatched surfaces
+  overlapping ≥99% of *both* their areas — `matchSurfaces()` uses an internal ~0.0125 m tolerance
+  and misses patches that land a few centimetres off their counterpart (2 such pairs on the Austin
+  fixture; a third candidate at 72% overlap is correctly declined).
 - **Same-space overlaps** (aka shared-wall duplication): the flip side of a missing surface — a
   wall exported once per neighboring room instead of split at the boundary between them, leaving
   a surface duplicated, or a byproduct of patching a missing surface that happens to coincide

@@ -163,7 +163,7 @@ surface, not the two a closed volume requires: a genuinely missing surface, not 
      overlap — a different defect) are excluded and reported separately, not allowed to
      block the rest of the space. Re-runs match_surfaces() once, batched; anything still
      unmatched afterward is set Adiabatic/NoSun/NoWind and flagged so the assumption is
-     visible (see "Boundary conditions" below); every space is re-checked rather
+     visible (see "Boundary conditions" below); every space is re-checked afterward rather
      than trusted, in case a new internal chord edge happens to coincide with an
      already-ambiguous pre-existing one.
    { ok: true, patched_count: 117, patched: [...], skipped_count: 5, skipped: [...],
@@ -189,11 +189,20 @@ A reconstructed surface starts `Outdoors` so `match_surfaces()` can pair it with
 the other side. One that finds no partner is set **`Adiabatic` with `NoSun`/`NoWind`** and reported
 with `boundary_condition_ambiguous: true`, counted in `ambiguous_boundary_condition_count`.
 
-On this fixture that is **107 of 117** patches. Measured directly, **101 of those 107 have no
-surface in any other space sharing their plane at all** — they bound a void, not a missing partner.
+On this fixture that is **103 of 117** patches. Measured directly, **101 of them have no surface in
+any other space sharing their plane at all** — they bound a void, not a missing partner.
 (Measuring this correctly requires normalizing winding before `openstudio.intersect`; a first pass
 using bare `openstudio.intersects` undercounted, because an interior pair has opposite winding —
 exactly the false negative documented under "Why Two Separate Checks" below.)
+
+The other **2 pairs are recovered automatically**. `matchSurfaces()` compares vertices against an
+internal, non-configurable tolerance of roughly 0.0125 m, so a reconstructed surface that lands a
+few centimetres off its counterpart comes back unmatched even when the two are plainly the same
+partition. A narrow fallback pass joins any two still-unmatched surfaces overlapping across ≥99% of
+*both* their areas, reported as `paired_by_fallback`. Requiring it of both areas is what makes it
+safe: a third candidate here — a 1474 m² floor plate against a 1059 m² one, overlapping 72% — is
+correctly left alone, because those are genuinely different surfaces and forcing adjacency would
+invent an interzone pair with a 415 m² area mismatch.
 
 Adiabatic is a deliberate assumption, not a determination. These facets are *topological
 closures*: traced from a hole's outline to make `isEnclosedVolume()` pass, so on geometry this
@@ -356,4 +365,6 @@ themselves also have synthetic-geometry tests in `tests/test_geometry.py`
 `test_trim_overlapping_surfaces_skips_mismatched_boundary_conditions`,
 `test_trim_overlapping_surfaces_skips_surface_carrying_a_window`,
 `test_patch_missing_surfaces_skips_high_degree_branch_point`,
-`test_merge_coplanar_sliver_surfaces_preserves_roof_normal`).
+`test_merge_coplanar_sliver_surfaces_preserves_roof_normal`,
+`test_patch_missing_surfaces_pairs_near_coincident_patches`,
+`test_patch_missing_surfaces_refuses_to_pair_mismatched_areas`).

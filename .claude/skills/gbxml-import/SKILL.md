@@ -60,7 +60,7 @@ left once merge and weld have closed what they can.
   heat flux keeps a surface the tool can't physically identify from inventing or destroying
   load. It is wrong for a genuinely exterior wall or roof the export dropped — override those
   to `Outdoors` with `SunExposed`/`WindExposed`. Expect this count to be large on a badly
-  broken export; on the project's own test fixture it is 107 of 117 patches.
+  broken export; on the project's own test fixture it is 103 of 117 patches.
 - `trim_overlapping_surfaces()` only trims a pair that is genuinely the same thing twice
   (matching type, boundary condition, and construction, neither carrying a window or door).
   Anything else is reported as skipped — resolve those by hand rather than expecting the

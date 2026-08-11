@@ -37,6 +37,7 @@ from mcp_server.skills.geometry.edge_graph import (
 )
 from mcp_server.skills.geometry.edge_topology import resolve_component
 from mcp_server.skills.geometry.operations import match_surfaces
+from mcp_server.skills.geometry.surface_pairing import pair_coincident_unmatched
 
 # Deliberately much smaller than the other repair tools' 0.01 m2 degenerate-result guard:
 # a facet here is computed exactly from the model's own unpaired edges, not guessed, so a
@@ -149,7 +150,12 @@ def patch_missing_surfaces() -> dict[str, Any]:
     specific reason rather than guessed at.
 
     Reconstructed surfaces start "Outdoors" so match_surfaces() can pair them with a real
-    surface on the other side. A patch that finds no partner is set "Adiabatic" with
+    surface on the other side. matchSurfaces() compares vertices against an internal
+    ~0.0125 m tolerance, so a patch landing a few centimetres off its counterpart comes
+    back unmatched even when the two are plainly the same partition; a narrow fallback
+    pass then pairs any two still-unmatched surfaces that overlap across at least 99% of
+    both their areas, reported as `paired_by_fallback`. A patch that still finds no
+    partner is set "Adiabatic" with
     NoSun/NoWind, and reported with `boundary_condition_ambiguous: true` (counted in
     `ambiguous_boundary_condition_count`) so the assumption is visible rather than silent.
     Adiabatic because these facets are topological closures traced from a hole's outline —
@@ -234,6 +240,7 @@ def patch_missing_surfaces() -> dict[str, Any]:
                     })
 
         ambiguous_bc_count = 0
+        paired_by_fallback: list[dict[str, Any]] = []
         if new_surfaces:
             # Must not be discarded: the boundary-condition decision below reads the
             # results of this matching, so a silent failure here would make every patch
@@ -249,8 +256,17 @@ def patch_missing_surfaces() -> dict[str, Any]:
                     "patched": patched,
                 }
 
+            # matchSurfaces() compares vertices against an internal ~0.0125 m tolerance,
+            # so a reconstructed surface landing a few centimetres off its counterpart
+            # comes back unmatched even when the two are plainly the same partition.
+            # Recover only those — see surface_pairing for how narrowly it is scoped.
+            paired_by_fallback = pair_coincident_unmatched(new_surfaces)
+            paired_names = {p["surface"] for p in paired_by_fallback}
+            paired_names.update(p["paired_with"] for p in paired_by_fallback)
+
             for entry, surface in zip(patched, new_surfaces, strict=True):
                 matched = surface.outsideBoundaryCondition() == "Surface"
+                entry["paired_by_fallback"] = surface.nameString() in paired_names
                 if not matched:
                     ambiguous_bc_count += 1
                     surface.setOutsideBoundaryCondition("Adiabatic")
@@ -299,6 +315,8 @@ def patch_missing_surfaces() -> dict[str, Any]:
             "skipped_count": len(skipped),
             "skipped": skipped,
             "ambiguous_boundary_condition_count": ambiguous_bc_count,
+            "paired_by_fallback_count": len(paired_by_fallback),
+            "paired_by_fallback": paired_by_fallback,
         }
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

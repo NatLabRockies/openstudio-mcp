@@ -777,13 +777,22 @@ def test_geometry_repair_pipeline_on_austin_apartment_fixture():
                 # pipeline three times and getting byte-identical counts.
                 assert patch_result["patched_count"] == 117, patch_result
                 assert patch_result["skipped_count"] == 5, patch_result
-                # Most reconstructed surfaces find no partner on the other side — measured
-                # directly, 101 of these 107 have no surface in any other space sharing
-                # their plane at all, so they bound a void rather than a missing partner.
-                # They are assumed Adiabatic and the assumption is reported; a large count
-                # here is expected on a fixture this broken, and is exactly the disclosure
-                # the old (equally Adiabatic but silent) behavior suppressed.
-                assert patch_result["ambiguous_boundary_condition_count"] == 107, patch_result
+                # Regression: matchSurfaces() compares vertices against an internal
+                # ~0.0125m tolerance, so two reconstructed surfaces that are plainly the
+                # same partition but land a few centimetres apart come back unmatched.
+                # Two such pairs exist here (Surface 25/49, Surface 36/74 — both 100%
+                # coincident) and the fallback joins them. A third candidate pair, a
+                # 1474 m2 floor plate against a 1059 m2 one at 72% overlap, is correctly
+                # NOT joined: those are different surfaces, and forcing adjacency would
+                # invent an interzone pair with a 415 m2 area mismatch.
+                assert patch_result["paired_by_fallback_count"] == 2, patch_result
+                # The rest find no partner at all — measured directly, 101 of them have no
+                # surface in any other space sharing their plane, so they bound a void
+                # rather than a missing partner. They are assumed Adiabatic and the
+                # assumption is reported; a large count here is expected on a fixture this
+                # broken, and is exactly the disclosure the old (equally Adiabatic but
+                # silent) behavior suppressed. 107 before the fallback pass, 103 after.
+                assert patch_result["ambiguous_boundary_condition_count"] == 103, patch_result
                 # Regression: exposure must follow the boundary condition. Every patch is
                 # created Outdoors so match_surfaces() can pair it, and a Surface defaults
                 # to SunExposed/WindExposed — so any patch left Outdoors afterward would
