@@ -42,8 +42,14 @@ def silence_openstudio_stdout_logger():
     Primary defense for Class B (Polyhedron/Space Logger warnings).
     Uses the intended OpenStudio Logger API — no fd manipulation.
     Call at process startup before any SDK operations.
+
+    Suppressed by default (OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE defaults to
+    "true") because a SWIG bindings issue writes OpenStudio logger output
+    directly to process stdout, corrupting the MCP JSON-RPC context. Set
+    OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE=false/0/no to disable suppression,
+    e.g. for local debugging.
     """
-    if os.environ.get("OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE", "").lower() in {"1", "true", "yes"}:
+    if os.environ.get("OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE", "true").lower() in {"0", "false", "no"}:
         return
     import openstudio
     openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
