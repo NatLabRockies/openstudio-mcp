@@ -1,12 +1,16 @@
-"""Repair spaces missing a RoofCeiling surface.
+"""Synthesize a missing RoofCeiling for spaces that have a Floor but no ceiling.
 
-gbXML/Revit exports commonly carve small spaces (closets, cabinets) that get
-a Floor but no RoofCeiling — nested under a bigger room's ceiling in the
-source model — which leaves Space.isEnclosedVolume() failing even after
-match_surfaces() has already reconciled every shared wall it can. This is a
-targeted fix for exactly that case: one level Floor, uniformly level Wall
-tops, no existing RoofCeiling. Anything sloped, stepped, or ambiguous is
-reported as skipped rather than guessed at.
+gbXML/Revit exports commonly carve small spaces (closets, cabinets) that get a Floor but
+no RoofCeiling — nested under a bigger room's ceiling in the source model — which leaves
+Space.isEnclosedVolume() failing even after match_surfaces() has already reconciled every
+shared wall it can. Targeted fix for exactly that case: one level Floor, uniformly level
+Wall tops, no existing RoofCeiling. Anything sloped or ambiguous is reported as skipped
+rather than guessed at.
+
+The other non-enclosed-volume repairs live in sibling modules, one per defect:
+merge_coplanar_sliver_surfaces (same-plane fragmentation), weld_coincident_vertices
+(sub-centimeter corner gaps), patch_missing_surfaces (a surface absent outright), and
+trim_overlapping_surfaces (a same-space duplicate).
 """
 from __future__ import annotations
 
@@ -17,9 +21,9 @@ import openstudio
 from mcp_server.model_manager import get_model
 from mcp_server.skills.geometry.operations import match_surfaces
 
-# Kept local (not imported from gbxml_import/operations.py's PLANE_TOLERANCE)
-# to preserve the existing one-way import direction: gbxml_import depends on
-# geometry, never the reverse.
+# Kept local (not imported from gbxml_import/operations.py's PLANE_TOLERANCE) to preserve
+# the existing one-way import direction: gbxml_import depends on geometry, never the
+# reverse.
 LEVEL_TOLERANCE_M = 0.01
 MIN_NEW_SURFACE_AREA_M2 = 0.01
 
@@ -45,8 +49,12 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
     is only synthesized when the geometry actually supports one. New
     surfaces start "Outdoors"; match_surfaces() then runs once to pair any
     that truly coincide with a floor above in an adjacent space, and
-    whatever's still unmatched afterward is set to "Adiabatic" rather than
-    left facing outdoor weather it almost certainly isn't exposed to.
+    whatever's still unmatched afterward is set "Adiabatic" with
+    NoSun/NoWind rather than left facing outdoor weather it almost
+    certainly isn't exposed to — defensible here specifically because this
+    tool only ever fires on the nested-under-another-room's-ceiling case
+    its preconditions describe. That assumption is still reported per
+    surface via boundary_condition_ambiguous.
     """
     try:
         model = get_model()
@@ -156,17 +164,38 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
             })
 
         if new_surfaces:
-            match_surfaces()
+            # Must not be discarded: the boundary-condition decision below reads the
+            # results of this matching, so a silent failure would make every synthesized
+            # ceiling look unmatched and be forced Adiabatic on false evidence.
+            match_result = match_surfaces()
+            if not match_result.get("ok"):
+                return {
+                    "ok": False,
+                    "error": f"Synthesized {len(new_surfaces)} ceiling(s) but "
+                             "match_surfaces() failed afterward, so boundary conditions "
+                             f"could not be resolved: {match_result.get('error')}",
+                    "repaired_count": len(repaired),
+                    "repaired": repaired,
+                }
+
             for entry, surface in zip(repaired, new_surfaces, strict=True):
                 matched_space_above = surface.outsideBoundaryCondition() == "Surface"
                 if not matched_space_above:
                     surface.setOutsideBoundaryCondition("Adiabatic")
+                    # Exposure has to follow the boundary condition — a Surface defaults to
+                    # SunExposed/WindExposed, which is incoherent against an adiabatic
+                    # outside face and becomes a live error if anything later flips this
+                    # surface back to Outdoors.
+                    surface.setSunExposure("NoSun")
+                    surface.setWindExposure("NoWind")
                 entry["final_boundary_condition"] = surface.outsideBoundaryCondition()
+                entry["boundary_condition_ambiguous"] = not matched_space_above
                 entry["boundary_condition_warning"] = (
                     None if matched_space_above
-                    else "Set Adiabatic (no matching space above) — correct for a nested space "
-                         "under another room's ceiling, but wrong if this space is genuinely "
-                         "top-floor with a missing roof; verify before trusting simulation results."
+                    else "Set Adiabatic (NoSun/NoWind) — no matching space above. Correct for "
+                         "a nested space under another room's ceiling, which is the case this "
+                         "repair targets, but wrong if this space is genuinely top-floor with "
+                         "a missing roof; verify before trusting simulation results."
                 )
 
         return {

@@ -33,6 +33,7 @@ from mcp_server.model_manager import get_model
 from mcp_server.skills.gbxml_import.climate_zone import ensure_climate_zone
 from mcp_server.skills.gbxml_import.zone_checks import check_conditioned_zone_volumes
 from mcp_server.skills.geometry.operations import match_surfaces
+from mcp_server.skills.geometry.winding import normalize_local_frame_winding
 from mcp_server.skills.measures.runner_messages import OSW_MAX_BYTES, parse_all_step_messages
 from mcp_server.util import create_run_dir, read_file_bounded, read_tail_bounded, reject_escaping_symlinks
 
@@ -327,18 +328,6 @@ MIN_OVERLAP_AREA_M2 = 0.01
 MAX_REPORTED_ISSUES = 20
 
 
-def _clockwise(points: openstudio.Point3dVector) -> openstudio.Point3dVector:
-    """Normalize a planar polygon (z~0, as produced by Transformation.alignFace) to the
-    winding order openstudio.intersects()/intersect() require — they silently return
-    False/empty for correctly-overlapping polygons given the "wrong" (counterclockwise,
-    by this SDK's convention) winding, with no error raised. Same reverse-if-z>0 pattern
-    already used for floor-print orientation in create_space_from_floor_print above."""
-    normal = openstudio.getOutwardNormal(points)
-    if normal.is_initialized() and normal.get().z() > 0:
-        return openstudio.reverse(points)
-    return points
-
-
 def _overlap_area_m2(face1: openstudio.Point3dVector, face2: openstudio.Point3dVector) -> float:
     """True overlap area between two same-plane, clockwise-normalized polygons.
 
@@ -401,8 +390,8 @@ def _surface_overlaps(space: openstudio.model.Space) -> list[dict[str, Any]]:
         if not (same or mirrored):
             continue
         transform = openstudio.Transformation.alignFace(s1.vertices()).inverse()
-        face1 = _clockwise(transform * s1.vertices())
-        face2 = _clockwise(transform * s2.vertices())
+        face1 = normalize_local_frame_winding(transform * s1.vertices())
+        face2 = normalize_local_frame_winding(transform * s2.vertices())
         overlap_area = _overlap_area_m2(face1, face2)
         if overlap_area <= MIN_OVERLAP_AREA_M2:
             continue

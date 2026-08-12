@@ -245,7 +245,7 @@ OSM, SQL, report, and log files as untrusted outputs.
 
 ## Skills & Tools (150+ total)
 
-In Claude Code, 13 bundled skills add workflow automation and domain knowledge:
+In Claude Code, 16 bundled skills add workflow automation and domain knowledge:
 
 | Skill | Type | What it does |
 |-------|------|--------------|
@@ -262,6 +262,9 @@ In Claude Code, 13 bundled skills add workflow automation and domain knowledge:
 | `openstudio-patterns` | Knowledge | tool dependencies and model relationships |
 | `tool-workflows` | Knowledge | multi-tool recipes for common operations |
 | `attribute-space-types` | Task | attribute standards space types to conditioned spaces (post-gbXML) |
+| `/gbxml-import` | Task | Revit gbXML import + geometry-defect repair workflow |
+| `/osaf-analysis` | Task | OpenStudio Analysis Framework workflow: algorithm selection, validation, submission |
+| `/python-ems` | Task | custom EnergyPlus Python Plugin control/reporting logic (EMS) |
 
 Workflow/task skills are invoked with `/name`; knowledge skills load automatically. Any MCP host can also discover these guides via the `list_skills()` and `get_skill(name)` tools (mount `-v ./.claude/skills:/skills:ro`).
 

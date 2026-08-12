@@ -5,10 +5,11 @@ description: Attribute OpenStudio standards space types (Template/Building Type/
 
 # Attribute Space Types
 
-Run after `repair_and_validate_gbxml_geometry` (or `import_floorspacejs`), when spaces have
-real geometry — and often real space-level People/Lights/ElectricEquipment loads translated
-from the source file — but no `SpaceType`. Only spaces in a **conditioned** zone (a
-ThermalZone with a heating+cooling thermostat) are ever touched.
+Run after `repair_and_validate_gbxml_geometry` (see the `gbxml-import` skill for that workflow)
+or `import_floorspacejs`, when spaces have real geometry — and often real space-level
+People/Lights/ElectricEquipment loads translated from the source file — but no `SpaceType`.
+Only spaces in a **conditioned** zone (a ThermalZone with a heating+cooling thermostat) are
+ever touched.
 
 ## Decide: simple or wizard
 

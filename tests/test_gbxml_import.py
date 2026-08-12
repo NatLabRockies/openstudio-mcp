@@ -21,8 +21,9 @@ from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
 GBXML_PATH = "/repo/tests/assets/gbxml/25_SpacesOneZE.xml"
-GBXML_PATH_11JAY = "/repo/tests/assets/2026_11Ja_path1.xml"
+GBXML_PATH_SHARED_WALL_DUPES = "/repo/tests/assets/2026_11Ja_path1.xml"
 GBXML_PATH_AUSTIN = "/repo/tests/assets/gbxml/austin_office.xml"
+GBXML_PATH_AUSTIN_SLIVERS = "/repo/tests/assets/gbxml/austin_apartment_slivers.xml"
 AUSTIN_EPW_PATH = "/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.epw"
 AUSTIN_STAT_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.stat")
 AUSTIN_DDY_PATH = Path("/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.ddy")
@@ -321,8 +322,8 @@ def test_repair_and_validate_gbxml_geometry_detects_non_enclosed_space():
 
 
 @pytest.mark.integration
-def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
-    """Test repair_and_validate_gbxml_geometry's exact output on the 11 Jay St residential fixture."""
+def test_repair_and_validate_gbxml_geometry_detects_shared_wall_duplication_overlaps():
+    """Test repair_and_validate_gbxml_geometry's exact output on the residential shared-wall-duplication fixture."""
     # Regression: 2026_11Ja_path1.xml (a Revit-exported residential floor plan)
     # produces 9 real same-space surface overlaps that match_surfaces() cannot
     # fix — walls that border more than one neighboring room along their run
@@ -354,7 +355,7 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
 
                 import_result = unwrap(await session.call_tool(
                     "import_gbxml",
-                    {"gbxml_path": GBXML_PATH_11JAY, "epw_path": EPW_PATH, "run_name": run_name},
+                    {"gbxml_path": GBXML_PATH_SHARED_WALL_DUPES, "epw_path": EPW_PATH, "run_name": run_name},
                 ))
                 assert import_result["ok"] is True, import_result
                 assert import_result["total_errors"] == 0, import_result
@@ -430,14 +431,14 @@ def test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps():
 
 
 @pytest.mark.integration
-def test_repair_missing_roof_ceiling_on_11jay_fixture():
-    """Test repair_missing_roof_ceiling's exact output on the 11 Jay St residential fixture."""
+def test_repair_missing_roof_ceiling_on_shared_wall_duplication_fixture():
+    """Test repair_missing_roof_ceiling's exact output on the residential shared-wall-duplication fixture."""
     # Regression: of the 3 spaces flagged has_floor=True/has_roofceiling=False on this
     # fixture, only sp-9diningroomcloset actually gets an auto-repaired flat ceiling.
     # sp-11mastercloset is correctly skipped for uneven wall heights and
     # sp-4masterbedroom for having 3 Floor surfaces instead of 1 — both symptomatic of
     # the same wall-duplication defect documented in
-    # test_repair_and_validate_gbxml_geometry_detects_11jay_overlaps, not something this
+    # test_repair_and_validate_gbxml_geometry_detects_shared_wall_duplication_overlaps, not something this
     # targeted repair should guess its way through. The repaired ceiling gets
     # "Adiabatic" (no adjacent-space match found), and non_enclosed_spaces_count drops
     # from 14 to 13 — the overlap count (9) and cross_space_surfaces_matched (128) are
@@ -454,7 +455,7 @@ def test_repair_missing_roof_ceiling_on_11jay_fixture():
 
                 import_result = unwrap(await session.call_tool(
                     "import_gbxml",
-                    {"gbxml_path": GBXML_PATH_11JAY, "epw_path": EPW_PATH, "run_name": run_name},
+                    {"gbxml_path": GBXML_PATH_SHARED_WALL_DUPES, "epw_path": EPW_PATH, "run_name": run_name},
                 ))
                 assert import_result["ok"] is True, import_result
 
@@ -664,5 +665,183 @@ def test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable():
                 assert reload_result["ok"] is True, reload_result
                 weather_info = unwrap(await session.call_tool("get_weather_info", {}))
                 assert weather_info["ashrae_climate_zone"] == "2A", weather_info
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_geometry_repair_pipeline_on_austin_apartment_fixture():
+    """Real-world reproduction of both the sliver-fragmentation and corner-gap defects."""
+    # Regression: tests/assets/gbxml/austin_apartment_slivers.xml is a 74-space Austin
+    # apartment/retail/office building whose Revit gbXML export both (a) splits walls/
+    # floors/ceilings into many same-space coplanar fragments per adjacent-room boundary
+    # segment (confirmed by inspection: sp-4stair's ceiling alone is split into a 25.21 m2
+    # piece plus a 0.084 m2 sliver), and (b) leaves sub-centimeter gaps between non-coplanar
+    # surfaces meeting at corners. Every fragment area still sums correctly —
+    # zero_volume_zone_count stays 0 — but the seams don't align to tight tolerance, so 69
+    # of the 74 spaces fail isEnclosedVolume() even though each one already has both a
+    # Floor and a RoofCeiling. match_surfaces() alone (run inside
+    # repair_and_validate_gbxml_geometry) cannot fix either defect, since it only
+    # reconciles surfaces between spaces, never within one.
+    #
+    # Honest result on this fixture, confirmed both ways (see tmp diagnostic run, not
+    # committed): weld_coincident_vertices() alone does real, verified work (22 spaces,
+    # real vertex snaps — see the synthetic tests in test_geometry.py) but doesn't flip
+    # any space to enclosed by itself here (69 -> 69), because the spaces it touches have
+    # *other* simultaneous non-manifold edges beyond what a 2cm weld closes.
+    # merge_coplanar_sliver_surfaces() alone fixes 2 (69 -> 67: sp-4stair, sp-7stair —
+    # the exact ceiling-fragmentation case this feature was built to diagnose). Running
+    # both, in either order, lands at the same 67 with zero regressions — weld doesn't add
+    # closures beyond what merge already achieves on this specific fixture, but it isn't
+    # harmful either.
+    #
+    # A follow-up investigation into that remaining 67 (Space.polyhedron().edgesNotTwo(True)
+    # — note the True; edgesNotTwo(False) hides edges Polyhedron's own internal colinear-
+    # point auto-heal step creates, understating the real defect on some spaces) found 394
+    # of 397 bad edges are used by exactly one surface — a genuinely missing surface, not a
+    # tolerance gap. patch_missing_surfaces() reconstructs a missing surface whenever a
+    # space's unpaired edges resolve (independently per separate hole) into one simple loop —
+    # splitting a non-planar loop into planar facets via chords, and resolving a branch
+    # point (more than one missing surface meeting at a vertex) via a cost-bounded search
+    # over ways to pair up its edges. trim_overlapping_surfaces() then handles the opposite
+    # problem: edges used three or more times (a genuine same-space duplicate —
+    # shared-wall duplication) — trims each surface to its non-overlap remainder, or
+    # removes it outright if fully contained within the other, but only for pairs that are
+    # genuinely the same thing twice (matching type/boundary condition/construction,
+    # neither carrying a subsurface). Together they close all but 4 of the original 69
+    # non-enclosed spaces on this fixture — the honest remainder (sp-14retail, sp-20office,
+    # sp-21restuarant, sp-6retail) has a structurally ambiguous mix of missing and
+    # duplicate geometry where patch and trim provably oscillate (each pass's fix creates
+    # exactly the input the other pass "fixes" right back), not a case either tool can
+    # resolve alone — confirmed directly, not assumed, by running repeated rounds.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name("austin_slivers")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH_AUSTIN_SLIVERS, "epw_path": AUSTIN_EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+                assert import_result["conditioned_zone_count"] == 74, import_result
+                assert import_result["zero_volume_zone_count"] == 0, import_result
+
+                reload_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": import_result["osm_path"]},
+                ))
+                assert reload_result["ok"] is True, reload_result
+
+                baseline = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert baseline["ok"] is False, baseline
+                assert baseline["space_count"] == 74, baseline
+                assert baseline["overlapping_surfaces_count"] == 0, baseline
+                assert baseline["non_enclosed_spaces_count"] == 69, baseline
+
+                weld_result = unwrap(await session.call_tool("weld_coincident_vertices", {}))
+                assert weld_result["ok"] is True, weld_result
+                assert weld_result["welded_space_count"] == 22, weld_result
+                assert weld_result["skipped_surface_count"] == 8, weld_result
+
+                merge_result = unwrap(await session.call_tool("merge_coplanar_sliver_surfaces", {}))
+                assert merge_result["ok"] is True, merge_result
+                # Regression: 28 groups collapse (up to 8 same-plane fragments down to 1
+                # surface, e.g. sp-14retail's ceiling), only 3 genuinely skipped (real
+                # mixed-boundary-condition/subsurface cases, not iteration-order artifacts
+                # — see the two-phase plan/apply split in merge_coplanar_sliver_surfaces).
+                assert merge_result["merged_group_count"] == 28, merge_result
+                assert merge_result["skipped_group_count"] == 3, merge_result
+
+                mid = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                # 67, not fewer — see the honest accounting above. Weld contributes zero
+                # *additional* closures beyond merge on this fixture, but causes zero
+                # regressions either (verified space-by-space, not just by count, in the
+                # diagnostic that produced these numbers).
+                assert mid["non_enclosed_spaces_count"] == 67, mid
+
+                patch_result = unwrap(await session.call_tool("patch_missing_surfaces", {}))
+                assert patch_result["ok"] is True, patch_result
+                # Regression: the large majority of the 67 still-broken spaces' components
+                # get reconstructed, with only a handful honestly skipped. These are now
+                # pinned exactly rather than bounded: they used to shift by one between
+                # runs (119/5 most often, occasionally 118/6) because
+                # Space.polyhedron().edgesNotTwo() emission order — a C++ implementation
+                # detail — reached every downstream tracing and chord decision. Edges are
+                # now canonically ordered at the source (canonical_edge_order), so a
+                # repeated run reconstructs the same surfaces. Verified by running this
+                # pipeline three times and getting byte-identical counts.
+                assert patch_result["patched_count"] == 117, patch_result
+                assert patch_result["skipped_count"] == 5, patch_result
+                # Regression: matchSurfaces() compares vertices against an internal
+                # ~0.0125m tolerance, so two reconstructed surfaces that are plainly the
+                # same partition but land a few centimetres apart come back unmatched.
+                # Two such pairs exist here (Surface 25/49, Surface 36/74 — both 100%
+                # coincident) and the fallback joins them. A third candidate pair, a
+                # 1474 m2 floor plate against a 1059 m2 one at 72% overlap, is correctly
+                # NOT joined: those are different surfaces, and forcing adjacency would
+                # invent an interzone pair with a 415 m2 area mismatch.
+                assert patch_result["paired_by_fallback_count"] == 2, patch_result
+                # The rest find no partner at all — measured directly, 101 of them have no
+                # surface in any other space sharing their plane, so they bound a void
+                # rather than a missing partner. They are assumed Adiabatic and the
+                # assumption is reported; a large count here is expected on a fixture this
+                # broken, and is exactly the disclosure the old (equally Adiabatic but
+                # silent) behavior suppressed. 107 before the fallback pass, 103 after.
+                assert patch_result["ambiguous_boundary_condition_count"] == 103, patch_result
+                # Regression: exposure must follow the boundary condition. Every patch is
+                # created Outdoors so match_surfaces() can pair it, and a Surface defaults
+                # to SunExposed/WindExposed — so any patch left Outdoors afterward would
+                # take fictitious solar gain and wind convection. On this fixture that was
+                # 107 surfaces, including 6 Floors and 2 RoofCeilings, worth roughly tens
+                # of kW of invented cooling load. Nothing may be left in that state.
+                for patched_entry in patch_result["patched"]:
+                    details = unwrap(await session.call_tool("get_surface_details", {
+                        "surface_name": patched_entry["new_surface_name"],
+                    }))
+                    surface = details["surface"]
+                    assert surface["outside_boundary_condition"] in ("Surface", "Adiabatic"), surface
+                    if surface["outside_boundary_condition"] == "Adiabatic":
+                        assert surface["sun_exposure"] == "NoSun", surface
+                        assert surface["wind_exposure"] == "NoWind", surface
+
+                trim_result = unwrap(await session.call_tool("trim_overlapping_surfaces", {}))
+                assert trim_result["ok"] is True, trim_result
+                # Only 1 pair is safe to trim; 18 are correctly declined. The tool used to
+                # trim any coincident-plane pair with no compatibility check, which on this
+                # real fixture meant blending 12 pairs with mismatched boundary conditions
+                # (9 Outdoors-vs-Surface, 3 Ground-vs-Surface — i.e. an interior matched
+                # surface against an exterior or below-grade one), 7 with different
+                # constructions, and 1 Floor against a RoofCeiling. Declining those costs
+                # nothing in closure: the final count below is unchanged.
+                assert trim_result["trimmed_count"] == 1, trim_result
+                assert trim_result["skipped_count"] == 18, trim_result
+
+                after = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                # 69 -> 67 (weld+merge) -> 4 (patch+trim): all but 4 of the original
+                # non-enclosed spaces closed by purely automated, verified repair tools.
+                # The honest remainder is a structurally ambiguous mix of missing and
+                # duplicate geometry neither tool can resolve alone — patch and trim
+                # provably oscillate on it, each pass's fix creating exactly the input the
+                # other pass "fixes" right back (confirmed directly by running repeated
+                # rounds, not assumed).
+                #
+                # Both the count and the exact membership are now pinned. This used to be
+                # bounded (<= 4, subset of a 4-space set) to tolerate run-to-run drift;
+                # canonical edge ordering removed that drift, so the stronger assertion is
+                # available and any change here is a real behavior change worth seeing.
+                # The membership differs from the pre-canonicalization set (sp-20office in
+                # place of sp-35apartment) because deterministic ordering picks a different
+                # but equally valid decomposition for those two — same count, and every
+                # other space still closes.
+                assert after["non_enclosed_spaces_count"] == 4, after
+                remaining = {ns["space"] for ns in after["non_enclosed_spaces"]}
+                assert remaining == {
+                    "sp-14retail", "sp-20office", "sp-21restuarant", "sp-6retail",
+                }, after
 
     asyncio.run(_run())
