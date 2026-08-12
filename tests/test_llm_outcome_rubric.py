@@ -232,6 +232,27 @@ def test_roof_insulation_l1_accepts_insulate_to_r30_reading():
                            bare_slab)["outcome_pass"] is True
 
 
+def test_roof_insulation_l3_graded_like_l1_rubric_1_3():
+    # Validates: rubric 1.3 — the corrected L3 prompt states the R-30 goal,
+    # so L3 uses the same R-30 criterion as L1: a small non-R-30 increase
+    # (+0.6, which cleared L2's 0.5 floor) must FAIL at L3, while an R-30
+    # layer swap must PASS
+    small_bump = {"load_ok": True,
+                  "model": _model(roof_surfaces=_roof(0.6, 0.6)),
+                  "baseline": _model(roof_surfaces=_roof(0.6))}
+    verdict = rubric.evaluate("roof_insulation", "L3", small_bump)
+    assert verdict["outcome_pass"] is False
+    assert "R-30 layer present: False" in verdict["reasons"][0]
+    r30_swap = {"load_ok": True,
+                "model": _model(roof_surfaces=_roof(0.0594, 5.2818)),
+                "baseline": _model(roof_surfaces=_roof(0.0594, 4.2959))}
+    assert rubric.evaluate("roof_insulation", "L3",
+                           r30_swap)["outcome_pass"] is True
+    # L2 unchanged: states no value, the 0.5 increase floor still applies
+    assert rubric.evaluate("roof_insulation", "L2",
+                           small_bump)["outcome_pass"] is True
+
+
 def _two_roofs(a_r: float, b_r: float, surfaces=("Roof A", "Roof B")) -> list[dict]:
     return [{"surface": s, "construction": "C",
              "layers": [{"name": "L", "class": "OS:Material", "r_si": r}],

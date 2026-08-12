@@ -484,9 +484,9 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "needs_hvac": True,
         "expected": ["set_zone_equipment_priority", "add_zone_equipment"],
-        "L1": "Add a baseboard heater to the first zone, then reorder zone equipment priority.",
+        "L1": "Add a baseboard heater to the first zone and make it the highest priority heating equipment.",
         "L2": "Add a ZoneHVACBaseboardConvectiveElectric to the first zone using add_zone_equipment, "
-              "then use set_zone_equipment_priority to change the serving order.",
+              "then use set_zone_equipment_priority to make the baseboard highest priority.",
         "L3": "Use add_zone_equipment to add a ZoneHVACBaseboardConvectiveElectric to the first zone. "
               "Then call set_zone_equipment_priority to set the baseboard as highest priority.",
     },

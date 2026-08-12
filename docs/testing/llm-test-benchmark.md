@@ -24,7 +24,7 @@ the release DOI); aggregates regenerate via
 ### Frozen rerun baseline (paper artifact)
 
 **The paper's benchmark is a fresh 75-leg rerun against the tagged release
-`v1.2.1 = <SHA>`, at rubric `1.2`.** The benchmark image is rebuilt from
+`v1.2.1 = <SHA>`, at rubric `1.3`.** The benchmark image is rebuilt from
 the tag and every leg pins that image and that harness commit; every leg
 must pass the contamination detector. The aggregator refuses to pool legs
 from different harness commits or images unless explicitly overridden
