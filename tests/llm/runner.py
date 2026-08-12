@@ -710,7 +710,7 @@ def _docker_mcp_args() -> list[str]:
     Path(measures_dir).mkdir(parents=True, exist_ok=True)
     assets_dir = str(Path(__file__).resolve().parents[1] / "assets")
 
-    # Benchmark sweeps pin the exact image (LLM_TESTS_IMAGE=openstudio-mcp:v1.2.0)
+    # Benchmark sweeps pin the exact image (LLM_TESTS_IMAGE=openstudio-mcp:v1.2.1)
     # so every benchmark.json can carry the artifact identity; dev default keeps
     # local iteration unchanged.
     image = os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev")

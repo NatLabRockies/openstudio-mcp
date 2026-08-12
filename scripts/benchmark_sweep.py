@@ -9,11 +9,11 @@ Paper honesty rule: retries are forced to 0 — repeats replace them. The
 sweep aborts if LLM_TESTS_RETRIES is set nonzero in the environment.
 
 Examples (one invocation per run-matrix row; shared --sweep-id):
-  python scripts/benchmark_sweep.py --sweep-id paper-v1 --image openstudio-mcp:v1.2.0 \
+  python scripts/benchmark_sweep.py --sweep-id paper-v1 --image openstudio-mcp:v1.2.1 \
       --model sonnet:claude --arms full --repeats 3 --pytest-args "tests/llm"
-  python scripts/benchmark_sweep.py --sweep-id paper-v1 --image openstudio-mcp:v1.2.0 \
+  python scripts/benchmark_sweep.py --sweep-id paper-v1 --image openstudio-mcp:v1.2.1 \
       --model gpt-5:codex --arms full --repeats 3 --pytest-args "-m progressive tests/llm"
-  python scripts/benchmark_sweep.py --sweep-id paper-v1 --image openstudio-mcp:v1.2.0 \
+  python scripts/benchmark_sweep.py --sweep-id paper-v1 --image openstudio-mcp:v1.2.1 \
       --model sonnet:claude --arms noskills --repeats 3 \
       --pytest-args "-m progressive -k 'not _L3' tests/llm"
 """

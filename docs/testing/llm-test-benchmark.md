@@ -23,39 +23,26 @@ the release DOI); aggregates regenerate via
 
 ### Frozen rerun baseline (paper artifact)
 
-**The paper's benchmark baseline is the tagged release `v1.2.1 = <SHA>`, at
-rubric `1.2`.** The bulk of the data is the 75-leg collection run against
-`v1.2.0 = 80670cf` (image rebuilt from the tag; every leg pins that image
-and harness commit; all legs passed the contamination detector). The only
-benchmark-affecting change between v1.2.0 and v1.2.1 is one prompt string:
-the `roof_insulation` L3 prompt prescribed the tool sequence without
-stating the insulation goal, so agents that complied literally (created and
-assigned an arbitrary construction) failed the graded intent — a
-construct-validity defect in the prompt, not in the grader (14 of 15 rows
-followed the prescribed procedure; 7 of 15 passed). The corrected L3 states
-the goal and names the same tools. The `roof_insulation` family was
-re-collected at v1.2.1 (`paper-v1.2.1-roof`), and analysis substitutes the
-roof family rows from that sweep; v1.2.0 roof L3 rows are retained in the
-archive for the diagnostic but excluded from scoring. The aggregator
-refuses to pool legs from different harness commits or images unless
-explicitly overridden (`--ignore-harness` / `--ignore-digest`); the
-documented substitution is the intended use of that override. Rubric 1.2
-hardened two graders after external review (per-surface roof criterion
-instead of an average; the EMS setback required on all 10 zones); the
-tightening had been validated as **0 of 391** verdict flips on the prior
-recorded roof+EMS facts.
+**The paper's benchmark is a fresh 75-leg rerun against the tagged release
+`v1.2.1 = <SHA>`, at rubric `1.2`.** The benchmark image is rebuilt from
+the tag and every leg pins that image and that harness commit; every leg
+must pass the contamination detector. The aggregator refuses to pool legs
+from different harness commits or images unless explicitly overridden
+(`--ignore-harness` / `--ignore-digest`), so a rerun that drifts off the
+tag fails loudly. Rubric 1.2 hardened two graders after external review
+(per-surface roof criterion instead of an average; the EMS setback required
+on all 10 zones); the tightening had been validated as **0 of 391** verdict
+flips on the prior recorded roof+EMS facts.
 
-Four sweeps: `paper-v1.2.0` (57 legs — three claude tiers x five arms x3,
-plus GPT-5.4 and GPT-5.4-mini x {full, noskills} x3), `paper-v1.2.0-t240`
-(12 legs, 240 s budget control), `paper-v1.2.0-codegen` (6 legs, Arm C),
-and `paper-v1.2.1-roof` (roof-family re-collection across the same
-model/arm cells). Raw legs are deposited with the release DOI; aggregates
-regenerate via `python scripts/benchmark_aggregate.py results/<sweep>`.
+Three sweeps: `paper-v1.2.1` (57 legs — three claude tiers x five arms x3,
+plus GPT-5.4 and GPT-5.4-mini x {full, noskills} x3), `paper-v1.2.1-t240`
+(12 legs, 240 s budget control), and `paper-v1.2.1-codegen` (6 legs, Arm
+C). Raw legs are deposited with the release DOI; aggregates regenerate via
+`python scripts/benchmark_aggregate.py results/paper-v1.2.1`.
 
 Full arm (all assistance layers on), outcome versus routing pass over the
 progressive tasks (16 tasks x 3 repeats = 48 trials per cell; numbers below
-are the v1.2.0 collection and are refreshed once the roof re-collection
-lands):
+are from the v1.2.0 collection and are refreshed with the v1.2.1 rerun):
 
 | Model | Outcome | Routing | Gap |
 |---|---|---|---|

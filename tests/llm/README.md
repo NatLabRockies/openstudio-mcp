@@ -67,12 +67,12 @@ commands, the pinned image/harness, and the 18-task selection are in the
 archived dataset's `README.md` (deposited with the release DOI). In short:
 
 ```bash
-git checkout v1.2.0 && docker build -f docker/Dockerfile -t openstudio-mcp:v1.2.0 .
-python scripts/benchmark_sweep.py --sweep-id paper-v1.2.0 --image openstudio-mcp:v1.2.0 \
+git checkout v1.2.1 && docker build -f docker/Dockerfile -t openstudio-mcp:v1.2.1 .
+python scripts/benchmark_sweep.py --sweep-id paper-v1.2.1 --image openstudio-mcp:v1.2.1 \
   --model claude-sonnet-4-6:claude --arms full,noskills,nodiscovery,nodiscovery-noskills,nohost \
   --repeats 3 --pytest-args "<18-task -k selection>"
-python scripts/benchmark_check_leg.py results/paper-v1.2.0     # contamination gate
-python scripts/benchmark_aggregate.py results/paper-v1.2.0     # Wilson-CI tables
+python scripts/benchmark_check_leg.py results/paper-v1.2.1     # contamination gate
+python scripts/benchmark_aggregate.py results/paper-v1.2.1     # aggregate tables
 ```
 
 Frozen numbers and provenance: [`../../docs/testing/llm-test-benchmark.md`](../../docs/testing/llm-test-benchmark.md).
