@@ -10,7 +10,7 @@ Class-name checks use substrings of iddObjectType().valueDescription()
 """
 from __future__ import annotations
 
-RUBRIC_VERSION = "1.2"
+RUBRIC_VERSION = "1.3"
 
 N_ZONES = 10                 # baseline fixture zone count
 NIGHT_SETPOINT_C = 15.6      # L2/L3 pinned setback value
@@ -20,7 +20,7 @@ L1_MIN_SETBACK_K = 1.0       # L1 only asserts direction: night <= day - 1K
 R30_SI = 5.283               # R-30 ft2hF/Btu in m2K/W
 R30_MIN_INCREASE_SI = R30_SI * 0.85
 R30_LAYER_REL_TOL = 0.15     # a layer within 15% of R-30 counts as "R-30"
-L2_MIN_R_INCREASE_SI = 0.5   # L2/L3 don't pin a value; require a real increase
+L2_MIN_R_INCREASE_SI = 0.5   # L2 states no value; require a real increase
 
 
 def _fail(reasons: list[str]) -> dict:
@@ -236,11 +236,13 @@ def _roof_surface_ok(level: str, name: str, graded: dict | None,
     if base_r is None or new_r is None:
         return f"{name}: assembly R not computable (unknown layer resistance)"
     increase = new_r - base_r
-    if level == "L1":
-        # "Add R-30 insulation" — accept the standard reading (this surface
-        # insulated WITH an R-30 layer, better than baseline; rubric 1.1, from
-        # val-grading: sonnet swapped R-21 -> exact R-30 layer and v1.0 wrongly
-        # demanded a +R-30 assembly DELTA) or the literal add.
+    if level in ("L1", "L3"):
+        # Levels whose prompt states the R-30 goal — accept the standard
+        # reading (this surface insulated WITH an R-30 layer, better than
+        # baseline; rubric 1.1, from val-grading: sonnet swapped R-21 ->
+        # exact R-30 layer and v1.0 wrongly demanded a +R-30 assembly DELTA)
+        # or the literal add. L3 joined in rubric 1.3 when its prompt gained
+        # the R-30 goal; L2 states no value and stays on the increase floor.
         has_r30 = any(
             layer.get("r_si") is not None
             and abs(layer["r_si"] - R30_SI) <= R30_SI * R30_LAYER_REL_TOL

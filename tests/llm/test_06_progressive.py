@@ -484,9 +484,9 @@ PROGRESSIVE_CASES = [
         "needs_model": True,
         "needs_hvac": True,
         "expected": ["set_zone_equipment_priority", "add_zone_equipment"],
-        "L1": "Add a baseboard heater to the first zone, then reorder zone equipment priority.",
+        "L1": "Add a baseboard heater to the first zone and make it the highest priority heating equipment.",
         "L2": "Add a ZoneHVACBaseboardConvectiveElectric to the first zone using add_zone_equipment, "
-              "then use set_zone_equipment_priority to change the serving order.",
+              "then use set_zone_equipment_priority to make the baseboard highest priority.",
         "L3": "Use add_zone_equipment to add a ZoneHVACBaseboardConvectiveElectric to the first zone. "
               "Then call set_zone_equipment_priority to set the baseboard as highest priority.",
     },
@@ -598,16 +598,17 @@ PROGRESSIVE_CASES = [
     {
         "id": "roof_insulation",
         "needs_model": True,
-        # add_layer_to_construction added 2026-08-07 (F7 affordance fix) —
-        # prompts unchanged so roof-fix-* sweeps stay comparable to prod-2026-08b
+        # add_layer_to_construction added 2026-08-07 (F7 affordance fix)
         "expected": ["create_standard_opaque_material", "create_construction",
                      "add_layer_to_construction",
                      "assign_construction_to_surface"],
         "L1": "Add R-30 insulation to the roof.",
         "L2": "Create an insulation material and construction for the roof "
               "and assign it to the roof surfaces.",
-        "L3": "Use create_standard_opaque_material, then create_construction, "
-              "then assign_construction_to_surface on the roof surfaces.",
+        "L3": "Add R-30 insulation to the roof: use "
+              "create_standard_opaque_material to create the R-30 material, "
+              "create_construction to build a roof construction with it, "
+              "then assign_construction_to_surface on all roof surfaces.",
     },
     {
         "id": "infiltration",

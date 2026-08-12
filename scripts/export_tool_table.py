@@ -3,7 +3,7 @@
 Run INSIDE the container at the archived tag so the printed counts are the
 artifact's counts, one counting rule everywhere: len(EXPECTED_TOOLS).
 
-  docker run --rm -v .:/repo openstudio-mcp:v1.2.0 \
+  docker run --rm -v .:/repo openstudio-mcp:v1.2.1 \
       bash -lc "cd /repo && python scripts/export_tool_table.py \
                 --md paper/table1.md --json paper/tool_counts.json"
 
