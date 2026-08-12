@@ -599,15 +599,23 @@ PROGRESSIVE_CASES = [
         "id": "roof_insulation",
         "needs_model": True,
         # add_layer_to_construction added 2026-08-07 (F7 affordance fix) —
-        # prompts unchanged so roof-fix-* sweeps stay comparable to prod-2026-08b
+        # prompts unchanged so roof-fix-* sweeps stay comparable to prod-2026-08b.
+        # L3 corrected 2026-08-12 (v1.2.1): the old L3 prescribed the tool
+        # sequence WITHOUT stating the insulation goal, so agents complying
+        # literally (create + assign any construction) failed the graded
+        # intent (14/15 complied, 7/15 passed at v1.2.0). Levels must vary
+        # specificity while staying goal-consistent. Breaks comparability
+        # with v1.2.0 roof L3 rows — re-collected as paper-v1.2.1-roof.
         "expected": ["create_standard_opaque_material", "create_construction",
                      "add_layer_to_construction",
                      "assign_construction_to_surface"],
         "L1": "Add R-30 insulation to the roof.",
         "L2": "Create an insulation material and construction for the roof "
               "and assign it to the roof surfaces.",
-        "L3": "Use create_standard_opaque_material, then create_construction, "
-              "then assign_construction_to_surface on the roof surfaces.",
+        "L3": "Add R-30 insulation to the roof: use "
+              "create_standard_opaque_material to create the R-30 material, "
+              "create_construction to build a roof construction with it, "
+              "then assign_construction_to_surface on all roof surfaces.",
     },
     {
         "id": "infiltration",
