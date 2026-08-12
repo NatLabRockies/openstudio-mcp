@@ -57,7 +57,27 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=2 pytest tests/llm/ -v
 | `nohost` | host tools (Bash/Edit/Write/…) | claude only; codex sandbox cancels MCP calls if host tools are cut |
 | `codegen` | the MCP server itself | Arm C: agent scripts the SDK in a bare container (`test_11_codegen_arm.py`); opt-in, outcome-only grading |
 
-## Test Files (253 tests total, counts from `pytest tests/llm --co`)
+## Reproducing the paper benchmark
+
+The Section 3.2 benchmark is a multi-leg sweep, not a single `pytest` run.
+Each leg is one `(model, arm, repeat)` full run; `scripts/benchmark_sweep.py`
+drives the matrix (retries forced to 0, provenance recorded per leg) and
+`scripts/benchmark_aggregate.py` produces the pass-rate tables. The exact
+commands, the pinned image/harness, and the 18-task selection are in the
+archived dataset's `README.md` (deposited with the release DOI). In short:
+
+```bash
+git checkout v1.2.0 && docker build -f docker/Dockerfile -t openstudio-mcp:v1.2.0 .
+python scripts/benchmark_sweep.py --sweep-id paper-v1.2.0 --image openstudio-mcp:v1.2.0 \
+  --model claude-sonnet-4-6:claude --arms full,noskills,nodiscovery,nodiscovery-noskills,nohost \
+  --repeats 3 --pytest-args "<18-task -k selection>"
+python scripts/benchmark_check_leg.py results/paper-v1.2.0     # contamination gate
+python scripts/benchmark_aggregate.py results/paper-v1.2.0     # Wilson-CI tables
+```
+
+Frozen numbers and provenance: [`../../docs/testing/llm-test-benchmark.md`](../../docs/testing/llm-test-benchmark.md).
+
+## Test Files (259 tests total, counts from `pytest tests/llm --co`)
 
 | File | Count | Description |
 |------|-------|-------------|
@@ -71,6 +91,7 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=2 pytest tests/llm/ -v
 | `test_08_measure_authoring.py` | 4 | Measure authoring regressions |
 | `test_09_tool_routing.py` | 12 | Routing A/B cases |
 | `test_10_confusion_pairs.py` | 9 | Ambiguous-prompt tool choice |
+| `test_11_codegen_arm.py` | 6 | Arm C codegen baseline — no MCP server, agent scripts the SDK (opt-in: `LLM_TESTS_ARM=codegen`) |
 
 **Comparability epoch (2026-08-05):** phases 0-3 of the realism rework
 (prompt casing preserved, arg/ok/EUI asserts, L3 trim, +16 coverage cases)
