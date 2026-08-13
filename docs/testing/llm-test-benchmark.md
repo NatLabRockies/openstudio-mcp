@@ -11,9 +11,9 @@
 
 ## Current baseline — outcome-graded production matrix (2026-08)
 
-The current citable numbers come from sweep `prod-2026-08b` (plus the
-`prod-2026-08b-t240`, `roof-fix-2026-08`, and `codegen-2026-08` companion
-sweeps), run 2026-08-07 through 2026-08-10 with two-gate grading: gate 1
+The current citable numbers come from sweep `paper-v1.2.1` (plus the
+`paper-v1.2.1-t240` and `paper-v1.2.1-codegen` companion sweeps), run
+2026-08-12 through 2026-08-13 with two-gate grading: gate 1
 routing (accept-set tool called, first call ok) and gate 2 outcome
 (deterministic artifact grading against a versioned rubric). 18 hard tasks
 per cell, n=3 repeats, retries disabled, one pinned image + harness per
@@ -24,7 +24,7 @@ the release DOI); aggregates regenerate via
 ### Frozen rerun baseline (paper artifact)
 
 **The paper's benchmark is a fresh 75-leg rerun against the tagged release
-`v1.2.1 = <SHA>`, at rubric `1.3`.** The benchmark image is rebuilt from
+`v1.2.1 = 8e2673d`, at rubric `1.3`.** The benchmark image is rebuilt from
 the tag and every leg pins that image and that harness commit; every leg
 must pass the contamination detector. The aggregator refuses to pool legs
 from different harness commits or images unless explicitly overridden
@@ -41,29 +41,32 @@ C). Raw legs are deposited with the release DOI; aggregates regenerate via
 `python scripts/benchmark_aggregate.py results/paper-v1.2.1`.
 
 Full arm (all assistance layers on), outcome versus routing pass over the
-progressive tasks (16 tasks x 3 repeats = 48 trials per cell; numbers below
-are from the v1.2.0 collection and are refreshed with the v1.2.1 rerun):
+progressive tasks (16 tasks x 3 repeats = 48 trials per cell):
 
 | Model | Outcome | Routing | Gap |
 |---|---|---|---|
-| Opus 4.6 | 85.4% | 89.6% | 4.2 |
+| Opus 4.6 | 93.8% | 93.8% | 0.0 |
 | Sonnet 4.6 | 83.3% | 91.7% | 8.3 |
-| Haiku 4.5 | 54.2% | 79.2% | 25.0 |
-| GPT-5.4 | 89.6% | 97.9% | 8.3 |
-| GPT-5.4-mini | 77.1% | 91.7% | 14.6 |
+| Haiku 4.5 | 68.8% | 81.2% | 12.5 |
+| GPT-5.4 | 95.8% | 100.0% | 4.2 |
+| GPT-5.4-mini | 89.6% | 89.6% | 0.0 |
 
-The routing-to-outcome gap widens as capability drops: routing pass alone
-would credit Haiku at 79% while only 54% of its artifacts are correct.
+The routing-to-outcome gap widens down the Claude tiers (Opus 0.0 /
+Sonnet 8.3 / Haiku 12.5 points): routing pass alone would credit Haiku
+at 81% while only 69% of its artifacts are correct.
 
 Key ablation results: removing deferred tool search (full to nodiscovery,
-all schemas loaded up front) raises outcome pass +37.5 points for Haiku,
-+8.3 for Opus, and +2.1 for Sonnet — the discovery lever scales inversely
-with model capability. A 240 s budget control leaves the full-arm pass
-rates essentially unchanged, so the discovery gap is structural, not a
-timeout race. Opus with discovery and skills both removed
-(nodiscovery-noskills) reaches 97.9%. Arm C (no MCP server, agent scripts
-the SDK directly): Sonnet 13/18, GPT-5.4 15/18 on six simpler
-outcome-graded tasks. Methodology details:
+all schemas loaded up front) raises outcome pass +16.7 points for Haiku,
++2.1 for Opus, and 0.0 for Sonnet — the discovery lever scales inversely
+with model capability, and Haiku with both discovery and skills removed
+gains +20.8 (89.6%). A 240 s budget control does not close the gap —
+Haiku's full arm stays at 62.5% while its nodiscovery arm reaches 93.8%
+at the same budget — so the discovery gap is structural, not a timeout
+race (Sonnet's full arm does gain ~10 points with the larger budget, so
+absolute rates are budget-sensitive; the contrast is not). Opus with
+discovery and skills both removed (nodiscovery-noskills) reaches 97.9%.
+Arm C (no MCP server, agent scripts the SDK directly): Sonnet 15/18,
+GPT-5.4 15/18 on six simpler outcome-graded tasks. Methodology details:
 [`llm-testing-methodology.md`](llm-testing-methodology.md).
 
 ---
