@@ -9,61 +9,101 @@
 > NOT comparable with Runs <= 16 below. `export_measure` rows refer to a
 > tool since removed from the roster.
 
-## Current baseline — outcome-graded production matrix (2026-08)
+## Current baseline — outcome-graded matrix at a 600 s completion budget (2026-08)
 
-The current citable numbers come from sweep `prod-2026-08b` (plus the
-`prod-2026-08b-t240`, `roof-fix-2026-08`, and `codegen-2026-08` companion
-sweeps), run 2026-08-07 through 2026-08-10 with two-gate grading: gate 1
-routing (accept-set tool called, first call ok) and gate 2 outcome
-(deterministic artifact grading against a versioned rubric). 18 hard tasks
-per cell, n=3 repeats, retries disabled, one pinned image + harness per
-sweep. Raw leg JSONs live outside git (local `results/`, deposited with
-the release DOI); aggregates regenerate via
-`python scripts/benchmark_aggregate.py results/<sweep-id>`.
+The citable numbers come from the frozen v1.2.1 rerun collection merged
+with 600 s re-runs of its timed-out rows (protocol below), two-gate
+grading: gate 1 routing (accept-set tool called, first call ok) and gate 2
+outcome (deterministic artifact grading against a versioned rubric,
+currently `1.3`). 18 hard tasks per cell, n=3 repeats, retries disabled,
+one pinned image + harness per sweep (`v1.2.1 = 8e2673d`, image rebuilt
+from the tag). Every leg passes the contamination detector
+(`scripts/benchmark_check_leg.py`); the aggregator refuses to pool legs
+from different harness commits or images (`--ignore-harness` /
+`--ignore-digest` to override), so a drifted rerun fails loudly. Rubric
+1.2 hardened two graders after external review (per-surface roof
+criterion; EMS setback on all 10 zones), validated as **0 of 391**
+verdict flips on prior recorded facts. Raw leg JSONs live outside git
+(local `results/`, deposited with the release DOI); aggregates regenerate
+via `python scripts/benchmark_aggregate.py results/paper-v1.2.1-merged`.
 
-### Frozen rerun baseline (paper artifact)
+### The 600 s completion budget (merge protocol)
 
-**The paper's benchmark is a fresh 75-leg rerun against the tagged release
-`v1.2.1 = <SHA>`, at rubric `1.3`.** The benchmark image is rebuilt from
-the tag and every leg pins that image and that harness commit; every leg
-must pass the contamination detector. The aggregator refuses to pool legs
-from different harness commits or images unless explicitly overridden
-(`--ignore-harness` / `--ignore-digest`), so a rerun that drifts off the
-tag fails loudly. Rubric 1.2 hardened two graders after external review
-(per-surface roof criterion instead of an average; the EMS setback required
-on all 10 zones); the tightening had been validated as **0 of 391** verdict
-flips on the prior recorded roof+EMS facts.
+The original collection ran with a 120 s per-task ceiling. A row that hit
+that ceiling is a censored observation — the run did not finish, which
+says the task was slow, not that the work was wrong. At 600 s every
+previously timed-out row completes, and the strong tiers' median
+substituted duration (121-139 s) sits just past the old cap. The merged
+dataset (`results/paper-v1.2.1-merged`, built by
+`scripts/benchmark_build_t600_dataset.py`):
 
-Three sweeps: `paper-v1.2.1` (57 legs — three claude tiers x five arms x3,
-plus GPT-5.4 and GPT-5.4-mini x {full, noskills} x3), `paper-v1.2.1-t240`
-(12 legs, 240 s budget control), and `paper-v1.2.1-codegen` (6 legs, Arm
-C). Raw legs are deposited with the release DOI; aggregates regenerate via
-`python scripts/benchmark_aggregate.py results/paper-v1.2.1`.
+- keeps every row that completed under 120 s (pass or graded fail)
+  unchanged;
+- substitutes every timed-out failing row with its 600 s re-run at the
+  same (model, arm, task, repeat) — **outcome-blind**: the re-run verdict
+  stands even when it fails grading, so substitution cannot selectively
+  inflate pass rates;
+- reports needing >120 s as latency, not a correctness failure; a row
+  that still fails at 600 s (graded miss or second timeout) remains a
+  correctness failure.
+
+Disclosure: kept rows are conditioned on having finished under 120 s;
+substituted rows are fresh draws, not extensions of the censored runs.
+Merged numbers are a different quantity from the 120 s originals and are
+never mixed with them; the originals are archived unmodified alongside
+the re-runs and `MERGE_MANIFEST.md` (all 73 substitutions, old and new
+verdict per row).
+
+### Sweeps
+
+`paper-v1.2.1` (57 legs, 120 s), `paper-v1.2.1-t600fix` (48 legs, 600 s
+re-runs covering the 56 timed-out rows), `opus48-v1.2.1` +
+`opus48-v1.2.1-t600` (15 + 15 legs, the Opus 4.8 collection),
+`paper-v1.2.1-t240` (12 legs, 240 s control), `paper-v1.2.1-codegen`
+(6 legs, Arm C — untouched by the merge: its failures are graded misses
+at 17-57 s, not timeouts).
 
 Full arm (all assistance layers on), outcome versus routing pass over the
-progressive tasks (16 tasks x 3 repeats = 48 trials per cell; numbers below
-are from the v1.2.0 collection and are refreshed with the v1.2.1 rerun):
+progressive tasks (16 tasks x 3 repeats = 48 trials per cell), merged
+600 s budget:
 
 | Model | Outcome | Routing | Gap |
 |---|---|---|---|
-| Opus 4.6 | 85.4% | 89.6% | 4.2 |
-| Sonnet 4.6 | 83.3% | 91.7% | 8.3 |
-| Haiku 4.5 | 54.2% | 79.2% | 25.0 |
-| GPT-5.4 | 89.6% | 97.9% | 8.3 |
-| GPT-5.4-mini | 77.1% | 91.7% | 14.6 |
+| Opus 4.6 | 100.0% | 100.0% | 0.0 |
+| Opus 4.8 | 97.9% | 100.0% | 2.1 |
+| Sonnet 4.6 | 91.7% | 100.0% | 8.3 |
+| Haiku 4.5 | 72.9% | 89.6% | 16.7 |
+| GPT-5.4 | 100.0% | 100.0% | 0.0 |
+| GPT-5.4-mini | 93.8% | 93.8% | 0.0 |
 
-The routing-to-outcome gap widens as capability drops: routing pass alone
-would credit Haiku at 79% while only 54% of its artifacts are correct.
+Latency (reported instead of timeout failures; all rows, setup included):
 
-Key ablation results: removing deferred tool search (full to nodiscovery,
-all schemas loaded up front) raises outcome pass +37.5 points for Haiku,
-+8.3 for Opus, and +2.1 for Sonnet — the discovery lever scales inversely
-with model capability. A 240 s budget control leaves the full-arm pass
-rates essentially unchanged, so the discovery gap is structural, not a
-timeout race. Opus with discovery and skills both removed
-(nodiscovery-noskills) reaches 97.9%. Arm C (no MCP server, agent scripts
-the SDK directly): Sonnet 13/18, GPT-5.4 15/18 on six simpler
-outcome-graded tasks. Methodology details:
+| Model | >120 s rows | Share | Median substituted duration |
+|---|---|---|---|
+| Opus 4.6 | 13/270 | 4.8% | 133 s |
+| Opus 4.8 | 22/270 | 8.1% | 121 s |
+| Sonnet 4.6 | 27/270 | 10.0% | 139 s |
+| Haiku 4.5 | 18/270 | 6.7% | 57 s |
+| GPT-5.4 | 5/108 | 4.6% | 101 s |
+| GPT-5.4-mini | 9/108 | 8.3% | 106 s |
+
+At an adequate budget the top of the field converges (Opus 4.6, Opus 4.8
+and GPT-5.4 at or near ceiling) while Haiku's deficit persists. Haiku's
+median substituted duration is under the old cap (57 s): its timed-out
+runs wander rather than work, re-run quickly, and mostly still fail
+grading. Time rescues the strong tiers; it does not rescue Haiku.
+
+Key ablation results (merged): removing deferred tool search (full to
+nodiscovery, all schemas up front) still lifts Haiku +12.5 points (72.9
+to 85.4; +16.7 with skills also removed) — the discovery lever is not a
+timeout artifact. The 240 s control points the same way (doubling the
+budget rescued Sonnet, not Haiku, at 1.35-1.63x cost). Opus 4.8 is
+never-wrong-but-slow: 17 of its 18 failures at 120 s were timeouts, its
+one graded miss is a single roof task, and it authors custom measures
+(create_measure, test_measure, apply_measure) instead of discovering the
+bundled one. Arm C (no MCP server, agent scripts the SDK directly):
+Sonnet 15/18, GPT-5.4 15/18 on six simpler outcome-graded tasks.
+Methodology details:
 [`llm-testing-methodology.md`](llm-testing-methodology.md).
 
 ---
