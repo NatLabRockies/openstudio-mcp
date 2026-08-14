@@ -1,6 +1,6 @@
 # OpenStudio®-MCP SWR 26-035
 
-[![DOI](https://zenodo.org/badge/1160362004.svg)](https://doi.org/10.5281/zenodo.21879644)
+[![DOI](https://zenodo.org/badge/1160362004.svg)](https://doi.org/10.5281/zenodo.21905081)
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
