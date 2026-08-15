@@ -129,6 +129,18 @@ defects cause this, and none are fixed by `match_surfaces()`:
   and misses patches that land a few centimetres off their counterpart (2 such pairs on the Austin
   fixture; a third candidate at 72% overlap is correctly declined). Override the remainder with
   `set_surface_boundary_conditions`, which takes the flagged names in one call.
+  Each patch also needs a **construction** — these models rarely carry a default construction set,
+  and EnergyPlus fails outright on a surface without one — so one is copied from existing
+  geometry and the basis reported per surface in `construction_source`: `partner` (the matched
+  surface's own construction, the same physical assembly), `same_space_same_boundary` /
+  `same_boundary` (same type *and* exposure), or `type_only_fallback` (same type, **different**
+  exposure). Only the last can put an exterior assembly on an interior surface, so it is counted
+  in `construction_fallback_count` and explained once in `construction_warnings` rather than per
+  surface. Expect it to dominate wherever there is no adiabatic geometry to copy from — 103 of
+  117 patches on the Austin fixture. This replaced a donor that took the first surface of a
+  matching *type* in handle order from the whole model, which drew at random and ignored exposure
+  entirely: on that fixture's RoofCeiling pool (92 interior ceilings, 13 exterior roofs) roughly
+  one run in eight put an R-20 cool-roof assembly on every patched interior ceiling (#134).
 - **Same-space overlaps** (aka shared-wall duplication): the flip side of a missing surface — a
   wall exported once per neighboring room instead of split at the boundary between them, leaving
   a surface duplicated, or a byproduct of patching a missing surface that happens to coincide

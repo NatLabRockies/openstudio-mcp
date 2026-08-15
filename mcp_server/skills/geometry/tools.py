@@ -235,6 +235,20 @@ def register(mcp):
         facets are topological closures that need not correspond to a real building
         element. Override any that are genuinely exterior with
         set_surface_boundary_conditions.
+
+        Each patch also gets a construction copied from existing geometry, since these
+        models rarely carry a default construction set and EnergyPlus fails outright on
+        a surface without one. Where it came from is reported per surface in
+        construction_source: "partner" (the matched surface's own construction — the two
+        sides are the same assembly), "same_space_same_boundary"/"same_boundary" (a
+        surface of the same type AND exposure), or "type_only_fallback" (same type,
+        DIFFERENT exposure — the only case that can put an exterior assembly on an
+        interior surface). The last two counts are summarised in
+        construction_fallback_count / construction_missing_count with one explanation
+        each in construction_warnings, rather than a paragraph repeated per surface.
+        Expect the fallback to dominate on a model with no adiabatic geometry to copy
+        from: it covers 103 of 117 patches on the project's own Austin fixture. Review
+        those before trusting simulation results.
         """
         return patch_missing_surfaces()
 

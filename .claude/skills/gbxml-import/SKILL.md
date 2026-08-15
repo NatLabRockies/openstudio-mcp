@@ -64,6 +64,13 @@ left once merge and weld have closed what they can.
   outside_boundary_condition="Outdoors")`, which takes the whole flagged list in one call and
   keeps sun/wind exposure coherent with the condition automatically. Expect this count to be
   large on a badly broken export; on the project's own test fixture it is 103 of 117 patches.
+- **Also check `construction_fallback_count` after `patch_missing_surfaces()`.** Each patch gets a
+  construction copied from existing geometry (these models rarely have a default construction set,
+  and E+ fails without one). `construction_source` says where it came from per surface — `partner`
+  and `same_boundary` are safe; `type_only_fallback` means the only donor available had a
+  *different* boundary condition, so an exterior assembly may now sit on an interior surface.
+  `construction_warnings` explains it once rather than per surface. Review those before trusting
+  results, and correct any that are wrong with `assign_construction_to_surface`.
 - `trim_overlapping_surfaces()` only trims a pair that is genuinely the same thing twice
   (matching type, boundary condition, and construction, neither carrying a window or door).
   Anything else is reported as skipped — resolve those by hand rather than expecting the
