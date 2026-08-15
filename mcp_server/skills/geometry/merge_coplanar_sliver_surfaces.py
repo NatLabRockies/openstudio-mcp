@@ -103,9 +103,11 @@ def merge_coplanar_sliver_surfaces() -> dict[str, Any]:
         planned: list[dict[str, Any]] = []
 
         # Pass 1: decide, mutating nothing.
-        for space in model.getSpaces():
+        # Name order throughout — see match_surfaces() in geometry/operations.py for why handle
+        # order is not reproducible across imports (issue #134).
+        for space in sorted(model.getSpaces(), key=lambda s: s.nameString()):
             space_name = space.nameString()
-            surfaces = list(space.surfaces())
+            surfaces = sorted(space.surfaces(), key=lambda s: s.nameString())
 
             for surface_type in ("Wall", "Floor", "RoofCeiling"):
                 same_type = [s for s in surfaces if s.surfaceType() == surface_type]

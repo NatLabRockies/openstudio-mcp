@@ -179,7 +179,10 @@ def patch_missing_surfaces() -> dict[str, Any]:
         new_surfaces: list[openstudio.model.Surface] = []
         attempted_spaces: list[openstudio.model.Space] = []
 
-        for space in model.getSpaces():
+        # Name order, not handle order — see match_surfaces() in geometry/operations.py. This
+        # loop's order becomes new_surfaces' order, which pair_coincident_unmatched() consumes
+        # first-match-wins, so a random order changed which patches got paired (issue #134).
+        for space in sorted(model.getSpaces(), key=lambda s: s.nameString()):
             name = space.nameString()
             if space.isEnclosedVolume():
                 continue

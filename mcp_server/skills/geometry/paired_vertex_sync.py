@@ -153,7 +153,10 @@ def sync_paired_surface_vertices() -> dict[str, Any]:
         area_mismatches: list[dict[str, Any]] = []
         seen: set[tuple] = set()
 
-        for surface in model.getSurfaces():
+        # Name order — see match_surfaces() in geometry/operations.py (issue #134). Order matters
+        # here because each applied mirror mutates geometry that the manifold guard then measures
+        # for every later pair, so a handle-ordered walk could repair a different subset per run.
+        for surface in sorted(model.getSurfaces(), key=lambda s: s.nameString()):
             if surface.outsideBoundaryCondition() != "Surface":
                 continue
             adjacent = surface.adjacentSurface()

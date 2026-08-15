@@ -115,7 +115,10 @@ def find_missing_ground_contact() -> dict[str, Any]:
         adiabatic_below = 0
         existing_ground = 0
 
-        for surface in model.getSurfaces():
+        # Name order — see match_surfaces() in geometry/operations.py (issue #134). Nothing here
+        # mutates, so only the reported list order depends on it, but a findings list that
+        # reshuffles between runs is a diff for no reason.
+        for surface in sorted(model.getSurfaces(), key=lambda s: s.nameString()):
             condition = surface.outsideBoundaryCondition()
             if condition in ground_family:
                 existing_ground += 1

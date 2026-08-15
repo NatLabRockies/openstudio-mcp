@@ -61,9 +61,12 @@ def weld_coincident_vertices() -> dict[str, Any]:
         skipped: list[dict[str, Any]] = []
         any_change = False
 
-        for space in model.getSpaces():
+        # Name order — see match_surfaces() in geometry/operations.py (issue #134). It matters
+        # here because the per-space vertex pool snaps each point to the first one it meets
+        # within tolerance, so the order decides which coordinate wins.
+        for space in sorted(model.getSpaces(), key=lambda s: s.nameString()):
             space_name = space.nameString()
-            surfaces = list(space.surfaces())
+            surfaces = sorted(space.surfaces(), key=lambda s: s.nameString())
             if not surfaces:
                 continue
 
