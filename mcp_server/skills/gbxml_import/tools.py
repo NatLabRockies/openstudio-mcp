@@ -71,7 +71,11 @@ def register(mcp):
         other check in this server catches, validate_model included. Repaired
         pairs are reported in paired_vertex_mismatches_repaired; any this could
         not repair are in paired_vertex_mismatches_skipped with a reason, and
-        set ok to False because they still block simulation. Pairs whose vertex
+        set ok to False because they still block simulation. A mismatch is not
+        always a desync — one side may be a merged surface whose partner is
+        still tiled into fragments — so any mirror that would leave a space with
+        more unpaired edges than it had is rolled back and reported as skipped.
+        Pairs whose vertex
         counts agree but whose areas differ are listed in
         paired_area_mismatches: reported only, never reshaped, since E+ accepts
         them.

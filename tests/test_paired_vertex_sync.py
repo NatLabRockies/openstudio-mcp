@@ -334,6 +334,64 @@ def test_sync_repairs_across_spaces_with_different_origins(tmp_path):
     assert b_side.grossArea() == pytest.approx(SHARED_WALL_AREA_M2, abs=1e-6)
 
 
+def test_sync_rolls_back_a_mirror_that_worsens_the_partner_space(tmp_path):
+    # Regression: a vertex-count mismatch is not always a desync to mirror. When
+    # merge_coplanar_sliver_surfaces has collapsed one space's wall into a single surface while
+    # the neighbour's side is still tiled into fragments, the two sides legitimately differ, and
+    # overwriting the fragment with the merged polygon leaves the neighbour overlapping itself.
+    # Measured on the Austin fixture, mirroring unguarded cost three spaces (4 non-enclosed
+    # became 7) and pushed patch_missing_surfaces off its known-good result (117/5/2/103 ->
+    # 119/8/2/106). isEnclosedVolume() is too coarse to catch it — 67 of those 74 spaces are
+    # already non-enclosed when the sync runs, so closed->open never fires — hence the guard
+    # measures polyhedron().edgesNotTwo(True), the same metric patch_missing_surfaces works from.
+    import openstudio
+
+    from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
+
+    a_side, b_side = _build_adjacent_pair(tmp_path)
+    b_space = b_side.space().get()
+
+    # Split B's side of the shared wall into two stacked halves, mirroring the fragmented-partner
+    # case: the lower half stays paired with A's full-height wall, the upper half is a separate
+    # surface. B stays closed, so any later break is attributable to the sync alone.
+    def _at_height(vertices, low: float, high: float):
+        return openstudio.Point3dVector(
+            [openstudio.Point3d(v.x(), v.y(), low if v.z() == 0 else high) for v in vertices],
+        )
+
+    full = list(b_side.vertices())
+    upper = openstudio.model.Surface(_at_height(full, 1.5, 3.0), b_space.model())
+    upper.setName("SyncBUpperHalf")
+    assert upper.setSpace(b_space) is True
+    assert upper.surfaceType() == "Wall", upper.surfaceType()
+
+    # Lower half, plus a collinear midpoint so the pair disagrees on vertex count. A's side keeps
+    # the full 30 m2, so it wins on area and B's fragment is what would be overwritten.
+    lower = list(_at_height(full, 0.0, 1.5))
+    lower.insert(1, openstudio.Point3d(
+        (lower[0].x() + lower[1].x()) / 2, (lower[0].y() + lower[1].y()) / 2,
+        (lower[0].z() + lower[1].z()) / 2,
+    ))
+    assert b_side.setVertices(openstudio.Point3dVector(lower)) is True
+    assert len(b_side.vertices()) == 5
+    assert b_space.isEnclosedVolume() is True, "B must start closed for the guard to be meaningful"
+
+    result = sync_paired_surface_vertices()
+
+    assert result["ok"] is True, result
+    assert result["paired_vertex_mismatches_repaired_count"] == 0, result
+    assert result["paired_vertex_mismatches_skipped_count"] == 1, result
+    entry = result["paired_vertex_mismatches_skipped"][0]
+    assert "unpaired edges" in entry["reason"], entry
+    assert "rolled back" in entry["reason"], entry
+
+    # Rolled back means byte-for-byte restored, not merely "not obviously worse".
+    assert len(b_side.vertices()) == 5, b_side.vertices()
+    assert b_side.grossArea() == pytest.approx(15.0, abs=1e-6)
+    assert a_side.grossArea() == pytest.approx(SHARED_WALL_AREA_M2, abs=1e-6)
+    assert b_space.isEnclosedVolume() is True
+
+
 def test_sync_reports_no_model_loaded_instead_of_raising():
     # Validates: the operation returns ok False rather than raising through MCP when no
     # model is loaded (operations contract — nothing raises through the tool layer)

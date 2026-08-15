@@ -224,6 +224,30 @@ Append the new test file to the lightest shard's `FILES=` list in the `case` blo
 | `OSMCP_MAX_CONCURRENCY` | `1` | Max concurrent simulations |
 | `MCP_SIM_TIMEOUT` | `1200` | Simulation poll timeout (seconds) |
 | `MCP_POLL_SECONDS` | `3.0` | Poll interval for simulation status |
+| `OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS` | `1800` | Wall-clock cap on the gbXML measure workflow (`0` = no cap) |
+
+**Slow hosts and the gbXML fixtures.** `import_gbxml`'s runtime is almost entirely one measure's
+single-threaded surface matching (`gbxml_import_advanced`), so it tracks per-core speed and core
+count buys nothing. On the Austin apartment fixture that is ~300s on 2-core CI runners, ~160s on a
+fast dev box, and ~8.5 min on a slower one — where the previous hardcoded 600s cap killed the
+import mid-measure and failed
+`test_gbxml_import.py::test_geometry_repair_pipeline_on_austin_apartment_fixture` with
+`gbXML import exceeded the 600s wall-clock cap`.
+
+Contention matters as much as the host: on that same machine the import took 622-687s run on its
+own but **1228s** when the rest of `tests/test_gbxml_import.py` ran alongside it in one container.
+CI does not hit this because the heavy gbXML tests are split across shards by node ID, but a local
+whole-file run does. If you hit it, raise the cap rather than assuming the test is broken:
+
+```bash
+docker run --rm -v "C:/OS_MCP:/repo" -v "C:/OS_MCP/runs:/runs" \
+  -e RUN_OPENSTUDIO_INTEGRATION=1 -e MCP_SERVER_CMD=openstudio-mcp \
+  -e OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS=2400 \
+  openstudio-mcp:dev bash -lc "cd /repo && pytest -vv tests/test_gbxml_import.py"
+```
+
+A timeout error always names both the cap in force and this variable, so it can be acted on
+without reading the source.
 
 ### Two execution modes
 

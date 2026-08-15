@@ -86,7 +86,8 @@ left once merge and weld have closed what they can.
   looks healthy there. `repair_and_validate_gbxml_geometry()` re-synchronizes automatically on
   every call, so running it after each repair (as instructed above) is what keeps the model
   simulable. Check `paired_vertex_mismatches_skipped` — those are pairs it would not guess at (a
-  side carrying windows/doors, or a mirrored polygon that collapses), and they still block
+  side carrying windows/doors, a mirrored polygon that collapses, or a mirror that would have left
+  a space with more unpaired edges than it had, which is rolled back), and they still block
   simulation. `paired_area_mismatches` is informational: E+ accepts those.
 - `repair_and_validate_gbxml_geometry()` mutates the model (via `match_surfaces()` and the pair
   sync) before reporting — if you need to inspect pre-match state, save a copy of the model first.

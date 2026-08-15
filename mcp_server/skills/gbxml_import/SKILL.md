@@ -162,10 +162,23 @@ then name; converted through world coordinates, so a space origin can't displace
 its partner. Result fields: `paired_vertex_mismatches_repaired`,
 `paired_vertex_mismatches_skipped`, `paired_area_mismatches`, each with a `_count`.
 
-Skipped pairs set `ok` to `false` — they still block simulation. Two cases are skipped rather than
-guessed at, both reported with a reason: a side carrying subsurfaces is never rewritten (its
-windows and doors are positioned against the polygon it has), and a mirrored result that collapses
-to near-zero area is abandoned. Pairs whose vertex counts agree but whose areas differ are listed
+Skipped pairs set `ok` to `false` — they still block simulation. Three cases are skipped rather
+than guessed at, each reported with a reason: a side carrying subsurfaces is never rewritten (its
+windows and doors are positioned against the polygon it has); a mirrored result that collapses to
+near-zero area is abandoned; and **any mirror that leaves either space with more unpaired edges
+than it had is rolled back**.
+
+That third guard is the important one. A vertex-count mismatch is *not* always a desync to mirror:
+when `merge_coplanar_sliver_surfaces()` has collapsed one space's wall into a single surface while
+the neighbour's side is still tiled into fragments, the two sides legitimately differ, and
+overwriting the fragment with the merged polygon leaves the neighbour overlapping itself. Measured
+on the Austin fixture, mirroring unguarded cost three spaces (4 non-enclosed became 7) and pushed
+`patch_missing_surfaces()` off its known-good result (117/5/2/103 → 119/8/2/106). With the guard,
+5 of the 7 candidate mirrors are rolled back and the pipeline lands on its expected numbers while
+the 2 genuine desyncs are still repaired. `isEnclosedVolume()` is too coarse to catch this — most
+spaces are *already* non-enclosed when the sync runs, so a closed→open test never fires — which is
+why the guard measures `polyhedron().edgesNotTwo(True)`, the same metric
+`patch_missing_surfaces()` works from. Pairs whose vertex counts agree but whose areas differ are listed
 in `paired_area_mismatches` and never reshaped — E+ accepts them, `matchSurfaces()` has its own
 ~0.0125 m internal tolerance, and reshaping on that weaker signal would be exactly the guess these
 tools refuse to make.

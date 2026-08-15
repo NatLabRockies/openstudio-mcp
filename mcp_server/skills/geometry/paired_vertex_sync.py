@@ -67,6 +67,33 @@ def _space_name(surface: openstudio.model.Surface) -> str:
     return space.get().nameString() if space.is_initialized() else ""
 
 
+def _unpaired_edge_counts(*surfaces: openstudio.model.Surface) -> dict[str, int]:
+    """How many edges each affected space uses other than exactly twice, keyed by space name.
+
+    `isEnclosedVolume()` is too coarse to guard this repair. These models arrive with most spaces
+    already non-enclosed (67 of 74 on the Austin fixture at the point the sync runs), so a
+    closed->open test never fires and every harmful mirror sails through. The damage is not
+    opening a hole, it is making an existing hole bigger and defeating patch_missing_surfaces
+    downstream. `polyhedron().edgesNotTwo(True)` — the same manifold metric
+    patch_missing_surfaces works from, with the same includeCreatedEdges=True, since False hides
+    edges Polyhedron's own auto-heal step creates — measures that directly.
+    """
+    counts: dict[str, int] = {}
+    for surface in surfaces:
+        space = surface.space()
+        if not space.is_initialized():
+            continue
+        name = space.get().nameString()
+        if name not in counts:
+            counts[name] = len(list(space.get().polyhedron().edgesNotTwo(True)))
+    return counts
+
+
+def _degrades_manifold(before: dict[str, int], after: dict[str, int]) -> bool:
+    """True if the mirror left either space with more unpaired edges than it had."""
+    return any(after.get(name, count) > count for name, count in before.items())
+
+
 def mirror_onto_partner(
     keep: openstudio.model.Surface,
     rewrite: openstudio.model.Surface,
@@ -105,11 +132,17 @@ def sync_paired_surface_vertices() -> dict[str, Any]:
     REPORTED and NOT repaired. E+ accepts it, and silently reshaping a surface on that weaker
     signal would be exactly the kind of guess the sibling repair tools refuse to make.
 
-    Two guards prevent turning a recoverable defect into a worse one: a side carrying
+    Three guards prevent turning a recoverable defect into a worse one. A side carrying
     subsurfaces is never rewritten (its windows and doors are positioned against the polygon it
-    has, and would be orphaned outside a replacement), and a mirrored result that collapses
-    below MIN_SYNCED_SURFACE_AREA_M2 is abandoned. Both are reported as skipped with a reason
-    rather than applied.
+    has, and would be orphaned outside a replacement). A mirrored result that collapses below
+    MIN_SYNCED_SURFACE_AREA_M2 is abandoned. And every applied mirror is measured against both
+    spaces' unpaired-edge counts and rolled back if either got worse — on the Austin fixture,
+    mirroring unguarded cost three spaces (4 non-enclosed spaces became 7), because a
+    vertex-count mismatch is not always a desync: when
+    merge_coplanar_sliver_surfaces has collapsed one space's wall into a single surface while the
+    neighbour's side is still tiled into fragments, the two sides legitimately differ, and
+    overwriting the fragment with the merged polygon leaves a hole. All three are reported as
+    skipped with a reason rather than applied.
 
     match_surfaces() is re-run once, batched, if anything changed.
     """
@@ -188,7 +221,22 @@ def sync_paired_surface_vertices() -> dict[str, Any]:
 
             vertices_before = len(rewrite.vertices())
             area_before = float(rewrite.grossArea())
+            original = openstudio.Point3dVector(list(rewrite.vertices()))
+            edges_before = _unpaired_edge_counts(keep, rewrite)
+
             rewrite.setVertices(mirrored)
+
+            if _degrades_manifold(edges_before, _unpaired_edge_counts(keep, rewrite)):
+                rewrite.setVertices(original)
+                skipped.append({
+                    "surface": keep.nameString(), "partner": rewrite.nameString(),
+                    "reason": "mirroring left a space with more unpaired edges than it had (the "
+                              "two sides differ because one is a merged surface and the other is "
+                              "still tiled into fragments, not because a repair desynchronized "
+                              "them); rolled back and left unchanged",
+                })
+                continue
+
             repaired.append({
                 "surface": rewrite.nameString(),
                 "space": _space_name(rewrite),

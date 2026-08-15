@@ -22,6 +22,7 @@ import openstudio
 
 from mcp_server import model_manager, sandbox
 from mcp_server.config import (
+    GBXML_IMPORT_TIMEOUT_SECONDS,
     GBXML_MEASURES_DIR,
     GBXML_SEED_OSM,
     OSCLI_GEM_PATH,
@@ -217,10 +218,14 @@ def import_gbxml_op(
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
                 env=run_env,
-                # gbxml_import_advanced is CPU-bound surface matching; the Austin
-                # fixture alone takes ~300s on 2-core CI runners (~160s locally),
-                # so 300 flaked at the boundary — 600 gives 2x headroom.
-                timeout=600,
+                # gbxml_import_advanced is CPU-bound surface matching and is where
+                # essentially all of this runs: on the Austin fixture it alone takes
+                # ~300s on 2-core CI runners (~160s locally), and ~8.5 min on a slower
+                # host. It is single-threaded, so core count buys nothing and the wall
+                # clock tracks per-core speed. A hardcoded literal was raised 300 -> 600
+                # for a boundary flake and then flaked again at ~625s, which is why the
+                # cap is configuration now. 0 -> None, i.e. no cap.
+                timeout=GBXML_IMPORT_TIMEOUT_SECONDS or None,
                 check=False,
             )
 
@@ -313,7 +318,13 @@ def import_gbxml_op(
         return result
 
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "gbXML import timed out (10 min)"}
+        # Names the cap and the knob: the old message stated a fixed "10 min" that went stale
+        # the moment the cap moved, leaving a timeout that could not be acted on.
+        return {
+            "ok": False,
+            "error": f"gbXML import exceeded the {GBXML_IMPORT_TIMEOUT_SECONDS:.0f}s wall-clock "
+                     f"cap (OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS)",
+        }
     except Exception as e:
         return {"ok": False, "error": f"Failed to import gbXML: {e}"}
 

@@ -116,6 +116,20 @@ SIM_TIMEOUT_SECONDS = _safe_float(
     7200.0,
 )
 
+# Wall-clock cap for the gbXML measure-workflow subprocess (import_gbxml). 0 = no cap.
+# Configurable because the runtime is almost entirely one measure's single-threaded surface
+# matching, so it tracks the host's per-core speed and nothing else. A hardcoded literal was
+# raised 300 -> 600 once already and then went marginal again; measured on the Austin fixture on
+# one slower host, the same import took 622-687s run on its own but 1228s when the rest of
+# tests/test_gbxml_import.py ran alongside it in the same container. 1800 covers that observed
+# worst case with margin instead of landing just above it, which is how the previous two values
+# each became too tight.
+GBXML_IMPORT_TIMEOUT_SECONDS = _safe_float(
+    os.environ.get("OPENSTUDIO_MCP_GBXML_IMPORT_TIMEOUT_SECONDS",
+                   os.environ.get("OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS", "1800")),
+    1800.0,
+)
+
 # Unprivileged account confined subprocesses drop to (baked into the image as
 # `sandbox`). See mcp_server/_sandbox_exec.py.
 def _safe_sandbox_id(env_val: str, default: int) -> int:
