@@ -14,9 +14,10 @@ description: Translate a Revit-exported gbXML file into an OpenStudio model, the
    `climate_zone_resolved` is `false`, call `change_building_location` explicitly before any
    ASHRAE 90.1 baseline work.
 2. `repair_and_validate_gbxml_geometry()` — always run next. Fixes shared walls left as
-   "Outdoors" internally, then reports `overlapping_surfaces_count` and
-   `non_enclosed_spaces_count` for what it can't fix on its own.
-3. If both counts are `0`, done. Otherwise diagnose and repair — see below.
+   "Outdoors" internally and re-synchronizes desynchronized interior surface pairs, then reports
+   `overlapping_surfaces_count`, `non_enclosed_spaces_count`, and
+   `paired_vertex_mismatches_skipped_count` for what it can't fix on its own.
+3. If all three counts are `0`, done. Otherwise diagnose and repair — see below.
 
 ## Fixing non-enclosed spaces
 
@@ -67,7 +68,27 @@ left once merge and weld have closed what they can.
   (matching type, boundary condition, and construction, neither carrying a window or door).
   Anything else is reported as skipped — resolve those by hand rather than expecting the
   tool to pick a winner.
-- `repair_and_validate_gbxml_geometry()` mutates the model (via `match_surfaces()`) before
-  reporting — if you need to inspect pre-match state, save a copy of the model first.
+- **Check `ground_contact_missing_count`.** gbXML exports under-declare ground contact and the
+  translator reproduces the omission — the repo's own basement fixture ends up with 1 Ground
+  surface out of 292. A buried slab or basement wall left `Outdoors` takes fictitious solar gain
+  and wind convection. `repair_and_validate_gbxml_geometry()` reports it (z = 0 is grade) but
+  never fixes it. Fix in one batched call:
+  `set_surface_boundary_conditions(surface_names=[<the reported names>],
+  outside_boundary_condition="Ground")` — it sets `NoSun`/`NoWind` automatically. **Review the
+  list first**: a slab over a crawlspace or open parking is not ground contact, and a wall only
+  partly below grade gets its above-grade portion buried too. `partially_below_grade` holds walls
+  crossing grade with less than half buried — reported, not proposed for a batch fix. `ok` is
+  unaffected by any of this, so it will not stop you; check the count yourself.
+- **The repair tools above can desynchronize interior surface pairs**, since each rewrites one
+  side of a pair in isolation. Two sides with different vertex counts make EnergyPlus abort at
+  `GetSurfaceData` before simulating — nothing else in this server catches it, `validate_model`
+  included, and `match_surfaces()` counts surfaces rather than consistent pairs so a broken pair
+  looks healthy there. `repair_and_validate_gbxml_geometry()` re-synchronizes automatically on
+  every call, so running it after each repair (as instructed above) is what keeps the model
+  simulable. Check `paired_vertex_mismatches_skipped` — those are pairs it would not guess at (a
+  side carrying windows/doors, or a mirrored polygon that collapses), and they still block
+  simulation. `paired_area_mismatches` is informational: E+ accepts those.
+- `repair_and_validate_gbxml_geometry()` mutates the model (via `match_surfaces()` and the pair
+  sync) before reporting — if you need to inspect pre-match state, save a copy of the model first.
 - After geometry is clean, spaces still need standards space types — see the
   `attribute-space-types` skill.

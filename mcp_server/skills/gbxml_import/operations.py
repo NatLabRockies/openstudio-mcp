@@ -32,7 +32,9 @@ from mcp_server.config import (
 from mcp_server.model_manager import get_model
 from mcp_server.skills.gbxml_import.climate_zone import ensure_climate_zone
 from mcp_server.skills.gbxml_import.zone_checks import check_conditioned_zone_volumes
+from mcp_server.skills.geometry.ground_contact import find_missing_ground_contact
 from mcp_server.skills.geometry.operations import match_surfaces
+from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
 from mcp_server.skills.geometry.winding import normalize_local_frame_winding
 from mcp_server.skills.measures.runner_messages import OSW_MAX_BYTES, parse_all_step_messages
 from mcp_server.util import create_run_dir, read_file_bounded, read_tail_bounded, reject_escaping_symlinks
@@ -405,12 +407,40 @@ def _surface_overlaps(space: openstudio.model.Space) -> list[dict[str, Any]]:
 
 
 def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
-    """Fix cross-space shared walls, then report same-space overlaps + non-enclosed spaces."""
+    """Fix cross-space shared walls and desynchronized surface pairs, then report what is left.
+
+    Two mutating passes (match_surfaces, then the paired-vertex sync) followed by three read-only
+    checks: same-space overlaps, non-enclosed spaces, and missing ground connections. Only the
+    first two affect `ok` — a model with no ground connection still simulates.
+    """
     try:
         model = get_model()
         match_result = match_surfaces()  # mutates: fixes the common cross-space case first
         if not match_result.get("ok"):
             return {"ok": False, "error": "match_surfaces() failed before geometry validation"}
+
+        # mutates: re-synchronizes interior pairs whose two sides drifted apart in an earlier
+        # repair. Must run after match_surfaces() (which establishes the pairing this reads)
+        # and before the checks below, so overlaps and enclosure are measured on final geometry.
+        sync_result = sync_paired_surface_vertices()
+        if not sync_result.get("ok"):
+            return {"ok": False, "error": sync_result.get("error", "paired vertex sync failed")}
+        pairs_repaired = sync_result["paired_vertex_mismatches_repaired"]
+        pairs_skipped = sync_result["paired_vertex_mismatches_skipped"]
+        area_mismatches = sync_result["paired_area_mismatches"]
+        # Vertices moved, so the count above is stale. sync already re-ran match_surfaces() and
+        # hands back the post-repair count — running it again here would repeat a full
+        # intersectSurfaces() pass over the model for nothing.
+        matched_surfaces = match_result["matched_surfaces"]
+        if sync_result["rematched_surfaces"] is not None:
+            matched_surfaces = sync_result["rematched_surfaces"]
+
+        # Read-only, and last of the three: match_surfaces() flips shared walls to "Surface",
+        # which takes them out of contention, so running this any earlier would report interior
+        # partitions as missing ground connections.
+        ground_result = find_missing_ground_contact()
+        if not ground_result.get("ok"):
+            return {"ok": False, "error": ground_result.get("error", "ground contact check failed")}
 
         overlaps: list[dict[str, Any]] = []
         non_enclosed: list[dict[str, Any]] = []
@@ -429,19 +459,38 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
                 })
 
         result = {
-            "ok": not overlaps and not non_enclosed,
-            "cross_space_surfaces_matched": match_result["matched_surfaces"],
+            # Repaired pairs do not fail the check — they are fixed. Pairs this could NOT
+            # repair do, since they still abort EnergyPlus. Area-only mismatches are
+            # informational: E+ accepts them (see sync_paired_surface_vertices).
+            "ok": not overlaps and not non_enclosed and not pairs_skipped,
+            "cross_space_surfaces_matched": matched_surfaces,
             "space_count": len(model.getSpaces()),
             "surface_count": len(model.getSurfaces()),
+            "paired_vertex_mismatches_repaired_count": len(pairs_repaired),
+            "paired_vertex_mismatches_repaired": pairs_repaired[:MAX_REPORTED_ISSUES],
+            "paired_vertex_mismatches_skipped_count": len(pairs_skipped),
+            "paired_vertex_mismatches_skipped": pairs_skipped[:MAX_REPORTED_ISSUES],
+            "paired_area_mismatches_count": len(area_mismatches),
+            "paired_area_mismatches": area_mismatches[:MAX_REPORTED_ISSUES],
             "overlapping_surfaces_count": len(overlaps),
             "overlapping_surfaces": overlaps[:MAX_REPORTED_ISSUES],
             "non_enclosed_spaces_count": len(non_enclosed),
             "non_enclosed_spaces": non_enclosed[:MAX_REPORTED_ISSUES],
         }
+        if len(pairs_repaired) > MAX_REPORTED_ISSUES:
+            result["paired_vertex_mismatches_repaired_truncated"] = True
+        if len(pairs_skipped) > MAX_REPORTED_ISSUES:
+            result["paired_vertex_mismatches_skipped_truncated"] = True
+        if len(area_mismatches) > MAX_REPORTED_ISSUES:
+            result["paired_area_mismatches_truncated"] = True
         if len(overlaps) > MAX_REPORTED_ISSUES:
             result["overlapping_surfaces_truncated"] = True
         if len(non_enclosed) > MAX_REPORTED_ISSUES:
             result["non_enclosed_spaces_truncated"] = True
+        # Merged rather than nested so the ground keys read like every other key here. `ok` is
+        # deliberately NOT affected: a model with no ground connection still simulates, it is
+        # just wrong thermally, and this fires on essentially every gbXML import.
+        result.update({k: v for k, v in ground_result.items() if k != "ok"})
         return result
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
