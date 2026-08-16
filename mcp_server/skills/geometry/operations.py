@@ -345,9 +345,17 @@ def match_surfaces() -> dict[str, Any]:
     try:
         model = get_model()
 
-        # Build a mutable SpaceVector — SWIG needs a non-const reference
+        # Build a mutable SpaceVector — SWIG needs a non-const reference.
+        # Name order, not model order: model.getSpaces() is handle-ordered and handles are UUIDs
+        # minted afresh on every import, and this vector is handed straight to the SDK, whose
+        # intersectSurfaces() splitting and matchSurfaces() pairing both depend on the order they
+        # are given. Feeding it a random order made the whole repair pipeline nondeterministic —
+        # measured on the Austin fixture across fresh handle assignments, patch_missing_surfaces
+        # returned 117/5/2/103, 117/5/1/105 and 117/6/1/105 on different runs, and
+        # trim_overlapping_surfaces flipped between 1/18 and 0/19 (issue #134). Space names come
+        # from the source gbXML and are stable.
         space_vector = openstudio.model.SpaceVector()
-        for sp in model.getSpaces():
+        for sp in sorted(model.getSpaces(), key=lambda s: s.nameString()):
             space_vector.append(sp)
 
         # Intersect: split surfaces where spaces overlap

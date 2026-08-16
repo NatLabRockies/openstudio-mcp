@@ -28,7 +28,8 @@ exactly as that pipeline would build it — without ever invoking EnergyPlus.
    a guaranteed climate zone and a conditioned-zone volume check — see "Climate zone and zone
    volume guarantees" below.
 5. `repair_and_validate_gbxml_geometry()` — checks the (now-loaded) model for same-space overlaps and
-   non-enclosed volumes match_surfaces() can't fix. One call replaces the manual
+   non-enclosed volumes match_surfaces() can't fix, and re-synchronizes interior surface pairs whose
+   two sides disagree on vertex count. One call replaces the manual
    list_surfaces/get_surface_details/list_spaces/get_space_details diagnostic chain — see "Why
    repair_and_validate_gbxml_geometry" below.
 6. Pass `osm_path` (or the auto-loaded session model) to any model-query/model-management tool.
@@ -70,7 +71,8 @@ left as "Outdoors" instead of matched interior boundaries, and spaces missing a 
 RoofCeiling surface (breaking volume calculation). OpenStudio's own `intersectSurfaces()`/
 `matchSurfaces()` (the existing `match_surfaces()` tool) fix the first case but — by design in the
 SDK — never touch surfaces within the same space, so they can't fix true duplicate/overlapping
-geometry. `repair_and_validate_gbxml_geometry()` runs `match_surfaces()` first, then reports same-space
+geometry. `repair_and_validate_gbxml_geometry()` runs `match_surfaces()` first, then re-synchronizes
+desynchronized interior pairs (see "Paired-vertex desync" below), then reports same-space
 overlaps (via coincident-plane + 2D polygon-intersection checks) and non-enclosed-volume spaces
 (via `Space.isEnclosedVolume()`, not `volume() == 0` — volume() silently falls back to
 `ceilingHeight * floorArea` on non-manifold geometry rather than signaling failure). One call
@@ -127,6 +129,18 @@ defects cause this, and none are fixed by `match_surfaces()`:
   and misses patches that land a few centimetres off their counterpart (2 such pairs on the Austin
   fixture; a third candidate at 72% overlap is correctly declined). Override the remainder with
   `set_surface_boundary_conditions`, which takes the flagged names in one call.
+  Each patch also needs a **construction** — these models rarely carry a default construction set,
+  and EnergyPlus fails outright on a surface without one — so one is copied from existing
+  geometry and the basis reported per surface in `construction_source`: `partner` (the matched
+  surface's own construction, the same physical assembly), `same_space_same_boundary` /
+  `same_boundary` (same type *and* exposure), or `type_only_fallback` (same type, **different**
+  exposure). Only the last can put an exterior assembly on an interior surface, so it is counted
+  in `construction_fallback_count` and explained once in `construction_warnings` rather than per
+  surface. Expect it to dominate wherever there is no adiabatic geometry to copy from — 103 of
+  117 patches on the Austin fixture. This replaced a donor that took the first surface of a
+  matching *type* in handle order from the whole model, which drew at random and ignored exposure
+  entirely: on that fixture's RoofCeiling pool (92 interior ceilings, 13 exterior roofs) roughly
+  one run in eight put an R-20 cool-roof assembly on every patched interior ceiling (#134).
 - **Same-space overlaps** (aka shared-wall duplication): the flip side of a missing surface — a
   wall exported once per neighboring room instead of split at the boundary between them, leaving
   a surface duplicated, or a byproduct of patching a missing surface that happens to coincide
@@ -138,6 +152,95 @@ defects cause this, and none are fixed by `match_surfaces()`:
   construction, neither carrying a subsurface) — the same guards
   `merge_coplanar_sliver_surfaces()` uses, and for the same reason: `Surface.remove()` cascades
   to child windows/doors, and shrinking a parent strands them outside it.
+
+## Paired-vertex desync
+
+A fifth defect, distinct from the four above in two ways: nothing in the model reports it, and the
+four repair tools are what *cause* it. An interior boundary is two Surfaces pointing at each other
+via `adjacentSurface()`, and EnergyPlus requires both to describe the same polygon with the same
+vertex count. When they disagree, E+ aborts at `GetSurfaceData` before simulating at all
+(`Vertex size mismatch between base surface ... and outside boundary surface`). `validate_model`
+has no geometry checks, and `match_surfaces()` doesn't catch it either — its returned count is a
+count of *surfaces* whose boundary condition is `"Surface"`, not of consistent *pairs*, so a
+mismatched pair increments it twice and looks healthy.
+
+Each repair tool mutates one side of a pair in isolation: `merge_coplanar_sliver_surfaces()`
+replaces a survivor's vertices while the survivor keeps its live `adjacentSurface` pointer, and
+`weld_coincident_vertices()` runs a per-space vertex pool (so one physical corner can snap to
+different coordinates in two adjacent spaces) and can skip one side as degenerate while rewriting
+the other. `repair_and_validate_gbxml_geometry()` therefore re-synchronizes automatically on every
+call — no separate tool — mirroring the authoritative side (largest area, then higher vertex count,
+then name; converted through world coordinates, so a space origin can't displace the result) onto
+its partner. Result fields: `paired_vertex_mismatches_repaired`,
+`paired_vertex_mismatches_skipped`, `paired_area_mismatches`, each with a `_count`.
+
+Skipped pairs set `ok` to `false` — they still block simulation. Three cases are skipped rather
+than guessed at, each reported with a reason: a side carrying subsurfaces is never rewritten (its
+windows and doors are positioned against the polygon it has); a mirrored result that collapses to
+near-zero area is abandoned; and **any mirror that leaves either space with more unpaired edges
+than it had is rolled back**.
+
+That third guard is the important one. A vertex-count mismatch is *not* always a desync to mirror:
+when `merge_coplanar_sliver_surfaces()` has collapsed one space's wall into a single surface while
+the neighbour's side is still tiled into fragments, the two sides legitimately differ, and
+overwriting the fragment with the merged polygon leaves the neighbour overlapping itself. Measured
+on the Austin fixture, mirroring unguarded cost three spaces (4 non-enclosed became 7) and pushed
+`patch_missing_surfaces()` off its known-good result (117/5/2/103 → 119/8/2/106). With the guard,
+5 of the 7 candidate mirrors are rolled back and the pipeline lands on its expected numbers while
+the 2 genuine desyncs are still repaired. `isEnclosedVolume()` is too coarse to catch this — most
+spaces are *already* non-enclosed when the sync runs, so a closed→open test never fires — which is
+why the guard measures `polyhedron().edgesNotTwo(True)`, the same metric
+`patch_missing_surfaces()` works from. Pairs whose vertex counts agree but whose areas differ are listed
+in `paired_area_mismatches` and never reshaped — E+ accepts them, `matchSurfaces()` has its own
+~0.0125 m internal tolerance, and reshaping on that weaker signal would be exactly the guess these
+tools refuse to make.
+
+## Missing ground connections
+
+A sixth defect, and unlike the others it does not stop the model simulating — it just makes the
+answer wrong. Revit exports under-declare ground contact and the translator faithfully reproduces
+the omission. Measured on this repo's fixtures: `2026_11Ja_path1.xml` is a building **with a
+basement** whose translated model carries exactly **1 Ground surface out of 292** (the source
+declares one `UndergroundSlab` and types the basement's own walls as plain `ExteriorWall`);
+`austin_office.xml` and `austin_apartment_slivers.xml` declare no ground-contact surface type at
+all. The defect is in the export, so reading `surfaceType` back out of the gbXML finds nothing —
+it has to be found geometrically.
+
+It matters because `Outdoors` carries `SunExposed`/`WindExposed`: a buried slab or basement wall
+left that way takes fictitious solar gain and wind convection, the same error class as the
+`patch_missing_surfaces` exposure fix. Nothing else reports it — `validate_model` has no geometry
+checks, and the overlap/enclosure checks never look at boundary conditions.
+
+`repair_and_validate_gbxml_geometry()` reports this on every call, taking z = 0 as grade (the
+site-coordinate convention gbXML and OpenStudio share). Result fields:
+`ground_contact_missing_count` / `ground_contact_missing` (names), plus
+`ground_surfaces_existing_count`, `partially_below_grade_count`, and
+`adiabatic_below_grade_count`. On that basement fixture it reports 17 walls against 1 existing
+Ground surface.
+
+**Report only — it never sets a boundary condition.** Whether a slab is on grade, over a
+crawlspace, or over open parking is a modeling judgment that changes energy results materially.
+The names are shaped to be replayed into one batched call:
+`set_surface_boundary_conditions(surface_names=[...], outside_boundary_condition="Ground")`, which
+derives `NoSun`/`NoWind` automatically for a non-`Outdoors` condition. Review the list first.
+
+Three details worth knowing:
+
+- **A wall counts as a basement wall when most of its height is buried**, not only when it is
+  entirely below grade. Every one of that fixture's 17 basement walls runs z = −3.05 to z = +0.91
+  — 77% buried, none of them fully — so an "entirely below grade" rule finds nothing there. Walls
+  crossing grade with less than half buried go to `partially_below_grade` instead: visible, but
+  not proposed for a batch fix. Setting a partly-buried wall to `Ground` does bury its
+  above-grade portion; splitting it at z = 0 would be strictly more correct and no tool here does
+  that, which is part of why this is reported rather than repaired.
+- **Ten boundary conditions already mean ground-coupled**, not one — `Ground`, `Foundation`, and
+  the eight `Ground*` preprocessor variants. The check reads them from the SDK, so an F/C-factor
+  or Kiva `Foundation` surface is never reported as defective.
+- `ok` is **not** affected. A model with no ground connection still simulates, and this fires on
+  essentially every gbXML import, so `ok` keeps meaning "geometry is structurally sound".
+  `ground_surfaces_existing_count` sits next to the finding on purpose: "1 existing, 17 missing"
+  reads very differently from "40 existing, 1 missing", and no geometric rule can tell you which
+  of those means the model's origin simply is not at grade.
 
 Re-check with `repair_and_validate_gbxml_geometry()` after any of these. Order matters less between
 `merge_coplanar_sliver_surfaces()` and `weld_coincident_vertices()` (they touch different surface

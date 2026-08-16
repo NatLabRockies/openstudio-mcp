@@ -47,12 +47,96 @@ from mcp_server.skills.geometry.surface_pairing import pair_coincident_unmatched
 MIN_PATCHED_SURFACE_AREA_M2 = 0.0001
 
 
-def _donor_construction(model: openstudio.model.Model, surface_type: str):
-    return next(
-        (c.get() for s in model.getSurfaces()
-         if s.surfaceType() == surface_type and (c := s.construction()).is_initialized()),
-        None,
+def build_construction_pools(
+    model: openstudio.model.Model,
+) -> dict[tuple[str, str], list[tuple[str, str, Any]]]:
+    """Candidate donor constructions keyed by (surface type, boundary condition).
+
+    Built once per run rather than rescanned per patch, and in name order so the choice cannot
+    depend on handle order — handles are UUIDs minted afresh on every import (issue #134).
+
+    Keying on the boundary condition as well as the type is the point. The earlier version took
+    the first surface of a matching *type* from the whole model, so on the Austin fixture a
+    patched interior ceiling could draw from the 13 exterior roofs sitting in the same
+    RoofCeiling pool as the 92 interior ceilings — an R-20 cool roof assembly on an interior
+    boundary, silently misstating the heat transfer across it.
+
+    Surfaces with no construction are skipped, which conveniently excludes the patches
+    themselves: this runs before any of them is assigned one, so a patch can never seed
+    another patch's construction.
+    """
+    pools: dict[tuple[str, str], list[tuple[str, str, Any]]] = {}
+    for surface in sorted(model.getSurfaces(), key=lambda s: s.nameString()):
+        construction = surface.construction()
+        if not construction.is_initialized():
+            continue
+        space = surface.space()
+        space_name = space.get().nameString() if space.is_initialized() else ""
+        key = (surface.surfaceType(), surface.outsideBoundaryCondition())
+        pools.setdefault(key, []).append((space_name, surface.nameString(), construction.get()))
+    return pools
+
+
+def choose_construction(
+    pools: dict[tuple[str, str], list[tuple[str, str, Any]]],
+    surface_type: str,
+    boundary_condition: str,
+    space_name: str,
+    partner_construction: Any | None,
+) -> tuple[Any | None, str]:
+    """Pick a construction for one reconstructed surface. Returns (construction, basis).
+
+    In priority order: the partner's own construction when this surface was paired (the two sides
+    are the same physical assembly, so there is nothing to guess); then a surface of the same type
+    AND boundary condition, preferring the same space; then, only if no such surface exists
+    anywhere, any surface of the type regardless of exposure — reported as a fallback rather than
+    applied silently, since that is the case that can cross an interior/exterior boundary.
+    """
+    if partner_construction is not None:
+        return partner_construction, "partner"
+
+    matching = pools.get((surface_type, boundary_condition), [])
+    for candidate_space, _name, construction in matching:
+        if candidate_space == space_name:
+            return construction, "same_space_same_boundary"
+    if matching:
+        return matching[0][2], "same_boundary"
+
+    any_exposure = sorted(
+        (entry for (kind, _bc), entries in pools.items() if kind == surface_type
+         for entry in entries),
+        key=lambda entry: entry[1],
     )
+    if any_exposure:
+        return any_exposure[0][2], "type_only_fallback"
+    return None, "none_available"
+
+
+def _construction_warnings(fallback_count: int, missing_count: int) -> list[str]:
+    """One disclosure per condition, not per surface.
+
+    Each patched surface carries a short `construction_source` slug; the prose lives here and is
+    emitted once. On the Austin fixture the fallback case alone covers 103 of 117 patches, so
+    repeating a sentence on every entry would add tens of kilobytes to a response an agent has to
+    read, to say the same thing 103 times.
+    """
+    warnings: list[str] = []
+    if fallback_count:
+        warnings.append(
+            f"{fallback_count} patch(es) borrowed a construction from a surface of the same type "
+            "but a DIFFERENT boundary condition (construction_source 'type_only_fallback') — no "
+            "surface of both the same type and exposure exists in the model. That can put an "
+            "exterior assembly on an interior surface or the reverse; check them before trusting "
+            "simulation results.",
+        )
+    if missing_count:
+        warnings.append(
+            f"{missing_count} patch(es) got no construction at all (construction_source "
+            "'none_available') — no default construction set and no existing surface of the type "
+            "to borrow from. Assign one before simulating or EnergyPlus will likely fail with a "
+            "missing-construction error.",
+        )
+    return warnings
 
 
 def _build_surface(
@@ -74,10 +158,9 @@ def _build_surface(
 
     surface.setSpace(space)
     surface.setOutsideBoundaryCondition("Outdoors")
-    surface_type = surface.surfaceType()
-    donor_construction = _donor_construction(model, surface_type)
-    if not surface.construction().is_initialized() and donor_construction is not None:
-        surface.setConstruction(donor_construction)
+    # No construction yet. It is assigned after the pairing pass below, once the surface's real
+    # boundary condition is known — every surface is created Outdoors here so match_surfaces()
+    # can pair it, so choosing an assembly at this point would be choosing against a placeholder.
     return True, surface, area.get()
 
 
@@ -179,7 +262,10 @@ def patch_missing_surfaces() -> dict[str, Any]:
         new_surfaces: list[openstudio.model.Surface] = []
         attempted_spaces: list[openstudio.model.Space] = []
 
-        for space in model.getSpaces():
+        # Name order, not handle order — see match_surfaces() in geometry/operations.py. This
+        # loop's order becomes new_surfaces' order, which pair_coincident_unmatched() consumes
+        # first-match-wins, so a random order changed which patches got paired (issue #134).
+        for space in sorted(model.getSpaces(), key=lambda s: s.nameString()):
             name = space.nameString()
             if space.isEnclosedVolume():
                 continue
@@ -216,7 +302,6 @@ def patch_missing_surfaces() -> dict[str, Any]:
                         skipped.append({"space": name, "component": comp_idx, "reason": result})
                         continue
                     surface = result
-                    resolved_construction = surface.construction()
                     new_surfaces.append(surface)
                     patched.append({
                         "space": name,
@@ -224,15 +309,8 @@ def patch_missing_surfaces() -> dict[str, Any]:
                         "surface_type": surface.surfaceType(),
                         "new_surface_name": surface.nameString(),
                         "area_m2": round(area_val, 4),
-                        "construction": resolved_construction.get().nameString()
-                            if resolved_construction.is_initialized() else None,
-                        "construction_warning": (
-                            None if resolved_construction.is_initialized()
-                            else "No construction assigned — no default construction set "
-                                 "and no existing surface of this type to borrow one from. "
-                                 "Assign one before simulating or EnergyPlus will likely "
-                                 "fail with a missing-construction error."
-                        ),
+                        # construction/construction_source/construction_warning are filled in
+                        # after pairing, once the real boundary condition is known.
                         # >1 means several distinct edge pairings were equally valid and
                         # one was chosen deterministically; the reconstruction is a
                         # legitimate reading of the geometry but not the only one.
@@ -264,6 +342,10 @@ def patch_missing_surfaces() -> dict[str, Any]:
             paired_names = {p["surface"] for p in paired_by_fallback}
             paired_names.update(p["paired_with"] for p in paired_by_fallback)
 
+            # Built here, before any patch has a construction, so the pools contain only
+            # pre-existing geometry — see build_construction_pools.
+            construction_pools = build_construction_pools(model)
+
             for entry, surface in zip(patched, new_surfaces, strict=True):
                 matched = surface.outsideBoundaryCondition() == "Surface"
                 entry["paired_by_fallback"] = surface.nameString() in paired_names
@@ -292,6 +374,27 @@ def patch_missing_surfaces() -> dict[str, Any]:
                          "WindExposed) before trusting simulation results."
                 )
 
+                partner_construction = None
+                adjacent = surface.adjacentSurface()
+                if adjacent.is_initialized():
+                    partner = adjacent.get().construction()
+                    if partner.is_initialized():
+                        partner_construction = partner.get()
+
+                construction, basis = choose_construction(
+                    construction_pools,
+                    surface.surfaceType(),
+                    surface.outsideBoundaryCondition(),
+                    entry["space"],
+                    partner_construction,
+                )
+                if construction is not None:
+                    surface.setConstruction(construction)
+                entry["construction"] = (
+                    construction.nameString() if construction is not None else None
+                )
+                entry["construction_source"] = basis
+
         already_flagged_spaces = {s["space"] for s in skipped}
         for space in attempted_spaces:
             if space.isEnclosedVolume():
@@ -308,16 +411,24 @@ def patch_missing_surfaces() -> dict[str, Any]:
                           "pre-existing edge; not further resolved automatically",
             })
 
-        return {
+        fallback_count = sum(1 for e in patched if e.get("construction_source") == "type_only_fallback")
+        missing_count = sum(1 for e in patched if e.get("construction_source") == "none_available")
+        result = {
             "ok": True,
             "patched_count": len(patched),
             "patched": patched,
             "skipped_count": len(skipped),
             "skipped": skipped,
             "ambiguous_boundary_condition_count": ambiguous_bc_count,
+            "construction_fallback_count": fallback_count,
+            "construction_missing_count": missing_count,
             "paired_by_fallback_count": len(paired_by_fallback),
             "paired_by_fallback": paired_by_fallback,
         }
+        warnings = _construction_warnings(fallback_count, missing_count)
+        if warnings:
+            result["construction_warnings"] = warnings
+        return result
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:

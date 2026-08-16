@@ -76,9 +76,10 @@ def repair_missing_roof_ceiling() -> dict[str, Any]:
         skipped: list[dict[str, Any]] = []
         new_surfaces: list[openstudio.model.Surface] = []
 
-        for space in model.getSpaces():
+        # Name order — see match_surfaces() in geometry/operations.py (issue #134).
+        for space in sorted(model.getSpaces(), key=lambda s: s.nameString()):
             name = space.nameString()
-            surfaces = list(space.surfaces())
+            surfaces = sorted(space.surfaces(), key=lambda s: s.nameString())
 
             if any(s.surfaceType() == "RoofCeiling" for s in surfaces):
                 continue

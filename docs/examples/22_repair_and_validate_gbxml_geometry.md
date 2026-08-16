@@ -21,17 +21,33 @@ actually clean before doing anything else with it. The manual way to check this 
 1. import_gbxml(gbxml_path="/inputs/25_SpacesOneZE.xml",
                  epw_path="/inputs/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw")
 2. repair_and_validate_gbxml_geometry()
-   → runs match_surfaces() internally first (fixes cross-space shared walls —
-     156 surfaces matched on this model), then reports what that can't fix:
+   → two mutating passes (match_surfaces(), which fixes cross-space shared walls —
+     156 surfaces matched on this model — then a paired-vertex sync), followed by
+     three read-only checks reporting what those can't fix:
    { ok: false,
      cross_space_surfaces_matched: 156,
      space_count: 25, surface_count: 228,
+     paired_vertex_mismatches_repaired_count: 0,
+     paired_vertex_mismatches_skipped_count: 0,
+     paired_area_mismatches_count: 0,
      overlapping_surfaces_count: 0, overlapping_surfaces: [],
      non_enclosed_spaces_count: 14,
      non_enclosed_spaces: [
        {"space": "aim2860", "floor_area_m2": 7.46, "has_floor": true, "has_roofceiling": true},
-       ... ] }
+       ... ],
+     ground_contact_missing_count: 0,
+     ground_surfaces_existing_count: 25,
+     partially_below_grade_count: 0,
+     adiabatic_below_grade_count: 0 }
 ```
+
+Three checks, not one. **Non-enclosed spaces and overlaps** are the geometry defects — they set
+`ok`. **Paired-vertex mismatches** are pairs whose two sides disagree on vertex count, which makes
+EnergyPlus abort at `GetSurfaceData` before simulating; repaired ones are fixed, skipped ones set
+`ok` false. **Ground contact** is report-only and never moves `ok`: a model with no ground
+connection still simulates, it is just wrong thermally. On the basement fixture below that check
+reports 17 buried walls against a single existing `Ground` surface — see "Missing ground
+connections" in the gbxml-import skill.
 
 Two calls total, replacing what would otherwise be dozens.
 
@@ -47,7 +63,7 @@ having a subtler non-manifold gap — see "Follow-up" below.
 | Tool | Purpose |
 |------|---------|
 | `import_gbxml` | Translate gbXML -> OSM (Example 21) |
-| `repair_and_validate_gbxml_geometry` | Fix cross-space shared walls (`match_surfaces()`, internal), then report same-space overlaps and non-enclosed spaces in one call |
+| `repair_and_validate_gbxml_geometry` | Fix cross-space shared walls (`match_surfaces()`, internal) and re-sync desynchronized surface pairs, then report same-space overlaps, non-enclosed spaces and missing ground connections in one call |
 | `repair_missing_roof_ceiling` | Follow-up fix for non-enclosed spaces that have a Floor but no RoofCeiling at all (see "Follow-up" below) |
 | `merge_coplanar_sliver_surfaces` | Follow-up fix for non-enclosed spaces fragmented into many same-space coplanar pieces (see "Follow-up" below) |
 | `weld_coincident_vertices` | Follow-up fix for non-enclosed spaces with sub-centimeter corner gaps between non-coplanar surfaces (see "Follow-up" below) |
@@ -167,9 +183,25 @@ surface, not the two a closed volume requires: a genuinely missing surface, not 
      than trusted, in case a new internal chord edge happens to coincide with an
      already-ambiguous pre-existing one.
    { ok: true, patched_count: 117, patched: [...], skipped_count: 5, skipped: [...],
-     ambiguous_boundary_condition_count: 107 }
+     ambiguous_boundary_condition_count: 103, paired_by_fallback_count: 2,
+     construction_fallback_count: 103, construction_missing_count: 0,
+     construction_warnings: [...] }
 4. repair_and_validate_gbxml_geometry()   # confirm: non_enclosed_spaces_count 67 -> 4
 ```
+
+(107 of those patches are unmatched before the ≥99%-overlap fallback pass joins 2 pairs; 103
+remain ambiguous after it.)
+
+Each patch also needs a **construction** — gbXML imports rarely carry a default construction set,
+and EnergyPlus fails outright on a surface without one. One is copied from existing geometry and
+the basis reported per surface in `construction_source`: `partner` (the matched surface's own
+construction — the same physical assembly), `same_space_same_boundary` / `same_boundary` (same
+type *and* exposure), or `type_only_fallback` (same type, **different** exposure). Only the last
+can put an exterior assembly on an interior surface, so it is counted in
+`construction_fallback_count` and explained once in `construction_warnings` rather than repeated
+on all 117 entries. It dominates here — 103 of 117 — because the fixture has no adiabatic geometry
+to copy from, which is exactly the population that ends up adiabatic. Review those before trusting
+results and correct any with `assign_construction_to_surface`.
 
 On the Austin fixture this reconstructs the large majority of the 67 remaining spaces' holes —
 mostly missing partition walls, but one (`sp-1stair`) turned out to be a missing RoofCeiling,

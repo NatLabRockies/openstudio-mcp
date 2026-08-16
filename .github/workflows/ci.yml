@@ -301,7 +301,14 @@ jobs:
             3)
               # controls, object mgmt, loads, building, doas, hvac, measures, measure_authoring, skill_qaqc, hvac_supply_wiring
               # + gbXML WMO-fallback climate-zone test (moved from shard 4 to balance runtime)
-              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_generic_access.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_measure_authoring.py tests/test_skill_qaqc.py tests/test_hvac_supply_wiring.py tests/test_validate_model.py tests/test_api_reference.py tests/test_gbxml_import.py::test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable"
+              # + paired-vertex sync, ground-contact, and gbXML import-timeout checks (in-process,
+              #   no sim — measured at ~15s, ~2s and ~43s, so shard balance is unaffected wherever
+              #   they land; placed here rather than with test_geometry.py in shard 2, which
+              #   already carries more)
+              # + geometry repair write guards (in-process setVertices fault injection, ~2s —
+              #   must not go to shard 2 with test_geometry.py: that file drives the same three
+              #   tools through the stdio server subprocess, which monkeypatch cannot reach)
+              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_generic_access.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_measure_authoring.py tests/test_skill_qaqc.py tests/test_hvac_supply_wiring.py tests/test_validate_model.py tests/test_api_reference.py tests/test_paired_vertex_sync.py tests/test_geometry_write_guards.py tests/test_ground_contact.py tests/test_gbxml_import_timeout.py tests/test_trim_order_invariance.py tests/test_patch_construction_choice.py tests/test_gbxml_import.py::test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable"
               EXTRA_ENV=""
               ;;
             4)

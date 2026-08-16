@@ -83,6 +83,12 @@ def merge_coplanar_sliver_surfaces() -> dict[str, Any]:
     so the merged loops are re-oriented against the survivor's pre-merge normal — without
     that, every merged RoofCeiling would come back facing downward.
 
+    The survivor's rewrite is verified before anything is removed. setVertices() can
+    reject a polygon silently, leaving the survivor on its old fragment, and the group's
+    other fragments are deleted purely on the strength of that write — so an unchecked
+    call would destroy them against a merge that never happened and report it as merged.
+    A rejected rewrite leaves the whole group intact and is reported as skipped.
+
     Run repair_and_validate_gbxml_geometry() before and after to see the effect on
     non_enclosed_spaces_count. match_surfaces() is re-run once, batched, if anything
     changed — a wall that genuinely borders more than one neighbor along its run will
@@ -103,9 +109,11 @@ def merge_coplanar_sliver_surfaces() -> dict[str, Any]:
         planned: list[dict[str, Any]] = []
 
         # Pass 1: decide, mutating nothing.
-        for space in model.getSpaces():
+        # Name order throughout — see match_surfaces() in geometry/operations.py for why handle
+        # order is not reproducible across imports (issue #134).
+        for space in sorted(model.getSpaces(), key=lambda s: s.nameString()):
             space_name = space.nameString()
-            surfaces = list(space.surfaces())
+            surfaces = sorted(space.surfaces(), key=lambda s: s.nameString())
 
             for surface_type in ("Wall", "Floor", "RoofCeiling"):
                 same_type = [s for s in surfaces if s.surfaceType() == surface_type]
@@ -190,7 +198,21 @@ def merge_coplanar_sliver_surfaces() -> dict[str, Any]:
             survivor = plan["survivor"]
             new_loops_3d = plan["new_loops_3d"]
 
-            survivor.setVertices(new_loops_3d[0])
+            # Checked before anything is created or removed: plan["others"] are deleted below
+            # purely on the strength of this write. A rejection is silent (setVertices does not
+            # raise, and OpenStudio's complaint goes to a logger this server pins at Fatal) and
+            # leaves the survivor on its old fragment, so an unchecked call would destroy the
+            # rest of the group against a merge that never happened — and report it as merged.
+            if not survivor.setVertices(new_loops_3d[0]):
+                skipped.append({
+                    "space": plan["space_name"], "surface_type": plan["surface_type"],
+                    "surfaces": [survivor.nameString(), *(s.nameString() for s in plan["others"])],
+                    "reason": "OpenStudio rejected the merged polygon (setVertices returned "
+                              "false); the group's fragments are left in place rather than "
+                              "removed against a survivor that never took the merged shape",
+                })
+                continue
+
             rebuilt_names = [survivor.nameString()]
 
             for extra_loop in new_loops_3d[1:]:

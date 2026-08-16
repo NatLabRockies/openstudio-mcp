@@ -57,11 +57,39 @@ def register(mcp):
         """Check the loaded model for surface overlaps and non-enclosed space volumes.
 
         Runs match_surfaces() first (fixes shared walls between adjacent
-        spaces — the common case), then reports same-space duplicate/
-        overlapping surfaces and spaces whose volume can't be computed as a
-        closed manifold (usually a missing Floor or RoofCeiling surface) —
-        problems match_surfaces() cannot fix. One call replaces the manual
-        list_surfaces/get_surface_details/list_spaces/get_space_details
-        diagnostic chain.
+        spaces — the common case), then re-synchronizes any interior surface
+        pair whose two sides ended up with different vertex counts, then
+        reports same-space duplicate/overlapping surfaces and spaces whose
+        volume can't be computed as a closed manifold (usually a missing Floor
+        or RoofCeiling surface) — problems match_surfaces() cannot fix. One
+        call replaces the manual list_surfaces/get_surface_details/list_spaces/
+        get_space_details diagnostic chain.
+
+        The vertex-pair sync matters because the other repair tools each mutate
+        one side of a pair in isolation, and a pair whose sides disagree makes
+        EnergyPlus abort at GetSurfaceData before simulating — a failure no
+        other check in this server catches, validate_model included. Repaired
+        pairs are reported in paired_vertex_mismatches_repaired; any this could
+        not repair are in paired_vertex_mismatches_skipped with a reason, and
+        set ok to False because they still block simulation. A mismatch is not
+        always a desync — one side may be a merged surface whose partner is
+        still tiled into fragments — so any mirror that would leave a space with
+        more unpaired edges than it had is rolled back and reported as skipped.
+        Pairs whose vertex
+        counts agree but whose areas differ are listed in
+        paired_area_mismatches: reported only, never reshaped, since E+ accepts
+        them.
+
+        Also reports missing ground connections, taking z=0 as grade: gbXML
+        exports under-declare ground contact, so slabs and basement walls
+        commonly arrive as Outdoors and take fictitious solar gain and wind
+        convection. ground_contact_missing lists the surfaces (Floors and Walls
+        at or below grade, plus walls with most of their height buried) —
+        shaped to be replayed into one set_surface_boundary_conditions(...,
+        outside_boundary_condition="Ground") call. Report only, and ok is NOT
+        affected: such a model still simulates, it is just wrong thermally.
+        Review before applying — a slab over a crawlspace is not ground
+        contact. See also ground_surfaces_existing_count,
+        partially_below_grade_count, and adiabatic_below_grade_count.
         """
         return repair_and_validate_gbxml_geometry_op()

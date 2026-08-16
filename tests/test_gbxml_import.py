@@ -427,6 +427,31 @@ def test_repair_and_validate_gbxml_geometry_detects_shared_wall_duplication_over
                     90.72543765430825, rel=1e-9), flagged
                 assert flagged["sp-0basement"]["has_roofceiling"] is True, flagged
 
+                # Regression: this building HAS a basement and the translated model carries
+                # exactly one Ground surface out of 292 — its basement slab. The source gbXML
+                # declares a single UndergroundSlab and types the basement's own walls as plain
+                # ExteriorWall, so the defect is in the export, not the translator, and cannot be
+                # found by reading surfaceType back out of the gbXML. All 17 basement walls run
+                # z=-3.05 to z=+0.91: 77% buried, none of them *entirely* buried, which is why
+                # the check treats a mostly-buried wall as a basement wall. An "entirely below
+                # grade" rule reports 0 findings on this model.
+                assert result["ground_surfaces_existing_count"] == 1, result
+                assert result["ground_contact_missing_count"] == 17, result
+                assert set(result["ground_contact_missing"]) == {
+                    "su-e-0-e-w-10", "su-e-0-e-w-12", "su-e-0-e-w-15", "su-e-0-e-w-17",
+                    "su-n-0-e-w-2", "su-n-0-e-w-5", "su-ne-0-e-w-1", "su-ne-0-e-w-16",
+                    "su-nw-0-e-w-3", "su-s-0-e-w-11", "su-s-0-e-w-13", "su-s-0-e-w-7",
+                    "su-s-0-e-w-9", "su-se-0-e-w-14", "su-se-0-e-w-8", "su-w-0-e-w-4",
+                    "su-w-0-e-w-6",
+                }, result
+                assert result["partially_below_grade_count"] == 0, result
+                assert result["adiabatic_below_grade_count"] == 0, result
+                assert "partially_below_grade" not in result, result
+                assert "ground_contact_missing_truncated" not in result, result
+                # The ground check is report-only and must not have moved ok, which still means
+                # "geometry is structurally sound and will simulate".
+                assert result["ok"] is False, result  # from the 9 overlaps / 14 non-enclosed
+
     asyncio.run(_run())
 
 
