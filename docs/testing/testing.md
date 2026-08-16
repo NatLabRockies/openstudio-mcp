@@ -224,7 +224,7 @@ Append the new test file to the lightest shard's `FILES=` list in the `case` blo
 | `OSMCP_MAX_CONCURRENCY` | `1` | Max concurrent simulations |
 | `MCP_SIM_TIMEOUT` | `1200` | Simulation poll timeout (seconds) |
 | `MCP_POLL_SECONDS` | `3.0` | Poll interval for simulation status |
-| `OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS` | `1800` | Wall-clock cap on the gbXML measure workflow (`0` = no cap) |
+| `OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS` | `1800` | Wall-clock cap on the gbXML measure workflow (`0` or negative = no cap) |
 
 **Slow hosts and the gbXML fixtures.** `import_gbxml`'s runtime is almost entirely one measure's
 single-threaded surface matching (`gbxml_import_advanced`), so it tracks per-core speed and core

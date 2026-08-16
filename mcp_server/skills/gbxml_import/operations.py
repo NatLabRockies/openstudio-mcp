@@ -224,8 +224,14 @@ def import_gbxml_op(
                 # host. It is single-threaded, so core count buys nothing and the wall
                 # clock tracks per-core speed. A hardcoded literal was raised 300 -> 600
                 # for a boundary flake and then flaked again at ~625s, which is why the
-                # cap is configuration now. 0 -> None, i.e. no cap.
-                timeout=GBXML_IMPORT_TIMEOUT_SECONDS or None,
+                # cap is configuration now. Any non-positive value means no cap, matching
+                # SIM_TIMEOUT_SECONDS. `or None` caught only 0.0: a negative from a
+                # misconfigured env var stayed truthy and reached subprocess.run, where it
+                # does not raise ValueError but puts the deadline in the past, so every
+                # import died in ~0ms and the handler below reported it as a real timeout
+                # against a nonsense cap ("exceeded the -1s wall-clock cap") — which reads
+                # as "raise the timeout", the opposite of the fix.
+                timeout=GBXML_IMPORT_TIMEOUT_SECONDS if GBXML_IMPORT_TIMEOUT_SECONDS > 0 else None,
                 check=False,
             )
 

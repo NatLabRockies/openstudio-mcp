@@ -116,7 +116,9 @@ SIM_TIMEOUT_SECONDS = _safe_float(
     7200.0,
 )
 
-# Wall-clock cap for the gbXML measure-workflow subprocess (import_gbxml). 0 = no cap.
+# Wall-clock cap for the gbXML measure-workflow subprocess (import_gbxml). <= 0 = no cap,
+# matching SIM_TIMEOUT_SECONDS — the call site gates on > 0, so a negative from a
+# misconfigured env var disables the cap rather than reaching subprocess.run.
 # Configurable because the runtime is almost entirely one measure's single-threaded surface
 # matching, so it tracks the host's per-core speed and nothing else. A hardcoded literal was
 # raised 300 -> 600 once already and then went marginal again; measured on the Austin fixture on

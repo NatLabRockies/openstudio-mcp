@@ -55,14 +55,19 @@ def test_timeout_returns_an_actionable_error_naming_the_cap_and_the_knob(monkeyp
     assert "10 min" not in result["error"], result
 
 
-def test_zero_disables_the_cap_rather_than_timing_out_instantly(monkeypatch):
-    # Regression: 0 means "no cap" across this server's timeouts (see SIM_TIMEOUT_SECONDS).
-    # Passing 0 straight through to subprocess.run would invert that into "time out immediately",
-    # so the falsy-to-None conversion is pinned here. The subprocess is stubbed rather than run,
-    # since an uncapped real import would take ~10 minutes to prove one keyword argument.
+@pytest.mark.parametrize("cap", [0.0, -1.0, -0.5])
+def test_non_positive_cap_disables_rather_than_timing_out_instantly(monkeypatch, cap):
+    # Regression: <= 0 means "no cap" across this server's timeouts (SIM_TIMEOUT_SECONDS
+    # gates on `<= 0`; resolve_gc_days clamps with max(0.0, ...)). This call site used
+    # `X or None`, which caught only 0.0 — a negative from a misconfigured env var stayed
+    # truthy and reached subprocess.run. That does not raise ValueError: it puts the
+    # deadline in the past, so TimeoutExpired fires in ~0ms and lands in the dedicated
+    # handler, which reported "exceeded the -1s wall-clock cap" — a confident, wrong
+    # diagnosis pointing at the workload instead of the config. -0.5 is here because it
+    # formats as "-0s", losing even the minus sign that hints at the real cause.
     from mcp_server.skills.gbxml_import import operations as ops
 
-    monkeypatch.setattr(ops, "GBXML_IMPORT_TIMEOUT_SECONDS", 0.0)
+    monkeypatch.setattr(ops, "GBXML_IMPORT_TIMEOUT_SECONDS", cap)
 
     seen: dict[str, object] = {}
     real_run = subprocess.run
@@ -71,7 +76,7 @@ def test_zero_disables_the_cap_rather_than_timing_out_instantly(monkeypatch):
         # Only the workflow invocation matters; anything else the op shells out to runs for real.
         if "timeout" in kwargs and "openstudio" in " ".join(str(a) for a in args[0]):
             seen["timeout"] = kwargs["timeout"]
-            raise subprocess.TimeoutExpired(cmd="openstudio", timeout=0)
+            raise subprocess.TimeoutExpired(cmd="openstudio", timeout=cap)
         return real_run(*args, **kwargs)
 
     monkeypatch.setattr(ops.subprocess, "run", _capture)
