@@ -33,6 +33,15 @@ from mcp_server.skills.geometry.operations import match_surfaces
 
 # Same scale as the sibling repair tools' area guards (MIN_WELDED_SURFACE_AREA_M2,
 # MIN_MERGED_SURFACE_AREA_M2) — below this a mirrored polygon is degenerate, not geometry.
+#
+# Load-bearing beyond cosmetics: it also screens setVertices()'s own precondition.
+# setVertices() returns false — silently, since OpenStudio reports the rejection to a logger
+# this server pins at Fatal to protect the JSON-RPC stream — when a polygon has fewer than
+# three vertices or no computable plane. getArea() IS |Newell| / 2, and Plane construction
+# fails only when |Newell| is ~0, so an area above this threshold implies a computable plane
+# (verified against OpenStudio 3.11). Lowering it toward zero, or letting a non-rigid
+# transform into mirror_onto_partner, breaks that implication. The setVertices return is
+# checked regardless — see sync_paired_surface_vertices.
 MIN_SYNCED_SURFACE_AREA_M2 = 0.01
 # Area disagreement between two sides that DO have matching vertex counts. Reported only,
 # never repaired: matchSurfaces() has its own ~0.0125m internal tolerance, so small positional
@@ -118,6 +127,34 @@ def mirror_onto_partner(
     return openstudio.reverse(rewrite_space.get().transformation().inverse() * world)
 
 
+def _restore_or_fail(
+    rewrite: openstudio.model.Surface,
+    original: openstudio.Point3dVector,
+    keep_name: str,
+    repaired: list[dict[str, Any]],
+    cause: str,
+) -> dict[str, Any] | None:
+    """Put `rewrite`'s original polygon back. None on success, a terminal result on failure.
+
+    A rejected restore is not a skip. Reporting the pair as "rolled back and left unchanged"
+    while the model still holds the polygon this function just decided was harmful would be a
+    lie about damaged geometry — worse than the misreported repair a rejected forward write
+    would cause. The caller has to reload rather than continue, so this ends the run.
+    """
+    if rewrite.setVertices(original):
+        return None
+    return {
+        "ok": False,
+        "error": (
+            f"Mirrored {keep_name} onto {rewrite.nameString()} and then had to undo it "
+            f"({cause}), but OpenStudio rejected the restore of its original vertices. The "
+            f"model now holds the rejected geometry and must be reloaded before it is used."
+        ),
+        "paired_vertex_mismatches_repaired_count": len(repaired),
+        "paired_vertex_mismatches_repaired": repaired,
+    }
+
+
 def sync_paired_surface_vertices() -> dict[str, Any]:
     """Mirror one side of each vertex-count-mismatched interior pair onto the other.
 
@@ -143,6 +180,15 @@ def sync_paired_surface_vertices() -> dict[str, Any]:
     neighbour's side is still tiled into fragments, the two sides legitimately differ, and
     overwriting the fragment with the merged polygon leaves a hole. All three are reported as
     skipped with a reason rather than applied.
+
+    Every write is verified rather than assumed. setVertices() returns a bool and rejects a
+    polygon it cannot plane-fit, without raising and without a visible log line, so an
+    unchecked call would let a no-op be counted as a repair while the mismatch that aborts E+
+    survives — the manifold guard cannot tell "harmless mirror" from "nothing happened",
+    since both leave the edge counts identical. A rejected write is reported as skipped. A
+    rejected *rollback* is worse than either, because the model then holds geometry this
+    function already judged harmful, so it ends the run with ok False rather than reporting
+    the pair as merely skipped.
 
     match_surfaces() is re-run once, batched, if anything changed.
     """
@@ -227,10 +273,44 @@ def sync_paired_surface_vertices() -> dict[str, Any]:
             original = openstudio.Point3dVector(list(rewrite.vertices()))
             edges_before = _unpaired_edge_counts(keep, rewrite)
 
-            rewrite.setVertices(mirrored)
+            # A rejected write leaves the old vertices in place, so the manifold guard below
+            # would see no change, read it as a harmless mirror, and report a repair that never
+            # happened — while the mismatch that aborts E+ at GetSurfaceData survives untouched.
+            # Nothing else would surface it: setVertices() does not raise, and its rejection
+            # message goes to a logger this server silences (see MIN_SYNCED_SURFACE_AREA_M2).
+            if not rewrite.setVertices(mirrored):
+                skipped.append({
+                    "surface": keep.nameString(), "partner": rewrite.nameString(),
+                    "reason": "OpenStudio rejected the mirrored polygon (setVertices returned "
+                              "false), so the two sides still carry different vertex counts and "
+                              "still block EnergyPlus; left unchanged",
+                })
+                continue
+
+            # The invariant E+ actually checks. setVertices() writes exactly what it is handed,
+            # so a true return already implies this — asserted anyway so the repair report stays
+            # self-verifying rather than resting on that being true of every future SDK version.
+            if len(rewrite.vertices()) != len(keep.vertices()):
+                failure = _restore_or_fail(
+                    rewrite, original, keep.nameString(), repaired,
+                    "the write was accepted but did not take",
+                )
+                if failure is not None:
+                    return failure
+                skipped.append({
+                    "surface": keep.nameString(), "partner": rewrite.nameString(),
+                    "reason": "OpenStudio accepted the mirrored polygon but the two sides still "
+                              "carry different vertex counts; rolled back and left unchanged",
+                })
+                continue
 
             if _degrades_manifold(edges_before, _unpaired_edge_counts(keep, rewrite)):
-                rewrite.setVertices(original)
+                failure = _restore_or_fail(
+                    rewrite, original, keep.nameString(), repaired,
+                    "it left a space with more unpaired edges than it had",
+                )
+                if failure is not None:
+                    return failure
                 skipped.append({
                     "surface": keep.nameString(), "partner": rewrite.nameString(),
                     "reason": "mirroring left a space with more unpaired edges than it had (the "

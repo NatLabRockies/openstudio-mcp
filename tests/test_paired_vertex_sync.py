@@ -103,6 +103,51 @@ def _shrink(surface, extra_vertex: bool) -> None:
     assert surface.setVertices(points) is True, "setVertices rejected the substitute polygon"
 
 
+def _fragment_partner_side(b_side) -> None:
+    """Leave B's side of the shared wall as a fragment of a wall A still spans whole.
+
+    Reproduces the merged-vs-tiled case: B's wall becomes two stacked surfaces, only the
+    lower of which stays paired with A's full-height wall, plus a collinear midpoint so the
+    pair disagrees on vertex count without disagreeing on anything else. B stays enclosed,
+    so any later break is attributable to the sync alone.
+    """
+    import openstudio
+
+    b_space = b_side.space().get()
+
+    def _at_height(vertices, low: float, high: float):
+        return openstudio.Point3dVector(
+            [openstudio.Point3d(v.x(), v.y(), low if v.z() == 0 else high) for v in vertices],
+        )
+
+    full = list(b_side.vertices())
+    upper = openstudio.model.Surface(_at_height(full, 1.5, 3.0), b_space.model())
+    upper.setName("SyncBUpperHalf")
+    assert upper.setSpace(b_space) is True
+    assert upper.surfaceType() == "Wall", upper.surfaceType()
+
+    # A's side keeps the full 30 m2, so it wins on area and B's fragment is what gets rewritten.
+    lower = list(_at_height(full, 0.0, 1.5))
+    lower.insert(1, openstudio.Point3d(
+        (lower[0].x() + lower[1].x()) / 2, (lower[0].y() + lower[1].y()) / 2,
+        (lower[0].z() + lower[1].z()) / 2,
+    ))
+    assert b_side.setVertices(openstudio.Point3dVector(lower)) is True
+    assert len(b_side.vertices()) == 5
+    assert b_space.isEnclosedVolume() is True, "B must start closed for the guard to be meaningful"
+
+
+def _patch_set_vertices(monkeypatch, surface, make_replacement) -> None:
+    """Swap setVertices on whichever class in the SWIG MRO actually defines it.
+
+    Patching the class rather than the instance is what makes this bite: the code under test
+    walks model.getSurfaces() and gets fresh proxy objects, not the ones a test holds.
+    `make_replacement` receives the original unbound function so a fake can delegate to it.
+    """
+    target = next(c for c in type(surface).__mro__ if "setVertices" in c.__dict__)
+    monkeypatch.setattr(target, "setVertices", make_replacement(target.setVertices))
+
+
 def test_choose_authoritative_index_prefers_larger_area():
     # Validates: area is the leading criterion, ahead of vertex count — the drifted side
     # is typically the one a weld shrank, so the larger polygon is the one to keep
@@ -344,37 +389,11 @@ def test_sync_rolls_back_a_mirror_that_worsens_the_partner_space(tmp_path):
     # 119/8/2/106). isEnclosedVolume() is too coarse to catch it — 67 of those 74 spaces are
     # already non-enclosed when the sync runs, so closed->open never fires — hence the guard
     # measures polyhedron().edgesNotTwo(True), the same metric patch_missing_surfaces works from.
-    import openstudio
-
     from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
 
     a_side, b_side = _build_adjacent_pair(tmp_path)
     b_space = b_side.space().get()
-
-    # Split B's side of the shared wall into two stacked halves, mirroring the fragmented-partner
-    # case: the lower half stays paired with A's full-height wall, the upper half is a separate
-    # surface. B stays closed, so any later break is attributable to the sync alone.
-    def _at_height(vertices, low: float, high: float):
-        return openstudio.Point3dVector(
-            [openstudio.Point3d(v.x(), v.y(), low if v.z() == 0 else high) for v in vertices],
-        )
-
-    full = list(b_side.vertices())
-    upper = openstudio.model.Surface(_at_height(full, 1.5, 3.0), b_space.model())
-    upper.setName("SyncBUpperHalf")
-    assert upper.setSpace(b_space) is True
-    assert upper.surfaceType() == "Wall", upper.surfaceType()
-
-    # Lower half, plus a collinear midpoint so the pair disagrees on vertex count. A's side keeps
-    # the full 30 m2, so it wins on area and B's fragment is what would be overwritten.
-    lower = list(_at_height(full, 0.0, 1.5))
-    lower.insert(1, openstudio.Point3d(
-        (lower[0].x() + lower[1].x()) / 2, (lower[0].y() + lower[1].y()) / 2,
-        (lower[0].z() + lower[1].z()) / 2,
-    ))
-    assert b_side.setVertices(openstudio.Point3dVector(lower)) is True
-    assert len(b_side.vertices()) == 5
-    assert b_space.isEnclosedVolume() is True, "B must start closed for the guard to be meaningful"
+    _fragment_partner_side(b_side)
 
     result = sync_paired_surface_vertices()
 
@@ -390,6 +409,108 @@ def test_sync_rolls_back_a_mirror_that_worsens_the_partner_space(tmp_path):
     assert b_side.grossArea() == pytest.approx(15.0, abs=1e-6)
     assert a_side.grossArea() == pytest.approx(SHARED_WALL_AREA_M2, abs=1e-6)
     assert b_space.isEnclosedVolume() is True
+
+
+def test_rejected_write_is_reported_as_skipped_not_as_a_repair(tmp_path, monkeypatch):
+    # Regression: setVertices() returns a bool and leaves the surface's old vertices in place
+    # when it rejects a polygon — without raising, and with its only complaint going to an
+    # OpenStudio logger this server pins at Fatal. An unchecked call therefore looks exactly
+    # like a harmless mirror to the manifold guard (edge counts unchanged either way), so the
+    # pair would be counted as repaired while the vertex-count mismatch that aborts E+ at
+    # GetSurfaceData survives untouched, under ok True. Fault-injected because the guards
+    # above the write make a real rejection unreachable today: MIN_VERTICES bounds the count
+    # and the MIN_SYNCED_SURFACE_AREA_M2 check implies a computable plane. That coupling is
+    # what this asserts the code no longer depends on.
+    from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
+
+    a_side, b_side = _build_adjacent_pair(tmp_path)
+    _shrink(b_side, extra_vertex=True)
+    assert len(b_side.vertices()) == 5
+
+    _patch_set_vertices(monkeypatch, b_side, lambda _original: lambda *_args: False)
+
+    result = sync_paired_surface_vertices()
+
+    assert result["ok"] is True, result
+    assert result["paired_vertex_mismatches_repaired_count"] == 0, result
+    assert result["paired_vertex_mismatches_repaired"] == [], result
+    assert result["paired_vertex_mismatches_skipped_count"] == 1, result
+    entry = result["paired_vertex_mismatches_skipped"][0]
+    assert "setVertices returned false" in entry["reason"], entry
+    assert entry["partner"] == b_side.nameString(), entry
+
+    # No repair means no rematch was needed, and the defect is still on the model for a
+    # later pass to find rather than silently written off as fixed.
+    assert result["rematched_surfaces"] is None, result
+    assert len(a_side.vertices()) == 4, a_side.vertices()
+    assert len(b_side.vertices()) == 5, b_side.vertices()
+
+
+def test_rejected_rollback_fails_the_run_instead_of_reporting_a_clean_skip(tmp_path, monkeypatch):
+    # Regression: the rollback in the manifold guard was also unchecked, and it is the more
+    # dangerous of the two writes. A refused restore leaves the model holding the mirror this
+    # function just decided was harmful, so reporting the pair as "rolled back and left
+    # unchanged" would be a false statement about damaged geometry. It must end the run with
+    # ok False and say the model needs reloading.
+    from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
+
+    a_side, b_side = _build_adjacent_pair(tmp_path)
+    b_name = b_side.nameString()
+    _fragment_partner_side(b_side)
+
+    def _let_the_mirror_land_then_refuse_the_restore(original):
+        calls = []
+
+        def _fake(self, vertices):
+            calls.append(1)
+            return original(self, vertices) if len(calls) == 1 else False
+
+        return _fake
+
+    _patch_set_vertices(monkeypatch, b_side, _let_the_mirror_land_then_refuse_the_restore)
+
+    result = sync_paired_surface_vertices()
+
+    assert result["ok"] is False, result
+    assert b_name in result["error"], result
+    assert "must be reloaded" in result["error"], result
+    assert result["paired_vertex_mismatches_repaired_count"] == 0, result
+    # Terminal, not a skip — a caller must not read this as a survivable outcome.
+    assert "paired_vertex_mismatches_skipped" not in result, result
+
+    # The error is telling the truth: the harmful mirror really is still applied.
+    assert b_side.grossArea() == pytest.approx(SHARED_WALL_AREA_M2, abs=1e-6), b_side.grossArea()
+    assert len(b_side.vertices()) == len(a_side.vertices()), b_side.vertices()
+
+
+def test_setvertices_rejection_modes_stay_inside_the_area_guard(tmp_path):
+    # Validates: the two conditions under which OpenStudio rejects a polygon — fewer than
+    # three vertices, and no computable plane — are both screened by the guards that run
+    # before the write, and a rejection leaves the surface untouched rather than half-written.
+    # getArea() is |Newell| / 2 and Plane construction fails only when |Newell| is ~0, so an
+    # area above MIN_SYNCED_SURFACE_AREA_M2 implies a plane. Pinned here so an OpenStudio
+    # upgrade that changes either behavior fails loudly instead of quietly invalidating the
+    # reasoning behind the guard order.
+    import openstudio
+
+    from mcp_server.skills.geometry.paired_vertex_sync import MIN_SYNCED_SURFACE_AREA_M2
+
+    a_side, _ = _build_adjacent_pair(tmp_path)
+    original = list(a_side.vertices())
+
+    too_few = openstudio.Point3dVector(original[:2])
+    collinear = openstudio.Point3dVector([
+        openstudio.Point3d(10, 0, 0), openstudio.Point3d(10, 5, 0), openstudio.Point3d(10, 10, 0),
+    ])
+
+    for name, polygon in (("too_few", too_few), ("collinear", collinear)):
+        assert a_side.setVertices(polygon) is False, name
+        # Rejected means untouched, which is exactly why an unchecked call is invisible.
+        assert len(a_side.vertices()) == len(original), name
+        assert a_side.grossArea() == pytest.approx(SHARED_WALL_AREA_M2, abs=1e-6), name
+
+        area = openstudio.getArea(polygon)
+        assert not area.is_initialized() or area.get() <= MIN_SYNCED_SURFACE_AREA_M2, name
 
 
 def test_sync_reports_no_model_loaded_instead_of_raising():
