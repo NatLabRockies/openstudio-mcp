@@ -5,6 +5,7 @@ Public API (no leading underscore):
   unwrap(res)            — extract dict/str from MCP CallToolResult
   server_params()        — build StdioServerParameters from env vars
   poll_until_done(s, id) — async poll get_run_status until terminal state
+  patch_set_vertices(mp, surface, factory) — fault-inject Surface.setVertices (in-process)
   EPW_PATH / POLL_SECONDS / SIM_TIMEOUT — simulation constants
 """
 import asyncio
@@ -127,6 +128,28 @@ async def setup_example(session, model_name):
     assert cr.get("ok") is True
     lr = unwrap(await session.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
     assert lr.get("ok") is True
+
+
+# ---------------------------------------------------------------------------
+# In-process fault injection — geometry repair write guards
+# ---------------------------------------------------------------------------
+
+def patch_set_vertices(monkeypatch, surface, make_replacement) -> None:
+    """Swap Surface.setVertices on whichever class in the SWIG MRO defines it.
+
+    Patching the class rather than the instance is what makes this bite: the repair
+    tools walk model.getSurfaces() and operate on fresh proxy objects, not the ones a
+    test holds. `make_replacement` receives the original unbound function, so a fake can
+    delegate to it (e.g. succeed once, then refuse).
+
+    Deliberately no `openstudio` import — it walks type(surface).__mro__ instead — so
+    conftest stays importable from unit-test contexts that must not load the SDK.
+
+    Only usable from in-process tests. Tests driving the MCP stdio server run the code
+    under test in a subprocess this cannot reach.
+    """
+    target = next(c for c in type(surface).__mro__ if "setVertices" in c.__dict__)
+    monkeypatch.setattr(target, "setVertices", make_replacement(target.setVertices))
 
 
 # ---------------------------------------------------------------------------

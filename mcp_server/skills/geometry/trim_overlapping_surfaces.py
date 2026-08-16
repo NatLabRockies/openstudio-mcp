@@ -202,7 +202,10 @@ def trim_overlapping_surfaces() -> dict[str, Any]:
     subsurface. Anything else is reported as skipped — blending different thermal
     semantics, or cascading a parent removal into its windows and doors, would be silent
     data loss rather than a repair. Both sides' remainders are validated before either is
-    written, so a pair is trimmed completely or not at all.
+    written, and both writes are then verified, so a pair is trimmed completely or not at
+    all: a rejected first write changes nothing, and a rejected second one rolls the first
+    back. Only if that rollback is itself rejected — leaving a half-trimmed space nothing
+    can undo — does this return ok False and tell the caller to reload.
 
     Run repair_and_validate_gbxml_geometry() before and after to see the effect on
     overlapping_surfaces_count and non_enclosed_spaces_count — trimming an overlap can
@@ -281,8 +284,41 @@ def trim_overlapping_surfaces() -> dict[str, Any]:
                     })
                     continue
 
-                s1.setVertices(prepared1)
-                s2.setVertices(prepared2)
+                # _prepare_remainder validates both sides before either is written so a pair
+                # is trimmed completely or not at all. That covers a validation failure but
+                # not a write failure: setVertices can reject a polygon silently, and an
+                # unchecked second call would leave exactly the half-trimmed space the split
+                # exists to prevent, reported as a clean trim.
+                s1_original = openstudio.Point3dVector(list(s1.vertices()))
+                if not s1.setVertices(prepared1):
+                    skipped.append({
+                        "space": name, "surface_1": s1_name, "surface_2": s2_name,
+                        "reason": "OpenStudio rejected surface_1's trimmed remainder "
+                                  "(setVertices returned false); neither side was changed",
+                    })
+                    continue
+                if not s2.setVertices(prepared2):
+                    # s1 already took its remainder, so the pair is half-trimmed until this
+                    # lands. A refused restore leaves the space in that state, which must not
+                    # be reported as a skip — the caller has to reload.
+                    if not s1.setVertices(s1_original):
+                        return {
+                            "ok": False,
+                            "error": f"OpenStudio rejected {s2_name}'s trimmed remainder and "
+                                     f"then rejected the restore of {s1_name}'s original "
+                                     f"vertices, leaving space '{name}' half-trimmed. The "
+                                     f"model must be reloaded before it is used.",
+                            "trimmed_count": len(trimmed),
+                            "trimmed": trimmed,
+                        }
+                    skipped.append({
+                        "space": name, "surface_1": s1_name, "surface_2": s2_name,
+                        "reason": "OpenStudio rejected surface_2's trimmed remainder "
+                                  "(setVertices returned false); surface_1 was rolled back so "
+                                  "the pair stays all-or-nothing",
+                    })
+                    continue
+
                 any_change = True
                 already_handled.update((s1_name, s2_name))
                 trimmed.append({

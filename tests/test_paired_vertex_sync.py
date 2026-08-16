@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 import pytest
+from conftest import patch_set_vertices
 
 pytestmark = [
     pytest.mark.integration,
@@ -135,17 +136,6 @@ def _fragment_partner_side(b_side) -> None:
     assert b_side.setVertices(openstudio.Point3dVector(lower)) is True
     assert len(b_side.vertices()) == 5
     assert b_space.isEnclosedVolume() is True, "B must start closed for the guard to be meaningful"
-
-
-def _patch_set_vertices(monkeypatch, surface, make_replacement) -> None:
-    """Swap setVertices on whichever class in the SWIG MRO actually defines it.
-
-    Patching the class rather than the instance is what makes this bite: the code under test
-    walks model.getSurfaces() and gets fresh proxy objects, not the ones a test holds.
-    `make_replacement` receives the original unbound function so a fake can delegate to it.
-    """
-    target = next(c for c in type(surface).__mro__ if "setVertices" in c.__dict__)
-    monkeypatch.setattr(target, "setVertices", make_replacement(target.setVertices))
 
 
 def test_choose_authoritative_index_prefers_larger_area():
@@ -427,7 +417,7 @@ def test_rejected_write_is_reported_as_skipped_not_as_a_repair(tmp_path, monkeyp
     _shrink(b_side, extra_vertex=True)
     assert len(b_side.vertices()) == 5
 
-    _patch_set_vertices(monkeypatch, b_side, lambda _original: lambda *_args: False)
+    patch_set_vertices(monkeypatch, b_side,lambda _original: lambda *_args: False)
 
     result = sync_paired_surface_vertices()
 
@@ -467,7 +457,7 @@ def test_rejected_rollback_fails_the_run_instead_of_reporting_a_clean_skip(tmp_p
 
         return _fake
 
-    _patch_set_vertices(monkeypatch, b_side, _let_the_mirror_land_then_refuse_the_restore)
+    patch_set_vertices(monkeypatch, b_side,_let_the_mirror_land_then_refuse_the_restore)
 
     result = sync_paired_surface_vertices()
 

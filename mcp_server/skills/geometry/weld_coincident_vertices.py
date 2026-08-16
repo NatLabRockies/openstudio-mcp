@@ -49,8 +49,10 @@ def weld_coincident_vertices() -> dict[str, Any]:
     normal — is preserved by construction. Two safety checks apply before rewriting: if
     two of a surface's *own* vertices snapped to the same point (degenerate edge), or the
     welded polygon's area collapses below MIN_WELDED_SURFACE_AREA_M2, that surface is
-    left alone and reported as skipped rather than corrupted. match_surfaces() is re-run
-    once, batched, if anything changed.
+    left alone and reported as skipped rather than corrupted. The write itself is then
+    verified: setVertices() can reject a polygon silently, and counting a rejected write
+    as a weld would inflate vertices_snapped for a snap that never happened while the
+    corner gap survived. match_surfaces() is re-run once, batched, if anything changed.
 
     Run repair_and_validate_gbxml_geometry() before and after to see the effect on
     non_enclosed_spaces_count.
@@ -114,7 +116,18 @@ def weld_coincident_vertices() -> dict[str, Any]:
                     })
                     continue
 
-                surface.setVertices(new_vertices)
+                # A rejection is silent — setVertices does not raise, and OpenStudio's
+                # complaint goes to a logger this server pins at Fatal — so an unchecked
+                # call would count a surface as welded and inflate vertices_snapped for a
+                # snap that never happened, while the corner gap it was closing survives.
+                if not surface.setVertices(new_vertices):
+                    skipped.append({
+                        "space": space_name, "surface": surface.nameString(),
+                        "reason": "OpenStudio rejected the welded polygon (setVertices "
+                                  "returned false); left unchanged",
+                    })
+                    continue
+
                 surfaces_modified.append(surface.nameString())
                 vertices_snapped += sum(
                     0 if (a.x() == b.x() and a.y() == b.y() and a.z() == b.z()) else 1
