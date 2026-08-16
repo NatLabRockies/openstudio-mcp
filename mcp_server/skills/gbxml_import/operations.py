@@ -326,9 +326,14 @@ def import_gbxml_op(
     except subprocess.TimeoutExpired:
         # Names the cap and the knob: the old message stated a fixed "10 min" that went stale
         # the moment the cap moved, leaving a timeout that could not be acted on.
+        # :g not :.0f — a fractional cap is a legitimate fail-fast debugging value, and .0f
+        # rendered 0.5 as "0s", colliding with the <= 0 = "no cap" convention this same message
+        # points the reader at (a timeout reported against a cap that means "no timeout"). .0f
+        # also rounds half-to-even, so 1.5 and 2.5 both rendered "2s", and it reported 7.75 as
+        # a larger cap than the one actually enforced.
         return {
             "ok": False,
-            "error": f"gbXML import exceeded the {GBXML_IMPORT_TIMEOUT_SECONDS:.0f}s wall-clock "
+            "error": f"gbXML import exceeded the {GBXML_IMPORT_TIMEOUT_SECONDS:g}s wall-clock "
                      f"cap (OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS)",
         }
     except Exception as e:

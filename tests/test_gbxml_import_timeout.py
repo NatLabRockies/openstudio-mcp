@@ -34,13 +34,23 @@ GBXML_PATH_AUSTIN_SLIVERS = "/repo/tests/assets/gbxml/austin_apartment_slivers.x
 AUSTIN_EPW_PATH = "/repo/tests/assets/USA_TX_Austin-Camp.Mabry.ANGB.722544_TMYx.2009-2023.epw"
 
 
-def test_timeout_returns_an_actionable_error_naming_the_cap_and_the_knob(monkeypatch):
+@pytest.mark.parametrize(("cap", "rendered"), [(1.0, "1s"), (0.5, "0.5s")])
+def test_timeout_returns_an_actionable_error_naming_the_cap_and_the_knob(
+    monkeypatch, cap, rendered,
+):
     # Regression: the timeout message was a hardcoded "gbXML import timed out (10 min)". It went
     # stale the moment the cap moved and named nothing the caller could change, so a timeout was
     # a dead end. It must report the cap actually in force and the env var that sets it.
+    #
+    # The cap it reports has to be the real one. Formatting it with .0f rendered a 0.5s cap as
+    # "0s" — not merely lossy but self-contradicting, since <= 0 is documented as "no cap" in
+    # config.py, docs/testing/testing.md and at the call site, so the message claimed a timeout
+    # against a cap meaning "no timeout". Sub-second caps are reachable: _safe_float accepts any
+    # finite value, and the call site treats anything > 0 as live. 0.5 is here because it is
+    # both the reported case and the one that lands exactly on .0f's half-to-even boundary.
     from mcp_server.skills.gbxml_import import operations as ops
 
-    monkeypatch.setattr(ops, "GBXML_IMPORT_TIMEOUT_SECONDS", 1.0)
+    monkeypatch.setattr(ops, "GBXML_IMPORT_TIMEOUT_SECONDS", cap)
 
     result = ops.import_gbxml_op(
         gbxml_path=GBXML_PATH_AUSTIN_SLIVERS,
@@ -51,8 +61,10 @@ def test_timeout_returns_an_actionable_error_naming_the_cap_and_the_knob(monkeyp
     # Returned, not raised — operations never raise through the MCP layer.
     assert result["ok"] is False, result
     assert "OSMCP_GBXML_IMPORT_TIMEOUT_SECONDS" in result["error"], result
-    assert "1s wall-clock cap" in result["error"], result
+    assert f"{rendered} wall-clock cap" in result["error"], result
     assert "10 min" not in result["error"], result
+    # The specific contradiction, not just the general rounding.
+    assert "the 0s" not in result["error"], result
 
 
 @pytest.mark.parametrize("cap", [0.0, -1.0, -0.5])
