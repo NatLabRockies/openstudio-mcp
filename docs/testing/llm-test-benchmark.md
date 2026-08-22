@@ -129,7 +129,7 @@ Two comparative runs on 2026-03-28 and 2026-04-05:
 | Experiment | Date | Variants | Finding |
 |---|---|---|---|
 | Cross-model sweep | 2026-03-28 | haiku / sonnet / opus, same 180-test suite | haiku 88.9% / sonnet 94.4% / opus 94.4%. Opus matches sonnet but costs ~1.7×. Haiku is 40% cheaper at the cost of 5.5pp. |
-| FastMCP CodeMode A/B | 2026-04-05 | CodeMode OFF / ON, same 129 progressive tests | OFF 95.3% / ON **24.0%** — 71pp regression. See [`../knowledge/codemode-benchmark-2026-04-05.md`](../knowledge/codemode-benchmark-2026-04-05.md). |
+| FastMCP CodeMode A/B | 2026-04-05 | CodeMode OFF / ON, same 129 progressive tests | OFF 95.3% / ON **24.0%** — 71pp regression. See [`../archived/codemode-benchmark-2026-04-05.md`](../archived/codemode-benchmark-2026-04-05.md). |
 
 ## Per-Tool Discovery Matrix
 
