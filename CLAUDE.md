@@ -16,7 +16,7 @@ Always use openstudio-mcp tools for BEM tasks:
 ## Coding Rules
 1. New files target ~250 lines; don't grow a file past ~400 without splitting by responsibility. Don't split artificially. Legacy large files are grandfathered — split opportunistically when touched
 2. Every MCP tool must have an integration test. New behavior, bug fixes, and security hardening need tests too — not just the happy path
-3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 shards, keep balanced ~200s each)
+3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 amd64 shards, keep balanced; each runs ~12-14 min as of 2026-08)
 4. Follow testing rules in `.claude/rules/testing.md`. Critical: every test needs `# Regression:` or `# Validates:` comment; never delete failing tests or weaken assertions; assert exact values not existence; integration tests mock nothing; unit tests never import `openstudio`
 5. Operations return `{"ok": True/False, ...}` — never raise through MCP
 6. Use `openstudio` Python bindings directly
@@ -78,7 +78,7 @@ docker run --rm \
 ### LLM Tests
 - Targeted: `LLM_TESTS_ENABLED=1 pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
 - Full suite only for final validation
-- Markers: `-m smoke` (12), `-m generic` (10), `-m progressive` (102)
+- Markers: `-m smoke` (12), `-m generic` (7), `-m progressive` (149); counts as of 2026-08-22
 - Benchmark results go in `docs/testing/llm-test-benchmark.md`
 
 ### Local Development

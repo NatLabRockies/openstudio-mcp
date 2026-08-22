@@ -1,303 +1,220 @@
 # Testing Frameworks Summary
 
+A side-by-side view of the three test tiers: what each covers, how it runs, where it is strong,
+where it is weak, and what is still on the backlog. Counts and timings were measured on
+2026-08-22; re-baseline this file when they drift.
+
 ## Overview
 
-~750+ tests across 71 files, split into three tiers:
+| Tier | Tests | Where it runs | Gate |
+|---|---|---|---|
+| Unit | 506 | any Python environment; CI build job | `pytest -m "not integration"` |
+| Integration | 663 | Docker; CI 5 amd64 shards + 2 arm64 shards | `@pytest.mark.integration` + `RUN_OPENSTUDIO_INTEGRATION=1` |
+| LLM agent | 259 in 11 files | local only (Claude Code CLI or Codex CLI) | `@pytest.mark.llm` + `LLM_TESTS_ENABLED=1` |
 
-| Category | Tests | Files | Requires Docker |
-|----------|-------|-------|-----------------|
-| Integration | ~326 | 63 | Yes |
-| LLM agent | ~200 | 8 | Yes + Claude CLI |
-| Unit | ~200 | ~10 | No |
-
-CI runs 5 parallel shards (~200s each, ~6 min wall time). LLM tests run locally only.
+Unit and integration tests share the 114 files in `tests/`. CI is four jobs in
+`.github/workflows/ci.yml` (build, test ×5, arm64-build, arm64-test ×2) plus a separate
+`security.yml`; wall time is set by the slowest shard, 12-14 min.
 
 ---
 
-## 1. Integration Tests
+## 1. Integration tests
 
-### Methodology
+### How they work
 
-Each test spawns an MCP server via `stdio_client`, creates a temporary model with a UUID-based unique name, exercises one or more MCP tools, and asserts on the `{"ok": True/False, ...}` response dict. Tests run inside Docker containers with the full OpenStudio SDK + ComStock measures installed.
+Each test spawns the MCP server as a subprocess over stdio (`stdio_client(server_params())`),
+creates a model with a UUID-based unique name, calls tools exactly as an MCP client would, and
+asserts on the `{"ok": ..., ...}` response dict. They run inside the Docker image with the full
+OpenStudio SDK, EnergyPlus, and the bundled ComStock / common measures. Nothing is mocked.
 
-```
-pytest → stdio_client(server_params()) → MCP server subprocess
-  → session.call_tool("tool_name", {args})
-  → unwrap(result) → assert result["ok"] is True
-```
+Shared helpers in `tests/conftest.py`: `create_and_load()`, `create_baseline_and_load()`,
+`unwrap()`, `poll_until_done()`. Every test carries a `# Regression:` or `# Validates:` comment.
 
-Key fixtures in `tests/conftest.py`: `create_and_load()`, `create_baseline_and_load()`, `unwrap()`, `poll_until_done()`.
+### What they cover, by CI shard
 
-### Categories
+| Shard | Focus |
+|---|---|
+| 1 | SEB4 full simulation + EUI pin, example workflows, component properties, ComStock, weather, loop operations, retrofit skill, load/save + file listing, merge-coplanar fixture regression |
+| 2 | common measures, HVAC baseline systems 1-10, geometry, zone terminals, energy-report skill, HTTP transport / session isolation / token auth / session eviction, measure discovery + BCL + per-tenant measures isolation, python EMS, outcome grader ground truth, gbXML climate-zone (.stat) |
+| 3 | controls, object management, generic access, loads, building, DOAS, air/plant loops, measures, measure authoring, QA/QC skill, HVAC supply wiring, gbXML climate-zone (WMO), paired-vertex sync, ground contact, import timeout, geometry write guards |
+| 4 | VRF, radiant, query skills (spaces, space types, schedules, constructions, loads), creation tools, air terminals, results extraction, gbXML import (minus its three heaviest tests, split into shards 1-3 by node id), validate_osw / run_osw, add_layer_to_construction |
+| 5 | HVAC supply simulation smoke, HVAC validation, bar building, concurrent tools, stdout-logger silence, simulation queue, per-user run-dir isolation, run retention, python EMS phase 2, comfort benchmark, weather fail-fast, hvac_only parity |
+| arm64 1 / 2 | mirror of shard 1 (real EnergyPlus sim) / the arch-sensitive set (SWIG memleak, stdout logger, measures, measure authoring, HVAC supply sim) |
+| `security.yml` | `tests/test_sandbox.py` under `OSMCP_SANDBOX=auto` on amd64 and arm64 (dual-run: attack succeeds with the sandbox off, is blocked with it on) |
 
-Integration tests are organized by domain, mapped to CI shards for parallel execution:
-
-| Category | What it tests | Example files | CI Shard |
-|----------|--------------|---------------|----------|
-| **Simulation** | Full create→weather→HVAC→simulate→extract pipelines | `test_mcp_seb4`, `test_example_workflows` | 1 |
-| **HVAC** | Baseline systems 1-10, DOAS, VRF, radiant, air loops, supply wiring | `test_hvac_systems`, `test_doas_system`, `test_vrf_system`, `test_hvac_supply_wiring` | 2, 3, 4, 5 |
-| **Geometry** | Bar building, space creation, floor plans, surface matching | `test_geometry`, `test_bar_building`, `test_create_space` | 2, 4, 5 |
-| **Envelope** | Materials, constructions, subsurfaces, WWR | `test_constructions`, `test_create_constructions` | 1, 4 |
-| **Loads & Schedules** | Load definitions, schedules, infiltration, thermostats | `test_loads`, `test_schedules`, `test_create_loads` | 3, 4 |
-| **Component access** | Get/set properties, setpoint managers, sizing, generic inspect/modify | `test_component_properties`, `test_component_controls`, `test_generic_access` | 1, 3 |
-| **Measures** | Apply bundled measures, author custom measures, ComStock integration | `test_measures`, `test_measure_authoring`, `test_comstock` | 1, 3 |
-| **Results** | Summary metrics, hourly extraction, error parsing, output variables | `test_results_extraction`, `test_add_output_variable` | 4 |
-| **Model lifecycle** | Load/save, object management, validation, model summary | `test_load_save_model`, `test_object_management`, `test_validate_model` | 3, 4 |
-| **Infrastructure** | SWIG cleanup, stdout suppression, JSON-RPC protocol, response sizes | `test_swig_memleak_cleanup`, `test_stdio_smoke`, `test_response_sizes` | 4 |
-| **Skills** | Skill registration, SKILL.md validation, QA/QC, energy reports, retrofit | `test_skill_registration`, `test_skill_qaqc`, `test_skill_retrofit` | 1, 2, 3 |
-
-No formal tier markers — all integration tests share the `@pytest.mark.integration` marker. The category split is implicit in file naming and CI shard assignment.
+The `ci.yml` comments are the authoritative shard map; the table above is a summary.
 
 ### Strengths
 
-- **High fidelity**: tests hit the real OpenStudio SDK, no mocks. Catches SWIG binding issues, model state bugs, and measure failures that unit tests would miss.
-- **Good coverage breadth**: 63 files cover all 138 registered tools — geometry, HVAC, loads, schedules, constructions, measures, results extraction, component properties, and full simulation workflows.
-- **Parallelized CI**: 5 shards keep wall time under 6 min despite 326 tests.
-- **Unique naming**: UUID + xdist worker ID prevents model collisions if tests ever run in parallel.
-- **Response contract testing**: `test_contract.py` validates JSON schema of tool responses; `test_response_sizes.py` checks payload limits.
+- High fidelity: real SDK, real EnergyPlus, real MCP transport. Catches SWIG binding issues, model-state bugs, measure failures, and multi-tenant path leaks that unit tests cannot.
+- Breadth: every MCP tool has at least one integration test (CLAUDE.md rule 2), plus security-specific suites (path safety, sandbox, session and measure isolation).
+- Contract testing: `test_contract.py` (response JSON schema) and `test_response_sizes.py` (payload limits).
+- Parallel CI with explicit provenance: one image built once, shared to every shard and pushed to Docker Hub.
 
 ### Weaknesses
 
-- **No code coverage tracking**: no `.coveragerc`, no coverage reports. Unknown which code paths are exercised vs dead.
-- **Heavy Docker dependency**: can't run integration tests without building the full image (~2 GB). Slows feedback loop for contributors.
-- **Sequential within each test**: most tests create a fresh model, load it, do work, assert — no shared fixtures across tests in the same file. Lots of redundant model creation.
-- **Limited negative testing**: most tests verify the happy path (`ok: True`). Few tests assert specific error messages, edge cases, or malformed input handling.
-- **Shard balancing is manual**: test files are hand-assigned to shards in `ci.yml`. No automation to detect imbalance.
-- **No parametric stress testing**: e.g., no tests creating 100-zone models, applying 20 measures in sequence, or hitting concurrency limits.
+- No code-coverage measurement; which code paths are exercised is inferred, not reported.
+- Heavy Docker dependency (~2 GB image) slows the feedback loop for contributors.
+- Each test builds its own model; little fixture sharing, so runtime grows linearly with test count.
+- Shard balancing is manual (`FILES=` lists hand-edited), and the 12-14 min shards make a full CI run a coffee break.
+- No parametric stress tests (very large models, long measure chains, concurrency limits beyond the sim-queue tests).
 
 ---
 
-## 2. LLM Agent Tests
+## 2. LLM agent tests
 
-### Methodology
+### How they work
 
-Tests invoke `claude -p` CLI with a natural-language prompt, pointed at the MCP server via a generated config. The NDJSON stream is parsed to extract tool calls, token usage, and final text. Assertions check that the agent selected the correct tool(s).
+`tests/llm/runner.py::run_agent()` launches a real agent CLI with the prompt and an MCP config
+pointing at the Docker server: `claude -p ... --output-format stream-json --verbose` for Claude
+models, `codex exec --json` for GPT models (`LLM_TESTS_PROVIDER`). The NDJSON stream is parsed into
+an `AgentResult` (tool calls, tokens, cost, turns, final text). Each test runs in a fresh empty
+working directory so the agent cannot read the repo or leave files that later tests could find.
 
-```
-run_claude(prompt, timeout=300)
-  → claude -p "prompt" --output-format stream-json --verbose --mcp-config mcp.json
-  → parse NDJSON → ClaudeResult(tool_calls, tool_names, final_text, cost_usd)
-  → assert expected_tool in result.tool_names
-```
+Every trial is scored by two deterministic checks, no LLM judge:
 
-Custom retry logic via `pytest_runtest_protocol()` retries flaky LLM tests up to N times (default 2), with prompt budget tracking (max 180 invocations per session).
+1. **Routing**: a tool from the task's accept set was called and its first call succeeded (with
+   pinned argument values where defined).
+2. **Outcome**: `tests/llm/grading/` reloads the artifact the agent saved and grades physical
+   facts (assembly R-values, HVAC loop membership, simulated setpoints, EnergyPlus results against
+   pinned references) with a versioned rubric (`RUBRIC_VERSION`, currently 1.3). Facts are stored
+   in every row, so a rubric change re-scores without re-running agents.
 
-### Tiers
+Assistance arms (`LLM_TESTS_ARM`): `full`, `noskills` (server hides the knowledge tools),
+`nodiscovery` (Claude Code loads every schema up front instead of deferred ToolSearch),
+`nodiscovery-noskills`, `nohost` (host tools disabled), `codegen` (no MCP server; the agent
+scripts the SDK directly). Benchmark sweeps pin one image and one harness commit per sweep
+(`scripts/benchmark_sweep.py`), screen legs for API-corrupted rows
+(`scripts/benchmark_check_leg.py`), and aggregate per sweep (`scripts/benchmark_aggregate.py`).
 
-| Tier | File | Tests | Purpose | Avg Duration |
-|------|------|-------|---------|-------------|
-| **Setup** | `test_01_setup.py` | 5 | Create baseline, HVAC, and example models. All downstream tests depend on these. | ~1 min |
-| **Tier 1** | `test_02_tool_selection.py` | ~14 | Single-tool discovery — given a question, does the agent pick the right tool? No model state needed. | ~20s/test |
-| **Tier 2** | `test_04_workflows.py` | ~26 | Multi-step workflows (3-4 tool chains). Verifies the agent can sequence create→configure→simulate→extract. | ~45s/test |
-| **Tier 3** | `test_03_eval_cases.py` | ~27 | Auto-parsed from skill `eval.md` "Should trigger" tables. Tests with model state (needs baseline loaded). | ~30s/test |
-| **Tier 4** | `test_05_guardrails.py` | 3 | Safety: agent must NOT use Bash/Edit/Write to bypass MCP tools. Regression gate for tool bypass bugs. | ~30s/test |
-| **Progressive** | `test_06_progressive.py` | 102 | 34 operations × 3 specificity levels. The core diagnostic for tool description quality. | ~35s/test |
-| **E2E** | `test_07_fourpipe_e2e.py` | 1 | Full retrofit on a 44-zone model with natural-language prompt. Realistic complexity test. | ~5 min |
-| **Measure** | `test_08_measure_authoring.py` | ~8 | Custom measure creation, editing, testing, export. Domain-specific authoring workflows. | ~40s/test |
+### Files
 
-**Pytest markers** for selective execution: `smoke` (12), `stable` (~140), `flaky` (~18), `progressive` (102), `generic` (~10), `tier1`-`tier4`.
+| File | Tests | What it exercises |
+|---|---|---|
+| `test_01_setup.py` | 8 | Creates the baseline / HVAC / example models and seed fixtures every later test loads |
+| `test_02_tool_selection.py` | 4 | Single-tool discovery with no model state |
+| `test_03_eval_cases.py` | 26 | Auto-parsed from `.claude/skills/*/eval.md` "Should trigger" tables |
+| `test_04_workflows.py` | 37 | Multi-step chains: load → weather → HVAC → simulate → extract |
+| `test_05_guardrails.py` | 3 | The agent must not bypass MCP with Bash / Edit / Write |
+| `test_06_progressive.py` | 149 | **The core diagnostic**: operations posed at L1 (vague), L2 (moderate), L3 (tool named); the benchmark's 16-task hard set is a `-k` subset of this file |
+| `test_07_fourpipe_e2e.py` | 1 | Natural-language retrofit of a 44-zone model, two simulations, ~5 min |
+| `test_08_measure_authoring.py` | 4 | Custom measure create / edit / test regressions |
+| `test_09_tool_routing.py` | 12 | A/B of the full roster vs `recommend_tools` routing (not in the benchmark) |
+| `test_10_confusion_pairs.py` | 9 | Prompts that plausibly fit two similar tools |
+| `test_11_codegen_arm.py` | 6 | Arm C: no MCP server, outcome-only grading |
 
-### Progressive Testing (L1/L2/L3)
+Markers: `llm`, `tier1`-`tier4`, `progressive`, `smoke`, `stable`, `flaky`, `generic`,
+`needs_baseline`, `needs_hvac`. `FLAKY_TESTS` in `conftest.py` (30 patterns) is the quarantine
+list. Defaults: `LLM_TESTS_RETRIES=0` (repeats replace retries), `LLM_TESTS_MAX_PROMPTS=300`,
+`LLM_TESTS_TIMEOUT_BASE=120` s per task, `LLM_TESTS_MODEL=sonnet`.
 
-The standout methodology. Each of 34 operations is tested at three prompt specificity levels:
+### What is measured
 
-| Level | Description | Example prompt | Latest pass rate |
-|-------|-------------|---------------|-----------------|
-| **L1 (vague)** | Minimal keywords, no tool names, missing context | "Add HVAC to the building" | 90% (38/42) |
-| **L2 (moderate)** | Domain context + values, still no tool names | "Add a VAV reheat system to all 10 zones" | 95% (40/42) |
-| **L3 (explicit)** | Tool name included in prompt | "Use add_baseline_system to add System 7" | 100% (42/42) |
+Per test: pass/fail, failure mode (`timeout`, `no_mcp_tool`, `wrong_tool`, `wrong_args`,
+`tool_error`, `outcome_mismatch`; `recovered` tag), duration, turns, ordered tool calls, tokens,
+CLI-reported cost, ToolSearch count, host-tool counts (escape detection), and the gate-2
+`outcome` dict. Per sweep (`results/<sweep>/paper/`): outcome-vs-routing per model / arm / case,
+pass rates, L1/L2/L3 discovery rates, failure modes, repeat stability, behavior means, $/test
+(CLI-reported and token-derived). Current numbers: `llm-test-benchmark.md`.
 
-The L1→L2→L3 gradient directly measures tool description quality. When L1 fails but L3 passes, the fix is in the tool's docstring or keywords — not the tool's code. This has driven multiple targeted docstring improvements (e.g., adding "HVAC / heating and cooling" keywords to `add_baseline_system` fixed L1 discovery immediately).
-
-### Metrics Collected
-
-Every `run_claude()` invocation produces a `ClaudeResult` with these metrics, aggregated into benchmark reports:
-
-**Per-test metrics** (written to `benchmark.json`):
-
-| Metric | Source | What it measures |
-|--------|--------|-----------------|
-| `passed` | pytest outcome | Binary pass/fail after retries |
-| `attempt` | retry hook | Which attempt succeeded (1 = first try, 2+ = flaky) |
-| `duration_s` | wall clock | Total time including Docker startup + LLM inference |
-| `num_turns` | Claude CLI result | Conversation turns (tool call + response = 1 turn). High turn count signals looping. |
-| `num_tool_calls` | NDJSON parsing | Total MCP tools invoked. Expected: 1-3 for single-tool, 3-8 for workflows. |
-| `tool_calls` | NDJSON parsing | Ordered list of MCP tool names called. Primary assertion target. |
-| `input_tokens` | Claude CLI usage | Tokens sent to model (system prompt + tool descriptions + conversation) |
-| `output_tokens` | Claude CLI usage | Tokens generated by model |
-| `cache_read_tokens` | Claude CLI usage | Tokens served from prompt cache (high = good, means tool descriptions cached) |
-| `cost_usd` | Claude CLI result | Notional API cost (free on Claude Max, tracked for comparison only) |
-
-**Aggregated metrics** (written to `benchmark.md`):
-
-| Metric | Granularity | Purpose |
-|--------|-------------|---------|
-| Pass rate by tier | per-tier | Are specific tiers degrading? |
-| Pass rate by level (L1/L2/L3) | per-progressive-case | Which tools have weak descriptions? |
-| Token profile by tier | per-tier avg | Detect prompt bloat or regression |
-| Failed test detail | per-test | Tool sequence + turn count for debugging |
-| Run history | per-run (last 50) | Track pass rate trends across code changes |
-
-**What's NOT measured** (gaps):
-
-| Missing metric | Why it matters |
-|----------------|---------------|
-| Parameter correctness | A test passes if the right tool is called, even with wrong args |
-| First-attempt pass rate | Retries mask flakiness — only `attempt` field captures this |
-| Time-to-first-tool | Slow tool discovery (many ToolSearch calls) isn't penalized |
-| Cross-model comparison | All runs use one model (sonnet) — no data on model-agnostic tool quality |
-| Error recovery rate | When a tool returns `ok: False`, does the agent retry or give up? |
-
-### Benchmark Reports
-
-Written at session end to `LLM_TESTS_RUNS_DIR/`:
-
-| File | Format | Contents |
-|------|--------|----------|
-| `benchmark.json` | JSON | Full per-test data (all metrics above) |
-| `benchmark.md` | Markdown | Tier summary tables + progressive analysis + failed test detail |
-| `benchmark_history.json` | JSON array | Per-run summary (last 50 runs) for trend tracking |
-| `ndjson_logs/<test>.ndjson` | NDJSON | Raw Claude CLI stream per test (for debugging tool call sequences) |
-
-Latest results are copied to `docs/testing/llm-test-benchmark.md` for version control.
+Still not measured: time-to-first-tool, error-recovery rate as its own metric, and any Gemini
+backend.
 
 ### Strengths
 
-- **Unique in the ecosystem**: very few open-source projects have automated LLM agent testing. The progressive L1/L2/L3 methodology systematically measures how well tool descriptions guide the model.
-- **Eval case auto-discovery**: `eval_parser.py` scrapes "Should trigger" tables from skill `eval.md` files, keeping tests DRY and co-located with skill definitions.
-- **Benchmark reporting**: per-test timing, token usage, cost, pass rates — written as JSON + markdown. Historical tracking via `benchmark_history.json`.
-- **Guardrail regression tests**: dedicated tier 4 ensures the agent doesn't bypass MCP tools with raw scripts.
-- **Flaky test management**: explicit `FLAKY_TESTS` set with promotion path (remove pattern when stable). Separate `-m flaky` and `-m stable` markers.
-- **Budget-aware**: hard cap on prompt invocations prevents runaway costs during development.
+- Rare in the ecosystem: an automated, outcome-graded agent benchmark with L1/L2/L3 prompts that separates "wrong description" from "cannot discover" from "broken tool".
+- Reproducible: pinned image + harness commit per sweep, per-leg provenance in every result file, an aggregator that refuses to pool mismatched legs, and a frozen dataset deposited with the release.
+- Cross-vendor (Claude and GPT via Codex) and ablation-ready (arms) without changing tests.
+- Eval cases auto-discovered from skill `eval.md` files stay co-located with the skills they test.
 
 ### Weaknesses
 
-- **Non-deterministic by nature**: LLM outputs vary run-to-run. Even with retries, ~4% of tests remain flaky (18 known patterns). Hard to distinguish "flaky prompt" from "broken tool description".
-- **Slow**: full suite takes ~2-3 hours. Progressive tier alone is ~60 min. This discourages frequent runs.
-- **No CI integration**: runs locally only (`LLM_TESTS_ENABLED=1`). No automated regression gate — regressions can ship.
-- **Setup dependency chain**: `test_01_setup` must run first to create baseline models. If it fails, all downstream tests skip. No automatic re-creation.
-- **Single-model testing**: all tests use Claude (sonnet default). No cross-model comparison (GPT-4, Gemini) to validate tool descriptions are model-agnostic.
-- **Binary pass/fail**: a test that calls the right tool with wrong parameters passes if the tool name matches. Limited parameter-level assertion.
-- **Cost opacity**: cost figures are "notional API pricing" (free on Claude Max). No real cost tracking for non-Max users.
+- Non-deterministic: even at three repeats, single misses are at the resolution limit; the flaky list needs periodic pruning.
+- Slow and manual: the full suite is hours, the benchmark matrix is a day, and nothing runs in CI, so agent-behavior regressions can ship.
+- Setup chain: `test_01_setup` must succeed first or everything downstream skips.
+- Agent-CLI versions are not recorded in `run_config` (the Docker image and harness commit are).
 
 ---
 
-## 3. Unit Tests
-
-### Methodology
-
-Pure Python tests that don't require Docker or OpenStudio. Cover tool registration, path safety, SWIG cleanup, error parsing, unit conversions, skill document validation, and JSON-RPC protocol compliance.
+## 3. Unit tests
 
 ### Categories
 
 | Category | Files | What it tests |
-|----------|-------|--------------|
-| **Registration** | `test_skill_registration.py` | All 138 tools register, no broken imports |
-| **Skill docs** | `test_skill_docs.py`, `test_skill_tools.py` | SKILL.md format, skill discovery |
-| **Protocol** | `test_stdio_smoke.py` | Raw JSON-RPC messages, no stdout contamination |
-| **Security** | `test_path_safety.py` | Path traversal guards, OSError handling |
-| **Parsing** | `test_err_parser.py`, `test_unit_conversions.py` | EnergyPlus .err parsing, unit math |
-| **Contract** | `test_contract.py` | Response JSON schema compliance |
+|---|---|---|
+| Registration | `test_skill_registration.py` | all 197 tools register; `EXPECTED_TOOLS` is the roster of record |
+| Skill docs | `test_skill_docs.py`, `test_skill_tools.py` | SKILL.md frontmatter, tool-name cross-references, skill discovery |
+| Protocol | `test_stdio_smoke.py` | raw JSON-RPC on stdio, no stdout pollution |
+| Security / isolation | `test_path_safety.py`, `test_measure_isolation.py` | path-traversal guards, per-user roots disjoint, cross-tenant denied |
+| Parsing / units | `test_err_parser.py`, `test_unit_conversions.py` | EnergyPlus `.err` parsing, unit math |
+| Contract | `test_contract.py` | response JSON schema |
+| Benchmark tooling | `test_llm_outcome_rubric.py`, `test_benchmark_build_t600.py`, `test_benchmark_check_leg.py`, `test_benchmark_aggregate.py` | rubric verdicts on known facts, the 600 s merge builder, the contamination screen, aggregation |
 
 ### Strengths
 
-- **Fast**: run in seconds, no Docker overhead.
-- **Registration completeness**: `test_skill_registration.py` verifies all 138 tools register correctly — catches broken imports and missing `register()` functions.
-- **Protocol-level testing**: `test_stdio_smoke.py` validates raw JSON-RPC messages, ensuring no stdout contamination from SWIG bindings.
-- **Security testing**: `test_path_safety.py` checks path traversal guards.
+- Fast (seconds) and Docker-free; runs in the CI build job before any image is shared.
+- The security and benchmark-tooling suites are red-green tested: each was shown to fail on the unfixed code before the fix landed.
 
 ### Weaknesses
 
-- **Small surface area**: ~10 files, ~200 tests. Most logic lives in `operations.py` files that require OpenStudio SDK to test.
-- **No mocking strategy**: the project doesn't mock OpenStudio bindings for faster testing of business logic. Everything that touches the SDK requires the full Docker container.
+- Most business logic lives in `operations.py` files that need the SDK, so the unit surface is
+  structurally small; there is no mock layer for `openstudio.model`.
 
 ---
 
-## 4. CI/CD Pipeline
+## 4. CI/CD
 
-### Methodology
+| Job | What it does | Last green `develop` run |
+|---|---|---|
+| `build` | Docker image with buildx cache, sanity checks, unit tests, save image artifact, push to Docker Hub | 9 min |
+| `test` (shards 1-5) | load the image, run that shard's `FILES=` list with `RUN_OPENSTUDIO_INTEGRATION=1` and `OSMCP_SANDBOX=auto` | 12-14 min each |
+| `arm64-build` / `arm64-test` (1-2) | arm64 image from `Dockerfile.arm64`, real-sim and arch-sensitive shards | 3 min / 5-6 min |
+| `security.yml` (separate workflow) | `tests/test_sandbox.py` on amd64 and arm64 | — |
 
-Two-job GitHub Actions workflow:
-1. **Build**: Docker image with GHA buildx cache + unit tests
-2. **Test**: 5 parallel shards pull the image artifact, run integration tests
-
-### Shard Breakdown
-
-| Shard | Focus | ~Duration |
-|-------|-------|-----------|
-| 1 | Simulation pipelines, component properties, weather, ComStock, loop ops, retrofit skill | ~200s |
-| 2 | Common measures, HVAC baseline systems, geometry, zone terminals, energy reports | ~200s |
-| 3 | Controls, object mgmt, loads, building info, DOAS, HVAC wiring, measures, validation | ~200s |
-| 4 | VRF, radiant, query tools, creation tools, results extraction, protocol tests | ~200s |
-| 5 | HVAC supply simulation, HVAC validation, bar building | ~200s |
-
-### Strengths
-
-- **Efficient caching**: Docker buildx layer cache minimizes rebuild time.
-- **Parallel shards**: 5-way split keeps CI under 6 min wall time.
-- **Artifact sharing**: build-once, test-many pattern avoids redundant builds.
-
-### Weaknesses
-
-- **No LLM test gate**: agent behavior regressions aren't caught in CI.
-- **Manual shard balancing**: files hand-assigned; no script to detect drift.
-- **No coverage gates**: no minimum coverage thresholds or trend tracking.
-- **No flaky test detection**: no automatic quarantine for tests that pass on retry.
-- **Single OS**: tests only run on Linux (Docker). No Windows/macOS validation despite Windows dev environment.
+Strengths: build-once / test-many, layer caching, `fail-fast: false` so one shard failure does
+not hide others, arm64 parity. Weaknesses: no LLM gate, manual shard balancing, no coverage
+gate, Linux only (Windows path handling is untested in CI despite Windows dev machines).
 
 ---
 
-## 5. Areas for Improvement
+## 5. Backlog
 
-### High Impact
-
-1. **Add code coverage**: integrate `pytest-cov` + coverage report. Set a baseline threshold. Low effort, high visibility into gaps.
-2. **LLM tests in CI**: run a smoke subset (`-m smoke`, 12 tests, ~10 min) on PRs that touch tool descriptions or server instructions. Gate on stable tests only.
-3. **Automated shard balancing**: script that reads test durations from CI logs and rebalances `FILES=` lists in `ci.yml`.
-4. **Negative/edge-case tests**: systematically test malformed inputs, missing parameters, invalid model state, concurrent access.
-
-### Medium Impact
-
-5. **Mock OpenStudio for unit tests**: create a lightweight mock layer for `openstudio.model` to enable fast testing of business logic in `operations.py` without Docker.
-6. **Parameter-level LLM assertions**: beyond "right tool called", assert that key parameters (e.g., system type, zone name) are correct.
-7. **Cross-model LLM testing**: run progressive suite against multiple models to validate tool descriptions are model-agnostic.
-8. **Flaky test dashboard**: track flaky rate per test over time, auto-quarantine tests that fail >20% of runs.
-
-### Lower Priority
-
-9. **Windows CI shard**: add a Windows runner to catch path-handling bugs (forward vs back slashes, temp dir differences).
-10. **Performance benchmarks**: track test duration trends per shard. Alert on >20% regression.
-11. **Property-based testing**: use Hypothesis for fuzz-testing tool parameter validation (str lists, numeric ranges, enum values).
-12. **Shared model fixtures**: reduce redundant model creation across integration tests by sharing loaded models within test modules via module-scoped fixtures.
+1. Code coverage (`pytest-cov`) with a baseline threshold.
+2. An LLM smoke subset (`-m smoke`, ~10 min) on PRs that touch tool descriptions or server instructions.
+3. A script that rebalances `FILES=` lists from recorded durations.
+4. Systematic negative tests: malformed inputs, missing parameters, invalid model state.
+5. Record agent-CLI versions in benchmark `run_config`.
+6. Rubric 2.0: grade four-pipe-beam coil-to-plant wiring (needs a re-run).
+7. Flaky-rate tracking per LLM test with automatic quarantine.
+8. Shared module-scoped model fixtures to cut redundant model creation.
+9. A Windows CI shard for path-handling bugs; property-based tests for parameter validation.
 
 ---
 
-## Appendix: Quick Reference
-
-### Run Commands
+## Quick reference
 
 ```bash
-# Unit tests (no Docker)
-pytest tests/test_skill_registration.py -v
+# Unit
+pytest -m "not integration" tests/
 
-# Integration tests (Docker)
+# Integration (one file)
 docker run --rm -v "C:/projects/openstudio-mcp:/repo" -v "C:/projects/openstudio-mcp/runs:/runs" \
   -e RUN_OPENSTUDIO_INTEGRATION=1 -e MCP_SERVER_CMD=openstudio-mcp \
   openstudio-mcp:dev bash -lc "cd /repo && pytest -vv tests/test_hvac_systems.py"
 
-# LLM tests
-LLM_TESTS_ENABLED=1 pytest tests/llm/ -m smoke -v       # quick (~12 tests, 10 min)
-LLM_TESTS_ENABLED=1 pytest tests/llm/ -m progressive -v  # tool descriptions (~102 tests, 60 min)
-LLM_TESTS_ENABLED=1 pytest tests/llm/ -v                 # full (~160 tests, 2-3 hrs)
+# LLM
+LLM_TESTS_ENABLED=1 pytest tests/llm/ -m smoke -v        # ~10 min
+LLM_TESTS_ENABLED=1 pytest tests/llm/ -m progressive -v  # the L1/L2/L3 diagnostic
+LLM_TESTS_ENABLED=1 pytest tests/llm/ -v                 # everything, hours
 ```
 
-### Key Files
-
 | File | Purpose |
-|------|---------|
-| `tests/conftest.py` | Integration fixtures, MCP helpers, polling |
-| `tests/llm/conftest.py` | LLM markers, retry logic, benchmark collection |
-| `tests/llm/runner.py` | `run_claude()`, NDJSON parsing, `ClaudeResult` |
-| `tests/llm/eval_parser.py` | Auto-parse skill eval.md into test cases |
-| `.github/workflows/ci.yml` | CI pipeline, shard definitions |
-| `docs/testing/llm-test-benchmark.md` | Latest benchmark results + run history |
+|---|---|
+| `tests/conftest.py` | integration fixtures, MCP helpers, polling |
+| `tests/llm/conftest.py` | LLM markers, flaky list, budget, benchmark collection |
+| `tests/llm/runner.py` | `run_agent()` / `run_claude()`, NDJSON parsing, `AgentResult` |
+| `tests/llm/grading/` | gate-2 graders (`container_grader.py`, `host.py`, `rubric.py`) |
+| `tests/llm/eval_parser.py` | turns skill `eval.md` tables into tests |
+| `scripts/benchmark_sweep.py`, `benchmark_check_leg.py`, `benchmark_aggregate.py`, `benchmark_build_t600_dataset.py` | sweep driver, contamination screen, aggregator, 600 s merge builder |
+| `.github/workflows/ci.yml`, `security.yml` | CI shards and the sandbox workflow |
+| `docs/testing/llm-test-benchmark.md` | current benchmark numbers and run history |
