@@ -125,11 +125,12 @@ def _ro_paths() -> list[str]:
     another's inputs. Inputs are staged into the run dir before execution, so the
     confined process reads the staged copy, never /inputs directly.
 
-    The broad system roots (/etc, /proc, /sys) are intentional and DAC-mitigated:
-    OpenStudio/Ruby/EnergyPlus need bits of each (certs, nsswitch, /proc/self,
-    cpuinfo), and the uid-1001 drop means the kernel already blocks reads of
-    non-world-readable secrets (/etc/shadow) and other users' /proc/<pid>/environ.
-    Landlock here is defense-in-depth on top of DAC, not the only barrier.
+    The broad system roots (/etc, /sys) are intentional and DAC-mitigated:
+    OpenStudio/Ruby/EnergyPlus need bits of each (certs, nsswitch, cpuinfo), and
+    the uid drop means the kernel already blocks reads of non-world-readable
+    secrets (/etc/shadow). /proc is NOT granted (see _RO_SYSTEM, H1): it would
+    expose /proc/<pid>/environ on a non-root server. Landlock here is
+    defense-in-depth on top of DAC, not the only barrier.
     """
     return [
         *_RO_SYSTEM,

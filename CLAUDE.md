@@ -16,7 +16,7 @@ Always use openstudio-mcp tools for BEM tasks:
 ## Coding Rules
 1. New files target ~250 lines; don't grow a file past ~400 without splitting by responsibility. Don't split artificially. Legacy large files are grandfathered — split opportunistically when touched
 2. Every MCP tool must have an integration test. New behavior, bug fixes, and security hardening need tests too — not just the happy path
-3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 shards, keep balanced ~200s each)
+3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 amd64 shards, keep balanced; each runs ~12-14 min as of 2026-08)
 4. Follow testing rules in `.claude/rules/testing.md`. Critical: every test needs `# Regression:` or `# Validates:` comment; never delete failing tests or weaken assertions; assert exact values not existence; integration tests mock nothing; unit tests never import `openstudio`
 5. Operations return `{"ok": True/False, ...}` — never raise through MCP
 6. Use `openstudio` Python bindings directly
@@ -29,6 +29,7 @@ Always use openstudio-mcp tools for BEM tasks:
 13. MCP clients may send `list[str]` as JSON strings — use `list[str] | str` type annotation + `parse_str_list()` from `osm_helpers.py`
 14. Multi-user isolation: new persistent user data MUST live under an identity-scoped root (`user_run_root()`/`user_measures_root()`), never a process-global path constant; never add a per-user dir to `_SHARED_READ_ROOTS`; validate path args via `is_path_allowed(..., write=…)`. The sandbox covers execution only — see `docs/security-isolation.md`
 14. Tool roster has ONE source of truth: `EXPECTED_TOOLS` in `tests/test_skill_registration.py`. Add/remove a tool → edit that set (one line per tool; merges cleanly across branches). `test_tool_count`/`test_tags_coverage` derive from it — never hardcode a tool-count literal in tests. Docs/instructions say "150+ tools", not an exact count
+15. List tools (`list_*`): filters are primary, `max_results` (default 10, 0=unlimited) is the safety net, brief fields by default, explicit typed filter params (no generic filter dict). Use `list_paginated()` + `build_list_response()` from `osm_helpers.py` so truncated responses carry `count`/`total_available`/`truncated`; put common-filter examples in the docstring
 
 ## Architecture
 - Each skill lives in `mcp_server/skills/<name>/`
@@ -77,7 +78,7 @@ docker run --rm \
 ### LLM Tests
 - Targeted: `LLM_TESTS_ENABLED=1 pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
 - Full suite only for final validation
-- Markers: `-m smoke` (12), `-m generic` (10), `-m progressive` (102)
+- Markers: `-m smoke` (12), `-m generic` (7), `-m progressive` (149); counts as of 2026-08-22
 - Benchmark results go in `docs/testing/llm-test-benchmark.md`
 
 ### Local Development

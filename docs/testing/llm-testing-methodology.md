@@ -65,15 +65,15 @@ pytest (tests/llm/conftest.py)
 
 | Concern | Where | Detail |
 |---|---|---|
-| Subprocess spawn | `runner.py:181-239` `run_claude()` | Writes temp `mcp.json`, spawns CLI. Strips `CLAUDECODE` env var (nested `claude -p` fails otherwise). |
-| Output parsing | `runner.py:242-261` `_parse_stream_json()` | `--output-format stream-json --verbose` is **mandatory** — plain `json` drops `tool_use` blocks. |
-| Tool-call extraction | `runner.py:61-106` `ClaudeResult` | Two views: `tool_calls` (all, inc. builtins like ToolSearch/Bash) and `mcp_tool_calls` (MCP-only). |
-| Markers & auto-tagging | `conftest.py:42-53, 252-278` | `llm`, `tier1-4`, `stable`, `flaky`, `smoke`, `progressive`, `generic`. Auto-tagged via `FLAKY_TESTS` frozenset. |
-| Retry logic | `conftest.py:281-323` | Custom `pytest_runtest_protocol` hook. Each retry consumes one prompt from the budget. |
-| Benchmark collection | `conftest.py:342-412, 434-692` | `pytest_runtest_logreport` stores per-test metrics. Session end writes `benchmark.json` / `benchmark.md` / `benchmark_history.json`. |
+| Subprocess spawn | `runner.py` `run_agent()` → `run_claude()` / `_run_codex()` | Writes temp `mcp.json`, spawns the CLI for `LLM_TESTS_PROVIDER`, in a fresh empty cwd (`_agent_cwd()`). Strips `CLAUDECODE` env var (nested `claude -p` fails otherwise). |
+| Output parsing | `runner.py` `_parse_stream_json()` / `_parse_codex_jsonl()` | `--output-format stream-json --verbose` is **mandatory** for Claude — plain `json` drops `tool_use` blocks. |
+| Tool-call extraction | `runner.py` `AgentResult` (`ClaudeResult` is an alias) | Two views: `tool_calls` (all, inc. builtins like ToolSearch/Bash) and `mcp_tool_calls` (MCP-only); plus host-tool counts and ToolSearch queries. |
+| Markers & auto-tagging | `conftest.py` `pytest_configure` / `pytest_collection_modifyitems` | `llm`, `tier1-4`, `stable`, `flaky`, `smoke`, `progressive`, `generic`, `needs_baseline`, `needs_hvac`. Auto-tagged via the `FLAKY_TESTS` frozenset (30 patterns). |
+| Retry logic | `conftest.py` `pytest_runtest_protocol` | Custom hook; retries only when `LLM_TESTS_RETRIES` > 0 (benchmarks keep it 0). Each retry consumes one prompt from the budget. |
+| Benchmark collection | `conftest.py` `pytest_runtest_logreport` / `pytest_sessionfinish` | Stores per-test metrics; session end writes `benchmark.json` / `benchmark.md` / `benchmark_history.json`. |
 | Failure classification | conftest (`fail_with_mode`) | `timeout` · `no_mcp_tool` · `wrong_tool` · `wrong_args` · `tool_error` · `outcome_mismatch` (+ `recovered` tag). |
 | Prompt budget | `conftest.py` `LLM_TESTS_MAX_PROMPTS` (default 300) | Hard cap prevents runaway cost during iteration. |
-| Skill eval auto-discovery | `eval_parser.py:48-90` | Scrapes "Should trigger" / "Should NOT trigger" tables from `.claude/skills/*/eval.md`. |
+| Skill eval auto-discovery | `eval_parser.py` `load_should_trigger()` / `load_should_not_trigger()` | Scrapes "Should trigger" / "Should NOT trigger" tables from `.claude/skills/*/eval.md`. |
 
 ### Environment knobs
 
@@ -88,7 +88,7 @@ pytest (tests/llm/conftest.py)
 | `LLM_TESTS_TIMEOUT_BASE` | `120` | Per-task wall-clock budget in seconds |
 | `LLM_TESTS_MAX_PROMPTS` | `300` | Hard budget cap |
 | `LLM_TESTS_TIER` | `all` | `1`/`2`/`3`/`4`/`all` |
-| `LLM_TESTS_RUNS_DIR` | `/tmp/llm-test-runs` | Host path mounted as `/runs` in Docker |
+| `LLM_TESTS_RUNS_DIR` | `<tempdir>/llm-test-runs` | Host path mounted as `/runs` in Docker (the sweep driver sets a fresh dir per leg) |
 | `LLM_TESTS_MEASURES_DIR` | derived | Per-leg `/measures` volume (persists within a leg, never across legs) |
 | `LLM_TESTS_RUN_META` | unset | JSON provenance blob recorded into `benchmark.json` `run_config` (set by the sweep driver) |
 
@@ -96,20 +96,20 @@ pytest (tests/llm/conftest.py)
 
 ## 3. Test taxonomy
 
-Ten test files, organized by what the agent is asked to do.
+Eleven test files (259 tests collected on 2026-08-22), organized by what the agent is asked to do.
 
-| File | Tier | ~Count | Purpose | Pass‑rate signal |
+| File | Tier | Count | Purpose | Pass‑rate signal |
 |---|---|---|---|---|
-| `test_01_setup.py` | setup | 5 | Creates baseline/HVAC/example models in `/runs`. All other tests depend on these. Prompts use explicit tool names to minimize non-determinism. | Dependency gate |
+| `test_01_setup.py` | setup | 8 | Creates baseline/HVAC/example models and seed fixtures in `/runs`. All other tests depend on these. Prompts use explicit tool names to minimize non-determinism. | Dependency gate |
 | `test_02_tool_selection.py` | tier1 | 4 | Single-tool discovery, **no model state** (e.g., "What is the server status?"). Fastest tests. | Baseline discovery |
 | `test_03_eval_cases.py` | tier3 | 26 | Auto-parsed from `.claude/skills/*/eval.md` "Should trigger" tables. Keeps tests DRY and co-located with skill definitions. | Skill discovery |
-| `test_04_workflows.py` | tier2 | 19 | Multi-step chains (3-5 MCP calls): load → weather → HVAC → simulate → extract. | Multi-step composition |
+| `test_04_workflows.py` | tier2 | 37 | Multi-step chains (3-5 MCP calls): load → weather → HVAC → simulate → extract. | Multi-step composition |
 | `test_05_guardrails.py` | tier4 | 3 | **Regression gate**: agent must **NOT** use `Bash`/`Edit`/`Write` to bypass MCP tools. | Safety/bypass |
-| `test_06_progressive.py` | progressive | 110 | **The core diagnostic.** 34+ operations × 3 specificity levels. | Tool description quality |
+| `test_06_progressive.py` | progressive | 149 | **The core diagnostic.** Operations posed at L1 and L2, plus L3 for the `L3_KEEP` subset; the benchmark's 16-task hard set is a `-k` selection from this file. | Tool description quality |
 | `test_07_fourpipe_e2e.py` | tier2 | 1 | Full retrofit on 44-zone SystemD model using natural language (no tool names). Two simulations, 40+ turns, ~5 min. | Real-user session |
-| `test_08_measure_authoring.py` | tier2 | 8 | Custom measure create/edit/test/export. Regression tests pulled from debug-session JSON exports. | Authoring workflows |
-| `test_09_tool_routing.py` | tier4 | 4 | A/B baseline: full roster vs. `recommend_tools` routing. Not in CI. | Tool-routing efficiency |
-| `test_10_confusion_pairs.py` | tier4 | 8 | Prompts that could reasonably trigger either of two similar tools (`run_qaqc_checks` vs `validate_model`). | Disambiguation |
+| `test_08_measure_authoring.py` | tier2 | 4 | Custom measure create/edit/test regressions pulled from debug-session exports. | Authoring workflows |
+| `test_09_tool_routing.py` | tier4 | 12 | A/B baseline: full roster vs. `recommend_tools` routing. Not in the benchmark. | Tool-routing efficiency |
+| `test_10_confusion_pairs.py` | tier4 | 9 | Prompts that could reasonably trigger either of two similar tools (`run_qaqc_checks` vs `validate_model`). | Disambiguation |
 | `test_11_codegen_arm.py` | tier2 | 6 | **Arm C baseline**: no MCP server; agent gets shell + a bare SDK/CLI/EnergyPlus container and scripts everything. Outcome-only grading. Opt-in via `LLM_TESTS_ARM=codegen`. | Is the tool layer needed at all? |
 
 ### The progressive test pattern (L1 / L2 / L3)
@@ -264,7 +264,7 @@ The qaqc cluster is the most interesting: both tools legitimately "check the mod
 
 7. **Flaky tests need a promotion path.** The `FLAKY_TESTS` frozenset is the quarantine. Pattern-match by substring. Remove patterns when a test stabilizes across 3+ runs. Don't let the list grow indefinitely.
 
-8. **Description guidance alone doesn't fix L1 failures.** See [`benchmark-description-guidance.md`](benchmark-description-guidance.md) — ~35 tools got disambiguation/when-to-use/emphasis edits and L1 pass rate **did not move**. The remaining failures were structural.
+8. **Description guidance alone doesn't fix L1 failures.** In March 2026 ~35 tools got disambiguation/when-to-use/emphasis edits and L1 pass rate **did not move** (11/15 before and after). The remaining failures were structural — the vague prompts were genuinely ambiguous and the agent's alternative tool was defensible.
 
 9. **NDJSON logs per test are indispensable.** When a test fails, the `.ndjson` log shows the exact tool calls, arguments, error responses, and where the agent got stuck. Clearing them per run keeps disk usage sane.
 
@@ -308,6 +308,5 @@ Reports land in `$LLM_TESTS_RUNS_DIR/benchmark.md` / `benchmark.json`; sweep agg
 
 - [`llm-test-benchmark.md`](llm-test-benchmark.md) — raw benchmark data, per-tool matrix, run history
 - [`frameworks-summary.md`](frameworks-summary.md) — unit/integration/LLM side-by-side, strengths & gaps
-- [`benchmark-description-guidance.md`](benchmark-description-guidance.md) — negative-result experiment: description edits that didn't move the needle
 - [`testing.md`](testing.md) — general testing guide (unit + integration + CI)
 - [`plots/generate_plots.py`](plots/generate_plots.py) — reproduce every chart in this doc (`python docs/testing/plots/generate_plots.py`)

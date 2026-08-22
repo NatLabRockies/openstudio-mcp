@@ -278,6 +278,8 @@ BEM-AI's multi-agent approach targets small local models that struggle with larg
 
 10. **Don't collapse tools into meta-tools.** Shifts "which tool?" to "which parameter?" -- LLMs are equally bad at both when option count is high. Every winning approach filters tools per turn, not reduces catalog.
 
+11. **Description-writing rules** (Mar 20 guidance pass; heuristics -- the pass measured no L1 change; the per-test before/after tables were in `docs/testing/benchmark-description-guidance.md`, deleted 2026-08-22, see git history at 7878a0b). Concise first line, then a keyword-rich paragraph (field names, use cases, domain terms); no boilerplate ("Requires model loaded", "Returns dict with ok"). Add negative scope ("For X, use Y") only on measured confusion pairs (`tests/llm/test_10_confusion_pairs.py`). IMPORTANT/ALWAYS on ~12 tools max -- more dilutes the signal. Keep simple tools under ~300 chars; long descriptions dilute ToolSearch keyword matching. Background: Anthropic's pre-ToolSearch guidance ("3-4 sentences minimum", all tools in context) and post-ToolSearch guidance ("semantic keywords for search") were never reconciled -- descriptions serve both discovery (ToolSearch keywords) and in-context selection.
+
 ### Action Items
 
 | Priority | Action | Status |

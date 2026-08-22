@@ -127,7 +127,7 @@ If revisiting CodeMode:
 ## Related Research
 
 - `docs/knowledge/fastmcp-code-mode-and-advanced-tool-use.md` — FastMCP 3.1/3.2 features, Anthropic advanced tool use
-- `docs/knowledge/tool-discovery-and-llm-testing.md` — timeline of tool count growth, prior benchmark results
+- `docs/archived/tool-discovery-and-llm-testing.md` — timeline of tool count growth, prior benchmark results
 - `docs/knowledge/reddit-mcp-discovery-thread.md` — community approaches to tool discovery at scale
 
 ## Files Modified for This Experiment
