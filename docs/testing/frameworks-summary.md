@@ -39,7 +39,7 @@ Shared helpers in `tests/conftest.py`: `create_and_load()`, `create_baseline_and
 | 3 | controls, object management, generic access, loads, building, DOAS, air/plant loops, measures, measure authoring, QA/QC skill, HVAC supply wiring, gbXML climate-zone (WMO), paired-vertex sync, ground contact, import timeout, geometry write guards |
 | 4 | VRF, radiant, query skills (spaces, space types, schedules, constructions, loads), creation tools, air terminals, results extraction, gbXML import (minus its three heaviest tests, split into shards 1-3 by node id), validate_osw / run_osw, add_layer_to_construction |
 | 5 | HVAC supply simulation smoke, HVAC validation, bar building, concurrent tools, stdout-logger silence, simulation queue, per-user run-dir isolation, run retention, python EMS phase 2, comfort benchmark, weather fail-fast, hvac_only parity |
-| arm64 1 / 2 | mirror of shard 1 (real EnergyPlus sim) / the arch-sensitive set (SWIG memleak, stdout logger, measures, measure authoring, HVAC supply sim) |
+| arm64 1 / 2 | core real-simulation subset of amd64 shard 1 / the arch-sensitive set (SWIG memleak, stdout logger, measures, measure authoring, HVAC supply sim) |
 | `security.yml` | `tests/test_sandbox.py` under `OSMCP_SANDBOX=auto` on amd64 and arm64 (dual-run: attack succeeds with the sandbox off, is blocked with it on) |
 
 The `ci.yml` comments are the authoritative shard map; the table above is a summary.
