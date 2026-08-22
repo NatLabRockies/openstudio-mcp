@@ -33,7 +33,7 @@ container, it is fully effective.
 | **Measures dirs** | `MEASURES_DIR/local/` (still keyed) | `MEASURES_DIR/<user_key>/` |
 | **Path allow-list** (`is_path_allowed`) | rejects paths outside RUN_ROOT + RO shared roots | same, plus cross-tenant paths denied R **and** W |
 | **Model state** | one shared in-memory model | per-session dict, LRU cap 16, 30-min idle TTL |
-| **Quotas** | subprocess rlimits only | rlimits + upload/download quotas + session caps |
+| **Quotas** | subprocess rlimits only | rlimits + upload quotas + session caps |
 | **Concurrency** | process-global FIFO queue (`MAX_CONCURRENCY`) | same queue, optional per-user cap |
 | **Audit** | tool calls + sim lifecycle → stderr | same, plus optional audit file; users see only own runs |
 
