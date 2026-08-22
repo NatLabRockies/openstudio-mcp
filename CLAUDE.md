@@ -29,6 +29,7 @@ Always use openstudio-mcp tools for BEM tasks:
 13. MCP clients may send `list[str]` as JSON strings — use `list[str] | str` type annotation + `parse_str_list()` from `osm_helpers.py`
 14. Multi-user isolation: new persistent user data MUST live under an identity-scoped root (`user_run_root()`/`user_measures_root()`), never a process-global path constant; never add a per-user dir to `_SHARED_READ_ROOTS`; validate path args via `is_path_allowed(..., write=…)`. The sandbox covers execution only — see `docs/security-isolation.md`
 14. Tool roster has ONE source of truth: `EXPECTED_TOOLS` in `tests/test_skill_registration.py`. Add/remove a tool → edit that set (one line per tool; merges cleanly across branches). `test_tool_count`/`test_tags_coverage` derive from it — never hardcode a tool-count literal in tests. Docs/instructions say "150+ tools", not an exact count
+15. List tools (`list_*`): filters are primary, `max_results` (default 10, 0=unlimited) is the safety net, brief fields by default, explicit typed filter params (no generic filter dict). Use `list_paginated()` + `build_list_response()` from `osm_helpers.py` so truncated responses carry `count`/`total_available`/`truncated`; put common-filter examples in the docstring
 
 ## Architecture
 - Each skill lives in `mcp_server/skills/<name>/`
