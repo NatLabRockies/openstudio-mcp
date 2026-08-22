@@ -169,7 +169,7 @@ backend.
 | `build` | Docker image with buildx cache, sanity checks, unit tests, save image artifact, push to Docker Hub | 9 min |
 | `test` (shards 1-5) | load the image, run that shard's `FILES=` list with `RUN_OPENSTUDIO_INTEGRATION=1` and `OSMCP_SANDBOX=auto` | 12-14 min each |
 | `arm64-build` / `arm64-test` (1-2) | arm64 image from `Dockerfile.arm64`, real-sim and arch-sensitive shards | 3 min / 5-6 min |
-| `security.yml` (separate workflow) | `tests/test_sandbox.py` on amd64 and arm64 | — |
+| `security.yml` (separate workflow) | `tests/test_sandbox.py` plus `tests/test_security_*.py` on amd64 and arm64 | — |
 
 Strengths: build-once / test-many, layer caching, `fail-fast: false` so one shard failure does
 not hide others, arm64 parity. Weaknesses: no LLM gate, manual shard balancing, no coverage
