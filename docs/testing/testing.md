@@ -178,7 +178,7 @@ assert status["run"]["status"] == "success"
 |---|---|---|
 | `build` | Docker image with GHA buildx cache, sanity checks, unit tests (`pytest -m "not integration"`), saves the image artifact, pushes to Docker Hub | ~9 min |
 | `test` (matrix: shard 1-5) | loads the image, runs that shard's `FILES=` list with `RUN_OPENSTUDIO_INTEGRATION=1` and `OSMCP_SANDBOX=auto`; `fail-fast: false` so one shard failure doesn't cancel the others | 12-14 min each |
-| `arm64-build` / `arm64-test` (shards 1-2) | arm64 image from `docker/Dockerfile.arm64`; shard 1 mirrors amd64 shard 1 (real EnergyPlus sim), shard 2 is the arch-sensitive set (SWIG memleak, stdout logger, measures, measure authoring, HVAC supply sim) | ~3 min / 5-6 min |
+| `arm64-build` / `arm64-test` (shards 1-2) | arm64 image from `docker/Dockerfile.arm64`; shard 1 runs the core real-simulation subset of amd64 shard 1, while shard 2 is the arch-sensitive set (SWIG memleak, stdout logger, measures, measure authoring, HVAC supply sim) | ~3 min / 5-6 min |
 | `security.yml` (separate workflow) | `tests/test_sandbox.py` under `OSMCP_SANDBOX=auto` on amd64 and arm64 | — |
 
 ### Shard assignment
