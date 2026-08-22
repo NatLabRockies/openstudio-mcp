@@ -251,7 +251,7 @@ One row per progressive case. L1=vague, L2=moderate, L3=explicit.
 | 13 | 2026-03-26 | 230 | 160 | 95.8% | — | Post #40 fix + test audit. 63 skipped (test structure). 7 fail: 3 qaqc tier2, 3 measure quality, 1 run_simulation_L1. Previously flaky L1s (import_floorplan, list_dynamic_type, check_loads, thermostat, set_wwr, schedule_details, create_loads) ALL passed. |
 | 14 | 2026-03-28 | 180 | 170 | 94.4% | $18.96 | Cross-model sweep baseline (sonnet). 157 min. 10 fail: 9 wrong_tool (2× qaqc, 2× troubleshoot, 1× energy-report, 1× systemd_e2e, 2× measure quality, 1× misc) + 1 timeout. Haiku same day: 160/180 = 88.9%, $11.21, 80 min. Opus same day: 170/180 = 94.4%, $32.23, 185 min. |
 | 15 | 2026-04-05 | 129 | 123 | 95.3% | $9.29 | CodeMode A/B baseline (OFF). Progressive-only suite (43 cases × 3). 69 min. 6 fail: edit_measure L1/L2/L3 (all 3 → tool regression), thermal_zones_L1, test_measure_L1, zone_equipment_priority_L3. L1=93.0%, L2=97.7%, L3=95.3%. |
-| 16 | 2026-04-05 | 129 | 31 | **24.0%** | $22.35 | **CodeMode A/B experiment (ON) — 71pp regression.** 168 min. 67 wrong_tool + 30 timeout + 1 no_mcp_tool. Feature kept as opt-in toggle, NOT default. See `docs/knowledge/codemode-benchmark-2026-04-05.md`. |
+| 16 | 2026-04-05 | 129 | 31 | **24.0%** | $22.35 | **CodeMode A/B experiment (ON) — 71pp regression.** 168 min. 67 wrong_tool + 30 timeout + 1 no_mcp_tool. Feature kept as opt-in toggle, NOT default. See `docs/archived/codemode-benchmark-2026-04-05.md`. |
 
 *Run 8 = combined results from two separate targeted runs (measure authoring 13/15 + cooled beam 10/10).*
 *Run 16 is an experimental outlier (CodeMode ON) and is excluded from the main pass-rate timeline in plots.*
