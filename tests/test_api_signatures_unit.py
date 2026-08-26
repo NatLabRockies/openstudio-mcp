@@ -10,6 +10,8 @@ The counterpart integration assertions (real SDK, real values) live in
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from mcp_server.skills.api_reference._headers import (
@@ -24,6 +26,14 @@ pytestmark = pytest.mark.unit
 
 def _write(tmp_path, name: str, body: str):
     path = tmp_path / name
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _write_tree(base: Path, rel: str, body: str) -> Path:
+    """Write a header at a nested relative path, creating parent dirs (for _build)."""
+    path = base / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
     return path
 
@@ -130,7 +140,13 @@ class MODEL_API CoilCoolingWater : public WaterToAirComponent {
 
 
 def test_ignores_macros(tmp_path):
-    """REGISTER_LOGGER appears 621 times, OS_DEPRECATED 295 times inside class bodies."""
+    """REGISTER_LOGGER appears 621 times, OS_DEPRECATED 295 times inside class bodies.
+
+    OS_DEPRECATED is stripped and the declaration kept; REGISTER_LOGGER expands to
+    ``static Logger logChannel();`` — a real static accessor, so it is registered
+    literally (deliberate: the utilities classes expose logChannel and it must
+    resolve to a type, not `?`).
+    """
     src = """
 class MODEL_API ThermalZone : public HVACComponent {
  public:
@@ -140,7 +156,8 @@ class MODEL_API ThermalZone : public HVACComponent {
 };
 """
     methods = _parse_header(_write(tmp_path, "T.hpp", src))["ThermalZone"]
-    assert set(methods) == {"realMethod"}
+    assert methods["logChannel"] == "Logger"
+    assert methods["realMethod"] == "double"
 
 
 def test_access_specifiers_do_not_filter_methods(tmp_path):
@@ -442,6 +459,273 @@ def test_build_skips_impl_headers(tmp_path):
     built = _build(tmp_path)
     assert built["ThermalZone"] == {"publicApi": "double"}
     assert "ThermalZone_Impl" not in built
+
+
+def test_build_discovers_nested_submodule_headers(tmp_path):
+    """Real: ``RunControl`` and ``AirflowPath`` are both declared in
+    ``airflow/contam/PrjObjects.hpp`` — a nested subdir, and a filename matching
+    neither class. The old ``glob("model/*.hpp")`` never saw them.
+    """
+    src = """
+class OS_AIRFLOW_API RunControl : public AirflowObject {
+ public:
+    int iterationCount() const;
+    double convergenceLimit() const;
+};
+class OS_AIRFLOW_API AirflowPath : public AirflowObject {
+ public:
+    int nodeCount() const;
+};
+"""
+    _write_tree(tmp_path, "airflow/contam/PrjObjects.hpp", src)
+    built = _build(tmp_path)
+    assert built["RunControl"] == {"iterationCount": "int", "convergenceLimit": "double"}
+    assert built["AirflowPath"] == {"nodeCount": "int"}
+
+
+def test_build_skips_impl_headers_in_nested_subdirs(tmp_path):
+    """The *_Impl.hpp skip applies everywhere, not just model/."""
+    _write_tree(
+        tmp_path, "model/ThermalZone.hpp",
+        "class MODEL_API ThermalZone {\n public:\n    double publicApi() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "utilities/sql/SqlFile.hpp",
+        "class OS_UTILITIES_API SqlFile {\n public:\n    std::string path() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "utilities/sql/SqlFile_Impl.hpp",
+        "class OS_UTILITIES_API SqlFile_Impl {\n public:\n    double implDetail() const;\n};\n",
+    )
+    built = _build(tmp_path)
+    assert built["ThermalZone"] == {"publicApi": "double"}
+    assert built["SqlFile"] == {"path": "std::string"}
+    assert "SqlFile_Impl" not in built
+
+
+def test_build_model_precedence_over_submodule(tmp_path):
+    """First-declaration-wins with model/ parsed first: a method declared in both
+    model/ and a submodule keeps the model declaration.
+    """
+    _write_tree(
+        tmp_path, "model/Space.hpp",
+        "class MODEL_API Space {\n public:\n    double surfaceArea() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "utilities/Space.hpp",
+        "class OS_UTILITIES_API Space {\n public:\n    int surfaceArea() const;\n};\n",
+    )
+    built = _build(tmp_path)
+    assert built["Space"] == {"surfaceArea": "double"}
+
+
+def test_build_parses_extend_in_nested_subdir(tmp_path):
+    """SWIG %extend blocks live in .i files outside model/ too; recursion must find
+    them so those methods get types (headers alone don't declare them).
+    """
+    _write_tree(
+        tmp_path, "utilities/sql/SqlFile.i",
+        "%extend openstudio::utilities::SqlFile{\n"
+        "    bool isOpen() const { return *self; }\n"
+        "};\n",
+    )
+    built = _build(tmp_path)
+    assert built["SqlFile"] == {"isOpen": "bool"}
+
+
+def test_build_hpp_declaration_wins_over_extend(tmp_path):
+    """A real .hpp declaration beats a %extend of the same method even when the
+    %extend sits in model/ — the .hpp-before-.i ordering is global, not per-module.
+    """
+    _write_tree(
+        tmp_path, "model/Space.hpp",
+        "class MODEL_API Space {\n public:\n    double surfaceArea() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "model/ModelCore.i",
+        "%extend openstudio::model::Space{\n"
+        "    int surfaceArea() const { return *self; }\n"
+        "};\n",
+    )
+    built = _build(tmp_path)
+    assert built["Space"] == {"surfaceArea": "double"}
+
+
+def test_parses_struct_classes(tmp_path):
+    """Real: `struct UTILITIES_API IstringFind` (Compare.hpp) and
+    `struct ISOMODEL_API ISOResults` (SimModel.hpp) — the class regex only matched
+    `class` and silently dropped every struct.
+    """
+    src = """
+struct UTILITIES_API IstringFind
+{
+ public:
+    void addTarget(const std::string& target);
+    std::string string() const;
+};
+"""
+    methods = _parse_header(_write(tmp_path, "Compare.hpp", src))["IstringFind"]
+    assert methods == {"addTarget": "void", "string": "std::string"}
+
+
+def test_nested_struct_does_not_hijack_enclosing_class(tmp_path):
+    """Real: Calendar.hpp — `struct CalendarDay` sits inside `class Calendar`; without
+    nesting tracking, the struct stole every method that followed it and Calendar got
+    none (its logChannel and accessors rendered unknown).
+    """
+    src = """
+class UTILITIES_API Calendar
+{
+ public:
+    REGISTER_LOGGER("utilities.time.Calendar");
+    struct CalendarDay
+    {
+        int dayOfWeek() const;
+    };
+    void addHoliday(const Date& date, const std::string& name);
+    std::string getName(const Date& date) const;
+};
+"""
+    methods = _parse_header(_write(tmp_path, "Calendar.hpp", src))["Calendar"]
+    assert methods["logChannel"] == "Logger"
+    assert methods["addHoliday"] == "void"
+    assert methods["getName"] == "std::string"
+    assert "dayOfWeek" not in methods  # belongs to CalendarDay, not Calendar
+
+
+def test_getters_ending_in_close_brace_do_not_close_the_class(tmp_path):
+    """Real: EpwFile.hpp — getters are written `std::string x() const {` / `return …;` /
+    `};` — each getter's closing line looks exactly like a class close. Brace-depth
+    tracking must keep the class open (the getter close stays at the class depth, the
+    class's own `};` drops below it).
+    """
+    src = """
+class UTILITIES_API EpwHoliday
+{
+ public:
+    std::string holidayName() const {
+        return m_holidayName;
+    };
+    std::string holidayDateString() const {
+        return m_holidayDateString;
+    };
+ private:
+    std::string m_holidayName;
+    std::string m_holidayDateString;
+};
+"""
+    methods = _parse_header(_write(tmp_path, "EpwFile.hpp", src))["EpwHoliday"]
+    assert methods == {
+        "holidayName": "std::string",
+        "holidayDateString": "std::string",
+    }
+
+
+def test_constructor_initializer_list_is_not_a_declaration(tmp_path):
+    """Real: EpwFile.hpp — `EpwHoliday(const std::string& a, const std::string& b)` is
+    followed by `: m_holidayName(holidayName), m_holidayDateString(holidayDateString){};`.
+    The ctor line ends with `)` so it is flushed as a (skipped) candidate, and the
+    initializer list used to parse as a bogus `m_holidayName` method with type `:`.
+    """
+    src = """
+class UTILITIES_API EpwHoliday
+{
+ public:
+    EpwHoliday(const std::string& holidayName, const std::string& holidayDateString)
+        : m_holidayName(holidayName), m_holidayDateString(holidayDateString){};
+    std::string holidayName() const;
+};
+"""
+    methods = _parse_header(_write(tmp_path, "EpwFile.hpp", src))["EpwHoliday"]
+    assert methods == {"holidayName": "std::string"}
+
+
+def test_build_reads_hxx_declarations(tmp_path):
+    """Real: IddFactory is declared in utilities/idd/IddFactory.hxx — a .hxx, which
+    the old glob never read, so IddFactory rendered unknown.
+    """
+    _write_tree(
+        tmp_path, "utilities/idd/IddFactory.hxx",
+        "class IddFactory {\n public:\n    static IddFactory& instance();\n};\n",
+    )
+    built = _build(tmp_path)
+    assert built["IddFactory"] == {"instance": "IddFactory"}
+
+
+def test_build_applies_module_scoped_class_rename(tmp_path):
+    """Real: `%rename(ZUnit) openstudio::Unit;` — the exposed name differs from the
+    declared one. The %extend on openstudio::Unit must also surface as ZUnit.
+    """
+    _write_tree(
+        tmp_path, "utilities/units/Unit.hpp",
+        "class UTILITIES_API Unit {\n public:\n    double baseUnits() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "utilities/UtilitiesUnits.i",
+        "%rename(ZUnit) openstudio::Unit;\n",
+    )
+    built = _build(tmp_path)
+    assert built["Unit"]["baseUnits"] == "double"
+    assert built["ZUnit"]["baseUnits"] == "double"  # alias carries the methods
+
+
+def test_build_rename_does_not_cross_modules(tmp_path):
+    """Real: six modules declare a `ForwardTranslator`; each is renamed to its own
+    XForwardTranslator. The rename must apply per module — sdd's rename must not
+    alias airflow's class, or SddForwardTranslator would inherit Contam's methods.
+    """
+    _write_tree(
+        tmp_path, "airflow/contam/ForwardTranslator.hpp",
+        "class AIRFLOW_API ForwardTranslator {\n public:\n    int modelToPrj() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "airflow/Airflow.i",
+        "%rename(ContamForwardTranslator) openstudio::contam::ForwardTranslator;\n",
+    )
+    _write_tree(
+        tmp_path, "sdd/ForwardTranslator.hpp",
+        "class SDD_API ForwardTranslator {\n public:\n    int modelToSDD() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "sdd/SDD.i",
+        "%rename(SddForwardTranslator) openstudio::sdd::ForwardTranslator;\n",
+    )
+    built = _build(tmp_path)
+    assert built["ContamForwardTranslator"] == {"modelToPrj": "int"}
+    assert built["SddForwardTranslator"] == {"modelToSDD": "int"}
+
+
+def test_build_applies_method_rename(tmp_path):
+    """Real: `%rename(toString) openstudio::measure::OSArgument::print;` — a method
+    rename: the header declares print, the exposed name is toString.
+    """
+    _write_tree(
+        tmp_path, "measure/OSArgument.hpp",
+        "class OS_MEASURE_API OSArgument {\n public:\n    std::string print() const;\n};\n",
+    )
+    _write_tree(
+        tmp_path, "measure/Measure.i",
+        "%rename(toString) openstudio::measure::OSArgument::print;\n",
+    )
+    built = _build(tmp_path)
+    assert built["OSArgument"]["print"] == "std::string"
+    assert built["OSArgument"]["toString"] == "std::string"
+
+
+def test_build_applies_inline_swig_class_rename(tmp_path):
+    """Real: CommonImport.i defines `class any { ... }` inline and renames it:
+    `%rename(Any) boost::any;` — the inline class's methods must surface as Any.
+    """
+    _write_tree(
+        tmp_path, "utilities/core/CommonImport.i",
+        "%rename(Any) boost::any;\n"
+        "class any {\n"
+        " public:\n"
+        "    std::string toString();\n"
+        "};\n",
+    )
+    built = _build(tmp_path)
+    assert built["Any"] == {"toString": "std::string"}
 
 
 def test_locate_header_dir_honours_env_override(tmp_path, monkeypatch):

@@ -267,37 +267,153 @@ def test_return_types_are_never_guessed():
 def test_every_returnable_method_has_a_sourced_type():
     """**Ratchet: 100% of what search_api can return.** No `?`, no guesses.
 
-    search_api lists `dir(openstudio.model)`; those 21,691 methods are the ones a caller
-    can actually be handed, and every one resolves to a type read from a C++ header, a
-    SWIG %extend, or a wrapper annotation. Coverage was 98.01% before the parser fixes and
-    10.84% before the headers were used at all.
+    search_api lists classes across an explicit module allowlist — the openstudio
+    root, openstudio.model, and the non-model submodules behind the plan's ~265
+    non-model headers (see operations._MODULES). Every class it can return must be
+    in the wrapper parse, and every method must resolve to a type read from a C++
+    header, a SWIG %extend, or a wrapper annotation. Coverage was 98.01% before the
+    parser fixes and 10.84% before the headers were used at all; the surface itself
+    grew from ``dir(openstudio.model)`` (628 classes / 21,691 methods) to 925
+    classes / 26,418 methods when non-model classes (SqlFile, RunControl,
+    UserModel, …) became reachable.
 
-    This is pinned at exactly 0 rather than a loose bound: an SDK upgrade that introduces a
-    declaration shape the parser can't read should fail here loudly, not degrade quietly to
-    `?`. If that happens, fix the parser or — if the shape is genuinely unreadable — change
-    this assertion deliberately and say why.
+    This is pinned at exactly 0 rather than a loose bound: an SDK upgrade that
+    introduces a declaration shape the parser can't read should fail here loudly,
+    not degrade quietly to `?`. If that happens, fix the parser or — if the shape is
+    genuinely unreadable — change this assertion deliberately and say why.
     """
     import openstudio
 
     from mcp_server.skills.api_reference import _signatures
+    from mcp_server.skills.api_reference.operations import _CAST_RE, _MODULES, _collect_classes
 
     sigs = _signatures.signatures()
+    modules = [
+        (label, openstudio if attr is None else getattr(openstudio, attr))
+        for label, attr in _MODULES
+        if attr is None or getattr(openstudio, attr, None) is not None
+    ]
     returnable = {
-        name
-        for name in dir(openstudio.model)
-        if not name.startswith("_") and isinstance(getattr(openstudio.model, name), type)
+        entry["class_name"]
+        for entry in _collect_classes(modules, preferred_names=set(sigs))
     }
+
+    # Every returned class must have a signature source — Python-only internals and
+    # legacy aliases are filtered out in _collect_classes, never returned untyped.
+    assert returnable <= set(sigs), f"untyped classes: {sorted(returnable - set(sigs))}"
 
     unknown = {
         f"{cls}#{method}"
-        for cls in returnable & set(sigs)
+        for cls in returnable
         for method, info in sigs[cls].items()
         if info["returns"] == _signatures.UNKNOWN_TYPE
+        # The to_<Class>() downcast family is SWIG-synthesized (declared in no
+        # header); search_api collapses it into one summary line, and the cast target
+        # IS the class name — its "unknown" is the family's design, not a gap.
+        and not _CAST_RE.match(method)
     }
-    total = sum(len(sigs[cls]) for cls in returnable & set(sigs))
+    total = sum(len(sigs[cls]) for cls in returnable)
 
-    assert total > 20000, f"expected the full model surface, got {total}"
+    assert total > 26000, f"expected the full SDK surface, got {total}"
     assert not unknown, f"{len(unknown)} of {total} methods have no sourced type: {sorted(unknown)[:10]}"
+
+
+def test_wrapper_parse_surface_pinned():
+    """The final wrapper numbers on this 3.11.0 install: the SWIG proxy parse covers
+    940 classes / 26,526 methods (measured at plan time — adjust pins only if the
+    install differs), and search_api can now return 925 of them. The remaining 15
+    (Alfalfa*, GbXML translators, Modelica/ClassDefinition/ProgressBar) live in
+    modules outside the allowlist and are deliberately not returned.
+    """
+    import openstudio
+
+    from mcp_server.skills.api_reference import _signatures
+    from mcp_server.skills.api_reference.operations import _MODULES, _collect_classes
+
+    sigs = _signatures.signatures()
+    assert len(sigs) == 940
+    assert sum(len(m) for m in sigs.values()) == 26526
+
+    modules = [
+        (label, openstudio if attr is None else getattr(openstudio, attr))
+        for label, attr in _MODULES
+        if attr is None or getattr(openstudio, attr, None) is not None
+    ]
+    returnable = {
+        entry["class_name"]
+        for entry in _collect_classes(modules, preferred_names=set(sigs))
+    }
+    assert len(returnable) == 925
+
+
+def test_sql_file_return_types_come_from_headers():
+    """SqlFile was unreachable before the module-allowlist change — reporting
+    measures use it constantly (execAndReturnFirstDouble, availableEnvPeriods, …).
+    Its types now come from utilities/sql/SqlFile.hpp, not from the name guesser.
+    """
+    search = _import_search_api_op()
+    assert _returns(search, "SqlFile", "execAndReturnFirstDouble") == "Float, nil"
+    assert _returns(search, "SqlFile", "execAndReturnFirstString") == "String, nil"
+    assert _returns(search, "SqlFile", "availableEnvPeriods") == "Array<String>"
+    assert _returns(search, "SqlFile", "path") == "Object"
+
+
+def test_module_field_attributes_each_class():
+    """Every class entry names the namespace it lives in, so a caller can tell
+    openstudio.model.Space from openstudio.SqlFile from openstudio.airflow.RunControl.
+    """
+    search = _import_search_api_op()
+    expected = {
+        "SqlFile": "openstudio",
+        "ThreeUserData": "openstudio",
+        "WorkflowStepResult": "openstudio",
+        "RunControl": "openstudio.airflow",
+        "AirflowPath": "openstudio.airflow",
+        "UserModel": "openstudio.isomodel",
+        "GltfUserData": "openstudio.gltf",
+        "People": "openstudio.model",
+    }
+    for class_name, module in expected.items():
+        result = search(class_name, max_classes=10)
+        cls = next(c for c in result["classes"] if c["class_name"] == class_name)
+        assert cls["module"] == module, f"{class_name}: {cls['module']}"
+
+
+def test_classes_listed_once_across_modules():
+    """Aliased submodules and cross-module re-exports must not double-list a class.
+    RunControl/AirflowPath/IndexModel live in openstudio.airflow (not in its
+    openstudioairflow alias, which is not in the allowlist) — each appears once.
+    """
+    search = _import_search_api_op()
+    result = search("RunControl|AirflowPath|IndexModel", max_classes=50)
+    names = [c["class_name"] for c in result["classes"]]
+    assert len(names) == len(set(names)), f"duplicates: {names}"
+    assert set(names) == {"RunControl", "AirflowPath", "IndexModel"}
+
+
+def test_include_base_false_keeps_non_model_methods():
+    """Regression: the old model-only logic subtracted dir(ModelObject) from every
+    class, silently dropping same-named methods on non-model classes. WorkflowStepResult
+    is not a ModelObject — include_base must be irrelevant to it.
+    """
+    search = _import_search_api_op()
+    excluded = search("WorkflowStepResult")["classes"][0]
+    included = search("WorkflowStepResult", include_base=True)["classes"][0]
+    names_excl = _names(excluded["setters"] + excluded["getters"] + excluded["other"])
+    names_incl = _names(included["setters"] + included["getters"] + included["other"])
+    assert names_excl == names_incl
+    assert "stepResult" in names_excl  # a real WorkflowStepResult method survived
+
+
+def test_loose_pattern_response_stays_bounded():
+    """A wider class list makes loose patterns match more; the default cap must keep
+    responses bounded — the module allowlist is not too wide if this stays sane.
+    """
+    search = _import_search_api_op()
+    result = search("Model", max_classes=50)
+    assert len(result["classes"]) <= 50
+    assert len(result["classes"]) > 1  # the widened surface actually matched more than one
+    assert len(search("Model")["classes"]) <= 10  # default cap still applies
 
 
 # ── Downcast collapse ────────────────────────────────────────────────────

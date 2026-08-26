@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 # Default install location inside the MCP image. The Python wheel ships no headers, so
@@ -40,8 +41,13 @@ _ENV_VAR = "OSMCP_OPENSTUDIO_INCLUDE"
 # all-caps class (`class MODEL_API AVM : public X`), since the trailing `(\w+)` must match.
 # A trailing `;` (forward declaration, `class ThermalZone_Impl;`) matches none of `:{$`
 # and is correctly ignored.
-_CLASS_RE = re.compile(r"^\s*class\s+(?:[A-Z][A-Z0-9_]*(?:\([^)]*\))?\s+)*(\w+)\s*(?::|\{|$)")
+_CLASS_RE = re.compile(r"^\s*(?:class|struct)\s+(?:[A-Z][A-Z0-9_]*(?:\([^)]*\))?\s+)*(\w+)\s*(?::|\{|$)")
 _ACCESS_RE = re.compile(r"^\s*(public|protected|private)\s*:")
+
+# `%rename(ZUnit) openstudio::Unit;` / `%rename(toString) openstudio::measure::OSArgument::print;`
+# — SWIG renames classes and methods, and the C++ headers declare only the pre-rename
+# name. Without applying the directive, the exposed class never finds its declaration.
+_RENAME_RE = re.compile(r"^\s*%rename\(\s*(\w+)\s*\)\s*([\w:]+)\s*;")
 
 # `%extend openstudio::model::ModelObject{` — SWIG interface files declare the methods it
 # synthesizes onto a class, which exist in no .hpp. ModelCore.i is where `toIdfObject`
@@ -240,9 +246,18 @@ def map_cpp_type(cpp: str, class_names: set[str] | None = None) -> str:
 
 
 def _parse_header(path: Path) -> dict[str, dict[str, str]]:
-    """Parse one .hpp into ``{class: {method: cpp_return_type}}`` (public members only)."""
+    """Parse one header into ``{class: {method: cpp_return_type}}`` (public members only)."""
     out: dict[str, dict[str, str]] = {}
     current: str | None = None
+    # Nested classes/structs (``struct CalendarDay`` inside ``class Calendar``) and
+    # inline method bodies must not hijack or prematurely close the enclosing class.
+    # Brace depth is tracked per line: a class body closes when depth drops below the
+    # level it had when the body's ``{`` opened — a method-body close keeps depth at
+    # or above that level, the class's own ``};`` drops below it. stack entries are
+    # (outer class, base depth) with base None until the body's ``{`` is seen (the
+    # brace may sit on the following line).
+    stack: list[tuple[str | None, int | None]] = []
+    depth = 0
     pending = ""
     in_block = False
 
@@ -260,12 +275,37 @@ def _parse_header(path: Path) -> dict[str, dict[str, str]]:
 
         class_match = _CLASS_RE.match(line) or _EXTEND_RE.match(line)
         if class_match:
+            depth += line.count("{") - line.count("}")
+            stack.append((current, depth if "{" in line else None))
             current = class_match.group(1)
             out.setdefault(current, {})
             pending = ""
             continue
 
+        # Track brace depth and pop classes whose body has closed. A body opened on an
+        # earlier line pins its base depth the first time a ``{`` line arrives.
+        depth += line.count("{") - line.count("}")
+        if stack and stack[-1][1] is None and "{" in line:
+            stack[-1] = (stack[-1][0], depth)
+        while stack and stack[-1][1] is not None and depth < stack[-1][1]:
+            current, _ = stack.pop()
+
         if current is None:
+            continue
+
+        # A constructor's initializer list — the line after ``Ctor(...)``, which ends
+        # with ``)`` so the multi-line continuation rule below already flushed — is a
+        # continuation of the (skipped) constructor, not a declaration. Without the
+        # skip, ``: m_member(...)...`` parses as a bogus method.
+        if line.lstrip().startswith(":"):
+            continue
+
+        # REGISTER_LOGGER("openstudio.model.ThermalZone"); expands to
+        # `static Logger logChannel();` — a real static accessor SWIG exposes, but the
+        # macro line carries no declaration shape the parser can read, so the method
+        # is registered literally. Logger is a bound class, so it renders as a name.
+        if line.lstrip().startswith("REGISTER_LOGGER("):
+            out[current].setdefault("logChannel", "Logger")
             continue
 
         # Access level is deliberately NOT filtered. This map only answers "what does X
@@ -329,29 +369,130 @@ def _locate_header_dir() -> Path | None:
 
 
 def _build(header_dir: Path) -> dict[str, dict[str, str]]:
-    """Parse every public model header under ``header_dir``.
+    """Parse every public header under ``header_dir``, recursing into submodules.
 
-    ``*_Impl.hpp`` are detail:: internals, not the public API — skipped.
+    Not limited to ``model/``: ``SqlFile`` (utilities/sql), ``RunControl`` and
+    ``AirflowPath`` (both declared in airflow/contam/PrjObjects.hpp), ``UserModel``
+    (isomodel) and friends live in nested subdirs under filenames that don't match
+    the class, and their methods need the same sourced return types as the model
+    classes. ``*_Impl.hpp`` are detail:: internals, not the public API — skipped
+    everywhere.
+
+    Ordering keeps two invariants. ``model/`` parses first, so first-declaration-wins
+    preserves model precedence for classes declared in more than one module. ``.hpp``
+    and ``.hxx`` files precede ``.i`` files, so a real declaration always wins over a
+    SWIG ``%extend`` of the same name.
+
+    Files are parsed module by module and each module's SWIG ``%rename`` directives
+    applied before the global merge: the exposed class name (``ZUnit``, ``Any``,
+    ``ContamForwardTranslator``, …) differs from the declared one (``Unit``,
+    ``boost::any``, ``contam::ForwardTranslator``, …), and the pre-rename names are
+    not unique across modules (six modules declare a ``ForwardTranslator``).
     """
-    model_dir = header_dir / "model" if (header_dir / "model").is_dir() else header_dir
-    # .hpp first so a real declaration always wins over a SWIG %extend of the same name.
-    paths = [p for p in sorted(model_dir.glob("*.hpp")) if not p.name.endswith("_Impl.hpp")]
-    paths += sorted(model_dir.glob("*.i"))
+    model_dir = header_dir / "model"
+
+    def _ordered(paths: Iterable[Path]) -> list[Path]:
+        # model/ first, each group alphabetical (first-declaration-wins below). When
+        # the include root has no model/ subdir (e.g. an env override pointing at a
+        # module dir directly), everything sorts alphabetically.
+        return sorted(paths, key=lambda p: (not p.is_relative_to(model_dir), p))
+
+    # .hpp/.hxx first so a real declaration always wins over a SWIG %extend of the
+    # same name. .hxx carries real declarations too (IddFactory.hxx).
+    headers = [
+        p for p in _ordered(header_dir.rglob("*.hpp")) if not p.name.endswith("_Impl.hpp")
+    ]
+    headers += [
+        p for p in _ordered(header_dir.rglob("*.hxx")) if not p.name.endswith("_Impl.hxx")
+    ]
+    i_files = _ordered(header_dir.rglob("*.i"))
+
+    # Group by top-level module dir so each module's %rename directives can be
+    # applied to that module's classes before the global merge.
+    by_module: dict[str, list[Path]] = {}
+    for path in headers + i_files:
+        parts = path.relative_to(header_dir).parts
+        by_module.setdefault(parts[0] if len(parts) > 1 else "", []).append(path)
 
     result: dict[str, dict[str, str]] = {}
-    for path in paths:
-        for cls, methods in _parse_header(path).items():
+    for module in sorted(by_module, key=lambda m: (m != "model", m)):
+        for cls, methods in _parse_module(by_module[module]).items():
             target = result.setdefault(cls, {})
             for name, cpp_type in methods.items():
                 target.setdefault(name, cpp_type)  # first declaration wins
     return result
 
 
+def _parse_renames(path: Path) -> list[tuple[str, str]]:
+    """Collect SWIG ``%rename(NewName) target;`` directives from an .i file."""
+    renames = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = _RENAME_RE.match(line)
+        if match:
+            renames.append((match.group(1), match.group(2)))
+    return renames
+
+
+def _parse_module(paths: list[Path]) -> dict[str, dict[str, str]]:
+    """Parse one module's headers + .i files, applying its SWIG %rename directives.
+
+    Renames are applied in two passes — method renames first, so a class-rename
+    alias created later copies the renamed methods too.
+    """
+    renames: list[tuple[str, str]] = []
+    out: dict[str, dict[str, str]] = {}
+    for path in paths:
+        if path.suffix == ".i":
+            renames.extend(_parse_renames(path))
+        for cls, methods in _parse_header(path).items():
+            target = out.setdefault(cls, {})
+            for name, cpp_type in methods.items():
+                target.setdefault(name, cpp_type)  # first declaration wins
+    for new_name, target in renames:
+        _apply_rename(out, new_name, target, method_only=True)
+    for new_name, target in renames:
+        _apply_rename(out, new_name, target, method_only=False)
+    return out
+
+
+def _apply_rename(
+    out: dict[str, dict[str, str]],
+    new_name: str,
+    target: str,
+    *,
+    method_only: bool,
+) -> None:
+    """Apply one %rename to a module's parsed classes, in place.
+
+    A target whose second-to-last segment is a parsed class carrying that method is a
+    method rename (``openstudio::Unit::print`` -> ``toString``); otherwise the last
+    segment is a class name (``openstudio::contam::ForwardTranslator`` ->
+    ``ContamForwardTranslator``). Aliases are additive — the pre-rename name is kept.
+    """
+    segments = target.split("::")
+    is_method = (
+        len(segments) >= 2
+        and segments[-2] in out
+        and segments[-1] in out[segments[-2]]
+    )
+    if is_method != method_only:
+        return
+    if is_method:
+        out[segments[-2]].setdefault(new_name, out[segments[-2]][segments[-1]])
+        return
+    old_name = segments[-1]
+    if old_name in out and old_name != new_name:
+        renamed = out.setdefault(new_name, {})
+        for name, cpp_type in out[old_name].items():
+            renamed.setdefault(name, cpp_type)
+
+
 def header_types() -> dict[str, dict[str, str]]:
     """Return ``{class_name: {method_name: cpp_return_type}}``, cached per process.
 
-    Empty dict when no headers are installed. Costs ~30 ms for the 613 public model
-    headers, once.
+    Empty dict when no headers are installed. Costs tens of ms for the ~880 public
+    headers (``model/`` plus the nested ``utilities``, ``airflow``, ``isomodel``, …
+    submodules), once.
     """
     global _cache
     if _cache is None:
