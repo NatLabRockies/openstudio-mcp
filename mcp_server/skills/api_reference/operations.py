@@ -37,6 +37,8 @@ _MODULES = (
     ("openstudio.airflow", "airflow"),
     ("openstudio.isomodel", "isomodel"),
     ("openstudio.gltf", "gltf"),
+    ("openstudio.gbxml", "gbxml"),
+    ("openstudio.alfalfa", "alfalfa"),
     ("openstudio.radiance", "radiance"),
     ("openstudio.sdd", "sdd"),
     ("openstudio.energyplus", "energyplus"),
@@ -125,14 +127,23 @@ def _own_methods(
 def _decorate(class_name: str, cls: type, names: list[str], sigs: dict) -> list[str]:
     """Render each method name as ``method(params) -> ReturnType``.
 
-    Uses the parsed wrapper signatures first; falls back to ``inspect.signature`` for
-    parameter names when a method isn't in the parse (e.g. C-level), with ``-> ?`` for
-    the unknown return; falls back to the bare name if even that fails.
+    Uses the parsed wrapper signature for the class or the first matching class in its
+    live MRO; falls back to ``inspect.signature`` for parameter names when a method
+    isn't in the parse (e.g. C-level), with ``-> ?`` for the unknown return; falls back
+    to the bare name if even that fails.
     """
     class_sigs = sigs.get(class_name, {})
     out = []
     for name in names:
+        # ``dir(cls)`` includes inherited methods, while ``sigs`` stores each method
+        # under the class whose wrapper declares it. Keep the explicit class-name lookup
+        # first for parsed aliases, then follow Python's normal MRO for inherited APIs.
         info = class_sigs.get(name)
+        if info is None:
+            for base in cls.__mro__:
+                info = sigs.get(base.__name__, {}).get(name)
+                if info is not None:
+                    break
         if info is not None:
             out.append(f"{name}({', '.join(info['params'])}) -> {info['returns']}")
             continue
