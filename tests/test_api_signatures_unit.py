@@ -20,6 +20,7 @@ from mcp_server.skills.api_reference._headers import (
     _parse_header,
     map_cpp_type,
 )
+from mcp_server.skills.api_reference._signatures import _resolve_return_type
 
 pytestmark = pytest.mark.unit
 
@@ -36,6 +37,39 @@ def _write_tree(base: Path, rel: str, body: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
     return path
+
+
+# --------------------------------------------------------------------------------------
+# _resolve_return_type — wrapper annotation rendering
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("annotation", "known_classes", "expected"),
+    [
+        ("OptionalString", set(), "String, nil"),
+        ("StringVector", set(), "Array<String>"),
+        ("OptionalStr", set(), "String, nil"),
+        ("StrVector", set(), "Array<String>"),
+        ("OptionalDouble", set(), "Float, nil"),
+        ("DoubleVector", set(), "Array<Float>"),
+        ("OptionalFloat", set(), "Float, nil"),
+        ("FloatVector", set(), "Array<Float>"),
+        ("OptionalInt", set(), "Integer, nil"),
+        ("IntVector", set(), "Array<Integer>"),
+        ("OptionalBool", set(), "Boolean, nil"),
+        ("BoolVector", set(), "Array<Boolean>"),
+        ("OptionalThermalZone", {"ThermalZone"}, "ThermalZone, nil"),
+        ("ThermalZoneVector", {"ThermalZone"}, "Array<ThermalZone>"),
+        ("OptionalUnknown", set(), "Object, nil"),
+        ("UnknownVector", set(), "Array"),
+    ],
+)
+def test_wrapper_return_types_resolve_primitives_before_classes(
+    annotation, known_classes, expected,
+):
+    """Primitive wrapper names must not be mistaken for unknown bound classes."""
+    assert _resolve_return_type(annotation, known_classes) == expected
 
 
 # --------------------------------------------------------------------------------------
