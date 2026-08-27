@@ -116,9 +116,17 @@ def _own_methods(
 
     ModelObject's method set is subtracted only for model-module classes: a non-model
     class (SqlFile, WorkflowStepResult) does not inherit ModelObject, and subtracting
-    it would wrongly drop same-named methods like ``name``.
+    it would wrongly drop same-named methods like ``name``. ``dir`` also exposes SWIG
+    properties, constants, and the internal ownership flag ``thisown``; only callable
+    public attributes are methods, and ``thisown`` is never part of the public API.
     """
-    all_methods = {m for m in dir(cls) if not m.startswith("_")}
+    all_methods = {
+        name
+        for name in dir(cls)
+        if not name.startswith("_")
+        and name != "thisown"
+        and callable(getattr(cls, name, None))
+    }
     if include_base or not is_model_class:
         return all_methods
     return all_methods - model_base_methods
@@ -129,8 +137,8 @@ def _decorate(class_name: str, cls: type, names: list[str], sigs: dict) -> list[
 
     Uses the parsed wrapper signature for the class or the first matching class in its
     live MRO; falls back to ``inspect.signature`` for parameter names when a method
-    isn't in the parse (e.g. C-level), with ``-> ?`` for the unknown return; falls back
-    to the bare name if even that fails.
+    isn't in the parse (e.g. C-level), with ``-> ?`` for the unknown return. If even
+    that fails, renders an explicit unknown-parameter signature rather than a bare name.
     """
     class_sigs = sigs.get(class_name, {})
     out = []
@@ -151,7 +159,7 @@ def _decorate(class_name: str, cls: type, names: list[str], sigs: dict) -> list[
             params = [p for p in inspect.signature(getattr(cls, name)).parameters if p != "self"]
             out.append(f"{name}({', '.join(params)}) -> ?")
         except (ValueError, TypeError):
-            out.append(name)
+            out.append(f"{name}(...) -> ?")
     return out
 
 
@@ -207,8 +215,8 @@ def search_api_op(
             continue
         modules.append((mod_label, mod))
 
-    # Parsed wrapper signatures (params + return types). Degrade to bare names if the
-    # parse is unavailable so search_api can never be broken by a SWIG/parser surprise.
+    # Parsed wrapper signatures (params + return types). Degrade to inspected or
+    # explicitly unknown signatures if the parse is unavailable, never bare names.
     try:
         sigs = signatures()
         sig_ok = True
@@ -285,10 +293,9 @@ def search_api_op(
             casts = {m for m in other_names if _CAST_RE.match(m)}
         other = sorted(other_names - casts)
 
-        if sig_ok:
-            setters = _decorate(class_name, cls, setters, sigs)
-            getters = _decorate(class_name, cls, getters, sigs)
-            other = _decorate(class_name, cls, other, sigs)
+        setters = _decorate(class_name, cls, setters, sigs)
+        getters = _decorate(class_name, cls, getters, sigs)
+        other = _decorate(class_name, cls, other, sigs)
 
         if casts:
             sample = ", ".join(sorted(casts)[:3])
