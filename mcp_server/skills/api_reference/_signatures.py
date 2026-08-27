@@ -40,11 +40,16 @@ _SKIP_METHODS = {"__init__", "__repr__", "__str__", "__del__"}
 
 _PRIMITIVE_TYPES = {
     "str": "String",
+    "Str": "String",
     "String": "String",
     "bool": "Boolean",
+    "Bool": "Boolean",
     "int": "Integer",
+    "Int": "Integer",
     "float": "Float",
+    "Float": "Float",
     "double": "Float",
+    "Double": "Float",
 }
 
 # Module-level cache (built once per process). PLW0603 is allowed in mcp_server.
@@ -183,6 +188,16 @@ def _parse_python_file(path: Path) -> list[ParsedClass]:
     return classes
 
 
+def _resolve_inner_type(type_name: str, all_class_names: set[str]) -> tuple[str, bool]:
+    """Resolve a wrapper's inner type and whether it has a useful rendered name."""
+    rendered = _PRIMITIVE_TYPES.get(type_name)
+    if rendered is not None:
+        return rendered, True
+    if type_name in all_class_names:
+        return type_name, True
+    return "Object", False
+
+
 def _resolve_return_type(type_str: str | None, all_class_names: set[str]) -> str:
     """Render a Python annotation as a Ruby-style return type string."""
     if not type_str:
@@ -191,13 +206,13 @@ def _resolve_return_type(type_str: str | None, all_class_names: set[str]) -> str
 
     optional = re.fullmatch(r"Optional(\w+)", type_name)
     if optional:
-        inner = optional.group(1)
-        return f"{inner}, nil" if inner in all_class_names else "Object, nil"
+        rendered, _ = _resolve_inner_type(optional.group(1), all_class_names)
+        return f"{rendered}, nil"
 
     vector = re.fullmatch(r"(\w+)Vector", type_name)
     if vector:
-        inner = vector.group(1)
-        return f"Array<{inner}>" if inner in all_class_names else "Array"
+        rendered, known = _resolve_inner_type(vector.group(1), all_class_names)
+        return f"Array<{rendered}>" if known else "Array"
 
     if type_name in _PRIMITIVE_TYPES:
         return _PRIMITIVE_TYPES[type_name]
