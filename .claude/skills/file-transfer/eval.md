@@ -1,7 +1,7 @@
 ## Should trigger
 | Query | Expected tools | Critical params |
 |---|---|---|
-| "Upload my local model office.osm (about 2 MB) to the server" | request_upload | filename=office.osm |
+| "Get me an upload URL for my local model office.osm, about 2 MB" | request_upload | filename=office.osm |
 | "I have a measure zip on my laptop the server needs" | request_upload | kind=measure |
 | "Give me a download link for the results of run run_abc123" | request_download | run_id=run_abc123 |
 | "What files have I uploaded?" | list_uploads | — |
