@@ -10,6 +10,7 @@ from mcp_server.skills.object_management.operations import (
     rename_object,
     set_object_property,
 )
+from mcp_server.skills.object_management.references import find_object_references
 
 
 def register(mcp):
@@ -17,6 +18,7 @@ def register(mcp):
     def delete_object_tool(
         object_name: str,
         object_type: str | None = None,
+        check_references: bool = False,
     ):
         """Remove a space, zone, surface, HVAC component, or any named object from the model.
 
@@ -24,10 +26,53 @@ def register(mcp):
             object_name: Name of the object to delete
             object_type: Optional type hint (e.g. "Space", "BoilerHotWater")
                 for disambiguation when multiple types share a name.
+            check_references: If True, first check whether anything else still
+                references this object and refuse to delete if so (returns
+                ok=False with a "blocked_by" list). Default False, since a
+                Space/ThermalZone's own children point at it as normal
+                ownership, not a stray reference — turning this on for those
+                types would block their existing cascade-delete behavior. Best
+                for shared/resource objects (Construction, ScheduleRuleset,
+                SpaceType, Material) where you want to confirm nothing else is
+                using it before deleting. Use find_object_references first if
+                you just want to inspect without deleting.
 
         Warning: deleting a Space also removes its surfaces and loads.
         """
-        return delete_object(object_name=object_name, object_type=object_type)
+        return delete_object(
+            object_name=object_name, object_type=object_type,
+            check_references=check_references,
+        )
+
+    @mcp.tool(name="find_object_references", tags={"core"})
+    def find_object_references_tool(
+        object_type: str,
+        object_name: str | None = None,
+        object_handle: str | None = None,
+    ):
+        """Find what references a model object, and what it references — check blast radius before deleting.
+
+        clean_unused_objects only sweeps objects with zero references; this
+        answers the opposite question for one specific object: what currently
+        points AT it (referenced_by), and what it points at (references).
+        Each entry gives the other object's type, name, handle, and the IDD
+        field name the pointer lives in (via_field).
+
+        A Space/ThermalZone's own surfaces/loads/equipment show up as
+        referenced_by entries too — that's normal ownership, not a stray
+        reference. This tool reports what's true of the object graph; use
+        judgment (or delete_object's own check_references flag, which is
+        deliberately off by default for container types) on what to do about it.
+
+        Args:
+            object_type: CamelCase, IDD colon, or IDD underscore format
+            object_name: Object name (provide name or handle)
+            object_handle: Object UUID handle
+        """
+        return find_object_references(
+            object_type=object_type, object_name=object_name,
+            object_handle=object_handle,
+        )
 
     @mcp.tool(name="rename_object", tags={"core"})
     def rename_object_tool(

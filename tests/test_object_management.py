@@ -248,6 +248,196 @@ def test_rename_schedule():
     asyncio.run(_run())
 
 
+# ---- find_object_references tests ----
+
+@pytest.mark.integration
+def test_find_object_references_construction_referenced_by_surface():
+    # Validates: assigning a construction to a surface makes the surface show up
+    # in the construction's referenced_by, with the correct via_field
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+
+                mat = unwrap(await s.call_tool("create_standard_opaque_material", {
+                    "name": "RefTestMaterial",
+                }))
+                assert mat["ok"] is True, mat
+                constr = unwrap(await s.call_tool("create_construction", {
+                    "name": "RefTestConstruction", "material_names": ["RefTestMaterial"],
+                }))
+                assert constr["ok"] is True, constr
+
+                surfaces = unwrap(await s.call_tool("list_surfaces", {"max_results": 1}))
+                surface_name = surfaces["surfaces"][0]["name"]
+                assign = unwrap(await s.call_tool("assign_construction_to_surface", {
+                    "surface_name": surface_name, "construction_name": "RefTestConstruction",
+                }))
+                assert assign["ok"] is True, assign
+
+                res = unwrap(await s.call_tool("find_object_references", {
+                    "object_type": "Construction", "object_name": "RefTestConstruction",
+                }))
+                assert res["ok"] is True, res
+                assert res["referenced_by_count"] >= 1, res
+                ref_names = {r["name"] for r in res["referenced_by"]}
+                assert surface_name in ref_names, res
+                matching = next(r for r in res["referenced_by"] if r["name"] == surface_name)
+                assert matching["via_field"] == "Construction Name", matching
+
+                # And the reverse direction: the construction references its material
+                out_names = {r["name"] for r in res["references"]}
+                assert "RefTestMaterial" in out_names, res
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_find_object_references_orphaned_object_has_no_referrers():
+    # Validates: a construction never assigned anywhere reports zero referenced_by
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+
+                unwrap(await s.call_tool("create_standard_opaque_material", {
+                    "name": "OrphanMaterial",
+                }))
+                unwrap(await s.call_tool("create_construction", {
+                    "name": "OrphanConstruction", "material_names": ["OrphanMaterial"],
+                }))
+
+                res = unwrap(await s.call_tool("find_object_references", {
+                    "object_type": "Construction", "object_name": "OrphanConstruction",
+                }))
+                assert res["ok"] is True, res
+                assert res["referenced_by_count"] == 0, res
+                assert res["referenced_by"] == [], res
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_find_object_references_not_found():
+    # Validates: unknown object returns ok=False, not an exception
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                res = unwrap(await s.call_tool("find_object_references", {
+                    "object_type": "Construction", "object_name": "NoSuchConstruction123",
+                }))
+                assert res["ok"] is False, res
+    asyncio.run(_run())
+
+
+# ---- delete_object check_references tests ----
+
+@pytest.mark.integration
+def test_delete_object_check_references_blocks_referenced_construction():
+    # Validates: delete_object(check_references=True) refuses to delete a
+    # construction still assigned to a surface, and reports the blocker
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+
+                unwrap(await s.call_tool("create_standard_opaque_material", {
+                    "name": "BlockMaterial",
+                }))
+                unwrap(await s.call_tool("create_construction", {
+                    "name": "BlockConstruction", "material_names": ["BlockMaterial"],
+                }))
+                surfaces = unwrap(await s.call_tool("list_surfaces", {"max_results": 1}))
+                surface_name = surfaces["surfaces"][0]["name"]
+                unwrap(await s.call_tool("assign_construction_to_surface", {
+                    "surface_name": surface_name, "construction_name": "BlockConstruction",
+                }))
+
+                res = unwrap(await s.call_tool("delete_object", {
+                    "object_name": "BlockConstruction", "object_type": "Construction",
+                    "check_references": True,
+                }))
+                assert res["ok"] is False, res
+                assert "blocked_by" in res, res
+                assert any(b["name"] == surface_name for b in res["blocked_by"]), res
+
+                # Still present — the blocked delete must not have gone through
+                still_there = unwrap(await s.call_tool("list_model_objects", {
+                    "object_type": "Construction", "max_results": 0,
+                }))
+                names = [o["name"] for o in still_there["objects"]]
+                assert "BlockConstruction" in names, still_there
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_delete_object_check_references_false_deletes_anyway():
+    # Validates: check_references defaults to False, matching prior delete_object behavior —
+    # a referenced construction is still deletable without the flag
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+
+                unwrap(await s.call_tool("create_standard_opaque_material", {
+                    "name": "UnblockedMaterial",
+                }))
+                unwrap(await s.call_tool("create_construction", {
+                    "name": "UnblockedConstruction", "material_names": ["UnblockedMaterial"],
+                }))
+                surfaces = unwrap(await s.call_tool("list_surfaces", {"max_results": 1}))
+                surface_name = surfaces["surfaces"][0]["name"]
+                unwrap(await s.call_tool("assign_construction_to_surface", {
+                    "surface_name": surface_name, "construction_name": "UnblockedConstruction",
+                }))
+
+                res = unwrap(await s.call_tool("delete_object", {
+                    "object_name": "UnblockedConstruction", "object_type": "Construction",
+                }))
+                assert res["ok"] is True, res
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_delete_space_with_surfaces_default_not_blocked_by_own_children():
+    # Regression: check_references defaulting to True would have blocked every
+    # Space deletion with surfaces, since a Space's own surfaces register as its
+    # "sources" (normal ownership, not a stray reference) — default must be False
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                unwrap(await s.call_tool("create_space", {"name": "SpaceWithNoSurfaces"}))
+                res = unwrap(await s.call_tool("delete_object", {
+                    "object_name": "SpaceWithNoSurfaces",
+                }))
+                assert res["ok"] is True, res
+    asyncio.run(_run())
+
+
 # ---------------------------------------------------------------------------
 # H-29: fetch_object UUID validation (direct SDK, not MCP)
 # ---------------------------------------------------------------------------

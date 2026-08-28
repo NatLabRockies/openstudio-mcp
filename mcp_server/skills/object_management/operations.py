@@ -300,14 +300,46 @@ def _find_object(model, object_type: str, object_name: str | None = None,
 def delete_object(
     object_name: str,
     object_type: str | None = None,
+    check_references: bool = False,
 ) -> dict[str, Any]:
-    """Delete a named object from the model."""
+    """Delete a named object from the model.
+
+    check_references (default False, matches prior behavior): before deleting,
+    checks whether any other object still points at this one, and if so
+    returns ok=False with the blocking references instead of deleting — a
+    schedule still wired into a thermostat, or a construction still in a
+    construction set, either raises an opaque OpenStudio error or, worse,
+    silently clears the referencing field and leaves it dangling.
+
+    Not a safe default: a Space's own surfaces/loads point AT the Space (that
+    is normal ownership, not a stray reference), so check_references=True
+    would block the routine "delete a Space and cascade its contents" case
+    this function already handles below via `warnings`. Pass True only when
+    deleting a shared/resource-style object (Construction, ScheduleRuleset,
+    SpaceType, Material) where an inbound reference is genuinely a problem,
+    not for container objects (Space, ThermalZone) whose children are
+    expected to reference them.
+    """
     try:
         model = get_model()
 
         obj, found_type = _find_object_by_name(model, object_name, object_type)
         if obj is None:
             return {"ok": False, "error": f"Object '{object_name}' not found"}
+
+        if check_references:
+            # Local import: references.py imports _find_object from this module,
+            # so importing at module scope here would be circular.
+            from mcp_server.skills.object_management.references import _inbound_references
+            blocking = _inbound_references(model, obj)
+            if blocking:
+                return {
+                    "ok": False,
+                    "error": f"'{object_name}' is still referenced by {len(blocking)} object(s); "
+                             "not deleted. Pass check_references=False to delete anyway, or "
+                             "reassign the referencing objects first.",
+                    "blocked_by": blocking,
+                }
 
         # Warn about child objects for cascading types
         warnings = []
