@@ -243,3 +243,22 @@ def test_weather_discovery_routes_to_list_weather_files():
     assert "list_files(" not in weather.group(1), (
         "tool-workflows weather recipe must not use list_files"
     )
+
+
+# ---- corpus invariant (D1-D6) -----------------------------------------------
+
+
+def test_no_internal_skill_md_files():
+    # Regression: mcp_server/skills/*/SKILL.md carried agent guidance that
+    # get_skill never serves (it reads the configured SKILLS_DIR only) — HVAC
+    # comfort doctrine, OSAF defaults, unit tables stranded (plan D1-D6).
+    # Internal developer notes are README.md; .claude/skills is the ONLY
+    # agent-guidance corpus.
+    stranded = sorted(
+        str(p.relative_to(REPO_ROOT))
+        for p in (REPO_ROOT / "mcp_server" / "skills").glob("*/SKILL.md")
+    )
+    assert stranded == [], (
+        f"internal SKILL.md files are never served — migrate agent guidance "
+        f"to .claude/skills and rename to README.md: {stranded}"
+    )
