@@ -145,9 +145,8 @@ def test_collector_rejects_duplicate_names():
 def test_router_routes_synthetic_files_tool():
     # Validates: recommend_tools builds its index from the collector — a
     # files-tagged tool is reachable via upload/transfer phrasing (F2)
-    from mcp_server.tool_registry import CollectingMCP, reset_descriptors
-
     from mcp_server.skills.tool_router import operations as router_ops
+    from mcp_server.tool_registry import CollectingMCP, reset_descriptors
 
     reset_descriptors()
     facade = CollectingMCP(_FakeMCP(), "file_transfer")
