@@ -18,6 +18,12 @@ OpenStudio MCP server — 150+ tools across 30+ skill packages (exact roster: EX
 - Tool functions use `_tool` suffix internally, MCP name strips it
 - `list[str]` params use `list[str] | str` type + `parse_str_list()` from `osm_helpers.py` (MCP clients may send JSON strings)
 
+## Skill Eval Maintenance
+- Every served skill requires `.claude/skills/<name>/eval.md` with positive and negative routing cases, or a non-empty `eval-exempt` reason in `SKILL.md` frontmatter
+- Follow the machine-readable table grammar in `tests/llm/README.md#skill-eval-files`; malformed or prose-only rows fail deterministic tests
+- Keep `eval.md` as repository test data; it must not be served to runtime agents through `get_skill`
+- Run `pytest tests/test_skill_docs.py -k eval -v` after changing skill metadata or eval cases; live LLM execution remains opt-in and budgeted
+
 ## Review Focus
 When reviewing code, check for:
 1. **Error handling** — bare `except Exception: pass`, swallowed errors, missing error context

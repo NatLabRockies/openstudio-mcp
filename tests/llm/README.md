@@ -57,6 +57,72 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=2 pytest tests/llm/ -v
 | `nohost` | host tools (Bash/Edit/Write/…) | claude only; codex sandbox cancels MCP calls if host tools are cut |
 | `codegen` | the MCP server itself | Arm C: agent scripts the SDK in a bare container (`test_11_codegen_arm.py`); opt-in, outcome-only grading |
 
+## Skill Eval Files
+
+Files at `.claude/skills/<skill>/eval.md` are repository-specific, machine-readable
+test fixtures for skill routing. They are not part of the Agent Skills format and
+are not instructions for the runtime modeling agent. `get_skill` deliberately does
+not serve them; the LLM test harness reads them directly from the repository.
+
+Every served skill must have either:
+
+- an `eval.md` with at least one positive and one negative routing case; or
+- a non-empty `eval-exempt` reason in `SKILL.md` frontmatter when the skill is
+  reference knowledge without a discrete action-tool choice to assert.
+
+Use `eval-exempt` narrowly. Action-oriented skills should remain covered by
+machine-checkable cases.
+
+### Required format
+
+Positive cases assert that at least one expected tool is called. The column names
+and order are required:
+
+```markdown
+## Should trigger
+| Query | Expected tools | Critical params |
+|---|---|---|
+| "Assign an office space type to every conditioned space" | assign_space_type_simple | standards_template=90.1-2019, standards_space_type present |
+```
+
+- `Expected tools` contains exact MCP registry names separated by commas or `OR`.
+  Wildcards and prose are invalid.
+- `Critical params` is comma-separated. Each item is `name`, `name present`, or
+  `name=value`; use an em dash or an empty cell when no parameter assertion applies.
+- Critical parameters are checked only on expected tools whose schemas define that
+  parameter. Numeric values compare numerically; other values compare as strings.
+
+Negative cases assert that no forbidden tool is called and at least one declared
+alternative is called. The older `Query | Why` format is not executable and fails
+validation.
+
+```markdown
+## Should NOT trigger
+| Query | Forbidden tools | Expected alternatives |
+|---|---|---|
+| "What space types already exist?" | assign_space_type_simple | list_model_objects, get_space_type_details |
+```
+
+Keep queries natural and behavior-focused. Action routing in `eval.md` is distinct
+from guide retrieval through `get_skill`; guide-routing coverage belongs in
+`GUIDE_ROUTING_CASES` in `test_03_eval_cases.py`.
+
+### Validation
+
+```bash
+# Fast, deterministic format/coverage checks; no LLM calls
+pytest tests/test_skill_docs.py -k eval -v
+
+# Confirm generated case collection without spending model tokens
+pytest tests/llm/test_03_eval_cases.py --collect-only -q
+
+# Execute the generated routing cases (uses the configured provider)
+LLM_TESTS_ENABLED=1 LLM_TESTS_TIER=1 pytest tests/llm/test_03_eval_cases.py -v
+```
+
+The parser and exact accepted grammar live in `eval_parser.py`. Parser errors fail
+the deterministic documentation tests rather than silently dropping malformed rows.
+
 ## Reproducing the paper benchmark
 
 The Section 3.2 benchmark is a multi-leg sweep, not a single `pytest` run.
@@ -77,13 +143,13 @@ python scripts/benchmark_aggregate.py results/paper-v1.2.1     # aggregate table
 
 Frozen numbers and provenance: [`../../docs/testing/llm-test-benchmark.md`](../../docs/testing/llm-test-benchmark.md).
 
-## Test Files (259 tests total, counts from `pytest tests/llm --co`)
+## Test Files
 
 | File | Count | Description |
 |------|-------|-------------|
 | `test_01_setup.py` | 8 | Creates models, seeds `my_measure` + EMS plugin model, runs baseline+retrofit sims |
 | `test_02_tool_selection.py` | 4 | Single tool selection |
-| `test_03_eval_cases.py` | 26 | Skill eval prompts |
+| `test_03_eval_cases.py` | auto | Positive, negative, and guide-routing skill eval prompts |
 | `test_04_workflows.py` | 37 | Multi-step tool chains (full chains assert pinned EUI) |
 | `test_05_guardrails.py` | 3 | Safety/refusal tests |
 | `test_06_progressive.py` | 149 | 60 operations; L1/L2 all, L3 only for `L3_KEEP` (29) |
