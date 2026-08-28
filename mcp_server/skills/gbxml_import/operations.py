@@ -32,7 +32,10 @@ from mcp_server.config import (
 )
 from mcp_server.model_manager import get_model
 from mcp_server.skills.gbxml_import.climate_zone import ensure_climate_zone
+from mcp_server.skills.gbxml_import.gbxml_source_state import get_source_for_current_model
+from mcp_server.skills.gbxml_import.gbxml_source_state import set_source as set_gbxml_source
 from mcp_server.skills.gbxml_import.zone_checks import check_conditioned_zone_volumes
+from mcp_server.skills.geometry.gbxml_deltas import find_gbxml_geometry_deltas
 from mcp_server.skills.geometry.ground_contact import find_missing_ground_contact
 from mcp_server.skills.geometry.operations import match_surfaces
 from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
@@ -309,6 +312,10 @@ def import_gbxml_op(
             return {"ok": False, "error": f"Failed to save model to {final_osm_path}", "run_dir": str(run_dir)}
 
         model_manager.load_model(final_osm_path)
+        # Must run after load_model(): that call bumps this session's model
+        # generation, and the stash is keyed to it so a later reload/replace
+        # invalidates it instead of silently comparing against a stale model.
+        set_gbxml_source(str(gbxml_src))
 
         result = {
             "ok": True,
@@ -431,9 +438,12 @@ def _surface_overlaps(space: openstudio.model.Space) -> list[dict[str, Any]]:
 def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
     """Fix cross-space shared walls and desynchronized surface pairs, then report what is left.
 
-    Two mutating passes (match_surfaces, then the paired-vertex sync) followed by three read-only
-    checks: same-space overlaps, non-enclosed spaces, and missing ground connections. Only the
-    first two affect `ok` — a model with no ground connection still simulates.
+    Two mutating passes (match_surfaces, then the paired-vertex sync) followed by four read-only
+    checks: same-space overlaps, non-enclosed spaces, missing ground connections, and (when the
+    model came from import_gbxml in this session) a cross-check of each Space's floorArea()/
+    volume() against the Area/Volume Revit declared in the source gbXML. Only the first two
+    affect `ok` — a model with no ground connection, or a geometry delta against the gbXML
+    source, still simulates.
     """
     try:
         model = get_model()
@@ -513,6 +523,25 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
         # deliberately NOT affected: a model with no ground connection still simulates, it is
         # just wrong thermally, and this fires on essentially every gbXML import.
         result.update({k: v for k, v in ground_result.items() if k != "ok"})
+
+        # Optional: only runs when this session's model came from import_gbxml_op and hasn't
+        # been reloaded/replaced since (see gbxml_source_state). Silently skipped otherwise —
+        # this is a bonus cross-check, not a requirement, since plenty of valid callers load an
+        # OSM directly. Never affects `ok`: a delta flags a space to look at, not a failure.
+        gbxml_path = get_source_for_current_model()
+        if gbxml_path is not None:
+            deltas_result = find_gbxml_geometry_deltas(gbxml_path)
+            if deltas_result.get("ok"):
+                result.update({k: v for k, v in deltas_result.items() if k != "ok"})
+            else:
+                result["gbxml_deltas_checked"] = False
+                result["gbxml_deltas_skip_reason"] = deltas_result.get("error", "gbXML delta check failed")
+        else:
+            result["gbxml_deltas_checked"] = False
+            result["gbxml_deltas_skip_reason"] = (
+                "No gbXML source on record for this model (not imported via import_gbxml, "
+                "or the model was reloaded since)"
+            )
         return result
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

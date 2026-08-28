@@ -211,6 +211,66 @@ def test_repair_and_validate_gbxml_geometry_on_real_import():
 
 
 @pytest.mark.integration
+def test_repair_and_validate_gbxml_geometry_checks_gbxml_area_volume_deltas():
+    """Test the gbxml_deltas wiring: import_gbxml stashes the source path, repair reads it back."""
+    # Validates: repair_and_validate_gbxml_geometry, run against a model produced by
+    # import_gbxml in the same session, automatically cross-checks each Space's
+    # floorArea()/volume() against the Area/Volume the gbXML source declared —
+    # gbxml_deltas_checked is True (the session-scoped stash from
+    # gbxml_source_state.set_source() round-tripped correctly), and on this small,
+    # unmutated fixture there is nothing to flag.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH, "epw_path": EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert result["gbxml_deltas_checked"] is True, result
+                assert result["gbxml_spaces_checked_count"] == 25, result
+                assert result["gbxml_area_delta_count"] == 0, result
+                assert result["gbxml_volume_delta_count"] == 0, result
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_repair_and_validate_gbxml_geometry_skips_gbxml_deltas_without_import():
+    """Test that loading an OSM directly (not via import_gbxml) skips the gbXML delta check."""
+    # Validates: gbxml_deltas_checked is False with a reason, not an error or a crash,
+    # when the current session's model has no recorded gbXML source
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": "/repo/tests/assets/SystemD_baseline.osm"},
+                ))
+                assert load_result["ok"] is True, load_result
+
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert result["gbxml_deltas_checked"] is False, result
+                assert "gbxml_deltas_skip_reason" in result, result
+                assert "gbxml_area_deltas" not in result, result
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_repair_and_validate_gbxml_geometry_detects_same_space_overlap():
     """Test that a deliberately injected duplicate Floor surface is flagged."""
     # Validates: a second Floor surface covering the same footprint in the same
