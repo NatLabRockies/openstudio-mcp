@@ -310,6 +310,17 @@ def test_knowledge_skills_ablation_flag(monkeypatch):
         f"extra={registered_names - (EXPECTED_TOOLS - KNOWLEDGE_TOOLS)}"
     )
 
+    # Validates: the ToolDescriptor collector sees the same ablated roster —
+    # catalog/router surfaces built from it exclude exactly the knowledge
+    # skills' descriptors, nothing else (plan PR 5)
+    from mcp_server.tool_registry import descriptors
+
+    collected = descriptors()
+    assert set(collected) == EXPECTED_TOOLS - KNOWLEDGE_TOOLS
+    assert not {d.package for d in collected.values()} & {
+        "skill_discovery", "tool_router",
+    }
+
 
 def test_export_tool_table_matches_expected_roster():
     # Validates: the paper's Table 1 exporter groups every EXPECTED_TOOLS
