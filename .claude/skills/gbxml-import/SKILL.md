@@ -99,5 +99,12 @@ left once merge and weld have closed what they can.
   simulation. `paired_area_mismatches` is informational: E+ accepts those.
 - `repair_and_validate_gbxml_geometry()` mutates the model (via `match_surfaces()` and the pair
   sync) before reporting — if you need to inspect pre-match state, save a copy of the model first.
+- **Check `zero_volume_zone_count` in the import report.** Conditioned
+  (thermostat-assigned, non-plenum) thermal zones with zero or uncomputable
+  volume are the same enclosure defects the Space-level checks catch, but they
+  specifically corrupt autosized equipment capacities. `zero_volume_zones`
+  names them — fix like any other non-enclosed space (usually
+  `repair_missing_roof_ceiling()`, then re-run
+  `repair_and_validate_gbxml_geometry()` to confirm).
 - After geometry is clean, spaces still need standards space types — see the
   `attribute-space-types` skill.

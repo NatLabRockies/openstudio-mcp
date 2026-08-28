@@ -1,7 +1,10 @@
-"""Verify OpenStudio.convert() works for all unit strings documented in SKILL.md.
+"""Verify OpenStudio.convert() works for every documented unit string.
 
-These are the unit pairs that measures commonly use for BEM calculations.
-Runs inside Docker where the openstudio Python bindings are available.
+Source of truth: the SERVED table .claude/skills/measure-authoring/
+unit-conversions.md (fetched by agents via get_skill_file). A unit test below
+parses that table and asserts every unit string appears in CONVERSION_PAIRS,
+so the served doc and this suite cannot drift apart silently (plan E4).
+Conversion execution runs inside Docker where openstudio is available.
 """
 import pytest
 from conftest import integration_enabled
@@ -173,3 +176,35 @@ def test_temperature_conversions():
     c100_to_f = openstudio.convert(100.0, "C", "F")
     assert c100_to_f.is_initialized()
     assert abs(c100_to_f.get() - 212.0) < 0.01, f"100°C should be 212°F, got {c100_to_f.get()}"
+
+
+@pytest.mark.unit
+def test_served_unit_table_units_are_exercised():
+    # Validates: every unit string in the served unit-conversions.md table is
+    # exercised by this suite — the served doc and the tests cannot drift
+    # apart silently (plan E4). Pure text parsing, no openstudio import.
+    import re
+    from pathlib import Path
+
+    table = (
+        Path(__file__).resolve().parents[1]
+        / ".claude" / "skills" / "measure-authoring" / "unit-conversions.md"
+    ).read_text(encoding="utf-8")
+
+    documented = set()
+    for line in table.splitlines():
+        if not (line.startswith("|") and "`" in line):
+            continue
+        documented.update(re.findall(r"`([^`]+)`", line))
+    assert len(documented) >= 40, (
+        f"served unit table parsed suspiciously few unit strings: {sorted(documented)}"
+    )
+
+    exercised = set(IDENTITY_UNITS)
+    for a, b in CONVERSION_PAIRS:
+        exercised.update((a, b))
+    missing = sorted(documented - exercised)
+    assert not missing, (
+        f"unit strings documented in the served table but never exercised "
+        f"here: {missing} — add pairs or fix the doc"
+    )
