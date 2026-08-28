@@ -103,12 +103,94 @@ def get_skill_op(name: str) -> dict:
         "content": body,
     }
 
-    # List supporting files so agent knows to ask for them
-    supporting = []
-    for f in sorted(skill_dir.iterdir()):
-        if f.name != "SKILL.md" and f.is_file():
-            supporting.append(f.name)
+    # List agent-support files so the agent knows to fetch them
+    supporting = [
+        f.name for f in sorted(skill_dir.iterdir())
+        if f.is_file() and _is_agent_support_file(f.name)
+    ]
     if supporting:
         result["supporting_files"] = supporting
+        result["supporting_files_hint"] = (
+            "Fetch with get_skill_file(skill_name=..., filename=...)"
+        )
 
     return result
+
+
+# Extensions a skill may serve to agents as supporting reference material.
+# SKILL.md is delivered via get_skill; eval.md is test data; README.md is
+# developer notes; hidden files and other artifacts are never served.
+_SUPPORT_EXTENSIONS = {".md", ".txt", ".csv", ".json"}
+_NON_SUPPORT_NAMES = {"SKILL.md", "eval.md", "README.md"}
+
+
+def _is_agent_support_file(name: str) -> bool:
+    """Whether a file in a skill directory is agent-facing support material."""
+    if name in _NON_SUPPORT_NAMES or name.startswith("."):
+        return False
+    return Path(name).suffix.lower() in _SUPPORT_EXTENSIONS
+
+
+def get_skill_file_op(skill_name: str, filename: str) -> dict:
+    """Read one supporting file of a skill (the sole retrieval affordance).
+
+    Resolves inside the configured SKILLS_DIR only; rejects absolute paths,
+    traversal, and files that are not agent support material.
+    """
+    safe_skill = Path(skill_name).name
+    if (
+        safe_skill in (".", "..", "")
+        or "/" in skill_name or "\\" in skill_name
+    ):
+        return {"ok": False, "error": f"Invalid skill name: '{skill_name}'"}
+    skill_dir = SKILLS_DIR / safe_skill
+    if not (skill_dir / "SKILL.md").is_file():
+        return {
+            "ok": False,
+            "error": (
+                f"Skill '{skill_name}' not found. "
+                "Use list_skills() to see available workflows."
+            ),
+        }
+
+    if (
+        not filename
+        or Path(filename).is_absolute()
+        or "/" in filename or "\\" in filename
+        or Path(filename).name != filename
+    ):
+        return {"ok": False, "error": f"Invalid filename: '{filename}'"}
+    if not _is_agent_support_file(filename):
+        return {
+            "ok": False,
+            "error": (
+                f"'{filename}' is not an agent support file. Available: "
+                "see supporting_files in get_skill(...)."
+            ),
+        }
+
+    target = (skill_dir / filename).resolve()
+    try:
+        target.relative_to(SKILLS_DIR.resolve())
+    except ValueError:
+        return {"ok": False, "error": f"Invalid filename: '{filename}'"}
+    if not target.is_file():
+        return {
+            "ok": False,
+            "error": (
+                f"File '{filename}' not found in skill '{safe_skill}'. "
+                "Check supporting_files in get_skill(...)."
+            ),
+        }
+
+    try:
+        content = target.read_text(encoding="utf-8")
+    except OSError as e:
+        return {"ok": False, "error": f"Failed to read file: {e}"}
+
+    return {
+        "ok": True,
+        "skill": safe_skill,
+        "filename": filename,
+        "content": content,
+    }

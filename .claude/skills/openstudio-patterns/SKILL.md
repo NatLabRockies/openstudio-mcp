@@ -121,7 +121,7 @@ search_wiring_patterns("four pipe beam")     # get working connection code
 | `"system_type must be 1-10"` | Invalid system number | Check `list_baseline_systems` |
 | Simulation fails, no results | Missing weather file or design days | `change_building_location` (sets EPW + DDY + climate zone) |
 | EUI = 0 or unreasonable | No loads, no HVAC, or no run period | Check `inspect_osm_summary` for missing objects |
-| `"Output directory is not allowed"` / `"... path not allowed"` | Path outside your allowed roots (over HTTP each user is scoped to `/runs/<user>/`) | Use `/runs/` for output, `/inputs/` for input files; over HTTP use paths returned by tools |
+| `"Output directory is not allowed"` / `"... path not allowed"` | Path outside your allowed roots (over HTTP each user is scoped to `/runs/<user>/`) | Save with `save_osm_model(save_name=...)` and reuse the paths tools return; staged inputs are read-only |
 
 ## Save vs Simulate
 

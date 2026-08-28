@@ -86,8 +86,8 @@ For fully custom buildings not matching DOE prototypes:
 
 After any workflow:
 ```
-save_osm_model(osm_path="/runs/<name>.osm")
-run_simulation(osm_path="/runs/<name>.osm", epw_path="/inputs/<city>.epw")
+save_osm_model(save_name="<name>")              # response carries osm_path
+run_simulation(osm_path=<osm_path from save>, epw_path="/inputs/<city>.epw")
 get_run_status(run_id=<id>)
 extract_summary_metrics(run_id=<id>)
 ```

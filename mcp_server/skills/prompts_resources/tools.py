@@ -46,13 +46,13 @@ def register(mcp):
             f'weather_file="/inputs/{climate_city}.epw")  # builds typical model\n'
             f'2. create_typical_building(system_type="{system_a}", '
             'hvac_only=True)  # standards-tuned swap, loads untouched\n'
-            '3. save_osm_model(osm_path="/runs/sweep_a.osm") and '
-            'run_simulation(osm_path="/runs/sweep_a.osm")\n'
+            '3. save_osm_model(save_name="sweep_a") and '
+            "run_simulation(osm_path=<osm_path from save>)\n"
             "4. get_run_status(run_id=<id from run_simulation>) until complete\n"
             f'5. create_typical_building(system_type="{system_b}", '
             'hvac_only=True)  # swap to candidate B on the SAME model\n'
-            '6. save_osm_model(osm_path="/runs/sweep_b.osm") and '
-            'run_simulation(osm_path="/runs/sweep_b.osm")\n'
+            '6. save_osm_model(save_name="sweep_b") and '
+            "run_simulation(osm_path=<osm_path from save>)\n"
             "7. compare_runs(baseline_run_id=<run A id>, "
             "retrofit_run_id=<run B id>) — EUI, end uses, unmet hours\n\n"
             "Note: system_type takes openstudio-standards names — call "
@@ -91,7 +91,7 @@ def register(mcp):
             "existing layers; verify assembly_r_si_after > before\n"
             "6. assign_construction_to_surface(surface_name=<target surface>, "
             "construction_name=<new construction>) for each target surface\n"
-            '7. save_osm_model(osm_path="/runs/retrofit.osm") — save to a '
+            '7. save_osm_model(save_name="retrofit") — the server picks a '
             "new path, never over a read-only input"
         )
 
@@ -116,8 +116,8 @@ def register(mcp):
             f'weather_file="/inputs/{climate_city}.epw", '
             f'system_type="{system_type}")\n'
             "2. list_spaces() — verify geometry and loads\n"
-            '3. save_osm_model(osm_path="/runs/full_building.osm") and '
-            'run_simulation(osm_path="/runs/full_building.osm")\n'
+            '3. save_osm_model(save_name="full_building") and '
+            "run_simulation(osm_path=<osm_path from save>)\n"
             "4. Poll get_run_status(run_id=<id from run_simulation>) "
             "until complete\n"
             "5. extract_summary_metrics(run_id=<id>) — review EUI and "
@@ -172,7 +172,7 @@ def register(mcp):
             "4. get_model_summary() — verify what was added\n"
             "5. list_air_loops() — inspect HVAC\n"
             '6. list_model_objects(object_type="Construction") — inspect envelope\n'
-            '7. save_osm_model(osm_path="/runs/typical.osm") — save to a new '
+            '7. save_osm_model(save_name="typical") — the server picks a '
             "path, never over a read-only input"
         )
 

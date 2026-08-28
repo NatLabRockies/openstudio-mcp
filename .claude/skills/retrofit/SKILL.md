@@ -13,8 +13,8 @@ Apply energy conservation measures to an existing model and compare before/after
 ### 1. Establish Baseline
 Ensure a simulation has been run on the current model. If not:
 ```
-save_osm_model(osm_path="/runs/baseline.osm")
-run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
+save_osm_model(save_name="baseline")            # response carries osm_path
+run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 get_run_status(run_id=<id>)
 extract_summary_metrics(run_id=<baseline_id>)
 ```
@@ -53,12 +53,12 @@ Ask the user which upgrades to apply. Available ECM tools:
 **Model Cleanup:**
 - `clean_unused_objects()` — remove orphans before re-simulation
 
-See [ecm-catalog.md](ecm-catalog.md) for typical savings ranges.
+For typical savings ranges, fetch the catalog: `get_skill_file(skill_name="retrofit", filename="ecm-catalog.md")`.
 
 ### 4. Re-Simulate
 ```
-save_osm_model(osm_path="/runs/retrofit.osm")
-run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
+save_osm_model(save_name="retrofit")            # response carries osm_path
+run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 get_run_status(run_id=<id>)
 extract_summary_metrics(run_id=<retrofit_id>)
 extract_end_use_breakdown(run_id=<retrofit_id>)
@@ -73,7 +73,7 @@ For manual comparison, use `extract_summary_metrics` on both runs.
 
 ## Notes
 
-- Always save to a new path before re-simulating to preserve the baseline
+- Always save under a new save_name before re-simulating to preserve the baseline
 - Multiple ECMs can be stacked before re-simulating
 - Some measures modify the model in-memory (thermostat, window); others run as OpenStudio measures
 - For custom ECMs not covered by existing tools, use `create_measure` to write a custom measure (see `measure-authoring` skill)

@@ -124,7 +124,7 @@ def test_save_name_scopes_to_caller_and_isolates_users():
 
                 # Mutual exclusion with osm_path
                 both = unwrap(await s1.call_tool("save_osm_model", {
-                    "save_name": "x", "osm_path": "/tmp/x.osm",
+                    "save_name": "x", "osm_path": "/runs/x.osm",
                 }))
                 assert both["ok"] is False, both
 
