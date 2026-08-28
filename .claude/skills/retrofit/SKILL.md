@@ -13,7 +13,7 @@ Apply energy conservation measures to an existing model and compare before/after
 ### 1. Establish Baseline
 Ensure a simulation has been run on the current model. If not:
 ```
-save_osm_model(save_path="/runs/baseline.osm")
+save_osm_model(osm_path="/runs/baseline.osm")
 run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
 get_run_status(run_id=<id>)
 extract_summary_metrics(run_id=<baseline_id>)
@@ -39,10 +39,10 @@ Ask the user which upgrades to apply. Available ECM tools:
 **HVAC/Controls:**
 - `adjust_thermostat_setpoints(cooling_offset_f=2.0, heating_offset_f=-2.0)` — widen deadband
 - `replace_thermostat_schedules(...)` — new thermostat schedules
-- `shift_schedule_time(shift_value_hours=1)` — shift occupancy/HVAC schedules
+- `shift_schedule_time(schedule_name="<schedule>", shift_hours=1)` — shift occupancy/HVAC schedules
 
 **Renewables:**
-- `add_rooftop_pv(fraction_of_roof=0.5)` — rooftop solar
+- `add_rooftop_pv(fraction_of_surface=0.5)` — rooftop solar
 - `add_pv_to_shading(...)` — PV on shading surfaces
 
 **Loads:**
@@ -57,7 +57,7 @@ See [ecm-catalog.md](ecm-catalog.md) for typical savings ranges.
 
 ### 4. Re-Simulate
 ```
-save_osm_model(save_path="/runs/retrofit.osm")
+save_osm_model(osm_path="/runs/retrofit.osm")
 run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
 get_run_status(run_id=<id>)
 extract_summary_metrics(run_id=<retrofit_id>)

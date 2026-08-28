@@ -73,7 +73,7 @@ create_typical_building(system_type="PVAV with gas boiler reheat",
     template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
 save_osm_model(...); run_simulation(...)   # then next candidate
 
-compare_runs(run_id_a, run_id_b)           # EUI + unmet-hours deltas
+compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-hours deltas
 ```
 
 ## Notes

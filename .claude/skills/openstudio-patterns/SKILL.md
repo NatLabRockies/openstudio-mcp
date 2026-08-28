@@ -13,7 +13,7 @@ Objects must be created in dependency order. Arrows mean "must exist before."
 ```
 Materials
   └─> Constructions
-        └─> assign_construction_to_surface (needs Surface + Construction)
+        └─> assign_construction_to_surface(...) — needs Surface + Construction
 
 Spaces (geometry)
   ├─> Surfaces (auto-created by create_space_from_floor_print)

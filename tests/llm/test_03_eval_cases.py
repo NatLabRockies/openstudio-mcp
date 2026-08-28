@@ -21,12 +21,24 @@ Key design decisions:
 from __future__ import annotations
 
 import pytest
+from doc_contract_lib import load_tool_registry
 
 from .conftest import BASELINE_MODEL, baseline_model_exists, get_sim_run_id, get_tier
-from .eval_parser import load_should_trigger
+from .eval_parser import (
+    check_critical_params,
+    load_should_not_trigger,
+    load_should_trigger,
+    normalize_calls,
+)
 from .runner import run_claude
 
 pytestmark = [pytest.mark.llm, pytest.mark.tier1]
+
+# AST-derived tool schemas (pure, no imports) — critical-param assertions
+# only apply to expected tools whose schema carries the parameter.
+REGISTRY_PARAMS = {
+    name: set(sig.params) for name, sig in load_tool_registry().items()
+}
 
 # Prompts too vague or too complex for single-turn testing.
 # Vague prompts: agent consults skill guides but doesn't act within timeout.
@@ -54,12 +66,16 @@ EVAL_CASES = [
 NEEDS_MODEL = {"add-hvac", "simulate", "energy-report", "retrofit",
                "qaqc", "troubleshoot", "view"}
 
+# Skills whose target tools need a COMPLETED simulation run_id, not just a
+# loaded model (get_run_logs, run_qaqc_checks) — they get the run-id prefix.
+NEEDS_RUN_ID = {"troubleshoot", "qaqc"}
+
 LOAD_PREFIX = (
     f"First load the model at {BASELINE_MODEL} using load_osm_model. Then "
 )
 
-def _troubleshoot_prefix() -> str:
-    """Build a prompt prefix for troubleshoot tests, including run_id if available."""
+def _run_id_prefix() -> str:
+    """Prompt prefix including a completed-simulation run_id if available."""
     run_id = get_sim_run_id()
     if run_id:
         return (
@@ -131,8 +147,8 @@ def test_eval_tool_selection(case):
     if case["skill"] in NEEDS_MODEL:
         if not baseline_model_exists():
             pytest.skip("Baseline model not found — run test_01_setup first")
-        if case["skill"] == "troubleshoot":
-            prompt = _troubleshoot_prefix() + prompt.lower()
+        if case["skill"] in NEEDS_RUN_ID:
+            prompt = _run_id_prefix() + prompt.lower()
         else:
             prompt = LOAD_PREFIX + prompt.lower()
     prompt += SUFFIX
@@ -148,4 +164,58 @@ def test_eval_tool_selection(case):
     assert any(t in expected for t in tool_names), (
         f"[{case['skill']}] Expected one of {sorted(expected)}, "
         f"got: {tool_names}"
+    )
+
+    # Critical-param assertions from the eval.md third column (previously
+    # parsed and ignored — plan finding E3). Grammar in eval_parser docstring.
+    failures = check_critical_params(
+        case["critical_params"], case["expected_tools"],
+        normalize_calls(result), REGISTRY_PARAMS,
+    )
+    assert not failures, (
+        f"[{case['skill']}] critical-param assertions failed: {failures}; "
+        f"calls: {normalize_calls(result)}"
+    )
+
+
+# Negative cases: the prompt must be answered WITHOUT the forbidden tools,
+# using at least one declared alternative (parsed from the machine-checkable
+# "Should NOT trigger" tables).
+NEGATIVE_CASES = load_should_not_trigger()
+
+
+@pytest.mark.parametrize(
+    "case", NEGATIVE_CASES,
+    ids=[f"neg:{_case_id(c)}" for c in NEGATIVE_CASES],
+)
+def test_eval_negative_routing(case):
+    """Verify agent avoids forbidden tools and uses a declared alternative."""
+    # Regression: "Should NOT trigger" tables were parsed but never asserted
+    # (plan finding E3) — negative routing had zero coverage
+    tier = get_tier()
+    if tier not in ("all", "1"):
+        pytest.skip("Tier 1 not selected")
+
+    prompt = case["prompt"]
+    if case["skill"] in NEEDS_MODEL:
+        if not baseline_model_exists():
+            pytest.skip("Baseline model not found — run test_01_setup first")
+        if case["skill"] in NEEDS_RUN_ID:
+            prompt = _run_id_prefix() + prompt.lower()
+        else:
+            prompt = LOAD_PREFIX + prompt.lower()
+    prompt += SUFFIX
+
+    result = run_claude(prompt, timeout=180)
+    called = set(result.tool_names)
+
+    forbidden_called = called & set(case["forbidden_tools"])
+    assert not forbidden_called, (
+        f"[{case['skill']}] forbidden tools called for "
+        f"'{case['prompt']}': {sorted(forbidden_called)}"
+    )
+    assert called & set(case["alternatives"]), (
+        f"[{case['skill']}] none of the declared alternatives "
+        f"{case['alternatives']} called for '{case['prompt']}'; got: "
+        f"{sorted(called)}"
     )

@@ -7,7 +7,7 @@ description: Translate a Revit-exported gbXML file into an OpenStudio model, the
 
 ## Workflow
 
-1. `import_gbxml(gbxml_path, epw_path[, osm_path, run_name])` — needs four files under
+1. `import_gbxml(gbxml_path=..., epw_path=..., ...)` (optional `osm_path`, `run_name`) — needs four files under
    `/inputs`: the gbXML file, its project EPW, and the EPW's companion `.stat`/`.ddy` files
    (same directory, same filename stem as the EPW). Result auto-loads the model and always
    returns a `climate_zone` (+ `climate_zone_source`) unless truly unresolvable — if
