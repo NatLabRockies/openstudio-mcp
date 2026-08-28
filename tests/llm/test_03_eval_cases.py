@@ -1,6 +1,6 @@
 """Tier 1 tests auto-generated from eval.md files.
 
-Parses "should trigger" tables from 8 skill eval.md files
+Parses "should trigger" tables from skill eval.md files
 (.claude/skills/<skill>/eval.md). Each row maps a natural-language prompt
 to one or more expected MCP tool names.
 
@@ -11,8 +11,8 @@ Key design decisions:
     reasonable context-gathering responses (e.g. list_thermal_zones before
     adding HVAC). This prevents false failures when the agent does useful
     work but doesn't reach the exact target tool within the turn limit.
-  - SLOW_SKILLS get 180s timeout instead of 120s because model creation
-    operations (create_baseline_osm) take 30-60s each.
+  - SLOW_SKILLS get 180s timeout instead of 120s because model creation and
+    gbXML import operations can take 30-60s each.
   - Wildcard tool names (e.g. "add_*_system") are filtered out at import
     since we can't match them reliably.
   - All prompts get " Use MCP tools only." appended to discourage the
@@ -23,7 +23,14 @@ from __future__ import annotations
 import pytest
 from doc_contract_lib import load_tool_registry
 
-from .conftest import BASELINE_MODEL, baseline_model_exists, get_sim_run_id, get_tier
+from .conftest import (
+    BASELINE_MODEL,
+    EMS_MODEL,
+    baseline_model_exists,
+    ems_model_exists,
+    get_sim_run_id,
+    get_tier,
+)
 from .eval_parser import (
     check_critical_params,
     load_should_not_trigger,
@@ -64,7 +71,8 @@ EVAL_CASES = [
 # Without model state, the agent wastes turns on creation instead of
 # exercising the target tool.
 NEEDS_MODEL = {"add-hvac", "simulate", "energy-report", "retrofit",
-               "qaqc", "troubleshoot", "view"}
+               "qaqc", "troubleshoot", "view", "attribute-space-types",
+               "python-ems"}
 
 # Skills whose target tools need a COMPLETED simulation run_id, not just a
 # loaded model (get_run_logs, run_qaqc_checks) — they get the run-id prefix.
@@ -73,6 +81,24 @@ NEEDS_RUN_ID = {"troubleshoot", "qaqc"}
 LOAD_PREFIX = (
     f"First load the model at {BASELINE_MODEL} using load_osm_model. Then "
 )
+EMS_LOAD_PREFIX = (
+    f"First load the model at {EMS_MODEL} using load_osm_model. Then "
+)
+SKILL_CONTEXT_PREFIX = {
+    "gbxml-import": (
+        "The source gbXML is at /inputs/gbxml/25_SpacesOneZE.xml and the "
+        "project EPW is at /opt/comstock-measures/ChangeBuildingLocation/tests/"
+        "USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw. "
+    ),
+}
+GBXML_MODEL_TOOLS = {
+    "repair_and_validate_gbxml_geometry",
+    "list_spaces",
+    "get_model_summary",
+    "validate_model",
+    "inspect_osm_summary",
+}
+
 
 def _run_id_prefix() -> str:
     """Prompt prefix including a completed-simulation run_id if available."""
@@ -123,11 +149,75 @@ EXTRA_EXPECTED = {
 }
 
 # Skills that need longer timeout because their tools involve heavyweight
-# operations (model creation ~30-60s, simulation ~60-120s)
-SLOW_SKILLS = {"new-building": 180, "retrofit": 180}
+# operations (model creation/import ~30-60s, simulation ~60-120s)
+SLOW_SKILLS = {"new-building": 180, "retrofit": 180, "gbxml-import": 180}
 
 # Appended to all prompts to discourage raw file/script creation
 SUFFIX = " Use MCP tools only."
+
+
+GUIDE_ROUTING_CASES = [
+    {
+        "skill": "attribute-space-types",
+        "prompt": (
+            "Load the workflow guide for assigning standards space types to "
+            "conditioned spaces in a mixed-use model."
+        ),
+    },
+    {
+        "skill": "gbxml-import",
+        "prompt": (
+            "Load the workflow guide for importing a Revit gbXML file and "
+            "repairing its geometry."
+        ),
+    },
+    {
+        "skill": "python-ems",
+        "prompt": (
+            "Load the workflow guide for adding EnergyPlus Python Plugin EMS "
+            "controls."
+        ),
+    },
+    {
+        "skill": "measure-authoring",
+        "prompt": (
+            "Load the workflow guide for writing and testing a custom "
+            "OpenStudio measure."
+        ),
+    },
+    {
+        "skill": "osaf-analysis",
+        "prompt": (
+            "Load the workflow guide for OpenStudio Server sampling and OSA "
+            "JSON analyses."
+        ),
+    },
+]
+
+
+def _prepare_prompt(case: dict) -> str:
+    """Add only the model/file context required by an action-routing case."""
+    skill = case["skill"]
+    prompt = case["prompt"]
+    routed_tools = set(case.get("expected_tools", case.get("alternatives", [])))
+    needs_model = (
+        skill in NEEDS_MODEL
+        or (skill == "gbxml-import" and bool(routed_tools & GBXML_MODEL_TOOLS))
+    )
+    if needs_model:
+        if skill == "python-ems":
+            if not ems_model_exists():
+                pytest.skip("EMS model not found — run test_01_setup first")
+            prompt = EMS_LOAD_PREFIX + prompt.lower()
+        else:
+            if not baseline_model_exists():
+                pytest.skip("Baseline model not found — run test_01_setup first")
+            prompt = LOAD_PREFIX + prompt.lower()
+    context = (
+        SKILL_CONTEXT_PREFIX.get(skill, "")
+        if "import_gbxml" in case.get("expected_tools", []) else ""
+    )
+    return context + prompt + SUFFIX
 
 
 def _case_id(case: dict) -> str:
@@ -142,16 +232,9 @@ def test_eval_tool_selection(case):
     if tier not in ("all", "1"):
         pytest.skip("Tier 1 not selected")
 
-    # Prepend model load for skills that need model state
-    prompt = case["prompt"]
-    if case["skill"] in NEEDS_MODEL:
-        if not baseline_model_exists():
-            pytest.skip("Baseline model not found — run test_01_setup first")
-        if case["skill"] in NEEDS_RUN_ID:
-            prompt = _run_id_prefix() + prompt.lower()
-        else:
-            prompt = LOAD_PREFIX + prompt.lower()
-    prompt += SUFFIX
+    prompt = _prepare_prompt(case)
+    if case["skill"] in NEEDS_RUN_ID:
+        prompt = _run_id_prefix() + case["prompt"].lower() + SUFFIX
 
     timeout = SLOW_SKILLS.get(case["skill"], 120)
     result = run_claude(prompt, timeout=timeout)
@@ -196,15 +279,9 @@ def test_eval_negative_routing(case):
     if tier not in ("all", "1"):
         pytest.skip("Tier 1 not selected")
 
-    prompt = case["prompt"]
-    if case["skill"] in NEEDS_MODEL:
-        if not baseline_model_exists():
-            pytest.skip("Baseline model not found — run test_01_setup first")
-        if case["skill"] in NEEDS_RUN_ID:
-            prompt = _run_id_prefix() + prompt.lower()
-        else:
-            prompt = LOAD_PREFIX + prompt.lower()
-    prompt += SUFFIX
+    prompt = _prepare_prompt(case)
+    if case["skill"] in NEEDS_RUN_ID:
+        prompt = _run_id_prefix() + case["prompt"].lower() + SUFFIX
 
     result = run_claude(prompt, timeout=180)
     called = set(result.tool_names)
@@ -218,4 +295,29 @@ def test_eval_negative_routing(case):
         f"[{case['skill']}] none of the declared alternatives "
         f"{case['alternatives']} called for '{case['prompt']}'; got: "
         f"{sorted(called)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    GUIDE_ROUTING_CASES,
+    ids=[f"guide:{case['skill']}" for case in GUIDE_ROUTING_CASES],
+)
+def test_served_guide_routing(case):
+    """Verify natural-language guide requests retrieve the intended served skill."""
+    # Validates: guide-seeking prompts route through get_skill with the exact
+    # served skill name rather than passing via an unrelated action tool
+    tier = get_tier()
+    if tier not in ("all", "1"):
+        pytest.skip("Tier 1 not selected")
+
+    result = run_claude(case["prompt"] + SUFFIX, timeout=120)
+    requested = [
+        call["input"].get("name")
+        for call in normalize_calls(result)
+        if call["tool"] == "get_skill"
+    ]
+    assert case["skill"] in requested, (
+        f"Expected get_skill(name={case['skill']!r}), got names {requested}; "
+        f"tools: {result.tool_names}"
     )
