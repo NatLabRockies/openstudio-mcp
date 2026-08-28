@@ -85,7 +85,7 @@ def register(mcp):
                 ReportingMeasures run after simulation, accessing SQL results.
                 run() receives (runner, user_arguments) — no model param.
                 Model and SQL are available via runner.lastOpenStudioModel
-                and runner.lastEnergyPlusSqlFilePath (boilerplate auto-generated).
+                and runner.lastEnergyPlusSqlFile (boilerplate auto-generated).
 
         Ruby common patterns for run_body:
           CRITICAL — error/applicability handling:
