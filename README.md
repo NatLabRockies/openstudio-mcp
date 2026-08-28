@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**150+ tools · 13 workflow skills · 480+ integration tests**
+**150+ tools · bundled workflow skills · 480+ integration tests**
 
 ---
 
@@ -245,7 +245,7 @@ OSM, SQL, report, and log files as untrusted outputs.
 
 ## Skills & Tools (150+ total)
 
-In Claude Code, 16 bundled skills add workflow automation and domain knowledge:
+In Claude Code, the bundled skills add workflow automation and domain knowledge:
 
 | Skill | Type | What it does |
 |-------|------|--------------|
@@ -265,6 +265,7 @@ In Claude Code, 16 bundled skills add workflow automation and domain knowledge:
 | `/gbxml-import` | Task | Revit gbXML import + geometry-defect repair workflow |
 | `/osaf-analysis` | Task | OpenStudio Analysis Framework workflow: algorithm selection, validation, submission |
 | `/python-ems` | Task | custom EnergyPlus Python Plugin control/reporting logic (EMS) |
+| `file-transfer` | Task | move files to/from a remote server (signed upload/download URLs) |
 
 Workflow/task skills are invoked with `/name`; knowledge skills load automatically. Any MCP host can also discover these guides via the `list_skills()` and `get_skill(name)` tools (mount `-v ./.claude/skills:/skills:ro`).
 
@@ -736,7 +737,7 @@ CI runs the same pre-commit check in `.github/workflows/format_and_lint.yml`.
 
 - **Transport:** stdio (default) or streamable HTTP for [remote/multi-user](#remote--multi-user-http)
 - **Protocol:** MCP (JSON-RPC); in stdio prod mode, stdout is reserved for JSON-RPC and logs go to stderr
-- **Skills:** 27 skill modules under `mcp_server/skills/<name>/`, each with `tools.py` (MCP registration) + `operations.py` (business logic); they auto-register
+- **Skills:** 30+ skill modules under `mcp_server/skills/<name>/`, each with `tools.py` (MCP registration) + `operations.py` (business logic); they auto-register
 - **State:** per-session in-memory model via `model_manager`; runs under `/runs/<run_id>/` (or `/runs/<user>/<run_id>/` in HTTP mode)
 
 Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full system diagram, security analysis, and hardening notes: **[docs/architecture.md](docs/architecture.md)**.
@@ -749,7 +750,7 @@ Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full syste
 2. `operations.py` — pure logic, returns `{"ok": True/False, ...}`
 3. `tools.py` — exports `register(mcp)`, defines tool schemas
 4. Add `tests/test_<name>.py` and a CI step in `.github/workflows/ci.yml`
-5. Auto-registers via `skills/__init__.py`; add names to `EXPECTED_TOOLS` and bump counts in `tests/test_tool_baseline.py`
+5. Auto-registers via `skills/__init__.py`; add each tool name to `EXPECTED_TOOLS` in `tests/test_skill_registration.py` — the roster's single source of truth (never hardcode counts)
 
 **New Claude Code skill (workflow guide)**
 1. Create `.claude/skills/<name>/SKILL.md` with YAML frontmatter (`name`, `description`)
