@@ -59,7 +59,7 @@ create_electric_equipment(
 
 ## Set Up Weather
 
-User must provide an EPW file in the docker-mounted input directory.
+Weather files are SERVER-side (remote clients stage their own with `request_upload`).
 `change_building_location` sets weather, design days (from DDY), and climate zone in one call.
 The EPW must have companion `.stat` and `.ddy` files alongside it (same directory, same base filename).
 
@@ -82,10 +82,10 @@ create_typical_building(template="90.1-2019", climate_zone="ASHRAE 169-2013-5A")
 # Per candidate: swap ONLY the HVAC, simulate, compare
 create_typical_building(system_type="PVAV with gas boiler reheat",
     template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
-save_osm_model(osm_path="/runs/sweep_pvav.osm"); run_simulation(...)
+save_osm_model(save_name="sweep_pvav"); run_simulation(osm_path=<osm_path from save>)
 
 create_typical_building(system_type="PSZ-HP", ..., hvac_only=True)
-save_osm_model(osm_path="/runs/sweep_pszhp.osm"); run_simulation(...)
+save_osm_model(save_name="sweep_pszhp"); run_simulation(osm_path=<osm_path from save>)
 
 compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-hours deltas
 ```
@@ -130,8 +130,8 @@ Full chain: create → test → apply → simulate → compare results.
 
 ```
 # 1. Baseline simulation
-save_osm_model(osm_path="/runs/baseline.osm")
-run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
+save_osm_model(save_name="baseline")            # response carries osm_path
+run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 extract_summary_metrics(run_id=<baseline_id>)
 
 # 2. Create custom measure
@@ -142,8 +142,8 @@ test_measure(measure_dir="/measures/<user>/custom/my_measure")  # use the measur
 # 3. Reload original model, apply measure, re-simulate
 load_osm_model(osm_path="<original>")
 apply_measure(measure_dir="/measures/<user>/custom/my_measure")
-save_osm_model(osm_path="/runs/retrofit.osm")
-run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
+save_osm_model(save_name="retrofit")
+run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 extract_summary_metrics(run_id=<retrofit_id>)
 
 # 4. Compare baseline vs retrofit EUI
@@ -163,7 +163,8 @@ ReportingMeasures run after simulation to analyze SQL results.
 
 ```
 # 1. Run simulation first
-run_simulation(osm_path="/runs/model.osm", epw_path="<epw>")
+save_osm_model(save_name="model")               # response carries osm_path
+run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 
 # 2. Create reporting measure
 create_measure(name="custom_report", description="...",

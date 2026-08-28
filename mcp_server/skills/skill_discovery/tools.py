@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from mcp_server.skills.skill_discovery.operations import (
+    get_skill_file_op,
     get_skill_op,
     list_skills_op,
 )
@@ -32,3 +33,16 @@ def register(mcp):
                   "new-building", "retrofit", "add-hvac", "qaqc")
         """
         return get_skill_op(name)
+
+    @mcp.tool(name="get_skill_file", tags={"core"})
+    def get_skill_file_tool(skill_name: str, filename: str):
+        """Fetch a supporting file advertised by get_skill (its
+        supporting_files list) — reference tables and catalogs that back a
+        workflow guide, e.g. get_skill_file(skill_name="retrofit",
+        filename="ecm-catalog.md").
+
+        Args:
+            skill_name: Skill name from list_skills
+            filename: File name from get_skill's supporting_files
+        """
+        return get_skill_file_op(skill_name, filename)

@@ -328,7 +328,7 @@ jobs:
               # + generic HVAC template comfort benchmark (issue #97)
               # + weather fail-fast + failed-run extraction guard
               # + hvac_only standards swap parity benchmark (issue #97, moved from shard 4 to balance runtime)
-              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_sim_queue.py tests/test_per_user_run_dirs.py tests/test_audit_log.py tests/test_retention.py tests/test_python_ems_phase2.py tests/test_generic_hvac_comfort.py tests/test_hvac_only_swap.py tests/test_run_simulation_weather_guard.py"
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_sim_queue.py tests/test_per_user_run_dirs.py tests/test_audit_log.py tests/test_retention.py tests/test_python_ems_phase2.py tests/test_generic_hvac_comfort.py tests/test_hvac_only_swap.py tests/test_run_simulation_weather_guard.py tests/test_save_name_delivery.py"
               EXTRA_ENV=""
               ;;
           esac

@@ -210,6 +210,7 @@ EXPECTED_TOOLS = {
     # Skill Discovery
     "list_skills",
     "get_skill",
+    "get_skill_file",
     # API Reference
     "search_api",
     "search_wiring_patterns",
@@ -279,7 +280,7 @@ def test_all_tool_names_registered():
 
 # The exact roster removed by the benchmark ablation arm (reviewer-response
 # plan D3) — keep in lockstep with _KNOWLEDGE_SKILLS in mcp_server/skills.
-KNOWLEDGE_TOOLS = {"list_skills", "get_skill", "recommend_tools"}
+KNOWLEDGE_TOOLS = {"list_skills", "get_skill", "get_skill_file", "recommend_tools"}
 
 
 def test_knowledge_skills_ablation_flag(monkeypatch):
