@@ -30,14 +30,9 @@ PROMPTS_TOOLS_PY = (
     REPO_ROOT / "mcp_server" / "skills" / "prompts_resources" / "tools.py"
 )
 
-# (context, tool, kwarg) triples temporarily tolerated. B1: apply_measure's
-# run_id path is implemented in operations.py but not yet exposed on the MCP
-# wrapper — PR "fix/apply-measure-run-id" adds the kwarg and MUST remove
-# these entries so the validator enforces it.
-KNOWN_EXCEPTIONS = frozenset({
-    ("measure-authoring/SKILL.md", "apply_measure", "run_id"),
-    ("tool-workflows/SKILL.md", "apply_measure", "run_id"),
-})
+# (context, tool, kwarg) triples temporarily tolerated — each entry must
+# cite the PR that removes it. Empty since apply_measure gained run_id (B1).
+KNOWN_EXCEPTIONS: frozenset[tuple[str, str, str]] = frozenset()
 
 # snake_case callees in served docs that are legitimately not MCP tools
 IGNORE_NAMES: frozenset[str] = frozenset()

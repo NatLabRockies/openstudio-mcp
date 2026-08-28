@@ -799,7 +799,8 @@ def test_create_reporting_measure_ruby():
                 assert "def run(runner, user_arguments)" in text
                 assert "super(runner, user_arguments)" in text
                 assert "lastOpenStudioModel" in text
-                assert "lastEnergyPlusSqlFilePath" in text
+                assert "lastEnergyPlusSqlFile" in text
+                assert "lastEnergyPlusSqlFilePath" not in text  # nonexistent in 3.11.0 (B1)
                 assert "energyPlusOutputRequests" in text
     asyncio.run(_run())
 
@@ -834,7 +835,8 @@ def test_create_reporting_measure_python():
                 assert "ReportingMeasure" in text
                 assert "def run(self, runner, user_arguments)" in text
                 assert "lastOpenStudioModel" in text
-                assert "lastEnergyPlusSqlFilePath" in text
+                assert "lastEnergyPlusSqlFile" in text
+                assert "lastEnergyPlusSqlFilePath" not in text  # nonexistent in 3.11.0 (B1)
                 assert "energyPlusOutputRequests" in text
     asyncio.run(_run())
 

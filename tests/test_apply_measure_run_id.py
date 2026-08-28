@@ -106,4 +106,21 @@ def test_apply_measure_accepts_run_id_for_reporting_measure():
                 assert bad["ok"] is False
                 assert "not found" in bad["error"].lower(), bad
 
+                # --- Assert: test_measure's run_id path executes run() too ---
+                # Regression: the scaffold called the nonexistent
+                # runner.lastEnergyPlusSqlFilePath (OSRunner 3.11.0 has only
+                # lastEnergyPlusSqlFile), so run() failed under any
+                # --postprocess_only execution; only args-only tests passed
+                tm = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"],
+                    "run_id": run_id,
+                }))
+                assert tm["ok"] is True, tm.get("test_output", tm)
+                assert tm["passed"] == 1 and tm["failed"] == 0, tm
+                tmsgs = tm.get("runner_messages") or {}
+                assert tmsgs.get("final_condition") == "Report complete", tm
+                assert any(
+                    "Total Site Energy" in m for m in tmsgs.get("info") or []
+                ), f"reporting measure did not read the run's SQL: {tm}"
+
     asyncio.run(_run())

@@ -127,6 +127,7 @@ def register(mcp):
     def apply_measure_tool(
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
+        run_id: str | None = None,
     ):
         """Run an existing local OpenStudio measure against the loaded model.
 
@@ -134,9 +135,15 @@ def register(mcp):
         for a measure by name or intent, call find_measure first and pass its
         top-level measure_dir here. To create a new measure, use create_measure.
 
+        For a ReportingMeasure, pass run_id from a completed simulation — the
+        run's SQL/IDF are staged and only reporting measures execute
+        (--postprocess_only), leaving the loaded model untouched.
+
         Args:
             measure_dir: Path to the measure directory (contains measure.rb)
             arguments: Optional dict of argument_name -> value overrides
+            run_id: Completed simulation run_id (ReportingMeasures only)
 
         """
-        return apply_measure(measure_dir=measure_dir, arguments=arguments)
+        return apply_measure(measure_dir=measure_dir, arguments=arguments,
+                             run_id=run_id)
