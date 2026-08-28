@@ -9,6 +9,6 @@
 ## Should NOT trigger
 | Query | Forbidden tools | Expected alternatives |
 |---|---|---|
-| "Change wall insulation" | compare_runs | create_standard_opaque_material, add_layer_to_construction, assign_construction_to_surface |
+| "Change wall insulation" | compare_runs | create_standard_opaque_material, add_layer_to_construction, assign_construction_to_surface, get_construction_details, list_model_objects |
 | "Run a simulation" | compare_runs | run_simulation, save_osm_model |
 | "Create a new building" | compare_runs, replace_window_constructions | create_new_building, create_bar_building, create_baseline_osm |

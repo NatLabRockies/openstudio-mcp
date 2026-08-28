@@ -16,4 +16,4 @@
 | "What spaces are in the model?" | create_new_building, create_bar_building | list_spaces, get_model_summary |
 | "Add a boiler to the hot water loop" | create_new_building, create_bar_building | add_supply_equipment, list_plant_loops |
 | "Run the simulation" | create_new_building, create_bar_building | run_simulation, load_osm_model, list_files |
-| "Add HVAC to the building" | create_new_building, create_bar_building | add_baseline_system, list_thermal_zones, list_baseline_systems |
+| "Add HVAC to the building" | create_new_building, create_bar_building | add_baseline_system, list_thermal_zones, list_baseline_systems, get_model_summary, load_osm_model |
