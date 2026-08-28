@@ -8,7 +8,8 @@ def register(mcp):
     @mcp.tool(tags={"core"}, name="recommend_tools")
     def recommend_tools_tool(task_description: str) -> dict:
         """Recommend relevant tools for a task. Call this when unsure which
-        tool to use. Returns a focused group of tools instead of all 140.
+        tool to use. Returns a focused group of tools instead of the full
+        roster.
 
         Args:
             task_description: What you want to do (e.g. "add VAV reheat",
