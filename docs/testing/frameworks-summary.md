@@ -142,7 +142,7 @@ backend.
 
 | Category | Files | What it tests |
 |---|---|---|
-| Registration | `test_skill_registration.py` | all 197 tools register; `EXPECTED_TOOLS` is the roster of record |
+| Registration | `test_skill_registration.py` | every tool registers; `EXPECTED_TOOLS` is the roster of record |
 | Skill docs | `test_skill_docs.py`, `test_skill_tools.py` | SKILL.md frontmatter, tool-name cross-references, skill discovery |
 | Protocol | `test_stdio_smoke.py` | raw JSON-RPC on stdio, no stdout pollution |
 | Security / isolation | `test_path_safety.py`, `test_measure_isolation.py` | path-traversal guards, per-user roots disjoint, cross-tenant denied |
