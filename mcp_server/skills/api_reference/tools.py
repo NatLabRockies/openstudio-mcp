@@ -48,9 +48,11 @@ def register(mcp):
         each class entry carries a "module" field naming the namespace it lives in
         ("openstudio", "openstudio.model", "openstudio.airflow", ...).
 
-        Return types are read from the SDK's C++ headers and its SWIG wrappers —
-        they are sourced, never inferred from the method's name. Read them
-        literally; the distinction matters in Ruby:
+        The response includes `signatures_available`; if it is false, a warning is
+        included and entries may contain fallback parameters or `-> ?` for an
+        unknown return type. Return types are read from the SDK's C++ headers and
+        its SWIG wrappers — they are sourced, never inferred from the method's
+        name. Read them literally; the distinction matters in Ruby:
           - "-> Float"       a plain value. Calling .get on it raises NoMethodError.
           - "-> Float, nil"  an Optional. .get is required; check .is_initialized
                              first. e.g. nominalCapacity() -> Float, nil while

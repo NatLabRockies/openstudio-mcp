@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import sys
 
 from ._signatures import signatures
 
@@ -187,11 +188,13 @@ def search_api_op(
 
     Returns:
         {"ok": True, "classes": [{"class_name": ..., "module": ..., "setters": [...],
-         "getters": [...], "other": [...]}], "query": ...} where each
-        setter/getter/other entry is a signature string, e.g.
-        "setSurfaceType(surfaceType) -> Boolean", and module names the namespace
-        the class lives in ("openstudio", "openstudio.model", "openstudio.airflow",
-        ...).
+         "getters": [...], "other": [...]}], "query": ...,
+         "signatures_available": True} where each setter/getter/other entry is a
+        signature string, e.g. "setSurfaceType(surfaceType) -> Boolean", and module
+        names the namespace the class lives in ("openstudio", "openstudio.model",
+        "openstudio.airflow", ...). If signature loading fails, discovery still
+        succeeds with "signatures_available": False, a "warning", and explicit
+        fallback/unknown signature details.
     """
     try:
         import openstudio
@@ -220,9 +223,24 @@ def search_api_op(
     try:
         sigs = signatures()
         sig_ok = True
-    except Exception:
+        signature_warning = None
+    except Exception as exc:
         sigs = {}
         sig_ok = False
+        signature_warning = (
+            "SDK signatures are unavailable; method entries may use fallback "
+            "parameters and unknown return types."
+        )
+        print(
+            "search_api: failed to load SDK signatures "
+            f"while searching for {class_pattern!r}: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+    response_metadata = {"signatures_available": sig_ok}
+    if signature_warning is not None:
+        response_metadata["warning"] = signature_warning
 
     matched = [
         entry for entry in _collect_classes(
@@ -234,7 +252,12 @@ def search_api_op(
     matched = matched[:max_classes]
 
     if not matched:
-        return {"ok": True, "classes": [], "query": class_pattern}
+        return {
+            "ok": True,
+            "classes": [],
+            "query": class_pattern,
+            **response_metadata,
+        }
 
     # ModelObject's method set is subtracted only from classes that inherit it
     # (model-module classes); non-model classes keep same-named methods.
@@ -313,7 +336,12 @@ def search_api_op(
             "other": other,
         })
 
-    return {"ok": True, "classes": results, "query": class_pattern}
+    return {
+        "ok": True,
+        "classes": results,
+        "query": class_pattern,
+        **response_metadata,
+    }
 
 
 def search_wiring_patterns_op(
