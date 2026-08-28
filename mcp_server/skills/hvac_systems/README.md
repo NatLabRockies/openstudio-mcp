@@ -1,6 +1,8 @@
-# hvac_systems
+# hvac_systems — internal dev notes
 
 System-level HVAC templates and ASHRAE 90.1 Appendix G baseline systems.
+Served agent guidance lives in `.claude/skills/add-hvac/SKILL.md` (via
+`get_skill("add-hvac")`), including the comfort-defaults doctrine.
 
 ## Overview
 
@@ -24,19 +26,9 @@ modern templates (DOAS, VRF, Radiant) and terminal replacement tools.
 - Systems 5-6: packaged VAV (HW reheat / PFP boxes), one shared air loop
 - Systems 7-8: central plant VAV (chiller/boiler/tower)
 
-## Comfort defaults (issue #97, benchmark-verified)
+## Comfort defaults
 
-Applied automatically so generic systems are viable out of the box:
-- App G sizing factors (1.25 heating / 1.15 cooling) + night-cycle
-  availability managers on air-loop systems
-- VAV reheat terminals use DamperHeatingAction=Reverse (Normal caps heating
-  at minimum airflow — was 1807 unmet heating hrs on the benchmark)
-- System 4 heat pump: -12.2C compressor lockout, cycling Fan:OnOff, 40C max
-  supplemental supply temp (autosized 16.7C could not heat a 21C zone)
-- DOAS loop availability defaults to the served zones' People schedule
-  (24/7 buildings stay always-on); override via availability_schedule_name
-- VRF uses the standard outdoor-unit family with waste-heat recovery
-  (the FluidTemperatureControl family needs different terminal coils)
+Migrated to the served add-hvac skill ("Why These Defaults") — edit it there. Implementation: baseline.py / templates.py.
 
 ## Tools
 
@@ -178,14 +170,14 @@ Get detailed metadata for a specific ASHRAE baseline system type.
 **Heating:** Gas furnace or electric resistance
 **Cooling:** Single-speed DX coil
 **Use Case:** Small commercial, retail, single-zone buildings
-**Notes:** Central air loop serving single zone, supports economizer
+**Notes:** One air loop per zone — pass the full zone list, the tool fans out; supports economizer
 
 ### System 4: PSZ-HP
 **Equipment:** Packaged single-zone heat pump rooftop unit
 **Heating:** DX heat pump with supplemental electric
 **Cooling:** DX heat pump
 **Use Case:** Small commercial, retail
-**Notes:** Single zone only, supports economizer
+**Notes:** One air loop per zone (pass the full zone list); supports economizer
 
 ### System 5: Packaged VAV w/ Reheat
 **Equipment:** Packaged rooftop VAV with hot water reheat
@@ -250,7 +242,7 @@ Validation results included in tool response under `"validation"` key.
 
 - Systems 1-2 create zone equipment (no air loops)
 - System 3 creates central air loop with outdoor air system
-- Systems 5-8 create plant loops (chilled water, hot water, condenser)
+- Plant loops: System 5 creates HW; 7 creates CHW + HW + condenser; 8 creates CHW + condenser; 6 creates none (electric PFP reheat)
 - Economizer parameter only applies to central systems (3-8)
 - Fuel parameters validated against system type capabilities
 
@@ -262,7 +254,9 @@ Validation results included in tool response under `"validation"` key.
 | `Radiant` | Low-temp radiant panels (floor/ceiling) | CHW + HW |
 | `ChilledBeams` | Passive/active chilled beams (cooling only) | CHW only |
 | `FourPipeBeam` | 4-pipe active chilled beams (heating + cooling) | CHW + HW |
-| `CooledBeam` | 2-pipe cooled beams (cooling only) | CHW only |
+
+(`CooledBeam` is a terminal type for `replace_air_terminals`, NOT a valid
+`add_doas_system` zone_equipment_type — the tool accepts only the four above.)
 
 ## API Reference
 
@@ -274,4 +268,3 @@ Validation results included in tool response under `"validation"` key.
 
 - `hvac/` skill — Query existing air loops, plant loops, zone equipment
 - `spaces/` skill — Create thermal zones to serve with HVAC systems
-- Phase 4 Implementation Plan — docs/PHASE_4_IMPLEMENTATION_PLAN.md

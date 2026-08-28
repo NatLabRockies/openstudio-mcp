@@ -73,7 +73,7 @@ create_typical_building(system_type="PVAV with gas boiler reheat",
     template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
 save_osm_model(...); run_simulation(...)   # then next candidate
 
-compare_runs(run_id_a, run_id_b)           # EUI + unmet-hours deltas
+compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-hours deltas
 ```
 
 ## Notes
@@ -83,3 +83,23 @@ compare_runs(run_id_a, run_id_b)           # EUI + unmet-hours deltas
   call, the tool fans out automatically
 - Systems 5-8 create one shared air loop for all zones (multi-zone VAV)
 - Systems 1-2, 9-10 create zone equipment only (no air loops)
+- Plant loops: System 5 creates a HW loop; 7 creates CHW + HW + condenser;
+  8 creates CHW + condenser; 6 creates none (electric PFP reheat)
+- DOAS zone equipment types: FanCoil (CHW+HW), Radiant (CHW+HW),
+  ChilledBeams (CHW only), FourPipeBeam (CHW+HW)
+
+## Why These Defaults (comfort tuning, issue #97)
+
+The generic templates apply these automatically so systems are viable out of
+the box — don't undo them without a reason:
+
+- App G sizing factors (1.25 heating / 1.15 cooling) + night-cycle
+  availability managers on air-loop systems
+- VAV reheat terminals use DamperHeatingAction=Reverse (Normal caps heating
+  at minimum airflow — 1807 unmet heating hours on the benchmark)
+- System 4 heat pump: -12.2 C compressor lockout, cycling Fan:OnOff, 40 C max
+  supplemental supply temperature (autosized 16.7 C could not heat a 21 C zone)
+- DOAS loop availability defaults to the served zones' People schedule
+  (24/7 buildings stay always-on); override via availability_schedule_name
+- VRF uses the standard outdoor-unit family with waste-heat recovery
+  (the FluidTemperatureControl family needs different terminal coils)

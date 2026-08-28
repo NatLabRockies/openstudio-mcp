@@ -85,7 +85,7 @@ def register(mcp):
                 ReportingMeasures run after simulation, accessing SQL results.
                 run() receives (runner, user_arguments) — no model param.
                 Model and SQL are available via runner.lastOpenStudioModel
-                and runner.lastEnergyPlusSqlFilePath (boilerplate auto-generated).
+                and runner.lastEnergyPlusSqlFile (boilerplate auto-generated).
 
         Ruby common patterns for run_body:
           CRITICAL — error/applicability handling:
@@ -111,7 +111,7 @@ def register(mcp):
             opt = surface.construction; if opt.is_initialized then c = opt.get end
             OpenStudio.convert(val, "W/m^2", "Btu/hr*ft^2").get — unit conversion
               Common: W/m^2↔Btu/hr*ft^2, m^2*K/W↔ft^2*hr*R/Btu, kWh/m^2↔kBtu/ft^2
-              See SKILL.md "Unit Conversion" table for full list
+              Full table: get_skill_file(skill_name="measure-authoring", filename="unit-conversions.md")
             model.alwaysOnDiscreteSchedule — reusable schedule for constructors
           HVAC traversal (Ruby):
             model.getAirLoopHVACs.each { |loop| ... }

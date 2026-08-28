@@ -12,6 +12,7 @@ import pytest
 
 from mcp_server.skills.skill_discovery.operations import (
     _parse_frontmatter,
+    get_skill_file_op,
     get_skill_op,
     list_skills_op,
 )
@@ -221,3 +222,70 @@ def test_get_skill_path_traversal(tmp_path):
     assert result["ok"] is False
     assert "error" in result, "Path traversal rejection should include error message"
     assert result["error"].strip(), "Error message should not be empty for path traversal rejection"
+
+
+# --- get_skill_file + support-file classification ---
+
+def _support_skill_dir(tmp_path):
+    d = tmp_path / "retrofit"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: retrofit\n---\nBody", encoding="utf-8")
+    (d / "eval.md").write_text("| Query |", encoding="utf-8")
+    (d / "ecm-catalog.md").write_text("## Envelope\nECM list", encoding="utf-8")
+    (d / ".hidden.md").write_text("secret", encoding="utf-8")
+    (d / "notes.pyc").write_text("junk", encoding="utf-8")
+    return tmp_path
+
+
+def test_supporting_files_filtered_to_agent_support(tmp_path):
+    # Regression: get_skill listed eval.md (test data) and would list hidden/
+    # developer artifacts in supporting_files (F4) — only agent support shows
+    root = _support_skill_dir(tmp_path)
+    with patch("mcp_server.skills.skill_discovery.operations.SKILLS_DIR", root):
+        result = get_skill_op("retrofit")
+    assert result["ok"] is True
+    assert result["supporting_files"] == ["ecm-catalog.md"]
+    assert "get_skill_file" in result["supporting_files_hint"]
+
+
+def test_get_skill_file_returns_content(tmp_path):
+    # Validates: get_skill_file serves an advertised support file's content
+    root = _support_skill_dir(tmp_path)
+    with patch("mcp_server.skills.skill_discovery.operations.SKILLS_DIR", root):
+        result = get_skill_file_op("retrofit", "ecm-catalog.md")
+    assert result["ok"] is True
+    assert result["skill"] == "retrofit"
+    assert result["filename"] == "ecm-catalog.md"
+    assert result["content"] == "## Envelope\nECM list"
+
+
+def test_get_skill_file_missing_file(tmp_path):
+    # Validates: missing support file returns ok=False pointing at get_skill
+    root = _support_skill_dir(tmp_path)
+    with patch("mcp_server.skills.skill_discovery.operations.SKILLS_DIR", root):
+        result = get_skill_file_op("retrofit", "nope.md")
+    assert result["ok"] is False
+    assert "not found" in result["error"].lower()
+    assert "supporting_files" in result["error"]
+
+
+@pytest.mark.parametrize("bad", [
+    "../retrofit/ecm-catalog.md", "/etc/passwd", r"..\x.md",
+    "SKILL.md", "eval.md", "README.md", ".hidden.md", "notes.pyc", "",
+])
+def test_get_skill_file_rejects_non_support_and_traversal(tmp_path, bad):
+    # Validates: traversal, absolute paths, hidden files, test data, and
+    # developer artifacts are refused — only classified agent support serves
+    root = _support_skill_dir(tmp_path)
+    with patch("mcp_server.skills.skill_discovery.operations.SKILLS_DIR", root):
+        result = get_skill_file_op("retrofit", bad)
+    assert result["ok"] is False
+    assert result["error"].strip()
+
+
+def test_get_skill_file_unknown_skill(tmp_path):
+    # Validates: unknown skill name gets the list_skills-pointing error
+    with patch("mcp_server.skills.skill_discovery.operations.SKILLS_DIR", tmp_path):
+        result = get_skill_file_op("ghost", "x.md")
+    assert result["ok"] is False
+    assert "not found" in result["error"].lower()

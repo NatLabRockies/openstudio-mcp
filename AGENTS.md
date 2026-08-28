@@ -1,7 +1,7 @@
 # AGENTS.md — Codex CLI Instructions
 
 ## Project
-OpenStudio MCP server — 24 skills, 138 tools, ~18K prod lines.
+OpenStudio MCP server — 150+ tools across 30+ skill packages (exact roster: EXPECTED_TOOLS in tests/test_skill_registration.py).
 
 ## Architecture
 - `mcp_server/skills/<name>/tools.py` — MCP tool defs, calls operations

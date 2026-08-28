@@ -274,13 +274,14 @@ def _build_ruby_reporting_run(args: list[dict], run_body: str) -> str:
     if extraction:
         lines.append(extraction)
     lines += [
-        "    model = runner.lastOpenStudioModel",
-        "    if model.is_initialized",
-        "      model = model.get",
-        "    end",
-        "    sql_path = runner.lastEnergyPlusSqlFilePath",
-        "    if sql_path.is_initialized",
-        "      sql = OpenStudio::SqlFile.new(sql_path.get)",
+        # OSRunner 3.11.0 has lastEnergyPlusSqlFile (Optional<SqlFile>) but no
+        # lastEnergyPlusSqlFilePath getter — the OSW runner sets the path via
+        # setLastEnergyPlusSqlFilePath and measures read the SqlFile optional
+        "    model_opt = runner.lastOpenStudioModel",
+        "    model = model_opt.is_initialized ? model_opt.get : nil",
+        "    sql_opt = runner.lastEnergyPlusSqlFile",
+        "    if sql_opt.is_initialized",
+        "      sql = sql_opt.get",
         "      model.setSqlFile(sql) if model",
         "    end",
         f"    {_BEGIN_MARKER}",
@@ -324,11 +325,13 @@ def _build_python_reporting_run(args: list[dict], run_body: str) -> str:
     if extraction:
         lines.append(extraction)
     lines += [
+        # Same 3.11.0 API note as the Ruby template: read the SqlFile
+        # optional, not the nonexistent lastEnergyPlusSqlFilePath getter
         "        model_opt = runner.lastOpenStudioModel()",
         "        model = model_opt.get() if model_opt.is_initialized() else None",
-        "        sql_path = runner.lastEnergyPlusSqlFilePath()",
-        "        if sql_path.is_initialized():",
-        "            sql = openstudio.SqlFile(sql_path.get())",
+        "        sql_opt = runner.lastEnergyPlusSqlFile()",
+        "        if sql_opt.is_initialized():",
+        "            sql = sql_opt.get()",
         "            if model:",
         "                model.setSqlFile(sql)",
         f"        {_BEGIN_MARKER}",
@@ -1038,11 +1041,19 @@ def _test_reporting_measure_with_run(
             "test_output": f"ReportingMeasure test failed (exit {proc.returncode}):\n{display}",
         }
 
-    return {
+    from mcp_server.skills.measures.runner_messages import parse_runner_messages
+
+    result = {
         "ok": True,
         "passed": 1, "failed": 0, "errors": 0,
         "test_output": f"ReportingMeasure ran successfully via --postprocess_only:\n{display}",
     }
+    # Surface the measure's registered messages (registerValue/Info/Final) —
+    # the CLI log is often empty on success, which told the caller nothing
+    runner_messages = parse_runner_messages(run_dir / "out.osw")
+    if runner_messages:
+        result["runner_messages"] = runner_messages
+    return result
 
 
 def _detect_measure_type(mdir: Path) -> str:

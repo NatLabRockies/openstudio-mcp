@@ -12,7 +12,7 @@ from conftest import integration_enabled, server_params
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-KNOWLEDGE_TOOLS = {"list_skills", "get_skill", "recommend_tools"}
+KNOWLEDGE_TOOLS = {"list_skills", "get_skill", "get_skill_file", "recommend_tools"}
 
 
 async def _tool_names() -> set:

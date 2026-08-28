@@ -2,12 +2,12 @@
 | Query | Expected tools | Critical params |
 |---|---|---|
 | "Give me a full energy report" | extract_summary_metrics, extract_end_use_breakdown, extract_envelope_summary, extract_hvac_sizing, extract_zone_summary | run_id |
-| "Detailed analysis of results" | extract_* tools | run_id |
-| "What are the full simulation results?" | extract_* tools | run_id |
+| "Detailed analysis of results" | extract_summary_metrics, extract_end_use_breakdown, extract_envelope_summary, extract_hvac_sizing, extract_zone_summary | run_id |
+| "What are the full simulation results?" | extract_summary_metrics, extract_end_use_breakdown, extract_envelope_summary, extract_hvac_sizing, extract_zone_summary | run_id |
 
 ## Should NOT trigger
-| Query | Why |
-|---|---|
-| "What's the EUI?" | Single metric — use extract_summary_metrics directly |
-| "Run the simulation" | Simulation — use simulate skill |
-| "Show me monthly electricity" | Timeseries — use query_timeseries |
+| Query | Forbidden tools | Expected alternatives |
+|---|---|---|
+| "What's the EUI?" | extract_end_use_breakdown, extract_envelope_summary, extract_hvac_sizing, extract_zone_summary | extract_summary_metrics |
+| "Run the simulation" | generate_results_report | run_simulation, save_osm_model |
+| "Show me monthly electricity" | extract_end_use_breakdown, generate_results_report | query_timeseries, list_output_variables |

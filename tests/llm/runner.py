@@ -41,8 +41,14 @@ BUILTIN_TOOLS = frozenset({
     "Bash", "PowerShell", "LocalShell", "Glob", "Grep", "Read", "Edit",
     "Write", "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite",
     "AskUserQuestion", "Skill", "EnterPlanMode", "ExitPlanMode",
-    "EnterWorktree", "LSP", "ListMcpResourcesTool", "ReadMcpResourceTool",
-    "Agent",
+    "EnterWorktree", "ExitWorktree", "LSP", "ListMcpResourcesTool",
+    "ReadMcpResourceTool", "Agent",
+    # Newer Claude Code built-ins — missing entries here get miscounted as
+    # MCP tool calls (a file-transfer eval failed with tool_names=["Monitor"])
+    "Monitor", "SendFeedback", "SendMessage", "ListAgents", "Artifact",
+    "Workflow", "ReportFindings", "SendUserFile", "PushNotification",
+    "RemoteTrigger", "ScheduleWakeup", "CronCreate", "CronDelete",
+    "CronList", "DesignSync",
 })
 
 # Tools that touch the HOST machine (shell, filesystem, network) — the

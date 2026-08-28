@@ -179,11 +179,36 @@ def load_osm_model(osm_path: str, version_translate: bool = True) -> dict[str, A
         return {"ok": False, "error": f"Failed to load OSM: {e}", "osm_path": str(p)}
 
 
-def save_osm_model(osm_path: str | None = None) -> dict[str, Any]:
+def _resolve_save_name(save_name: str) -> Path | None:
+    """Server-resolved save-as target for a bare name, or None if invalid.
+
+    Accepts a basename only (no separators, drives, traversal, or hidden
+    names), normalizes the .osm suffix, and resolves under the caller's
+    private run root — no user key or writable-root knowledge is client input.
+    """
+    if (
+        not save_name
+        or any(c in save_name for c in "/\\:")
+        or save_name in (".", "..")
+        or save_name.startswith(".")
+        or Path(save_name).name != save_name
+    ):
+        return None
+    name = save_name if save_name.endswith(".osm") else f"{save_name}.osm"
+    return (user_run_root() / "models" / name).resolve()
+
+
+def save_osm_model(
+    osm_path: str | None = None,
+    save_name: str | None = None,
+) -> dict[str, Any]:
     """Save the currently loaded model to disk.
 
     Args:
-        osm_path: Optional path to save to. If None, saves to the original load path.
+        osm_path: Optional explicit path to save to. If None, saves to the
+            original load path.
+        save_name: Optional bare name — the server resolves the path inside
+            the caller's private run area (client-neutral save-as).
 
     Returns:
         Dict with ok=True and saved path on success, ok=False with error on failure
@@ -193,8 +218,25 @@ def save_osm_model(osm_path: str | None = None) -> dict[str, Any]:
     if current_model is None:
         return {"ok": False, "error": "No model loaded. Call load_osm_model first."}
 
+    if osm_path is not None and save_name is not None:
+        return {
+            "ok": False,
+            "error": "Pass either osm_path or save_name, not both.",
+        }
+
     # Determine save path
-    if osm_path is not None:
+    if save_name is not None:
+        p = _resolve_save_name(save_name)
+        if p is None:
+            return {
+                "ok": False,
+                "error": (
+                    f"Invalid save_name '{save_name}': must be a bare file "
+                    "name (no separators, drives, or leading dots); "
+                    ".osm is appended automatically."
+                ),
+            }
+    elif osm_path is not None:
         p = Path(osm_path).resolve()
     else:
         current_path = model_manager.get_model_path()
