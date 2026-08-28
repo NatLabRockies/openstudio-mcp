@@ -295,7 +295,7 @@ jobs:
               # + python_ems (plugin templates, actuator discovery, plugin sims)
               # + outcome grader (LLM benchmark gate-2 ground truth, ~7s)
               # + gbXML .stat-file climate-zone resolution test (moved from shard 4 to balance runtime)
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py tests/test_measure_discovery.py tests/test_python_ems.py tests/test_knowledge_ablation.py tests/test_outcome_grader_integration.py tests/test_gbxml_import.py::test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture"
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py tests/test_measure_discovery.py tests/test_python_ems.py tests/test_knowledge_ablation.py tests/test_outcome_grader_integration.py tests/test_apply_measure_run_id.py tests/test_gbxml_import.py::test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture"
               EXTRA_ENV=""
               ;;
             3)
