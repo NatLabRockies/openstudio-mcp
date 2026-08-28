@@ -35,7 +35,7 @@ Always use openstudio-mcp tools for BEM tasks:
 - Each skill lives in `mcp_server/skills/<name>/`
 - `tools.py` exports `register(mcp)` — MCP tool definitions only
 - `operations.py` — business logic, returns plain dicts, no MCP awareness
-- `SKILL.md` — skill definition for LLM context
+- `README.md` — internal dev notes; LLM-facing skills live in `.claude/skills/` (served via get_skill)
 - Key modules: `model_manager.py` (load/get/save/clear model), `osm_helpers.py` (fetch_object, optional_name, list_all_as_dicts), `skills/__init__.py` (auto-discovers all skills)
 
 ## Stdout Suppression

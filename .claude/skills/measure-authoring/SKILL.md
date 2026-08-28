@@ -18,6 +18,17 @@ Use measure authoring when:
 
 Do NOT use when an existing tool already does the job (e.g., `replace_air_terminals` for terminal swaps, `adjust_thermostat_setpoints` for thermostat changes).
 
+## Reuse Before Writing (find_measure / BCL routing)
+
+For requests to use an EXISTING measure by name, BCL page title, or intent,
+call `find_measure` first. It searches your own custom measures, bundled
+common measures, ComStock measures, and your BCL cache before searching BCL;
+a strong BCL match is downloaded into your per-user `bcl` dir. Pass its
+returned `measure_dir` straight to `list_measure_arguments` or
+`apply_measure`. Use `search_bcl_measures` only to inspect BCL candidates
+without downloading; `list_custom_measures` lists what you've authored.
+Custom measures are private per user — never tell users measures are shared.
+
 ## Workflow
 
 ### 1. Create the Measure
@@ -121,7 +132,8 @@ Python gotchas (different from Ruby):
 - `obj.name()` returns an OptionalString — use `str(obj.name())` or `obj.name().get()`, never bare `obj.name()`.
 - `runner.registerError("msg")` must be followed by `return False` (capital F; it does not halt).
 - Optionals: `opt = surface.construction()` then `if opt.is_initialized(): c = opt.get()`.
-- Unit conversion: `openstudio.convert(val, "W/m^2", "Btu/hr*ft^2").get()`.
+- Unit conversion: `openstudio.convert(val, "W/m^2", "Btu/hr*ft^2").get()` —
+  full unit-string table: `get_skill_file(skill_name="measure-authoring", filename="unit-conversions.md")`.
 
 ### Envelope
 ```python

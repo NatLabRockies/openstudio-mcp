@@ -70,28 +70,12 @@ change_building_location(weather_file="/inputs/Chicago.epw")
 
 ## Fair HVAC System Sweep (decision-grade comparison)
 
-Compare candidate systems on the SAME configured model — standards-tuned
-equipment/controls each time, loads and schedules never touched:
-
-```
-# One-time setup: geometry + weather + typical build + any load customizations
-create_bar_building(...); change_building_location(...)
-create_typical_building(template="90.1-2019", climate_zone="ASHRAE 169-2013-5A")
-# ... apply load reductions, setbacks, etc. ...
-
-# Per candidate: swap ONLY the HVAC, simulate, compare
-create_typical_building(system_type="PVAV with gas boiler reheat",
-    template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
-save_osm_model(save_name="sweep_pvav"); run_simulation(osm_path=<osm_path from save>)
-
-create_typical_building(system_type="PSZ-HP", ..., hvac_only=True)
-save_osm_model(save_name="sweep_pszhp"); run_simulation(osm_path=<osm_path from save>)
-
-compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-hours deltas
-```
-
-Do NOT use add_baseline_system/add_doas_system for comparative studies — they
-are generic wiring templates without standards tuning (see add-hvac skill).
+Owned by the `add-hvac` skill — see its "Comparing Systems / Decision-Grade
+Results" section (`get_skill("add-hvac")`): per-candidate
+`create_typical_building(system_type=..., hvac_only=True)` swaps on the SAME
+configured model, then `compare_runs`. Do NOT use
+add_baseline_system/add_doas_system for comparative studies — generic wiring
+templates, no standards tuning.
 
 ## Tune Component Properties
 
@@ -124,58 +108,17 @@ apply_measure(measure_dir="/inputs/measures/my_measure",
 
 Note: All measure arguments are strings. Booleans → `"true"` / `"false"`. Numbers → `"42"`.
 
-## Write and Apply a Custom Measure
+## Write and Apply a Custom Measure / ReportingMeasure
 
-Full chain: create → test → apply → simulate → compare results.
-
-```
-# 1. Baseline simulation
-save_osm_model(save_name="baseline")            # response carries osm_path
-run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
-extract_summary_metrics(run_id=<baseline_id>)
-
-# 2. Create custom measure
-create_measure(name="my_measure", description="...",
-    language="Ruby", run_body="    model.get...each { |x| ... }")
-test_measure(measure_dir="/measures/<user>/custom/my_measure")  # use the measure_dir returned by create_measure
-
-# 3. Reload original model, apply measure, re-simulate
-load_osm_model(osm_path="<original>")
-apply_measure(measure_dir="/measures/<user>/custom/my_measure")
-save_osm_model(save_name="retrofit")
-run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
-extract_summary_metrics(run_id=<retrofit_id>)
-
-# 4. Compare baseline vs retrofit EUI
-```
-
-See the `measure-authoring` skill for run_body patterns and language guidance.
-
-For HVAC measures, verify methods exist and get wiring code first:
+Owned by the `measure-authoring` skill (`get_skill("measure-authoring")`):
+the create_measure → test_measure → apply_measure chain, run_body patterns
+(Ruby + Python), ReportingMeasures against a completed run
+(`test_measure(measure_dir=..., run_id=...)` /
+`apply_measure(measure_dir=..., run_id=...)`), and the before/after
+comparison workflow. For HVAC measures, verify methods and wiring first:
 ```
 search_api("CoilCoolingFourPipeBeam")             # check real setter/getter names
 search_wiring_patterns("four pipe beam")           # get working Ruby wiring code
-```
-
-## Write and Apply a Custom ReportingMeasure
-
-ReportingMeasures run after simulation to analyze SQL results.
-
-```
-# 1. Run simulation first
-save_osm_model(save_name="model")               # response carries osm_path
-run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
-
-# 2. Create reporting measure
-create_measure(name="custom_report", description="...",
-    language="Ruby", measure_type="ReportingMeasure",
-    run_body="    val = sql.execAndReturnFirstDouble('SELECT ...')\n    runner.registerValue('metric', val.get) if val.is_initialized")
-
-# 3. Test against completed simulation
-test_measure(measure_dir="/measures/<user>/custom/custom_report", run_id="<run_id>")
-
-# 4. Apply to completed simulation
-apply_measure(measure_dir="/measures/<user>/custom/custom_report", run_id="<run_id>")
 ```
 
 ## Object Cleanup

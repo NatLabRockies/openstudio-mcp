@@ -1,6 +1,8 @@
-# file_transfer
+# file_transfer — internal dev notes
 
 Move user files to/from a **remote (HTTP) openstudio-mcp server** securely.
+Served agent guidance lives in `.claude/skills/file-transfer/SKILL.md`
+(model-invocable; via `get_skill("file-transfer")`).
 
 ## Why
 Over HTTP the server runs on a different machine than the user. Every file tool
