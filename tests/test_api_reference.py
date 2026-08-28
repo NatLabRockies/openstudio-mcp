@@ -206,6 +206,36 @@ def test_methods_carry_signatures():
     assert setter.split("(", 1)[1].split(")", 1)[0].strip(), "setter should take an arg"
 
 
+def test_non_model_classes_exclude_swig_data_and_only_return_signatures():
+    """Regression: non-model classes must not expose SWIG data or bare entries."""
+    search = _import_search_api_op()
+    cls = search("^SqlFile$", max_classes=1)["classes"][0]
+    entries = cls["setters"] + cls["getters"] + cls["other"]
+
+    assert "thisown" not in _names(entries)
+    assert entries
+    assert all("(" in entry and ") -> " in entry for entry in entries)
+
+    constants = search(
+        "^IddFieldProperties$",
+        method_pattern="^ExclusiveBound$",
+        max_classes=1,
+    )["classes"][0]
+    assert constants["setters"] + constants["getters"] + constants["other"] == []
+
+
+def test_inherited_methods_keep_sourced_signatures():
+    """Inherited methods use the parsed signature of their declaring base class."""
+    search = _import_search_api_op()
+    result = search(
+        "^CoilCoolingFourPipeBeam$",
+        method_pattern="^addToNode$",
+        max_classes=1,
+    )
+    assert result["ok"]
+    assert result["classes"][0]["other"] == ["addToNode(node) -> Boolean"]
+
+
 # ── return types are sourced, not guessed ───────────────────────────────
 
 
@@ -273,9 +303,9 @@ def test_every_returnable_method_has_a_sourced_type():
     in the wrapper parse, and every method must resolve to a type read from a C++
     header, a SWIG %extend, or a wrapper annotation. Coverage was 98.01% before the
     parser fixes and 10.84% before the headers were used at all; the surface itself
-    grew from ``dir(openstudio.model)`` (628 classes / 21,691 methods) to 925
-    classes / 26,418 methods when non-model classes (SqlFile, RunControl,
-    UserModel, …) became reachable.
+    grew from ``dir(openstudio.model)`` (628 classes / 21,691 methods) to 936
+    classes / 26,496 methods when non-model classes (SqlFile, RunControl,
+    UserModel, GbXML translators, Alfalfa, …) became reachable.
 
     This is pinned at exactly 0 rather than a loose bound: an SDK upgrade that
     introduces a declaration shape the parser can't read should fail here loudly,
@@ -321,9 +351,9 @@ def test_every_returnable_method_has_a_sourced_type():
 def test_wrapper_parse_surface_pinned():
     """The final wrapper numbers on this 3.11.0 install: the SWIG proxy parse covers
     940 classes / 26,526 methods (measured at plan time — adjust pins only if the
-    install differs), and search_api can now return 925 of them. The remaining 15
-    (Alfalfa*, GbXML translators, Modelica/ClassDefinition/ProgressBar) live in
-    modules outside the allowlist and are deliberately not returned.
+    install differs), and search_api can now return 936 of them. The remaining 4
+    (ClassDefinition, ConnectClause, ModelicaFile, ProgressBar) live in modules
+    outside the allowlist and are deliberately not returned.
     """
     import openstudio
 
@@ -343,7 +373,7 @@ def test_wrapper_parse_surface_pinned():
         entry["class_name"]
         for entry in _collect_classes(modules, preferred_names=set(sigs))
     }
-    assert len(returnable) == 925
+    assert len(returnable) == 936
 
 
 def test_sql_file_return_types_come_from_headers():
@@ -371,12 +401,44 @@ def test_module_field_attributes_each_class():
         "AirflowPath": "openstudio.airflow",
         "UserModel": "openstudio.isomodel",
         "GltfUserData": "openstudio.gltf",
+        "GbXMLForwardTranslator": "openstudio.gbxml",
+        "GbXMLReverseTranslator": "openstudio.gbxml",
+        "AlfalfaJSON": "openstudio.alfalfa",
+        "AlfalfaPoint": "openstudio.alfalfa",
+        "AlfalfaComponentCapability": "openstudio",
+        "AlfalfaComponentType": "openstudio",
         "People": "openstudio.model",
     }
     for class_name, module in expected.items():
         result = search(class_name, max_classes=10)
         cls = next(c for c in result["classes"] if c["class_name"] == class_name)
         assert cls["module"] == module, f"{class_name}: {cls['module']}"
+
+
+def test_gbxml_and_alfalfa_namespaces_are_searchable():
+    """Public gbXML and Alfalfa classes are included in the API search surface."""
+    search = _import_search_api_op()
+
+    gbxml = search("GbXML", max_classes=10)
+    assert {c["class_name"] for c in gbxml["classes"]} == {
+        "GbXMLForwardTranslator",
+        "GbXMLReverseTranslator",
+    }
+
+    alfalfa = search("Alfalfa", max_classes=50)
+    assert {c["class_name"] for c in alfalfa["classes"]} == {
+        "AlfalfaActuator",
+        "AlfalfaComponent",
+        "AlfalfaComponentBase",
+        "AlfalfaComponentCapability",
+        "AlfalfaComponentType",
+        "AlfalfaConstant",
+        "AlfalfaGlobalVariable",
+        "AlfalfaJSON",
+        "AlfalfaMeter",
+        "AlfalfaOutputVariable",
+        "AlfalfaPoint",
+    }
 
 
 def test_classes_listed_once_across_modules():

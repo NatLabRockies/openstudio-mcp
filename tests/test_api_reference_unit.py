@@ -13,6 +13,7 @@ import pytest
 
 from mcp_server.skills.api_reference.operations import (
     _collect_classes,
+    _decorate,
     _is_wrapper_type,
     _own_methods,
 )
@@ -204,6 +205,75 @@ def test_own_methods_non_model_class_never_subtracts_base():
         _FakeSqlFile, include_base=False, is_model_class=False, model_base_methods=_BASE_METHODS,
     )
     assert own == {"name", "path"}  # nothing subtracted
+
+
+def test_own_methods_excludes_swig_data_and_thisown_unconditionally():
+    """``dir`` includes SWIG properties/constants and the internal ownership flag.
+
+    ``thisown`` is excluded by name even if a binding version exposes it as callable;
+    all other non-callable attributes are excluded from the method buckets.
+    """
+    class _FakeSwigClass:
+        def thisown(self):
+            return None
+
+        ExclusiveBound = 1
+
+        @property
+        def swig_property(self):
+            return "value"
+
+        def realMethod(self):
+            return None
+
+    own = _own_methods(
+        _FakeSwigClass,
+        include_base=False,
+        is_model_class=False,
+        model_base_methods=set(),
+    )
+    assert own == {"realMethod"}
+
+
+def test_decorate_walks_mro_for_inherited_signatures_and_respects_precedence():
+    """Parsed signatures come from the first matching class in the live MRO."""
+    class _SignatureBase:
+        def inherited(self, base_value):
+            return None
+
+    class _SignatureMiddle(_SignatureBase):
+        def inherited(self, middle_value):
+            return None
+
+    class _SignatureLeaf(_SignatureMiddle):
+        pass
+
+    sigs = {
+        "_SignatureBase": {
+            "inherited": {"params": ["baseValue"], "returns": "BaseResult"},
+        },
+        "_SignatureMiddle": {
+            "inherited": {"params": ["middleValue"], "returns": "MiddleResult"},
+        },
+    }
+
+    assert _decorate("_SignatureLeaf", _SignatureLeaf, ["inherited"], sigs) == [
+        "inherited(middleValue) -> MiddleResult",
+    ]
+
+
+def test_decorate_never_returns_a_bare_method_name():
+    """Opaque C/SWIG callables still render as an explicit unknown signature."""
+    class _OpaqueCallable:
+        __signature__ = "unavailable"
+
+        def __call__(self):
+            return None
+
+    class _Opaque:
+        method = _OpaqueCallable()
+
+    assert _decorate("_Opaque", _Opaque, ["method"], {}) == ["method(...) -> ?"]
 
 
 # --------------------------------------------------------------------------------------
