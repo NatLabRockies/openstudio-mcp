@@ -196,6 +196,40 @@ def test_every_eval_file_has_negative_cases():
     )
 
 
+def test_every_served_skill_is_evaluated_or_exempt():
+    # Validates: every served skill has machine-checkable eval coverage or an
+    # explicit, reviewable reason why action-tool routing does not apply
+    missing: list[str] = []
+    invalid_reasons: list[str] = []
+    for skill_md in sorted(SERVED_SKILLS_DIR.glob("*/SKILL.md")):
+        if (skill_md.parent / "eval.md").is_file():
+            continue
+        fm, _ = _parse_skill_md(skill_md)
+        reason = fm.get("eval-exempt")
+        if reason is None:
+            missing.append(skill_md.parent.name)
+        elif not isinstance(reason, str) or not reason.strip():
+            invalid_reasons.append(skill_md.parent.name)
+
+    assert not missing, f"served skills missing eval.md or eval-exempt: {missing}"
+    assert not invalid_reasons, (
+        "served skills with empty/non-string eval-exempt reasons: "
+        f"{invalid_reasons}"
+    )
+
+
+def test_every_eval_file_has_positive_cases():
+    # Validates: an empty or negative-only eval.md cannot satisfy served-skill
+    # coverage without contributing an asserted action-tool routing case
+    parsed = parse_eval_files()
+    skills_with_pos = {c["skill"] for c in parsed["cases"]}
+    eval_files = {p.parent.name for p in SERVED_SKILLS_DIR.rglob("eval.md")}
+    missing = eval_files - skills_with_pos
+    assert not missing, (
+        f"eval.md files with no machine-checkable positive cases: {sorted(missing)}"
+    )
+
+
 # ---- cross-surface consistency (C1/C2) --------------------------------------
 
 

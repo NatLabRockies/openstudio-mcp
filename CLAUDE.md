@@ -80,6 +80,8 @@ docker run --rm \
 - Full suite only for final validation
 - Markers: `-m smoke` (12), `-m generic` (7), `-m progressive` (149); counts as of 2026-08-22
 - Benchmark results go in `docs/testing/llm-test-benchmark.md`
+- Served skills require `.claude/skills/<name>/eval.md` or a non-empty `eval-exempt` reason in `SKILL.md`; follow `tests/llm/README.md#skill-eval-files`
+- Treat `eval.md` as test data, not agent-facing skill content; validate changes with `pytest tests/test_skill_docs.py -k eval -v`
 
 ### Local Development
 - Lint: `ruff check mcp_server/`

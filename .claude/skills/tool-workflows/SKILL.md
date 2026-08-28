@@ -1,6 +1,7 @@
 ---
 name: tool-workflows
 description: Multi-tool recipes for common building energy modeling tasks. Use when chaining tools together for operations like adding windows, changing insulation, setting up HVAC, or running simulations.
+eval-exempt: "reference workflows; no single action-tool selection to assert"
 user-invocable: false
 ---
 

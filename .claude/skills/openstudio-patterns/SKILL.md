@@ -1,6 +1,7 @@
 ---
 name: openstudio-patterns
 description: OpenStudio model object relationships, tool dependencies, and common error patterns. Use when building or modifying models to ensure correct tool ordering.
+eval-exempt: "reference knowledge; no discrete action-tool selection to assert"
 user-invocable: false
 ---
 

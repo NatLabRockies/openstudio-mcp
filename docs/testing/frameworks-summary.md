@@ -93,7 +93,7 @@ scripts the SDK directly). Benchmark sweeps pin one image and one harness commit
 |---|---|---|
 | `test_01_setup.py` | 8 | Creates the baseline / HVAC / example models and seed fixtures every later test loads |
 | `test_02_tool_selection.py` | 4 | Single-tool discovery with no model state |
-| `test_03_eval_cases.py` | 26 | Auto-parsed from `.claude/skills/*/eval.md` "Should trigger" tables |
+| `test_03_eval_cases.py` | auto | Positive and negative action-routing cases auto-parsed from `.claude/skills/*/eval.md`, plus explicit served-guide routing cases |
 | `test_04_workflows.py` | 37 | Multi-step chains: load → weather → HVAC → simulate → extract |
 | `test_05_guardrails.py` | 3 | The agent must not bypass MCP with Bash / Edit / Write |
 | `test_06_progressive.py` | 149 | **The core diagnostic**: operations posed at L1 (vague), L2 (moderate), L3 (tool named); the benchmark's 16-task hard set is a `-k` subset of this file |
@@ -125,7 +125,7 @@ backend.
 - Rare in the ecosystem: an automated, outcome-graded agent benchmark with L1/L2/L3 prompts that separates "wrong description" from "cannot discover" from "broken tool".
 - Reproducible: pinned image + harness commit per sweep, per-leg provenance in every result file, an aggregator that refuses to pool mismatched legs, and a frozen dataset deposited with the release.
 - Cross-vendor (Claude and GPT via Codex) and ablation-ready (arms) without changing tests.
-- Eval cases auto-discovered from skill `eval.md` files stay co-located with the skills they test.
+- Eval cases auto-discovered from skill `eval.md` files stay co-located with the skills they test; the authoring contract is documented in [`tests/llm/README.md`](../../tests/llm/README.md#skill-eval-files).
 
 ### Weaknesses
 
@@ -214,7 +214,7 @@ LLM_TESTS_ENABLED=1 pytest tests/llm/ -v                 # everything, hours
 | `tests/llm/conftest.py` | LLM markers, flaky list, budget, benchmark collection |
 | `tests/llm/runner.py` | `run_agent()` / `run_claude()`, NDJSON parsing, `AgentResult` |
 | `tests/llm/grading/` | gate-2 graders (`container_grader.py`, `host.py`, `rubric.py`) |
-| `tests/llm/eval_parser.py` | turns skill `eval.md` tables into tests |
+| `tests/llm/eval_parser.py` | turns skill `eval.md` positive and negative routing tables into tests; see the [authoring contract](../../tests/llm/README.md#skill-eval-files) |
 | `scripts/benchmark_sweep.py`, `benchmark_check_leg.py`, `benchmark_aggregate.py`, `benchmark_build_t600_dataset.py` | sweep driver, contamination screen, aggregator, 600 s merge builder |
 | `.github/workflows/ci.yml`, `security.yml` | CI shards and the sandbox workflow |
 | `docs/testing/llm-test-benchmark.md` | current benchmark numbers and run history |
