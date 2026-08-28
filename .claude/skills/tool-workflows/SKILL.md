@@ -41,7 +41,7 @@ assign_construction_to_surface(
 
 Repeat `assign_construction_to_surface` for each target surface, or use
 `replace_window_constructions` for bulk window replacement. Reserve
-`create_construction(material_names=[...])` for building NEW assemblies from
+`create_construction(name=..., material_names=[...])` for building NEW assemblies from
 scratch, where you specify every layer deliberately.
 
 ## Add Internal Loads to a Space
@@ -64,7 +64,7 @@ User must provide an EPW file in the docker-mounted input directory.
 The EPW must have companion `.stat` and `.ddy` files alongside it (same directory, same base filename).
 
 ```
-list_files()                              # find available weather files
+list_weather_files()                      # find available weather files
 change_building_location(weather_file="/inputs/Chicago.epw")
 ```
 
@@ -87,7 +87,7 @@ save_osm_model(osm_path="/runs/sweep_pvav.osm"); run_simulation(...)
 create_typical_building(system_type="PSZ-HP", ..., hvac_only=True)
 save_osm_model(osm_path="/runs/sweep_pszhp.osm"); run_simulation(...)
 
-compare_runs(run_id_a, run_id_b)          # EUI + unmet-hours deltas
+compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-hours deltas
 ```
 
 Do NOT use add_baseline_system/add_doas_system for comparative studies — they
@@ -105,14 +105,13 @@ set_component_properties(component_name="Heating Coil 1",
 ### Economizer
 ```
 set_economizer_properties(air_loop_name="VAV System",
-    economizer_type="DifferentialEnthalpy")
+    properties='{"economizer_control_type": "DifferentialEnthalpy"}')
 ```
 
 ### Plant Loop Sizing
 ```
-set_sizing_properties(component_name="Chilled Water Loop",
-    design_loop_exit_temperature_c=6.67,
-    loop_design_temperature_difference_c=5.56)
+set_sizing_properties(loop_name="Chilled Water Loop",
+    properties='{"design_loop_exit_temperature_c": 6.67, "loop_design_temperature_difference_c": 5.56}')
 ```
 
 ## Apply External Measure
@@ -131,19 +130,19 @@ Full chain: create → test → apply → simulate → compare results.
 
 ```
 # 1. Baseline simulation
-save_osm_model(save_path="/runs/baseline.osm")
+save_osm_model(osm_path="/runs/baseline.osm")
 run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
 extract_summary_metrics(run_id=<baseline_id>)
 
 # 2. Create custom measure
 create_measure(name="my_measure", description="...",
     language="Ruby", run_body="    model.get...each { |x| ... }")
-test_measure(measure_dir="/runs/custom_measures/my_measure")
+test_measure(measure_dir="/measures/<user>/custom/my_measure")  # use the measure_dir returned by create_measure
 
 # 3. Reload original model, apply measure, re-simulate
 load_osm_model(osm_path="<original>")
-apply_measure(measure_dir="/runs/custom_measures/my_measure")
-save_osm_model(save_path="/runs/retrofit.osm")
+apply_measure(measure_dir="/measures/<user>/custom/my_measure")
+save_osm_model(osm_path="/runs/retrofit.osm")
 run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
 extract_summary_metrics(run_id=<retrofit_id>)
 
@@ -172,10 +171,10 @@ create_measure(name="custom_report", description="...",
     run_body="    val = sql.execAndReturnFirstDouble('SELECT ...')\n    runner.registerValue('metric', val.get) if val.is_initialized")
 
 # 3. Test against completed simulation
-test_measure(measure_dir="/runs/custom_measures/custom_report", run_id="<run_id>")
+test_measure(measure_dir="/measures/<user>/custom/custom_report", run_id="<run_id>")
 
 # 4. Apply to completed simulation
-apply_measure(measure_dir="/runs/custom_measures/custom_report", run_id="<run_id>")
+apply_measure(measure_dir="/measures/<user>/custom/custom_report", run_id="<run_id>")
 ```
 
 ## Object Cleanup

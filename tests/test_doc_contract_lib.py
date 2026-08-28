@@ -312,6 +312,17 @@ def test_check_critical_params_presence_and_equality():
     assert len(failures) == 1 and "system_type" in failures[0]
 
 
+def test_check_critical_params_bool_values():
+    # Validates: eval cells like geometry_diagnostics=true match a boolean
+    # True input (case-insensitive), and mismatched booleans fail
+    reg = {"view_tool": {"geometry_diagnostics"}}
+    calls = [{"tool": "view_tool", "input": {"geometry_diagnostics": True}}]
+    crits = [CriticalParam("geometry_diagnostics", "equals", "true")]
+    assert check_critical_params(crits, ["view_tool"], calls, reg) == []
+    crits = [CriticalParam("geometry_diagnostics", "equals", "false")]
+    assert len(check_critical_params(crits, ["view_tool"], calls, reg)) == 1
+
+
 def test_check_critical_params_requires_a_carrying_call():
     # Regression: the old harness ignored criticals entirely — an agent that
     # never called the tool carrying the param must FAIL the assertion

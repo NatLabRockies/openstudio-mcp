@@ -12,7 +12,7 @@ disable-model-invocation: true
 1. Check status and logs:
 ```
 get_run_status(run_id=...)
-get_run_logs(run_id=..., log_type="stderr")
+get_run_logs(run_id=..., stream="energyplus")   # stream="openstudio" (default) or "energyplus"
 ```
 
 2. Common fatal errors and fixes:

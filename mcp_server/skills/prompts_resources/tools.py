@@ -46,12 +46,15 @@ def register(mcp):
             f'weather_file="/inputs/{climate_city}.epw")  # builds typical model\n'
             f'2. create_typical_building(system_type="{system_a}", '
             'hvac_only=True)  # standards-tuned swap, loads untouched\n'
-            '3. save_osm_model() and run_simulation()\n'
-            "4. get_run_status() until complete\n"
+            '3. save_osm_model(osm_path="/runs/sweep_a.osm") and '
+            'run_simulation(osm_path="/runs/sweep_a.osm")\n'
+            "4. get_run_status(run_id=<id from run_simulation>) until complete\n"
             f'5. create_typical_building(system_type="{system_b}", '
             'hvac_only=True)  # swap to candidate B on the SAME model\n'
-            "6. save_osm_model() and run_simulation()\n"
-            "7. compare_runs(run_id_a, run_id_b) — EUI, end uses, unmet hours\n\n"
+            '6. save_osm_model(osm_path="/runs/sweep_b.osm") and '
+            'run_simulation(osm_path="/runs/sweep_b.osm")\n'
+            "7. compare_runs(baseline_run_id=<run A id>, "
+            "retrofit_run_id=<run B id>) — EUI, end uses, unmet hours\n\n"
             "Note: system_type takes openstudio-standards names — call "
             "create_typical_building's docs or list them via the tool schema. "
             "Do NOT use add_baseline_system for comparisons; it is a generic "
@@ -86,9 +89,10 @@ def register(mcp):
             "5. add_layer_to_construction(construction_name=<current "
             'construction>, material_name="New_Insulation") — keeps all '
             "existing layers; verify assembly_r_si_after > before\n"
-            "6. assign_construction_to_surface() with the new construction "
-            "for each target surface\n"
-            "7. save_osm_model()"
+            "6. assign_construction_to_surface(surface_name=<target surface>, "
+            "construction_name=<new construction>) for each target surface\n"
+            '7. save_osm_model(osm_path="/runs/retrofit.osm") — save to a '
+            "new path, never over a read-only input"
         )
 
     @mcp.prompt(
@@ -99,19 +103,25 @@ def register(mcp):
         ),
     )
     def full_building_simulation_prompt(
-        system_type: str = "05",
+        system_type: str = "Inferred",
         climate_city: str = "Chicago",
     ) -> str:
+        # system_type takes openstudio-standards names ("VAV chiller with gas
+        # boiler reheat", ...); "Inferred" auto-selects by building type
         return (
-            f"Create a full building model with ASHRAE System {system_type} "
+            f"Create a full building model with HVAC system '{system_type}' "
             f"in {climate_city}, add loads, and simulate.\n\n"
             "Steps:\n"
             f'1. create_new_building(building_type="SmallOffice", '
-            f'weather_file="/inputs/{climate_city}.epw")\n'
+            f'weather_file="/inputs/{climate_city}.epw", '
+            f'system_type="{system_type}")\n'
             "2. list_spaces() — verify geometry and loads\n"
-            "3. save_osm_model() and run_simulation()\n"
-            "4. Poll get_run_status() until complete\n"
-            "5. extract_summary_metrics() — review EUI and unmet hours"
+            '3. save_osm_model(osm_path="/runs/full_building.osm") and '
+            'run_simulation(osm_path="/runs/full_building.osm")\n'
+            "4. Poll get_run_status(run_id=<id from run_simulation>) "
+            "until complete\n"
+            "5. extract_summary_metrics(run_id=<id>) — review EUI and "
+            "unmet hours"
         )
 
     @mcp.prompt(
@@ -162,7 +172,8 @@ def register(mcp):
             "4. get_model_summary() — verify what was added\n"
             "5. list_air_loops() — inspect HVAC\n"
             '6. list_model_objects(object_type="Construction") — inspect envelope\n'
-            "7. save_osm_model()"
+            '7. save_osm_model(osm_path="/runs/typical.osm") — save to a new '
+            "path, never over a read-only input"
         )
 
     @mcp.prompt(
@@ -183,7 +194,8 @@ def register(mcp):
             "5. get_weather_info() — verify weather file is set\n"
             "6. get_run_period() — verify simulation period\n"
             "7. get_simulation_control() — check sizing flags\n"
-            "8. run_qaqc_checks() — automated diagnostics\n"
+            "8. validate_model() — automated pre-flight diagnostics "
+            "(run_qaqc_checks needs a completed simulation)\n"
             "9. Report any issues found before proceeding"
         )
 

@@ -304,6 +304,8 @@ def normalize_calls(result_or_calls) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _values_equal(actual, expected: str) -> bool:
+    if isinstance(actual, bool) and expected.lower() in ("true", "false"):
+        return actual == (expected.lower() == "true")
     try:
         return float(actual) == float(expected)
     except (TypeError, ValueError):

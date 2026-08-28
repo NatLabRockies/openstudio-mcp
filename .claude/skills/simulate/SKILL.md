@@ -12,12 +12,12 @@ Run a simulation on the currently loaded model and present results.
 
 1. Save the model to a unique path under `/runs/`:
    ```
-   save_osm_model(save_path="/runs/<descriptive_name>.osm")
+   save_osm_model(osm_path="/runs/<descriptive_name>.osm")
    ```
 
-2. Ask the user which weather file to use. They must provide an EPW file path in the docker-mounted input directory. List available files if needed:
+2. Ask the user which weather file to use. They must provide an EPW file path in the docker-mounted input directory. List available weather files if needed:
    ```
-   list_files()
+   list_weather_files()
    ```
 
 3. Run the simulation:
@@ -25,10 +25,13 @@ Run a simulation on the currently loaded model and present results.
    run_simulation(osm_path="<saved_path>", epw_path="<user_epw_path>")
    ```
 
-4. Poll until complete (check every 3-5 seconds):
+4. Poll until complete — first status check ~60 seconds after submitting, then
+   no more than once per minute (every 2-3 minutes for long simulations):
    ```
    get_run_status(run_id=<id>)
    ```
+   Each status check costs a full LLM turn. If your client can wait (e.g. a
+   shell sleep), wait before checking rather than polling back-to-back.
 
 5. Extract key results:
    ```

@@ -49,21 +49,21 @@ apply_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
 ### 4. Verify Results (Before/After Comparison)
 For rigorous validation, run a baseline simulation BEFORE applying the measure:
 ```
-save_osm_model(save_path="/runs/baseline.osm")
+save_osm_model(osm_path="/runs/baseline.osm")
 run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
 extract_summary_metrics(run_id=<baseline_id>)   # record baseline EUI
 
 # reload, apply measure, re-simulate
 load_osm_model(osm_path="<original>")
 apply_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
-save_osm_model(save_path="/runs/retrofit.osm")
+save_osm_model(osm_path="/runs/retrofit.osm")
 run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
 extract_summary_metrics(run_id=<retrofit_id>)   # compare to baseline
 ```
 
 ## Language Choice
 
-Both are **fully supported** — `create_measure(language="Ruby"|"Python")` scaffolds, tests
+Both are **fully supported** — `create_measure(language="Ruby"|"Python", ...)` scaffolds, tests
 (minitest for Ruby, pytest for Python), and applies either. Pick per the user's request or
 project convention:
 

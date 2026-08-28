@@ -31,19 +31,21 @@ Inspect the current model for common issues before running a simulation.
 
 4. Run ASHRAE QA/QC checks (if model has been simulated):
    ```
-   run_qaqc_checks(template="90.1-2019")
+   run_qaqc_checks(run_id=<completed run_id>, template="90.1-2019")
    ```
 
-5. Report findings organized by severity:
+5. Report findings organized by severity (same buckets `validate_model` uses):
 
    **Errors** (will cause simulation failure):
-   - Missing weather file
+   - Missing design days (HVAC sizing fails)
+   - Air loops serving no thermal zones (EnergyPlus fatal)
+   - Single-zone setpoint managers without a control zone (EnergyPlus fatal)
+
+   **Warnings** (may fail later or produce bad results):
+   - No weather file on the model (can still pass epw_path to run_simulation)
    - Zones with no HVAC and no ideal air loads
    - Surfaces with no construction
-
-   **Warnings** (may produce bad results):
    - Zones with no loads (people, lights, equipment)
-   - Missing design days (HVAC won't autosize)
    - No run period set (only sizing runs)
    - Unmet hours above threshold
 
