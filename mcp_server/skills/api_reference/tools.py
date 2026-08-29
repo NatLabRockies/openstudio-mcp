@@ -12,17 +12,22 @@ def register(mcp):
         max_classes: int = 10,
         include_base: bool = False,
     ) -> dict:
-        """Look up OpenStudio SDK classes, setter methods, and getter methods.
+        """Look up OpenStudio SDK classes with full method signatures.
 
         IMPORTANT: call before writing measures that use SDK method calls.
-        Introspects the live openstudio.model module to verify which methods
-        actually exist on a class. Prevents calling nonexistent methods like
-        setRatedCoolingCoefficientOfPerformance.
+        Introspects the live SDK (the openstudio root namespace, openstudio.model,
+        and the non-model submodules — airflow, isomodel, gltf, measure, …) to
+        verify which methods actually exist on a class, AND returns each method's
+        full signature — parameter names and return type — so you can write the
+        call correctly. Prevents both hallucinated method names (e.g.
+        setRatedCoolingCoefficientOfPerformance) and guessed argument lists.
 
         Use cases:
-          - "What setters does CoilCoolingFourPipeBeam have?"
-          - "Does BoilerHotWater have a setEfficiency method?"
+          - "What setters does CoilCoolingFourPipeBeam have, and what args?"
+          - "Does BoilerHotWater have a setEfficiency method? What does it take?"
           - "List all classes matching 'ChillerElectric'"
+          - "How do I read sql output?" — SqlFile is reachable: it lives at the
+            openstudio root, not in openstudio.model
 
         Examples:
           search_api("CoilCoolingFourPipeBeam")
@@ -35,8 +40,31 @@ def register(mcp):
             method_pattern: Optional regex to filter methods (e.g. "Rated|COP").
             max_classes: Max classes to return (default 10).
             include_base: Include inherited ModelObject methods (default False).
+                Only model-module classes inherit ModelObject — non-model classes
+                (SqlFile, WorkflowStepResult) are unaffected.
 
-        Returns setters, getters, and other methods grouped per class.
+        Returns setters, getters, and other methods grouped per class. Each entry
+        is a signature string, e.g. "setSurfaceType(surfaceType) -> Boolean", and
+        each class entry carries a "module" field naming the namespace it lives in
+        ("openstudio", "openstudio.model", "openstudio.airflow", ...).
+
+        The response includes `signatures_available`; if it is false, a warning is
+        included and entries may contain fallback parameters or `-> ?` for an
+        unknown return type. Return types are read from the SDK's C++ headers and
+        its SWIG wrappers — they are sourced, never inferred from the method's
+        name. Read them literally; the distinction matters in Ruby:
+          - "-> Float"       a plain value. Calling .get on it raises NoMethodError.
+          - "-> Float, nil"  an Optional. .get is required; check .is_initialized
+                             first. e.g. nominalCapacity() -> Float, nil while
+                             efficiency() -> Float on the same class.
+          - "-> Array<X>"    a vector; iterate it.
+          - "-> ?"           genuinely unknown — no header or annotation declares
+                             it. Probe the object (print .class) before calling
+                             .get. This is an admitted gap, not a hint.
+
+        An Optional being present is not the same as it being meaningful: e.g.
+        ThermalZone#thermostat may be initialized while carrying no setpoint
+        schedule. Check the value the behavior depends on, not just the wrapper.
         """
         return search_api_op(
             class_pattern,
