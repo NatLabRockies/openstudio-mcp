@@ -7,10 +7,12 @@ semantics. Integration behavior against the live SDK lives in test_api_reference
 """
 from __future__ import annotations
 
+import sys
 import types
 
 import pytest
 
+from mcp_server.skills.api_reference import operations
 from mcp_server.skills.api_reference.operations import (
     _collect_classes,
     _decorate,
@@ -274,6 +276,42 @@ def test_decorate_never_returns_a_bare_method_name():
         method = _OpaqueCallable()
 
     assert _decorate("_Opaque", _Opaque, ["method"], {}) == ["method(...) -> ?"]
+
+
+def test_search_api_reports_degraded_signature_loading(monkeypatch, capsys):
+    """Class/method discovery survives a signature parser failure visibly."""
+    class ModelObject:
+        def name(self):
+            return None
+
+    class FakeWidget(ModelObject):
+        def setName(self, name):
+            return True
+
+    fake_model = types.ModuleType("openstudio.model")
+    fake_model.ModelObject = ModelObject
+    fake_model.FakeWidget = FakeWidget
+    fake_openstudio = types.ModuleType("openstudio")
+    fake_openstudio.model = fake_model
+    monkeypatch.setitem(sys.modules, "openstudio", fake_openstudio)
+
+    def fail_signatures():
+        raise OSError("signature files unavailable")
+
+    monkeypatch.setattr(operations, "signatures", fail_signatures)
+
+    result = operations.search_api_op("^FakeWidget$")
+
+    assert result["ok"] is True
+    assert result["signatures_available"] is False
+    assert "signatures are unavailable" in result["warning"]
+    assert result["classes"][0]["class_name"] == "FakeWidget"
+    assert result["classes"][0]["setters"] == ["setName(name) -> ?"]
+
+    stderr = capsys.readouterr().err
+    assert "search_api: failed to load SDK signatures" in stderr
+    assert "^FakeWidget$" in stderr
+    assert "OSError: signature files unavailable" in stderr
 
 
 # --------------------------------------------------------------------------------------
