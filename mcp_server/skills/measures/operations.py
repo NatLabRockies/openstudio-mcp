@@ -34,6 +34,7 @@ from mcp_server.config import (
     user_measures_root,
     user_run_root,
 )
+from mcp_server.log_excerpt import describe_exit, excerpt_log_file
 from mcp_server.model_manager import get_model, load_model
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
@@ -721,6 +722,8 @@ def apply_measure(
         arguments: Optional dict of argument_name -> value overrides
         run_id: Optional completed simulation run_id (for reporting measures)
     """
+    run_dir: Path | None = None
+    log_path: Path | None = None
     try:
         model = get_model()
         measure_path = Path(measure_dir)
@@ -874,14 +877,7 @@ def apply_measure(
             )
 
         if proc.returncode != 0:
-            # Read last 50 lines of log for error details
-            log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            tail = "\n".join(log_lines[-50:])
-            return {
-                "ok": False,
-                "error": f"Measure run failed (exit code {proc.returncode})",
-                "log_tail": tail,
-            }
+            return _measure_failure(proc.returncode, run_dir, log_path)
 
         # Parse runner messages from out.osw
         runner_messages = parse_runner_messages(run_dir / "out.osw")
@@ -945,8 +941,43 @@ def apply_measure(
         return result
 
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "Measure run timed out (5 min)"}
+        # The partial log is on disk — point at it so the agent can see how far
+        # the measure got before the cap.
+        result: dict[str, Any] = {"ok": False, "error": "Measure run timed out (5 min)"}
+        if run_dir is not None:
+            result["run_dir"] = str(run_dir)
+        if log_path is not None:
+            result["log_path"] = str(log_path)
+            result["log_hint"] = "Partial log: read_file(file_path=log_path)"
+        return result
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Failed to apply measure: {e}"}
+
+
+def _measure_failure(returncode: int, run_dir: Path, log_path: Path) -> dict[str, Any]:
+    """Failure response for a non-zero `openstudio run` (issue #150).
+
+    Always carries `log_path` (readable via read_file — it lives under the
+    caller's run root) so the 50-line excerpt is never the only evidence. On a
+    native crash the excerpt is the window around the `[BUG]` line (measure.rb
+    backtrace) instead of the memory-map dump that ends Ruby's report, and
+    `crash_marker` / `exit_code` say so explicitly.
+    """
+    # log_tail goes back to the client verbatim — the log is written by the
+    # sandboxed subprocess, so the read must refuse a symlink swap (PR #105).
+    try:
+        tail, crash_marker, _full_tail = excerpt_log_file(log_path)
+    except ValueError as e:
+        tail, crash_marker = f"(log unreadable: {e})", None
+    return {
+        "ok": False,
+        "error": f"Measure run failed ({describe_exit(returncode)})",
+        "exit_code": returncode,
+        "crash_marker": crash_marker,
+        "log_tail": tail,
+        "log_path": str(log_path),
+        "run_dir": str(run_dir),
+        "log_hint": "Full log: read_file(file_path=log_path)",
+    }

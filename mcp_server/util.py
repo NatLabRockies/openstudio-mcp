@@ -91,6 +91,18 @@ def read_tail_bounded(path: Path, max_bytes: int) -> bytes:
     Raises ``ValueError`` on a symlink, a non-regular file, or an unreadable
     path (same degradation notes as read_file_bounded on non-POSIX platforms).
     """
+    return _read_bounded(path, max_bytes, from_end=True)
+
+
+def read_head_bounded(path: Path, max_bytes: int) -> bytes:
+    """Read the FIRST ``max_bytes`` of a regular file with the same no-follow
+    guarantees as read_tail_bounded. Pairs with it when the interesting part
+    of an oversize log sits at the start (Ruby ``[BUG]`` reports put the
+    backtrace first and a memory-map dump last — issue #150)."""
+    return _read_bounded(path, max_bytes, from_end=False)
+
+
+def _read_bounded(path: Path, max_bytes: int, *, from_end: bool) -> bytes:
     flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
              | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
     try:
@@ -101,7 +113,7 @@ def read_tail_bounded(path: Path, max_bytes: int) -> bytes:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
             raise ValueError(f"not a regular file: {path}")
-        if st.st_size > max_bytes:
+        if from_end and st.st_size > max_bytes:
             os.lseek(fd, st.st_size - max_bytes, os.SEEK_SET)
         chunks: list[bytes] = []
         remaining = max_bytes

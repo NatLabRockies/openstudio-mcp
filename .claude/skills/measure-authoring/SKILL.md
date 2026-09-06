@@ -57,6 +57,21 @@ returns, not a hardcoded one.
 apply_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
 ```
 
+### When test_measure / apply_measure fail
+Both return `log_path` (the full log on disk), a `log_tail` excerpt, `exit_code`,
+and `crash_marker`. The excerpt is a window, not the whole story: read the full log
+before guessing.
+```
+read_file(file_path="<log_path from the failure response>")
+```
+- `crash_marker` set (e.g. `[BUG] Segmentation fault`, error mentions SIGABRT/SIGSEGV):
+  the Ruby/Python process died in native SDK code, not in a raised exception. The
+  excerpt shows the `-- Ruby level backtrace` with the `measure.rb` line. Almost
+  always a use-after-delete: `component.remove()` followed by `addToNode` on a node
+  that `remove()` deleted. Insert the replacement first, then remove the old one.
+- `crash_marker` null: an ordinary Ruby/Python error; the message and backtrace are in
+  `log_tail` / `test_output`.
+
 ### 4. Verify Results (Before/After Comparison)
 For rigorous validation, run a baseline simulation BEFORE applying the measure:
 ```

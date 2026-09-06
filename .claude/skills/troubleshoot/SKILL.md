@@ -60,6 +60,20 @@ query_timeseries(run_id=..., variable_name="Zone Mean Air Temperature",
     frequency="Hourly", key_value="Zone 1")
 ```
 
+## Measure Test / Apply Failed
+
+`test_measure` and `apply_measure` failures return `log_path`, `log_tail`, `exit_code`,
+and `crash_marker`. `log_tail` is an excerpt; read the whole log first:
+```
+read_file(file_path="<log_path from the failure response>")
+```
+
+| Signal | Cause | Fix |
+|---|---|---|
+| `crash_marker` = `[BUG] Segmentation fault`, error says SIGABRT/SIGSEGV | Native SDK crash inside the measure, usually `remove()` then `addToNode` on a node the removal deleted | Add the replacement component first, then remove the old one; re-run `test_measure` |
+| `crash_marker` null, backtrace names `measure.rb` / `measure.py` | Ordinary Ruby/Python error in `run_body` | Fix the line shown; see "Verify SDK Methods" for `NoMethodError` |
+| `Measure run timed out` | Measure loops or waits | Partial log at `log_path`; simplify the measure |
+
 ## Verify SDK Methods
 
 If a measure fails due to nonexistent API methods:
