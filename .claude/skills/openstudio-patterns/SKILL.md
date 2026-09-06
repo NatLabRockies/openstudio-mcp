@@ -123,6 +123,7 @@ search_wiring_patterns("four pipe beam")     # get working connection code
 | Simulation fails, no results | Missing weather file or design days | `change_building_location` (sets EPW + DDY + climate zone) |
 | EUI = 0 or unreasonable | No loads, no HVAC, or no run period | Check `inspect_osm_summary` for missing objects |
 | `"Output directory is not allowed"` / `"... path not allowed"` | Path outside your allowed roots (over HTTP each user is scoped to `/runs/<user>/`) | Save with `save_osm_model(save_name=...)` and reuse the paths tools return; staged inputs are read-only |
+| `[BUG] Segmentation fault ... in addToNode`, measure process exits 134 (`crash_marker` set, no Ruby exception) | Node handle captured before `component.remove()`; `remove()` deletes the component's outlet node | `addToNode` the new component on the old one's inlet node first, then `remove()`; `search_wiring_patterns("replace coil")` |
 
 ## Save vs Simulate
 

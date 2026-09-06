@@ -1379,3 +1379,102 @@ def test_uppercase_arg_name_rejected():
                 assert res["ok"] is False, f"uppercase arg name must be rejected: {res}"
                 assert "argument name" in res.get("error", "").lower(), res
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_replace_recipe_ruby_runs_via_apply_measure():
+    # Validates: #149 — the replace_supply_branch_component recipe is executable Ruby, not
+    # prose: it swaps a baseline DX single-speed coil for a two-speed one in place, keeps the
+    # supply-branch length, reuses the old name, and does not crash the measure process
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from mcp_server.skills.api_reference.wiring_recipes import RECIPES
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("recipe149"))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 1}))
+                zone = zones["thermal_zones"][0]["name"]
+                sys3 = unwrap(await s.call_tool("add_baseline_system", {
+                    "system_type": 3, "thermal_zone_names": [zone], "system_name": "PSZ Test",
+                }))
+                assert sys3["ok"] is True, sys3
+                before = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "PSZ Test"}))
+                assert before["ok"] is True, before
+                clg_before = before["air_loop"]["detailed_components"]["cooling_coils"]
+                assert [c["type"] for c in clg_before] == ["OS_Coil_Cooling_DX_SingleSpeed"], clg_before
+                n_supply_before = before["air_loop"]["num_supply_components"]
+
+                # Recipe verbatim; only the coil-name placeholder substituted
+                body = RECIPES["replace_supply_branch_component"]["ruby"]
+                body = body.replace("'Main Cooling Coil'", "'PSZ Test DX Cooling Coil'")
+                run_body = "\n".join("    " + line for line in body.splitlines())
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("swap_coil"),
+                    "description": "Swap DX coil in place (recipe #149)",
+                    "run_body": run_body, "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                applied = unwrap(await s.call_tool("apply_measure", {"measure_dir": create["measure_dir"]}))
+                assert applied["ok"] is True, applied.get("log_tail") or applied
+
+                after = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "PSZ Test"}))
+                clg_after = after["air_loop"]["detailed_components"]["cooling_coils"]
+                assert [c["type"] for c in clg_after] == ["OS_Coil_Cooling_DX_TwoSpeed"], clg_after
+                assert clg_after[0]["name"] == "PSZ Test DX Cooling Coil", "old name must be reused"
+                assert after["air_loop"]["num_supply_components"] == n_supply_before, \
+                    "in-place swap must not add or drop nodes on the supply branch"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_replace_recipe_handles_last_component_via_apply_measure():
+    # Validates: #149 review edge case — when the old component is LAST before
+    # supplyOutletNode, remove() deletes its INLET node (the new component's outlet). The
+    # recipe's add-first order must still splice the new coil to the loop outlet, keep the
+    # outlet-node setpoint manager and the branch's node count, and not crash the process
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from mcp_server.skills.api_reference.wiring_recipes import RECIPES
+
+    build = "\n".join([
+        "    loop = OpenStudio::Model::AirLoopHVAC.new(model); loop.setName('Edge Loop')",
+        "    s = model.alwaysOnDiscreteSchedule",
+        "    fan = OpenStudio::Model::FanConstantVolume.new(model, s); fan.setName('Edge Fan')",
+        "    htg = OpenStudio::Model::CoilHeatingElectric.new(model, s); htg.setName('Edge Htg')",
+        "    clg = OpenStudio::Model::CoilCoolingDXSingleSpeed.new(model); clg.setName('Main Cooling Coil')",
+        "    [fan, htg, clg].each { |c| c.addToNode(loop.supplyOutletNode) }  # coil ends up LAST",
+        "    sch = OpenStudio::Model::ScheduleConstant.new(model); sch.setValue(12.8)",
+        "    OpenStudio::Model::SetpointManagerScheduled.new(model, sch).addToNode(loop.supplyOutletNode)",
+    ])
+    recipe = RECIPES["replace_supply_branch_component"]["ruby"]
+    run_body = build + "\n" + "\n".join("    " + line for line in recipe.splitlines())
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("recipe149last"))
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("swap_last"),
+                    "description": "Swap the last supply component in place (recipe #149)",
+                    "run_body": run_body, "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                applied = unwrap(await s.call_tool("apply_measure", {"measure_dir": create["measure_dir"]}))
+                assert applied["ok"] is True, applied.get("log_tail") or applied
+
+                after = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "Edge Loop"}))
+                assert after["ok"] is True, after
+                supply = [c["type"] for c in after["air_loop"]["supply_components"]]
+                assert supply == [
+                    "OS_Node", "OS_Fan_ConstantVolume", "OS_Node", "OS_Coil_Heating_Electric",
+                    "OS_Node", "OS_Coil_Cooling_DX_TwoSpeed", "OS_Node",
+                ], supply
+                clg = after["air_loop"]["detailed_components"]["cooling_coils"]
+                assert [c["name"] for c in clg] == ["Main Cooling Coil"], "old name must be reused"
+                assert len(after["air_loop"]["setpoint_managers"]) == 1, \
+                    "SPM on the supply outlet node must survive the swap"
+    asyncio.run(_run())

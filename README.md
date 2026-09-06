@@ -641,7 +641,7 @@ Typed wrappers over ~79 bundled [common measures](https://github.com/NREL/openst
 | `get_skill` | Step-by-step instructions for a workflow |
 | `recommend_tools` | Recommend the relevant tool group for a task |
 | `search_api` | Look up OpenStudio SDK classes + methods (verify before calling) |
-| `search_wiring_patterns` | Ruby wiring recipes for HVAC (24 patterns) |
+| `search_wiring_patterns` | Ruby wiring recipes for HVAC, plus SDK crash hazards for remove/addToNode queries |
 | `get_server_status` | Server health check |
 | `get_versions` | OpenStudio, EnergyPlus, Ruby versions |
 
