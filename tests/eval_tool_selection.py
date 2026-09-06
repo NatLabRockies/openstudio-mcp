@@ -138,6 +138,9 @@ EVAL_CASES = [
     ("set economizer properties", "set_economizer_properties"),
     # Loop operations
     ("add supply equipment to plant loop", "add_supply_equipment"),
+    ("add a heating coil to the air loop supply branch", "add_air_loop_supply_component"),
+    ("remove the fan from the air loop", "remove_air_loop_supply_component"),
+    ("replace the cooling coil on the air loop", "replace_air_loop_supply_component"),
     ("remove zone equipment", "remove_zone_equipment"),
     ("remove all zone equipment batch", "remove_all_zone_equipment"),
     # Object management

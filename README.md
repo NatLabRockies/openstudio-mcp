@@ -455,7 +455,7 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Plant loops & zone equipment</b> — 9 tools</summary>
+<summary><b>Plant loops, air-loop supply branches & zone equipment</b> — 12 tools</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -464,6 +464,9 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 | `remove_supply_equipment` | Remove supply-side equipment |
 | `add_demand_component` | Add coil/heater to the demand side |
 | `remove_demand_component` | Remove a demand-side component |
+| `add_air_loop_supply_component` | Add a coil or fan to an air loop's supply branch (append or insert before/after) |
+| `remove_air_loop_supply_component` | Remove a coil or fan from an air loop, keeping its setpoint managers |
+| `replace_air_loop_supply_component` | Swap a coil or fan in place (add-first order, avoids the SDK segfault) |
 | `add_zone_equipment` | Add baseboard/unit heater to a zone |
 | `remove_zone_equipment` | Remove zone equipment |
 | `remove_all_zone_equipment` | Batch-remove all equipment from zones |

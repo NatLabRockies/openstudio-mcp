@@ -116,7 +116,9 @@ project convention:
     end
 ```
 
-Replace a supply-branch coil or fan in place (add first, THEN remove):
+Replace a supply-branch coil or fan in place (add first, THEN remove). For a plain swap
+prefer the tool `replace_air_loop_supply_component` (no measure needed); the snippet is for
+measures that must do it themselves:
 ```ruby
     old_coil = model.getCoilCoolingDXSingleSpeedByName('Main Cooling Coil').get
     inlet_node = old_coil.inletModelObject.get.to_Node.get

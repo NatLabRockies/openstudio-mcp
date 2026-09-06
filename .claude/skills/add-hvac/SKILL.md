@@ -51,6 +51,23 @@ Guide the user through selecting and applying an HVAC system to their model.
 
 6. Report what was created: system name, zones served, equipment types, plant loops.
 
+## Edit an Existing Air Loop's Supply Branch
+
+Swap, add, or drop a coil or fan on a loop that already exists. No measure needed:
+```
+get_air_loop_details(air_loop_name="PSZ-AC 1")            # exact component names + order
+replace_air_loop_supply_component(air_loop_name="PSZ-AC 1",
+    component_name="PSZ-AC 1 DX Cooling Coil", new_component_type="CoilCoolingDXTwoSpeed")
+add_air_loop_supply_component(air_loop_name="PSZ-AC 1", component_type="CoilHeatingWater",
+    component_name="Preheat Coil", insert_before="PSZ-AC 1 DX Cooling Coil", plant_loop_name="HW Loop")
+remove_air_loop_supply_component(air_loop_name="PSZ-AC 1", component_name="Preheat Coil")
+set_component_properties(component_name="PSZ-AC 1 DX Cooling Coil", properties={"rated_high_speed_cop": 4.0})
+```
+Water coils need `plant_loop_name` (a water-for-water swap inherits the old coil's loop).
+Setpoint managers on a deleted node are moved to the surviving node and listed in the response.
+These are for coils and fans; plant equipment uses `add_supply_equipment`, terminals use
+`replace_zone_terminal`.
+
 ## Custom HVAC Wiring
 
 For custom HVAC configurations beyond the baseline templates:

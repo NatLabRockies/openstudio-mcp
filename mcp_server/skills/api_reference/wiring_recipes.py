@@ -599,7 +599,8 @@ new_coil.setName(old_name)""",
                  "component to the loop outlet and SetpointManagers there survive; verified "
                  "both). Use to replace / swap / exchange / delete and re-add an existing coil "
                  "or fan in place on an air loop or plant loop supply branch; for terminals use "
-                 "addBranchForZone (zone-keyed, remove-first is safe). "
+                 "addBranchForZone (zone-keyed, remove-first is safe). For a plain swap without "
+                 "a measure, the replace_air_loop_supply_component tool does this sequence. "
                  "Verified OpenStudio 3.11.0.",
         "source": "verified in-repo 2026-09-06 (not from openstudio-resources)",
     },

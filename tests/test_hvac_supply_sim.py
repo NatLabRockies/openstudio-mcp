@@ -294,3 +294,53 @@ def test_doas_radiant_equip_simulates():
                 await _save_run_and_check(s, name)
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 6. Air-loop supply branch edited in place (#148) — replaced components still simulate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_replaced_supply_branch_components_simulate():
+    """System 3 with the fan and DX coil swapped in place → EnergyPlus completes cleanly."""
+    # Validates: replace_air_loop_supply_component leaves a branch that forward-translates and
+    # runs (fan CV→VAV, DX single→two-speed on every PSZ loop), no fatal/severe errors
+    name = f"sim_als_{uuid.uuid4().hex[:8]}"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                zone_names = await _setup_baseline(s, name)
+                sys3 = unwrap(await s.call_tool("add_baseline_system", {
+                    "system_type": 3, "thermal_zone_names": zone_names,
+                }))
+                assert sys3["ok"] is True, sys3
+                loops = unwrap(await s.call_tool("list_air_loops", {}))["air_loops"]
+                assert len(loops) == 10, "System 3 = one PSZ loop per zone"
+
+                swapped = 0
+                for loop in loops:
+                    details = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": loop["name"]}))
+                    comps = details["air_loop"]["detailed_components"]
+                    fan = comps["fans"][0]["name"]
+                    coil = comps["cooling_coils"][0]["name"]
+                    r1 = unwrap(await s.call_tool("replace_air_loop_supply_component", {
+                        "air_loop_name": loop["name"], "component_name": fan,
+                        "new_component_type": "FanVariableVolume",
+                    }))
+                    assert r1["ok"] is True, r1
+                    r2 = unwrap(await s.call_tool("replace_air_loop_supply_component", {
+                        "air_loop_name": loop["name"], "component_name": coil,
+                        "new_component_type": "CoilCoolingDXTwoSpeed",
+                    }))
+                    assert r2["ok"] is True, r2
+                    types = [c["type"] for c in r2["supply_order"]]
+                    assert types == ["OS_Coil_Cooling_DX_TwoSpeed", "OS_Coil_Heating_Gas",
+                                     "OS_Fan_VariableVolume", "OS_AirLoopHVAC_OutdoorAirSystem"], types
+                    swapped += 1
+                assert swapped == 10
+
+                await _save_run_and_check(s, name)
+
+    asyncio.run(_run())
