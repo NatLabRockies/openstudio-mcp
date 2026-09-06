@@ -78,6 +78,20 @@ configured model, then `compare_runs`. Do NOT use
 add_baseline_system/add_doas_system for comparative studies — generic wiring
 templates, no standards tuning.
 
+## Edit an Existing Air Loop's Supply Branch
+
+Swap, add, or drop a coil or fan on an air loop that already exists (no measure):
+```
+get_air_loop_details(air_loop_name="PSZ-AC 1")        # exact names + supply order
+replace_air_loop_supply_component(air_loop_name="PSZ-AC 1",
+    component_name="PSZ-AC 1 DX Cooling Coil", new_component_type="CoilCoolingDXTwoSpeed")
+set_component_properties(component_name="PSZ-AC 1 DX Cooling Coil",
+    properties={"rated_high_speed_cop": 4.0})
+```
+`add_air_loop_supply_component(..., insert_before=/insert_after=)` places a new coil or fan
+relative to an existing one; `remove_air_loop_supply_component` drops one and moves the
+setpoint managers off the deleted node. Water coils need `plant_loop_name`.
+
 ## Tune Component Properties
 
 ```

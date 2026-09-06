@@ -91,6 +91,9 @@ EXPECTED_TOOLS = {
     "remove_zone_equipment",
     "remove_all_zone_equipment",
     "set_zone_equipment_priority",
+    "add_air_loop_supply_component",
+    "remove_air_loop_supply_component",
+    "replace_air_loop_supply_component",
     # Phase 6A: Loads
     "get_load_details",
     "create_people_definition",
