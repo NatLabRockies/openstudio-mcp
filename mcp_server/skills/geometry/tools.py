@@ -40,7 +40,12 @@ def register(mcp):
         - Surfaces in a space: space_name="Office 1"
 
         Args:
-            detailed: Return all fields (construction, orientation, vertices, subsurfaces)
+            detailed: Return all fields (construction, orientation, subsurface count) plus
+                vertices = [[x, y, z], ...] metres in the parent space's local frame — the
+                same frame create_surface accepts, so values feed straight back in. For
+                building coordinates apply the space transformation (origin and
+                direction_of_relative_north from get_space_details); adding the origin
+                alone is only right for unrotated spaces.
             space_name: Filter by parent space name
             surface_type: Filter by type — "Wall", "Floor", "RoofCeiling"
             boundary: Filter by outside boundary — "Outdoors", "Ground", "Surface"
@@ -55,6 +60,12 @@ def register(mcp):
     def get_surface_details_tool(surface_name: str):
         """Get surface details — vertices, area, tilt, azimuth, construction, adjacent surface.
 
+        vertices = [[x, y, z], ...] metres in the parent space's local frame — the same
+        frame create_surface / create_subsurface accept, so values feed straight back in.
+        For building coordinates apply the space transformation (origin and
+        direction_of_relative_north from get_space_details); adding the origin alone is
+        only right for unrotated spaces.
+
         Args:
             surface_name: Name of the surface to retrieve
         """
@@ -66,6 +77,7 @@ def register(mcp):
         space_name: str | None = None,
         subsurface_type: str | None = None,
         max_results: int = 10,
+        detailed: bool = False,
     ):
         """List subsurfaces — windows, doors, skylights, glass doors.
         Default 10 results; use filters to narrow.
@@ -80,15 +92,18 @@ def register(mcp):
             space_name: Filter by parent space (transitive: subsurface→surface→space)
             subsurface_type: Filter — "FixedWindow", "OperableWindow", "Door", "GlassDoor"
             max_results: Max items to return (default 10, 0=unlimited)
+            detailed: Add vertices = [[x, y, z], ...] metres in the parent space's local
+                frame (same frame create_subsurface accepts)
         """
         mr = None if max_results == 0 else max_results
         return list_subsurfaces(surface_name=surface_name, space_name=space_name,
-                               subsurface_type=subsurface_type, max_results=mr)
+                               subsurface_type=subsurface_type, max_results=mr,
+                               detailed=detailed)
 
     @mcp.tool(tags={"geometry"}, name="create_surface")
     def create_surface_tool(
         name: str,
-        vertices: list[list[float]],
+        vertices: list[list[float]] | str,
         space_name: str,
         surface_type: str | None = None,
         outside_boundary_condition: str | None = None,
@@ -97,7 +112,8 @@ def register(mcp):
 
         Args:
             name: Surface name
-            vertices: List of [x,y,z] vertex coordinates (at least 3)
+            vertices: List of [x,y,z] vertex coordinates (at least 3), metres in the
+                space's local frame; a JSON string of the list is accepted
             space_name: Name of existing space to contain the surface
             surface_type: "Wall", "Floor", or "RoofCeiling" (auto-detected from tilt if omitted)
             outside_boundary_condition: "Outdoors", "Ground", or "Surface" (default "Outdoors")
@@ -112,7 +128,7 @@ def register(mcp):
     @mcp.tool(tags={"geometry"}, name="create_subsurface")
     def create_subsurface_tool(
         name: str,
-        vertices: list[list[float]],
+        vertices: list[list[float]] | str,
         parent_surface_name: str,
         subsurface_type: str = "FixedWindow",
     ):
@@ -120,7 +136,8 @@ def register(mcp):
 
         Args:
             name: Subsurface name
-            vertices: List of [x,y,z] vertex coordinates (coplanar with parent)
+            vertices: List of [x,y,z] vertex coordinates (coplanar with parent), metres
+                in the space's local frame; a JSON string of the list is accepted
             parent_surface_name: Name of existing parent surface
             subsurface_type: "FixedWindow", "OperableWindow", "Door", or "GlassDoor"
 
@@ -134,7 +151,7 @@ def register(mcp):
     @mcp.tool(tags={"geometry"}, name="create_space_from_floor_print")
     def create_space_from_floor_print_tool(
         name: str,
-        floor_vertices: list[list[float]],
+        floor_vertices: list[list[float]] | str,
         floor_to_ceiling_height: float,
         building_story_name: str | None = None,
         thermal_zone_name: str | None = None,
@@ -146,7 +163,8 @@ def register(mcp):
 
         Args:
             name: Space name
-            floor_vertices: List of [x,y] or [x,y,z] floor polygon vertices
+            floor_vertices: List of [x,y] or [x,y,z] floor polygon vertices; a JSON
+                string of the list is accepted
             floor_to_ceiling_height: Extrusion height in meters
             building_story_name: Optional existing building story to assign
             thermal_zone_name: Optional existing thermal zone to assign
