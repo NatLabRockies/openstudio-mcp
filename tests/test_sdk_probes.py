@@ -86,7 +86,7 @@ def _run_ruby(script: str) -> subprocess.CompletedProcess:
     try:
         rb = tmp / "probe.rb"
         rb.write_text(script, encoding="utf-8")
-        cmd = ["openstudio", "execute_ruby_script", str(rb)]  # noqa: S607 - CLI from the image's PATH
+        cmd = ["openstudio", "execute_ruby_script", str(rb)]  # CLI from the image's PATH
         return subprocess.run(  # noqa: S603 - fixed argv
             cmd,
             capture_output=True, text=True, timeout=120, check=False,
