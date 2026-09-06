@@ -30,9 +30,12 @@ from mcp_server.config import (
     is_path_allowed,
     user_run_root,
 )
-from mcp_server.model_manager import get_model
+from mcp_server.model_manager import ensure_generation_unchanged, get_model_with_generation
 from mcp_server.skills.gbxml_import.climate_zone import ensure_climate_zone
+from mcp_server.skills.gbxml_import.gbxml_source_state import get_source_for_model as get_gbxml_source_for_model
+from mcp_server.skills.gbxml_import.gbxml_source_state import set_source as set_gbxml_source
 from mcp_server.skills.gbxml_import.zone_checks import check_conditioned_zone_volumes
+from mcp_server.skills.geometry.gbxml_deltas import find_gbxml_geometry_deltas
 from mcp_server.skills.geometry.ground_contact import find_missing_ground_contact
 from mcp_server.skills.geometry.operations import match_surfaces
 from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
@@ -308,7 +311,15 @@ def import_gbxml_op(
         if not model.save(_os_path(final_osm_path), True):
             return {"ok": False, "error": f"Failed to save model to {final_osm_path}", "run_dir": str(run_dir)}
 
-        model_manager.load_model(final_osm_path)
+        _loaded, generation = model_manager.load_model_with_generation(final_osm_path)
+        # Stash the staged copy the translator actually consumed (run_dir/gbxmls/),
+        # not the caller's input path: an uploaded input can be deleted or
+        # overwritten after this returns, and a later delta check must compare
+        # against the bytes this model came from. Keyed to the generation the load
+        # itself returned — sync tools on one session run concurrently, so reading
+        # model_generation() afterwards could observe a later load and bind this
+        # file to the wrong model.
+        set_gbxml_source(str(gbxmls_dir / gbxml_name), generation)
 
         result = {
             "ok": True,
@@ -431,12 +442,20 @@ def _surface_overlaps(space: openstudio.model.Space) -> list[dict[str, Any]]:
 def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
     """Fix cross-space shared walls and desynchronized surface pairs, then report what is left.
 
-    Two mutating passes (match_surfaces, then the paired-vertex sync) followed by three read-only
-    checks: same-space overlaps, non-enclosed spaces, and missing ground connections. Only the
-    first two affect `ok` — a model with no ground connection still simulates.
+    Two mutating passes (match_surfaces, then the paired-vertex sync) followed by four read-only
+    checks: same-space overlaps, non-enclosed spaces, missing ground connections, and (when the
+    model came from import_gbxml in this session) a cross-check of each Space's floorArea()/
+    volume() against the Area/Volume Revit declared in the source gbXML. Only the first two
+    affect `ok` — a model with no ground connection, or a geometry delta against the gbXML
+    source, still simulates.
     """
     try:
-        model = get_model()
+        # Generation read atomically with the model. The helpers below each fetch the
+        # session model themselves, so a concurrent tool call loading a different model
+        # mid-way would have them mutate/report the new one while the enclosure and
+        # gbXML-delta checks inspect this one; ensure_generation_unchanged() at the end
+        # refuses to return such a mixed response.
+        model, generation = get_model_with_generation()
         match_result = match_surfaces()  # mutates: fixes the common cross-space case first
         if not match_result.get("ok"):
             return {"ok": False, "error": "match_surfaces() failed before geometry validation"}
@@ -513,6 +532,27 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
         # deliberately NOT affected: a model with no ground connection still simulates, it is
         # just wrong thermally, and this fires on essentially every gbXML import.
         result.update({k: v for k, v in ground_result.items() if k != "ok"})
+
+        # Optional: only runs when this session's model came from import_gbxml_op and hasn't
+        # been reloaded/replaced since (see gbxml_source_state). Silently skipped otherwise —
+        # this is a bonus cross-check, not a requirement, since plenty of valid callers load an
+        # OSM directly. Never affects `ok`: a delta flags a space to look at, not a failure.
+        gbxml_path = get_gbxml_source_for_model(generation)
+        if gbxml_path is not None:
+            deltas_result = find_gbxml_geometry_deltas(gbxml_path, model)
+            if deltas_result.get("ok"):
+                result.update({k: v for k, v in deltas_result.items() if k != "ok"})
+            else:
+                result["gbxml_deltas_checked"] = False
+                result["gbxml_deltas_skip_reason"] = deltas_result.get("error", "gbXML delta check failed")
+        else:
+            result["gbxml_deltas_checked"] = False
+            result["gbxml_deltas_skip_reason"] = (
+                "No gbXML source on record for this model (not imported via import_gbxml, "
+                "or the model was reloaded since)"
+            )
+        # Every number above must describe one model. Raises RuntimeError -> ok=False below.
+        ensure_generation_unchanged(generation)
         return result
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
