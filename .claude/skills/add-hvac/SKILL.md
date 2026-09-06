@@ -68,6 +68,18 @@ Setpoint managers on a deleted node are moved to the surviving node and listed i
 These are for coils and fans; plant equipment uses `add_supply_equipment`, terminals use
 `replace_zone_terminal`.
 
+Setpoint managers (supply air temperature control) get their own pair:
+```
+add_setpoint_manager(spm_type="SetpointManagerOutdoorAirReset", name="SAT Reset",
+    air_loop_name="PSZ-AC 1", replace_existing=True)      # swaps the builder's outlet SPM
+set_setpoint_manager_properties(setpoint_name="SAT Reset",
+    properties={"setpoint_at_outdoor_low_temperature": 15.6, "setpoint_at_outdoor_high_temperature": 12.8})
+remove_setpoint_manager(name="SAT Reset")
+```
+A node that already has a same-control-variable setpoint manager is refused unless
+`replace_existing=True`; the SDK would otherwise delete the old one silently. Placement:
+`node="supply_outlet"` (default) / `"supply_inlet"` / `"mixed_air"`, or `after_component=<coil>`.
+
 ## Custom HVAC Wiring
 
 For custom HVAC configurations beyond the baseline templates:

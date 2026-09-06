@@ -93,6 +93,7 @@ ROUTING_CASES = [
     ("add a boiler to the hot water loop", "hvac", "add_supply_equipment"),
     ("replace the cooling coil on the air loop", "hvac", "replace_air_loop_supply_component"),
     ("swap the constant volume fan for a variable speed fan", "hvac", "replace_air_loop_supply_component"),
+    ("add a scheduled setpoint manager to the hot water loop", "hvac", "add_setpoint_manager"),
     ("set chiller COP to 5.5", "hvac", "set_component_properties"),
     ("create a 2-story office building", "core", "create_new_building"),
     ("run an annual simulation", "simulation", "run_simulation"),

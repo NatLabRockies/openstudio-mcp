@@ -92,6 +92,21 @@ set_component_properties(component_name="PSZ-AC 1 DX Cooling Coil",
 relative to an existing one; `remove_air_loop_supply_component` drops one and moves the
 setpoint managers off the deleted node. Water coils need `plant_loop_name`.
 
+## Supply Air Temperature Reset
+
+Swap a loop's outlet setpoint manager for an outdoor-air reset and tune it:
+```
+get_air_loop_details(air_loop_name="VAV 1")            # setpoint_managers on the outlet
+add_setpoint_manager(spm_type="SetpointManagerOutdoorAirReset", name="VAV 1 SAT Reset",
+    air_loop_name="VAV 1", replace_existing=True)
+set_setpoint_manager_properties(setpoint_name="VAV 1 SAT Reset",
+    properties={"setpoint_at_outdoor_low_temperature": 15.6, "outdoor_low_temperature": 10.0,
+                "setpoint_at_outdoor_high_temperature": 12.8, "outdoor_high_temperature": 21.0})
+```
+Without `replace_existing=True` the call is refused when the node already has a Temperature
+setpoint manager (the SDK would delete it silently). `remove_setpoint_manager(name=...)` warns
+if a loop outlet is left with no Temperature control.
+
 ## Tune Component Properties
 
 ```

@@ -660,12 +660,14 @@ def _get_spm_scheduled_dual_setpoint_props(spm) -> dict:
     high_sched = spm.highSetpointSchedule()
     low_sched = spm.lowSetpointSchedule()
     return {
+        # OptionalSchedule: .get() before .nameString() (crashed the tool on every
+        # dual-setpoint SPM until add_setpoint_manager's tests created one)
         "high_setpoint_schedule": {
-            "value": high_sched.nameString() if high_sched.is_initialized() else None,
+            "value": high_sched.get().nameString() if high_sched.is_initialized() else None,
             "unit": None,
         },
         "low_setpoint_schedule": {
-            "value": low_sched.nameString() if low_sched.is_initialized() else None,
+            "value": low_sched.get().nameString() if low_sched.is_initialized() else None,
             "unit": None,
         },
     }
