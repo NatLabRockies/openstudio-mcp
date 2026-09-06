@@ -7,6 +7,7 @@ FloorspaceJS import uses the SDK-native FloorspaceReverseTranslator.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +21,27 @@ from mcp_server.osm_helpers import (
     fetch_object,
     list_paginated,
     optional_name,
+    parse_str_list,
 )
+
+
+def _vertices_to_list(vertices) -> list[list[float]]:
+    """Point3dVector → [[x, y, z], ...] in metres, space-local frame (#147).
+
+    Rounded to 1e-6 m (sub-micron, keeps the payload small); values feed
+    _to_point3d_vector back without a transform, since Surface(poly, model) +
+    setSpace() stores the same frame vertices() reads. Coordinates with more
+    than 6 decimals round-trip to within 1e-6 m, not bit-exactly.
+    """
+    return [[round(p.x(), 6), round(p.y(), 6), round(p.z(), 6)] for p in vertices]
 
 
 def _extract_surface(model, surface, detailed: bool = True) -> dict[str, Any]:
     """Extract surface attributes to dict.
 
     Brief: name, surface_type, gross_area, space, outside_boundary_condition.
+    Detailed adds `vertices` (space-local [[x,y,z],...]) — brief stays
+    vertex-free so default list responses stay inside the size budget.
     """
     result = {
         "name": surface.nameString(),
@@ -37,9 +52,9 @@ def _extract_surface(model, surface, detailed: bool = True) -> dict[str, Any]:
     }
     if not detailed:
         return result
+    vertices = surface.vertices()
     result.update({
         "handle": str(surface.handle()),
-        "outside_boundary_condition": surface.outsideBoundaryCondition(),
         "sun_exposure": surface.sunExposure(),
         "wind_exposure": surface.windExposure(),
         "construction": optional_name(surface.construction()),
@@ -47,18 +62,21 @@ def _extract_surface(model, surface, detailed: bool = True) -> dict[str, Any]:
         "net_area_m2": float(surface.netArea()),
         "azimuth_deg": float(surface.azimuth()) * 180.0 / 3.14159,
         "tilt_deg": float(surface.tilt()) * 180.0 / 3.14159,
-        "num_vertices": len(surface.vertices()),
+        "num_vertices": len(vertices),
+        "vertices": _vertices_to_list(vertices),
         "num_subsurfaces": len(surface.subSurfaces()),
     })
     return result
 
 
-def _extract_subsurface(model, subsurface) -> dict[str, Any]:
+def _extract_subsurface(model, subsurface, detailed: bool = False) -> dict[str, Any]:
     """Extract subsurface (window/door) attributes to dict.
 
     Fields mirror OpenStudio-Toolkit's get_subsurface_object_as_dict().
+    Detailed adds `vertices` (space-local [[x,y,z],...], #147).
     """
-    return {
+    vertices = subsurface.vertices()
+    result = {
         "handle": str(subsurface.handle()),
         "name": subsurface.nameString(),
         "subsurface_type": subsurface.subSurfaceType(),
@@ -66,8 +84,11 @@ def _extract_subsurface(model, subsurface) -> dict[str, Any]:
         "surface": optional_name(subsurface.surface()),
         "multiplier": float(subsurface.multiplier()),
         "gross_area_m2": float(subsurface.grossArea()),
-        "num_vertices": len(subsurface.vertices()),
+        "num_vertices": len(vertices),
     }
+    if detailed:
+        result["vertices"] = _vertices_to_list(vertices)
+    return result
 
 
 def list_surfaces(
@@ -133,6 +154,7 @@ def list_subsurfaces(
     space_name: str | None = None,
     subsurface_type: str | None = None,
     max_results: int = 10,
+    detailed: bool = False,
 ) -> dict[str, Any]:
     """List subsurfaces with server-side filtering and pagination.
 
@@ -140,6 +162,8 @@ def list_subsurfaces(
     - Windows on a surface: surface_name="Wall 1"
     - Windows in a space: space_name="Office 1"
     - All doors: subsurface_type="Door"
+
+    detailed=True adds `vertices` ([[x,y,z],...] metres, space-local frame).
     """
     try:
         model = get_model()
@@ -162,7 +186,7 @@ def list_subsurfaces(
 
         items, total = list_paginated(
             model, "getSubSurfaces", _extract_subsurface,
-            max_results=max_results, obj_filter_fn=filt,
+            detailed=detailed, max_results=max_results, obj_filter_fn=filt,
         )
         return build_list_response("subsurfaces", items, total, max_results)
     except RuntimeError as e:
@@ -172,6 +196,32 @@ def list_subsurfaces(
 
 
 # ---- Geometry creation ----
+
+
+def _parse_vertices(
+    value: list[list[float]] | str, param: str = "vertices",
+) -> tuple[list[list[float]] | None, str | None]:
+    """Coerce a vertex list that may arrive as a JSON string (CLAUDE.md rule 13).
+
+    Returns (vertices, None) or (None, error). Nested lists survive json.loads
+    intact, so the result feeds _to_point3d_vector unchanged.
+    """
+    try:
+        parsed = parse_str_list(value)
+    except json.JSONDecodeError as e:
+        return None, f"Invalid JSON for {param}: {e}"
+    if not isinstance(parsed, list):
+        return None, f"Invalid {param}: expected a list of [x, y, z] points, got {type(parsed).__name__}"
+    # Validate each point here so a bad entry names the parameter and the point
+    # instead of dying inside _to_point3d_vector with a generic "Failed to create".
+    for i, point in enumerate(parsed):
+        if not isinstance(point, (list, tuple)) or len(point) not in (2, 3):
+            return None, f"Invalid {param}: point {i} must be [x, y] or [x, y, z], got {point!r}"
+        try:
+            [float(c) for c in point]
+        except (TypeError, ValueError):
+            return None, f"Invalid {param}: point {i} must be numeric, got {point!r}"
+    return parsed, None
 
 
 def _to_point3d_vector(vertices: list[list[float]]) -> openstudio.Point3dVector:
@@ -195,7 +245,9 @@ def create_surface(
 
     Args:
         name: Surface name
-        vertices: [[x,y,z], ...] — at least 3 points
+        vertices: [[x,y,z], ...] — at least 3 points, space-local frame (the
+            frame get_surface_details / list_surfaces(detailed=True) return);
+            a JSON string of the same list is accepted
         space_name: Name of existing space to contain the surface
         surface_type: "Wall", "Floor", "RoofCeiling" — auto-detected from tilt if None
         outside_boundary_condition: "Outdoors", "Ground", "Surface" — default "Outdoors"
@@ -206,6 +258,9 @@ def create_surface(
         if space is None:
             return {"ok": False, "error": f"Space '{space_name}' not found"}
 
+        vertices, err = _parse_vertices(vertices)
+        if err:
+            return {"ok": False, "error": err}
         poly = _to_point3d_vector(vertices)
         surface = openstudio.model.Surface(poly, model)
         surface.setName(name)
@@ -232,7 +287,8 @@ def create_subsurface(
 
     Args:
         name: Subsurface name
-        vertices: [[x,y,z], ...] — at least 3 points, coplanar with parent
+        vertices: [[x,y,z], ...] — at least 3 points, coplanar with parent,
+            space-local frame; a JSON string of the same list is accepted
         parent_surface_name: Name of existing parent surface
         subsurface_type: "FixedWindow", "OperableWindow", "Door", "GlassDoor"
     """
@@ -242,13 +298,16 @@ def create_subsurface(
         if parent is None:
             return {"ok": False, "error": f"Surface '{parent_surface_name}' not found"}
 
+        vertices, err = _parse_vertices(vertices)
+        if err:
+            return {"ok": False, "error": err}
         poly = _to_point3d_vector(vertices)
         sub = openstudio.model.SubSurface(poly, model)
         sub.setName(name)
         sub.setSurface(parent)
         sub.setSubSurfaceType(subsurface_type)
 
-        return {"ok": True, "subsurface": _extract_subsurface(model, sub)}
+        return {"ok": True, "subsurface": _extract_subsurface(model, sub, detailed=True)}
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
@@ -270,13 +329,17 @@ def create_space_from_floor_print(
 
     Args:
         name: Space name
-        floor_vertices: [[x,y], ...] or [[x,y,z], ...] — floor polygon
+        floor_vertices: [[x,y], ...] or [[x,y,z], ...] — floor polygon; a JSON
+            string of the same list is accepted
         floor_to_ceiling_height: Height in meters
         building_story_name: Optional existing building story to assign
         thermal_zone_name: Optional existing thermal zone to assign
     """
     try:
         model = get_model()
+        floor_vertices, err = _parse_vertices(floor_vertices, "floor_vertices")
+        if err:
+            return {"ok": False, "error": err}
         poly = _to_point3d_vector(floor_vertices)
 
         # fromFloorPrint requires outward normal pointing down (clockwise

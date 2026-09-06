@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import uuid
 
@@ -1807,4 +1808,261 @@ def test_set_window_to_wall_ratio_invalid_ratio():
                     "ratio": 1.5,
                 }))
                 assert res["ok"] is False
+    asyncio.run(_run())
+
+
+# ---- #147: vertex coordinates out, JSON-string vertices in ----
+
+WALL_VERTS = [[0, 0, 0], [10, 0, 0], [10, 0, 3], [0, 0, 3]]
+WINDOW_VERTS = [[2, 0, 1], [4, 0, 1], [4, 0, 2], [2, 0, 2]]
+
+
+def _assert_points(actual, expected):
+    assert len(actual) == len(expected), f"vertex count {len(actual)} != {len(expected)}"
+    for got, exp in zip(actual, expected):
+        assert got == pytest.approx(exp, abs=1e-6), f"vertex {got} != {exp}"
+
+
+@pytest.mark.integration
+def test_get_surface_details_returns_vertices():
+    # Regression: #147 — get_surface_details promised vertices in its docstring but returned
+    # only num_vertices, so an agent could not read geometry back out of the model
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                created = unwrap(await s.call_tool("create_surface", {
+                    "name": "VertWall", "vertices": WALL_VERTS,
+                    "space_name": sp_name, "surface_type": "Wall",
+                }))
+                assert created["ok"] is True, created
+                _assert_points(created["surface"]["vertices"], WALL_VERTS)
+
+                res = unwrap(await s.call_tool("get_surface_details", {"surface_name": "VertWall"}))
+                assert res["ok"] is True, res
+                surf = res["surface"]
+                _assert_points(surf["vertices"], WALL_VERTS)
+                assert surf["num_vertices"] == 4 == len(surf["vertices"])
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_list_surfaces_brief_omits_vertices_detailed_includes():
+    # Validates: brief list_surfaces stays inside the 10k default response budget (no vertex
+    # arrays); detailed=True carries the coordinates
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                unwrap(await s.call_tool("create_surface", {
+                    "name": "BriefWall", "vertices": WALL_VERTS,
+                    "space_name": sp_name, "surface_type": "Wall",
+                }))
+                brief = unwrap(await s.call_tool("list_surfaces", {"space_name": sp_name}))
+                assert brief["ok"] is True and brief["count"] == 1, brief
+                assert "vertices" not in brief["surfaces"][0]
+                assert "num_vertices" not in brief["surfaces"][0]
+
+                det = unwrap(await s.call_tool("list_surfaces", {"space_name": sp_name, "detailed": True}))
+                assert det["count"] == 1, det
+                _assert_points(det["surfaces"][0]["vertices"], WALL_VERTS)
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_list_subsurfaces_detailed_returns_vertices():
+    # Regression: #147 — no tool returned window/door coordinates; list_subsurfaces had no
+    # detailed switch at all
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                unwrap(await s.call_tool("create_surface", {
+                    "name": "WinWall", "vertices": WALL_VERTS,
+                    "space_name": sp_name, "surface_type": "Wall",
+                }))
+                created = unwrap(await s.call_tool("create_subsurface", {
+                    "name": "Win1", "vertices": WINDOW_VERTS,
+                    "parent_surface_name": "WinWall", "subsurface_type": "FixedWindow",
+                }))
+                assert created["ok"] is True, created
+                _assert_points(created["subsurface"]["vertices"], WINDOW_VERTS)
+
+                brief = unwrap(await s.call_tool("list_subsurfaces", {"surface_name": "WinWall"}))
+                assert brief["count"] == 1, brief
+                assert "vertices" not in brief["subsurfaces"][0]
+                assert brief["subsurfaces"][0]["num_vertices"] == 4
+
+                det = unwrap(await s.call_tool("list_subsurfaces", {
+                    "surface_name": "WinWall", "detailed": True,
+                }))
+                assert det["count"] == 1, det
+                _assert_points(det["subsurfaces"][0]["vertices"], WINDOW_VERTS)
+                assert det["subsurfaces"][0]["gross_area_m2"] == pytest.approx(2.0, rel=1e-6)
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_surface_vertices_round_trip_into_create_surface():
+    # Validates: the issue's core ask — vertices read from one surface feed create_surface
+    # unchanged (same space-local frame) and reproduce area, azimuth and tilt exactly
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique_name())
+                walls = unwrap(await s.call_tool("list_surfaces", {
+                    "surface_type": "Wall", "boundary": "Outdoors",
+                    "detailed": True, "max_results": 1,
+                }))
+                assert walls["count"] == 1, walls
+                src = walls["surfaces"][0]
+                assert len(src["vertices"]) == src["num_vertices"] >= 3
+
+                clone = unwrap(await s.call_tool("create_surface", {
+                    "name": "RoundTripWall", "vertices": src["vertices"],
+                    "space_name": src["space"], "surface_type": "Wall",
+                }))
+                assert clone["ok"] is True, clone
+                dst = clone["surface"]
+                assert dst["gross_area_m2"] == pytest.approx(src["gross_area_m2"], rel=1e-6)
+                assert dst["azimuth_deg"] == pytest.approx(src["azimuth_deg"], rel=1e-6)
+                assert dst["tilt_deg"] == pytest.approx(src["tilt_deg"], rel=1e-6)
+                _assert_points(dst["vertices"], src["vertices"])
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("tool", ["create_surface", "create_subsurface", "create_space_from_floor_print"])
+def test_create_geometry_accepts_json_string_vertices(tool):
+    # Regression: rule 13 — MCP clients send list params as JSON strings; a string vertex
+    # list failed deep inside _to_point3d_vector with a generic "Failed to create ..." error
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                if tool == "create_surface":
+                    res = unwrap(await s.call_tool(tool, {
+                        "name": "JsonWall", "vertices": json.dumps(WALL_VERTS),
+                        "space_name": sp_name, "surface_type": "Wall",
+                    }))
+                    assert res["ok"] is True, res
+                    _assert_points(res["surface"]["vertices"], WALL_VERTS)
+                elif tool == "create_subsurface":
+                    unwrap(await s.call_tool("create_surface", {
+                        "name": "JsonHost", "vertices": WALL_VERTS,
+                        "space_name": sp_name, "surface_type": "Wall",
+                    }))
+                    res = unwrap(await s.call_tool(tool, {
+                        "name": "JsonWin", "vertices": json.dumps(WINDOW_VERTS),
+                        "parent_surface_name": "JsonHost",
+                    }))
+                    assert res["ok"] is True, res
+                    _assert_points(res["subsurface"]["vertices"], WINDOW_VERTS)
+                else:
+                    res = unwrap(await s.call_tool(tool, {
+                        "name": "JsonSpace",
+                        "floor_vertices": json.dumps([[0, 0], [10, 0], [10, 10], [0, 10]]),
+                        "floor_to_ceiling_height": 3.0,
+                    }))
+                    assert res["ok"] is True, res
+                    assert res["num_surfaces"] == 6
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("bad", "expected_error"), [
+    ("[[0,0", "Invalid JSON for vertices: "),
+    ("123", "Invalid vertices: expected a list of [x, y, z] points, got int"),
+    ('{"x": 1}', "Invalid vertices: expected a list of [x, y, z] points, got dict"),
+    ('[[0, "bad", 1], [1, 0, 0], [1, 1, 0]]', "Invalid vertices: point 0 must be numeric, got [0, 'bad', 1]"),
+    ("[[0], [1, 0, 0], [1, 1, 0]]", "Invalid vertices: point 0 must be [x, y] or [x, y, z], got [0]"),
+])
+def test_create_surface_rejects_bad_vertices(bad, expected_error):
+    # Validates: malformed JSON, a non-list JSON value, and malformed points each produce an
+    # error naming the parameter and the offending point, not a generic "Failed to create"
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                res = unwrap(await s.call_tool("create_surface", {
+                    "name": "BadVerts", "vertices": bad, "space_name": sp_name,
+                }))
+                assert res["ok"] is False
+                assert res["error"].startswith(expected_error), res["error"]
+                surfs = unwrap(await s.call_tool("list_surfaces", {"space_name": sp_name}))
+                assert surfs["count"] == 0, "rejected input must not leave a surface behind"
+    asyncio.run(_run())
+
+
+FRAC_VERTS = [[0.1234567, 0.7654321, 0.0], [5.5555555, 0.7654321, 0.0],
+              [5.5555555, 0.7654321, 2.9999999], [0.1234567, 0.7654321, 2.9999999]]
+
+
+@pytest.mark.integration
+def test_surface_vertices_are_space_local_in_transformed_space():
+    # Validates: vertices come back in the space's local frame even when the space has an
+    # origin offset and rotation (example/gbXML models do), so the documented "feed straight
+    # back into create_surface" contract holds; fractional inputs round-trip within 1e-6 m
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                sp_name = _unique_name("sp")
+                await _setup_with_space(s, _unique_name(), sp_name)
+                for prop, val in (("setXOrigin", 10.0), ("setYOrigin", 20.0),
+                                  ("setDirectionofRelativeNorth", 90.0)):
+                    res = unwrap(await s.call_tool("set_object_property", {
+                        "object_type": "Space", "object_name": sp_name,
+                        "property_name": prop, "value": val,
+                    }))
+                    assert res["ok"] is True, res
+                space = unwrap(await s.call_tool("get_space_details", {"space_name": sp_name}))
+                assert space["space"]["x_origin_m"] == pytest.approx(10.0)
+                assert space["space"]["direction_of_relative_north_deg"] == pytest.approx(90.0)
+
+                created = unwrap(await s.call_tool("create_surface", {
+                    "name": "LocalWall", "vertices": FRAC_VERTS,
+                    "space_name": sp_name, "surface_type": "Wall",
+                }))
+                assert created["ok"] is True, created
+                res = unwrap(await s.call_tool("get_surface_details", {"surface_name": "LocalWall"}))
+                verts = res["surface"]["vertices"]
+                _assert_points(verts, FRAC_VERTS)
+                # Not translated by the origin: a building-frame answer would start at x≈10.
+                assert verts[0][0] == pytest.approx(0.1234567, abs=1e-6)
+                assert all(len(v) == 3 for v in verts)
+                assert res["surface"]["gross_area_m2"] == pytest.approx(
+                    (5.5555555 - 0.1234567) * 2.9999999, rel=1e-6)
     asyncio.run(_run())
