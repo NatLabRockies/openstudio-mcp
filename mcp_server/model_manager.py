@@ -14,6 +14,7 @@ so the 100+ call sites are untouched by the multi-user refactor.
 from __future__ import annotations
 
 import atexit
+import itertools
 import os
 import threading
 import time
@@ -38,10 +39,15 @@ class _SessionState:
     model: openstudio.model.Model | None = None
     path: Path | None = None
     last_access: float = 0.0  # time.monotonic() of last touch
-    # Bumped every time `model` is replaced. Session-scoped skill state (see
-    # `extra`) records this at capture time to detect that the model it
-    # references was swapped out — id(model) can't be trusted for that
-    # because CPython reuses freed addresses.
+    # Token of the load_model() that produced `model`, drawn from the
+    # process-wide _load_tokens counter so it is never reused — not a
+    # per-session count, which would restart at 1 in the fresh state a
+    # TTL/LRU-evicted session gets on its next load and let an in-flight
+    # operation that captured generation N mistake the replacement model for
+    # its own. Session-scoped skill state (see `extra`) records this at
+    # capture time to detect that the model it references was swapped out —
+    # id(model) can't be trusted for that because CPython reuses freed
+    # addresses.
     generation: int = 0
     # Generic scratch space for skills that need session-scoped state beyond
     # the model itself (e.g. a multi-turn wizard). Keyed by skill name so
@@ -52,6 +58,10 @@ class _SessionState:
 
 _lock = threading.RLock()
 _sessions: dict[str, _SessionState] = {}
+# One token per load_model() across every session for the life of the process
+# (advanced under _lock). See _SessionState.generation for why it is not
+# per-session.
+_load_tokens = itertools.count(1)
 
 
 def _now() -> float:
@@ -125,7 +135,7 @@ def load_model_with_generation(
         st = _sessions.setdefault(key, _SessionState())
         st.model = model
         st.path = Path(osm_path)
-        st.generation += 1
+        st.generation = next(_load_tokens)
         _touch(st)
         return model, st.generation
 
@@ -219,11 +229,13 @@ def get_model_if_loaded() -> openstudio.model.Model | None:
 
 
 def model_generation() -> int:
-    """Monotonic per-session counter, bumped on every load_model.
+    """Token of the load that produced this session's current model.
 
-    Session-scoped skill state (see get_session_extra) records this at
-    capture time and compares later to detect that the model it references
-    was replaced. Returns 0 if the session has never loaded a model.
+    Process-wide monotonic and never reused, so it survives the session
+    being evicted and re-created (see _SessionState.generation). Session-
+    scoped skill state (see get_session_extra) records this at capture time
+    and compares later to detect that the model it references was replaced.
+    Returns 0 if the session currently holds no model.
     """
     with _lock:
         st = _sessions.get(session_key())

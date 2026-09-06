@@ -321,7 +321,7 @@ def test_gbxml_source_stash_is_bound_to_the_generation_it_was_recorded_for():
     assert get_source_for_model(first_gen) == "/runs/first/gbxmls/first.xml"
 
     _second, second_gen = model_manager.load_model_with_generation(second_osm)
-    assert second_gen == first_gen + 1
+    assert second_gen > first_gen
     assert get_source_for_model(second_gen) is None, "a reload must not inherit the previous import's source"
     assert get_source_for_model(first_gen) == "/runs/first/gbxmls/first.xml", \
         "a caller still holding the first model must still resolve its own source"
@@ -347,9 +347,34 @@ def test_ensure_generation_unchanged_raises_once_the_model_is_replaced():
     _model, generation = model_manager.load_model_with_generation(first_osm)
     model_manager.ensure_generation_unchanged(generation)  # must not raise
 
-    model_manager.load_model(second_osm)
-    with pytest.raises(RuntimeError, match=rf"replaced by another tool call.*{generation} -> {generation + 1}"):
+    _model, replaced_generation = model_manager.load_model_with_generation(second_osm)
+    with pytest.raises(RuntimeError, match=rf"replaced by another tool call.*{generation} -> {replaced_generation}"):
         model_manager.ensure_generation_unchanged(generation)
+
+
+def test_generation_is_not_reused_after_session_eviction():
+    # Regression: the generation was a per-_SessionState counter, so after TTL/LRU eviction
+    # dropped a session's state the next load on that same session started again at 1. An
+    # in-flight operation that had captured generation 1 then saw the replacement model at
+    # generation 1: ensure_generation_unchanged() passed, and a fresh import's gbXML stash
+    # recorded under generation 1 answered for the OLD model. Tokens are process-wide now,
+    # so a load after eviction can never alias the generation a caller still holds.
+    tmp_dir = _allowed_tmp_dir()
+    first_osm = tmp_dir / "first.osm"
+    openstudio.model.Model().save(str(first_osm), True)
+    second_osm = tmp_dir / "second.osm"
+    openstudio.model.Model().save(str(second_osm), True)
+
+    model_manager.clear_model()  # fresh session state: a per-session counter would start at 1 here
+    _first, held_generation = model_manager.load_model_with_generation(first_osm)
+    model_manager.clear_model()  # same registry pop that _sweep_idle()/_evict_if_needed() perform
+    _second, after_eviction = model_manager.load_model_with_generation(second_osm)
+
+    assert after_eviction > held_generation, "a load after eviction must not reuse a generation still held by a caller"
+    with pytest.raises(RuntimeError, match="replaced by another tool call"):
+        model_manager.ensure_generation_unchanged(held_generation)
+    set_source("/runs/after/gbxmls/after.xml", after_eviction)
+    assert get_source_for_model(held_generation) is None, "the new import's stash must not answer for the evicted model"
 
 
 def test_get_model_with_generation_matches_load_model_with_generation():
