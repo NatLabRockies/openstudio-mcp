@@ -30,7 +30,7 @@ from mcp_server.config import (
     is_path_allowed,
     user_run_root,
 )
-from mcp_server.model_manager import get_model_with_generation
+from mcp_server.model_manager import ensure_generation_unchanged, get_model_with_generation
 from mcp_server.skills.gbxml_import.climate_zone import ensure_climate_zone
 from mcp_server.skills.gbxml_import.gbxml_source_state import get_source_for_model as get_gbxml_source_for_model
 from mcp_server.skills.gbxml_import.gbxml_source_state import set_source as set_gbxml_source
@@ -450,9 +450,11 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
     source, still simulates.
     """
     try:
-        # Generation read atomically with the model: the gbXML delta check below must
-        # compare *this* model against *its* source even if a concurrent tool call on
-        # the same session loads a different model while the passes below run.
+        # Generation read atomically with the model. The helpers below each fetch the
+        # session model themselves, so a concurrent tool call loading a different model
+        # mid-way would have them mutate/report the new one while the enclosure and
+        # gbXML-delta checks inspect this one; ensure_generation_unchanged() at the end
+        # refuses to return such a mixed response.
         model, generation = get_model_with_generation()
         match_result = match_surfaces()  # mutates: fixes the common cross-space case first
         if not match_result.get("ok"):
@@ -549,6 +551,8 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
                 "No gbXML source on record for this model (not imported via import_gbxml, "
                 "or the model was reloaded since)"
             )
+        # Every number above must describe one model. Raises RuntimeError -> ok=False below.
+        ensure_generation_unchanged(generation)
         return result
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}

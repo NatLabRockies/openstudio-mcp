@@ -170,6 +170,24 @@ def get_model_with_generation() -> tuple[openstudio.model.Model, int]:
         return st.model, st.generation
 
 
+def ensure_generation_unchanged(generation: int) -> None:
+    """Raise if this session's model has been replaced since `generation` was captured.
+
+    For multi-step operations whose helpers each call get_model(): a
+    load_model from a concurrent tool call on the same session between two
+    steps would otherwise let one response silently mix results from two
+    different models. Capture the generation with get_model_with_generation()
+    at the start and call this before returning; the RuntimeError surfaces as
+    the operation's ok=False error.
+    """
+    current = model_generation()
+    if current != generation:
+        raise RuntimeError(
+            "The session model was replaced by another tool call while this operation "
+            f"ran (model generation {generation} -> {current}); re-run it on the current model.",
+        )
+
+
 def get_model_path() -> Path | None:
     """Return the file path of the current session's model, or None."""
     with _lock:

@@ -7,6 +7,7 @@ translation pipeline (that's covered end-to-end in test_gbxml_import.py's
 repair_and_validate_gbxml_geometry wiring test). No mocking: real openstudio
 SDK objects throughout, just minimal ones instead of a multi-megabyte fixture.
 """
+import tracemalloc
 import uuid
 from pathlib import Path
 
@@ -17,7 +18,10 @@ openstudio = pytest.importorskip("openstudio")
 from mcp_server import model_manager  # noqa: E402
 from mcp_server.config import user_run_root  # noqa: E402
 from mcp_server.skills.gbxml_import.gbxml_source_state import get_source_for_model, set_source  # noqa: E402
-from mcp_server.skills.geometry.gbxml_deltas import find_gbxml_geometry_deltas  # noqa: E402
+from mcp_server.skills.geometry.gbxml_deltas import (  # noqa: E402
+    _parse_gbxml_space_geometry,
+    find_gbxml_geometry_deltas,
+)
 
 # Imports the real openstudio SDK (importorskip above) — integration tier, must not
 # be collected by the unit run.
@@ -217,6 +221,45 @@ def test_find_gbxml_geometry_deltas_reads_only_the_space_scoped_area_and_volume(
     assert result["gbxml_volume_deltas"][0]["gbxml_volume_m3"] == 150.0
 
 
+_SURFACE_TEMPLATE = (
+    '<Surface id="su-{i}" surfaceType="ExteriorWall"><AdjacentSpaceId spaceIdRef="sp-1"/>'
+    '<PlanarGeometry><PolyLoop>'
+    '<CartesianPoint><Coordinate>0</Coordinate><Coordinate>0</Coordinate><Coordinate>0</Coordinate></CartesianPoint>'
+    '<CartesianPoint><Coordinate>5</Coordinate><Coordinate>0</Coordinate><Coordinate>0</Coordinate></CartesianPoint>'
+    '<CartesianPoint><Coordinate>5</Coordinate><Coordinate>10</Coordinate><Coordinate>0</Coordinate></CartesianPoint>'
+    '</PolyLoop></PlanarGeometry></Surface>\n'
+)
+
+
+def test_parse_gbxml_space_geometry_peak_memory_is_flat_in_surface_count():
+    # Regression: the streaming parser cleared each finished <Surface> but left its empty
+    # shell attached to <Campus>, so peak memory still grew ~80 bytes per surface (about
+    # 1.75 MB at the 20k surfaces below, 4 MB at 50k). Detaching finished subtrees from
+    # their parent holds the peak at ~0.15 MB regardless of surface count; the 1 MB cap
+    # sits well clear of both.
+    n_surfaces = 20_000
+    gbxml_path = _allowed_tmp_dir() / "many_surfaces.xml"
+    with gbxml_path.open("w", encoding="utf-8") as f:
+        f.write(
+            '<?xml version="1.0"?>\n'
+            '<gbXML areaUnit="SquareMeters" volumeUnit="CubicMeters" xmlns="http://www.gbxml.org/schema">'
+            '<Campus><Building><Space id="sp-1"><Area>50.0</Area><Volume>150.0</Volume></Space></Building>\n',
+        )
+        for i in range(n_surfaces):
+            f.write(_SURFACE_TEMPLATE.format(i=i))
+        f.write("</Campus></gbXML>\n")
+
+    tracemalloc.start()
+    try:
+        spaces = _parse_gbxml_space_geometry(gbxml_path)
+        _current, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert spaces == {"sp-1": {"area_m2": 50.0, "volume_m3": 150.0}}
+    assert peak_bytes < 1_000_000, f"peak {peak_bytes / 1e6:.2f} MB for {n_surfaces} surfaces: shells retained"
+
+
 def test_find_gbxml_geometry_deltas_converts_imperial_units():
     # Validates: areaUnit="SquareFeet"/volumeUnit="CubicFeet" files are converted to SI
     # before comparing — 215.278 ft2 is exactly Space B's 20.0 m2, so no delta; without
@@ -288,6 +331,25 @@ def test_gbxml_source_stash_is_bound_to_the_generation_it_was_recorded_for():
     assert get_source_for_model(second_gen) == "/runs/second/gbxmls/second.xml", \
         "an older generation's late write must not clobber the newer import's stash"
     assert get_source_for_model(first_gen) is None
+
+
+def test_ensure_generation_unchanged_raises_once_the_model_is_replaced():
+    # Validates: the end-of-operation guard repair_and_validate_gbxml_geometry relies on —
+    # silent while the captured generation is still current, a RuntimeError naming the
+    # generation change once another load has replaced the session model, so one response
+    # can never mix results from two models.
+    tmp_dir = _allowed_tmp_dir()
+    first_osm = tmp_dir / "first.osm"
+    openstudio.model.Model().save(str(first_osm), True)
+    second_osm = tmp_dir / "second.osm"
+    openstudio.model.Model().save(str(second_osm), True)
+
+    _model, generation = model_manager.load_model_with_generation(first_osm)
+    model_manager.ensure_generation_unchanged(generation)  # must not raise
+
+    model_manager.load_model(second_osm)
+    with pytest.raises(RuntimeError, match=rf"replaced by another tool call.*{generation} -> {generation + 1}"):
+        model_manager.ensure_generation_unchanged(generation)
 
 
 def test_get_model_with_generation_matches_load_model_with_generation():

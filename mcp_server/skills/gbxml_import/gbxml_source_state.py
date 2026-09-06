@@ -27,11 +27,16 @@ landed in between and bind this path to the wrong model.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 from mcp_server import model_manager
 
 _KEY = "gbxml_import"
+# Serializes the compare-and-set in set_source(): get_session_extra() hands back the
+# dict outside model_manager's lock, so without this two concurrent imports could both
+# read the old entry and the older one could write last.
+_write_lock = threading.Lock()
 
 
 @dataclass
@@ -48,10 +53,11 @@ def set_source(gbxml_path: str, model_generation: int) -> None:
     have stashed a newer generation — never overwrite it with an older one.
     """
     extra = model_manager.get_session_extra()
-    existing = extra.get(_KEY)
-    if existing is not None and existing.model_generation > model_generation:
-        return
-    extra[_KEY] = GbxmlSourceState(gbxml_path=gbxml_path, model_generation=model_generation)
+    with _write_lock:
+        existing = extra.get(_KEY)
+        if existing is not None and existing.model_generation > model_generation:
+            return
+        extra[_KEY] = GbxmlSourceState(gbxml_path=gbxml_path, model_generation=model_generation)
 
 
 def get_source_for_model(model_generation: int) -> str | None:

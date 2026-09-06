@@ -67,7 +67,11 @@ def _parse_gbxml_space_geometry(path: Path) -> dict[str, dict[str, float | None]
     hundreds of MB, and a full ElementTree costs several times the file size
     — almost all of it <Surface> polyloops this check never reads. Only the
     <Space> currently open is held to completion (it is tiny: Area/Volume/
-    Name plus one polyloop); everything else is freed the moment it closes.
+    Name plus one polyloop); everything else is freed the moment it closes,
+    and detached from its parent — elem.clear() alone leaves an empty shell
+    attached to <Campus> for every <Surface>, ~80 bytes each, so peak memory
+    would still grow with the surface count. Measured flat at ~0.15 MB from
+    1k to 50k surfaces with the detach; ~4 MB at 50k without it.
 
     gbXML Area/Volume are both optional per the schema even though every
     fixture in this repo happens to populate them — a Space with either one
@@ -82,6 +86,9 @@ def _parse_gbxml_space_geometry(path: Path) -> dict[str, dict[str, float | None]
     root = None
     open_space = None
     area_factor = volume_factor = 1.0
+    # Open ancestors of the element being parsed, so a finished element can be
+    # removed from its parent (iterparse gives no parent pointer).
+    ancestors: list[ET.Element] = []
     # is_path_allowed() in the caller puts this on the same trust boundary as the rest of
     # this server's file access, and the file was already parsed once by the real gbXML
     # translator during import_gbxml_op; defusedxml isn't a dependency this project
@@ -102,8 +109,10 @@ def _parse_gbxml_space_geometry(path: Path) -> dict[str, dict[str, float | None]
                     )
             elif open_space is None and elem.tag == _SPACE_TAG:
                 open_space = elem
+            ancestors.append(elem)
             continue
 
+        ancestors.pop()
         if elem is open_space:
             # End of the open <Space>: its children are complete and untouched.
             space_id = elem.get("id")
@@ -117,11 +126,16 @@ def _parse_gbxml_space_geometry(path: Path) -> dict[str, dict[str, float | None]
                     if volume_el is not None and volume_el.text else None,
                 }
             open_space = None
+        elif open_space is not None:
+            # Inside an open <Space>: keep its subtree intact until it closes.
+            continue
+        if ancestors:
+            # Finished with this subtree (a <Surface>, a <Building>'s own <Area>, a closed
+            # <Space>, ...): drop its contents AND unlink it from its parent, so the parent's
+            # child list stays at one entry instead of one shell per surface. The root has no
+            # parent and is left alone.
             elem.clear()
-        elif open_space is None and elem is not root:
-            # Outside any <Space> (a <Surface>, a <Building>'s own <Area>, ...): nothing
-            # here is needed, so free the subtree now instead of at end of file.
-            elem.clear()
+            ancestors[-1].remove(elem)
     return spaces
 
 
