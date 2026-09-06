@@ -62,3 +62,43 @@ def test_lru_cap_evicts_least_recently_used(monkeypatch):
 
     assert "old" not in mm._sessions, "LRU cap must evict the oldest session"
     assert "mid" in mm._sessions, "the more-recently-used session must survive"
+
+
+def test_lru_cap_does_not_evict_for_a_session_that_already_exists(monkeypatch):
+    # Regression: _evict_if_needed() made room whenever the registry was at the cap, even
+    # when the requesting session was already registered and nothing new was being added —
+    # so at capacity every load_model()/get_session_extra() from an existing session dropped
+    # an unrelated user's model.
+    import mcp_server.model_manager as mm
+
+    monkeypatch.setattr(mm, "MAX_SESSIONS", 2)
+    monkeypatch.setattr(mm, "SESSION_TTL_SECONDS", 0.0)  # isolate LRU from TTL
+    now = mm._now()
+    mm._sessions["old"] = mm._SessionState(model=object(), path=None, last_access=now - 10)
+    mm._sessions["mid"] = mm._SessionState(model=object(), path=None, last_access=now - 5)
+
+    mm._evict_if_needed(keep="mid")  # "mid" is already registered: no room is needed
+
+    assert set(mm._sessions) == {"old", "mid"}, "an existing session at the cap must not evict anyone"
+
+
+def test_session_extra_access_at_cap_keeps_other_sessions(monkeypatch):
+    # Regression: get_session_extra() (used by generation-keyed skill state such as the gbXML
+    # source stash) evicted an unrelated session on every call once the registry was full.
+    # The caller's own session already exists here, so the other session must survive and
+    # the returned dict must be the caller's.
+    import mcp_server.model_manager as mm
+
+    monkeypatch.setattr(mm, "MAX_SESSIONS", 2)
+    monkeypatch.setattr(mm, "SESSION_TTL_SECONDS", 0.0)
+    now = mm._now()
+    own_key = mm.session_key()  # off-request callers collapse to the single local session
+    mm._sessions["other"] = mm._SessionState(model=object(), path=None, last_access=now - 10)
+    mm._sessions[own_key] = mm._SessionState(model=object(), path=None, last_access=now - 5)
+    mm._sessions[own_key].extra["probe"] = "mine"
+
+    extra = mm.get_session_extra()
+
+    assert "other" in mm._sessions, "reading own session state must not evict another user's model"
+    assert extra == {"probe": "mine"}
+    assert len(mm._sessions) == 2

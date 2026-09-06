@@ -72,7 +72,15 @@ def _sweep_idle() -> None:
 
 
 def _evict_if_needed(keep: str) -> None:
-    """Evict least-recently-used sessions until under cap (never `keep`)."""
+    """Evict least-recently-used sessions until there is room to add `keep`.
+
+    No-op when `keep` already has a session: nothing new is being added, so
+    there is nothing to make room for. Without this, every load_model() or
+    get_session_extra() from an existing session at the cap dropped an
+    unrelated session's model.
+    """
+    if keep in _sessions:
+        return
     while len(_sessions) >= MAX_SESSIONS:
         victim = min(
             (k for k in _sessions if k != keep),
