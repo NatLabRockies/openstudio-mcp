@@ -355,4 +355,3 @@ def test_replace_dx_with_water_coil_requires_plant_loop():
                 assert [c["type"] for c in details["detailed_components"]["cooling_coils"]] == \
                     ["OS_Coil_Cooling_DX_SingleSpeed"]
     asyncio.run(_run())
-
