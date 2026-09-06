@@ -1,7 +1,8 @@
 """Integration tests for add_setpoint_manager / remove_setpoint_manager (follow-up to #148).
 
-stdio through the MCP server for the tool contract; in-process for node-placement
-assertions that need the SPM's setpointNode() handle.
+stdio through the MCP server for the tool contract. The in-process node-placement
+assertions (which need the SPM's setpointNode() handle) live in
+test_add_setpoint_manager_placement.py.
 
 SDK facts (dev/issue149-probes/probe_spm_collision.py, OpenStudio 3.11.0):
 SetpointManager.addToNode silently deletes a same-control-variable SPM already on the
@@ -11,9 +12,7 @@ plant node and attach nothing; spm.remove() leaves the node's other SPMs alone.
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
-from pathlib import Path
 
 import pytest
 from conftest import create_baseline_and_load, integration_enabled, server_params, unwrap
@@ -64,7 +63,7 @@ AIR_TYPES = [
     ("SetpointManagerScheduled", {"schedule_name": "SAT Sched"}),
     ("SetpointManagerScheduledDualSetpoint",
      {"cooling_schedule_name": "SAT Sched", "heating_schedule_name": "SAT Sched"}),
-    ("SetpointManagerSingleZoneReheat", {"control_zone_name": "<zone0>"}),
+    ("SetpointManagerSingleZoneReheat", {"control_zone_name": "<zone_last>"}),
     ("SetpointManagerWarmest", {}),
     ("SetpointManagerColdest", {}),
     ("SetpointManagerFollowOutdoorAirTemperature", {}),
@@ -82,7 +81,7 @@ def test_add_each_type_on_air_loop_supply_inlet(spm_type, extra):
                 await s.initialize()
                 zones, _hw, _chw = await _sys7(s, _unique())
                 await _schedule(s, "SAT Sched", 12.8)
-                args = {k: (zones[0] if v == "<zone0>" else v) for k, v in extra.items()}
+                args = {k: (zones[-1] if v == "<zone_last>" else v) for k, v in extra.items()}
                 res = unwrap(await s.call_tool("add_setpoint_manager", {
                     "spm_type": spm_type, "name": "New SPM", "air_loop_name": "VAV7",
                     "node": "supply_inlet", **args,
@@ -93,6 +92,8 @@ def test_add_each_type_on_air_loop_supply_inlet(spm_type, extra):
                 assert res["control_variable"] == "Temperature"
                 assert res["replaced"] is None
                 assert res["setpoint_managers_on_node"] == ["New SPM"]
+                expected_zone = zones[-1] if spm_type == "SetpointManagerSingleZoneReheat" else None
+                assert res["control_zone"] == expected_zone, res
                 props = unwrap(await s.call_tool("get_setpoint_manager_properties", {"setpoint_name": "New SPM"}))
                 assert props["ok"] is True, props
                 assert props["type"] == spm_type
@@ -148,6 +149,32 @@ def test_add_on_mixed_air_node():
                 assert res["control_variable"] == "HumidityRatio" and res["replaced"] is None
                 assert "Mixed Air Hum SPM" in res["setpoint_managers_on_node"]
                 assert len(res["setpoint_managers_on_node"]) == 2, res["setpoint_managers_on_node"]
+    asyncio.run(_run())
+
+
+def test_single_zone_reheat_keeps_requested_non_first_control_zone():
+    # Regression: SetpointManagerSingleZoneReheat.addToNode overwrites the control zone with the
+    # loop's FIRST demand zone (probe_szr_control_zone.py), so a zone set before attaching was
+    # silently replaced on any multi-zone loop. The tool must set it after attaching and the
+    # property reader must show the zone that was asked for
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                zones, _hw, _chw = await _sys7(s, _unique())
+                assert len(zones) == 10, zones
+                wanted = zones[7]
+                res = unwrap(await s.call_tool("add_setpoint_manager", {
+                    "spm_type": "SetpointManagerSingleZoneReheat", "name": "SZR Zone 7",
+                    "air_loop_name": "VAV7", "node": "supply_inlet", "control_zone_name": wanted,
+                }))
+                assert res["ok"] is True, res
+                assert res["control_zone"] == wanted
+                props = unwrap(await s.call_tool("get_setpoint_manager_properties", {"setpoint_name": "SZR Zone 7"}))
+                assert props["ok"] is True, props
+                assert props["properties"]["control_zone"]["value"] == wanted, (
+                    f"control zone reset to first zone {zones[0]!r}? got {props['properties']['control_zone']}"
+                )
     asyncio.run(_run())
 
 
@@ -296,80 +323,6 @@ def test_remove_only_temperature_spm_on_outlet_warns():
                 missing = unwrap(await s.call_tool("remove_setpoint_manager", {"name": only}))
                 assert missing["ok"] is False and "not found" in missing["error"]
     asyncio.run(_run())
-
-
-# ── in-process: node placement ───────────────────────────────────────────
-
-@pytest.fixture
-def inproc_loop(tmp_path: Path):
-    """Empty model in model_manager + air loop  Clg → Htg → Fan  with a coil to anchor on."""
-    if not os.environ.get("RUN_OPENSTUDIO_INTEGRATION"):
-        pytest.skip("requires OpenStudio")
-    import openstudio
-
-    from mcp_server.model_manager import clear_model, load_model
-
-    osm = tmp_path / "spm.osm"
-    openstudio.model.Model().save(openstudio.toPath(str(osm)), True)
-    model = load_model(osm)
-    loop = openstudio.model.AirLoopHVAC(model)
-    loop.setName("Loop")
-    always_on = model.alwaysOnDiscreteSchedule()
-    clg = openstudio.model.CoilCoolingDXSingleSpeed(model)
-    clg.setName("Clg")
-    htg = openstudio.model.CoilHeatingElectric(model, always_on)
-    htg.setName("Htg")
-    fan = openstudio.model.FanVariableVolume(model, always_on)
-    fan.setName("Fan")
-    for comp in (clg, htg, fan):
-        assert comp.addToNode(loop.supplyOutletNode())
-    yield model, loop
-    clear_model()
-
-
-def test_after_component_places_spm_on_that_outlet_node(inproc_loop):
-    # Validates: after_component=<coil> resolves the coil's OUTLET node (the node between it
-    # and the next component), not the loop outlet
-    from mcp_server.skills.loop_operations.setpoint_managers import add_setpoint_manager
-    model, loop = inproc_loop
-    clg = model.getCoilCoolingDXSingleSpeedByName("Clg").get()
-    clg_outlet = clg.outletModelObject().get().to_Node().get()
-
-    res = add_setpoint_manager("SetpointManagerOutdoorAirReset", "Coil Leaving SPM",
-                               air_loop_name="Loop", after_component="Clg")
-
-    assert res["ok"] is True, res
-    assert res["node_name"] == clg_outlet.nameString()
-    spm = model.getSetpointManagerOutdoorAirResetByName("Coil Leaving SPM").get()
-    assert spm.setpointNode().get().handle() == clg_outlet.handle()
-    assert loop.supplyOutletNode().setpointManagers().__len__() == 0, "loop outlet untouched"
-
-
-def test_replace_existing_deletes_exactly_the_colliding_spm(inproc_loop):
-    # Regression: the SDK deletes the colliding SPM from the MODEL, not just the node; the
-    # tool must report it and leave a different-control-variable neighbour alone
-    import openstudio
-
-    from mcp_server.skills.loop_operations.setpoint_managers import add_setpoint_manager
-    model, loop = inproc_loop
-    outlet = loop.supplyOutletNode()
-    sch = openstudio.model.ScheduleConstant(model)
-    sch.setValue(12.8)
-    temp = openstudio.model.SetpointManagerScheduled(model, sch)
-    temp.setName("Old Temp")
-    assert temp.addToNode(outlet)
-    hum = openstudio.model.SetpointManagerScheduled(model, sch)
-    hum.setName("Hum")
-    assert hum.setControlVariable("HumidityRatio") and hum.addToNode(outlet)
-
-    res = add_setpoint_manager("SetpointManagerWarmest", "Warmest", air_loop_name="Loop",
-                               replace_existing=True)
-
-    assert res["ok"] is True, res
-    assert res["replaced"] == "Old Temp"
-    assert sorted(res["setpoint_managers_on_node"]) == ["Hum", "Warmest"]
-    assert not model.getObject(temp.handle()).is_initialized(), "old Temperature SPM is gone"
-    assert model.getObject(hum.handle()).is_initialized(), "HumidityRatio neighbour survives"
 
 
 # ── refusals must not leave orphans (review finding) ─────────────────────

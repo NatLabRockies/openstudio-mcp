@@ -168,9 +168,9 @@ def _construct_spm(model, spm_type: str, loop, kind: str, *, schedule_name, cool
             return None, f"Thermal zone '{control_zone_name}' not found"
         if kind != "air" or not any(z.handle() == zone.handle() for z in loop.thermalZones()):
             return None, f"Zone '{control_zone_name}' is not served by air loop '{loop.nameString()}'"
-        spm = openstudio.model.SetpointManagerSingleZoneReheat(model)
-        spm.setControlZone(zone)
-        return spm, None
+        # The control zone is applied AFTER addToNode (see _apply_control_zone): attaching
+        # resets it to the loop's first zone (probe_szr_control_zone.py)
+        return openstudio.model.SetpointManagerSingleZoneReheat(model), None
     if control_variable is not None:
         return None, f"control_variable is only settable on SetpointManagerScheduled, not {spm_type}"
     if spm_type == "SetpointManagerWarmest":
@@ -182,6 +182,21 @@ def _construct_spm(model, spm_type: str, loop, kind: str, *, schedule_name, cool
     if spm_type == "SetpointManagerOutdoorAirReset":
         return openstudio.model.SetpointManagerOutdoorAirReset(model), None
     return None, f"Unknown spm_type '{spm_type}'. Valid: {list(SPM_CONSTRUCTOR_TYPES)}"
+
+
+def _apply_control_zone(spm, model, control_zone_name: str) -> tuple[str | None, str | None]:
+    """(zone name, None) or (None, error) — set the SingleZoneReheat control zone post-attach.
+
+    SetpointManagerSingleZoneReheat.addToNode overwrites the control zone with the
+    loop's FIRST demand-side zone, so a zone set before attaching is silently lost
+    on a multi-zone loop (probe_szr_control_zone.py). Set it afterwards and read back.
+    """
+    zone = fetch_object(model, "ThermalZone", name=control_zone_name)
+    szr = spm.to_SetpointManagerSingleZoneReheat().get()
+    got = szr.controlZone() if szr.setControlZone(zone) else None
+    if got is None or not got.is_initialized() or got.get().handle() != zone.handle():
+        return None, f"Could not set control zone '{control_zone_name}' on {spm.nameString()}"
+    return got.get().nameString(), None
 
 
 # ── tools ────────────────────────────────────────────────────────────────
@@ -240,11 +255,18 @@ def add_setpoint_manager(
             hint = " (this type is air-loop only)" if kind == "plant" else ""
             return {"ok": False, "error": f"{spm_type} was refused on {kind} loop '{loop.nameString()}' "
                                           f"node '{target.nameString()}'{hint}"}
+        control_zone = None
+        if spm_type == "SetpointManagerSingleZoneReheat":
+            control_zone, err = _apply_control_zone(spm, model, control_zone_name)
+            if err:
+                spm.remove()
+                return {"ok": False, "error": err}
         return {
             "ok": True,
             "name": spm.nameString(),
             "spm_type": spm_type,
             "control_variable": cv,
+            "control_zone": control_zone,
             "loop": loop.nameString(),
             "loop_type": kind,
             "node_name": target.nameString(),

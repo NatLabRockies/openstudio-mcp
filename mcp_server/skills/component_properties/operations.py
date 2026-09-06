@@ -506,9 +506,11 @@ def get_sizing_zone_properties(zone_name: str) -> dict:
 # Registry of supported SPM types: getter method, get/set functions.
 
 def _get_spm_single_zone_reheat_props(spm) -> dict:
+    zone = spm.controlZone()  # OptionalThermalZone; read-only here (add_setpoint_manager sets it)
     return {
         "minimum_supply_air_temperature_c": {"value": float(spm.minimumSupplyAirTemperature()), "unit": "C"},
         "maximum_supply_air_temperature_c": {"value": float(spm.maximumSupplyAirTemperature()), "unit": "C"},
+        "control_zone": {"value": zone.get().nameString() if zone.is_initialized() else None, "unit": None},
     }
 
 def _set_spm_single_zone_reheat_props(spm, properties: dict) -> tuple[dict, list]:
