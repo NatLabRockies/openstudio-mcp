@@ -17,20 +17,21 @@ bug can just as easily be the actual source of a mismatch.
 """
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
+from xml.parsers import expat
 
 import openstudio
 
 from mcp_server.config import is_path_allowed
 
-# gbXML files declare this namespace on the root <gbXML> element; every
-# element lookup below needs it (bare "Space" would never match).
-_GBXML_NS = "{http://www.gbxml.org/schema}"
-_SPACE_TAG = f"{_GBXML_NS}Space"
-_AREA_TAG = f"{_GBXML_NS}Area"
-_VOLUME_TAG = f"{_GBXML_NS}Volume"
+# gbXML files declare this namespace on the root <gbXML> element. The expat
+# parser below is created with namespace processing, so element names arrive
+# as "<uri>}<local>" (bare "Space" would never match).
+_GBXML_NS_URI = "http://www.gbxml.org/schema"
+_SPACE_TAG = _GBXML_NS_URI + "}Space"
+_AREA_TAG = _GBXML_NS_URI + "}Area"
+_VOLUME_TAG = _GBXML_NS_URI + "}Volume"
 
 # gbXML's areaUnit/volumeUnit root attributes name the units every <Area>/
 # <Volume> element in the file is expressed in — SquareMeters/CubicMeters is
@@ -59,84 +60,126 @@ class _UnsupportedGbxmlUnits(ValueError):
     """areaUnit/volumeUnit on the root element is one this check can't convert."""
 
 
-def _parse_gbxml_space_geometry(path: Path) -> dict[str, dict[str, float | None]]:
-    """Stream the gbXML and return {space id: {"area_m2", "volume_m3"}} in SI.
+class _RejectedGbxml(ValueError):
+    """The file uses XML features this check refuses to process (DTD / entity declarations)."""
 
-    Streams with iterparse() rather than materializing the whole tree: this
-    runs inside the long-lived MCP server process, a Revit export can run to
-    hundreds of MB, and a full ElementTree costs several times the file size
-    — almost all of it <Surface> polyloops this check never reads. Only the
-    <Space> currently open is held to completion (it is tiny: Area/Volume/
-    Name plus one polyloop); everything else is freed the moment it closes,
-    and detached from its parent — elem.clear() alone leaves an empty shell
-    attached to <Campus> for every <Surface>, ~80 bytes each, so peak memory
-    would still grow with the surface count. Measured flat at ~0.15 MB from
-    1k to 50k surfaces with the detach; ~4 MB at 50k without it.
 
+def _reject_dtd(*_args: Any) -> None:
+    # Fires on the first <!DOCTYPE or <!ENTITY token, before any entity is
+    # expanded — "billion laughs" style payloads never get to run.
+    raise _RejectedGbxml(
+        "gbXML with a DOCTYPE/DTD or entity declarations is not accepted: "
+        "entity expansion is not allowed in this server process",
+    )
+
+
+def _refuse_external_entity(*_args: Any) -> int:
+    # Returning 0 makes expat fail the parse instead of fetching the reference.
+    return 0
+
+
+class _SpaceGeometryReader:
+    """expat callback target that keeps only each <Space>'s Area/Volume text.
+
+    No element tree is ever built: the parser hands each start/end/text event
+    to these methods and discards it, so peak memory is independent of the
+    file size (a Revit export can run to hundreds of MB of <Surface> polyloops
+    this check never reads) and this runs safely inside the long-lived server
+    process.
+
+    Only <Area>/<Volume> that are direct children of a <Space> are read —
+    <Building> carries its own <Area>, and a Space's polyloops carry
+    coordinates in other elements — matching what the schema defines.
     gbXML Area/Volume are both optional per the schema even though every
     fixture in this repo happens to populate them — a Space with either one
     absent is recorded as None, never treated as a false 0%/100% delta.
-    <Building> also carries an <Area> child, so only elements inside an open
-    <Space> are ever read.
-
-    Raises ET.ParseError on malformed XML and _UnsupportedGbxmlUnits on units
-    outside the two tables above.
     """
-    spaces: dict[str, dict[str, float | None]] = {}
-    root = None
-    open_space = None
-    area_factor = volume_factor = 1.0
-    # Open ancestors of the element being parsed, so a finished element can be
-    # removed from its parent (iterparse gives no parent pointer).
-    ancestors: list[ET.Element] = []
-    # is_path_allowed() in the caller puts this on the same trust boundary as the rest of
-    # this server's file access, and the file was already parsed once by the real gbXML
-    # translator during import_gbxml_op; defusedxml isn't a dependency this project
-    # otherwise carries.
-    for event, elem in ET.iterparse(str(path), events=("start", "end")):  # noqa: S314
-        if event == "start":
-            if root is None:
-                # Root attributes are complete at its start event; fail on bad units
-                # before streaming a possibly huge file for nothing.
-                root = elem
-                area_unit = root.get("areaUnit", "SquareMeters")
-                volume_unit = root.get("volumeUnit", "CubicMeters")
-                area_factor = _AREA_UNIT_TO_M2.get(area_unit)
-                volume_factor = _VOLUME_UNIT_TO_M3.get(volume_unit)
-                if area_factor is None or volume_factor is None:
-                    raise _UnsupportedGbxmlUnits(
-                        f"Unsupported gbXML units (areaUnit={area_unit!r}, volumeUnit={volume_unit!r})",
-                    )
-            elif open_space is None and elem.tag == _SPACE_TAG:
-                open_space = elem
-            ancestors.append(elem)
-            continue
 
-        ancestors.pop()
-        if elem is open_space:
-            # End of the open <Space>: its children are complete and untouched.
-            space_id = elem.get("id")
-            if space_id:
-                area_el = elem.find(_AREA_TAG)
-                volume_el = elem.find(_VOLUME_TAG)
-                spaces[space_id] = {
-                    "area_m2": float(area_el.text) * area_factor
-                    if area_el is not None and area_el.text else None,
-                    "volume_m3": float(volume_el.text) * volume_factor
-                    if volume_el is not None and volume_el.text else None,
+    def __init__(self) -> None:
+        self.spaces: dict[str, dict[str, float | None]] = {}
+        self._area_factor = 1.0
+        self._volume_factor = 1.0
+        self._depth = 0
+        self._space_depth: int | None = None  # depth of the open <Space>, None outside one
+        self._space_id: str | None = None
+        self._space_area: str | None = None
+        self._space_volume: str | None = None
+        self._text_tag: str | None = None  # the <Area>/<Volume> whose text is being collected
+        self._text: list[str] = []
+
+    def start(self, name: str, attrs: dict[str, str]) -> None:
+        self._depth += 1
+        if self._depth == 1:
+            # Root attributes: fail on bad units before streaming a possibly huge file.
+            area_unit = attrs.get("areaUnit", "SquareMeters")
+            volume_unit = attrs.get("volumeUnit", "CubicMeters")
+            area_factor = _AREA_UNIT_TO_M2.get(area_unit)
+            volume_factor = _VOLUME_UNIT_TO_M3.get(volume_unit)
+            if area_factor is None or volume_factor is None:
+                raise _UnsupportedGbxmlUnits(
+                    f"Unsupported gbXML units (areaUnit={area_unit!r}, volumeUnit={volume_unit!r})",
+                )
+            self._area_factor = area_factor
+            self._volume_factor = volume_factor
+        elif self._space_depth is None:
+            if name == _SPACE_TAG:
+                self._space_depth = self._depth
+                self._space_id = attrs.get("id")
+                self._space_area = None
+                self._space_volume = None
+        elif self._depth == self._space_depth + 1 and name in (_AREA_TAG, _VOLUME_TAG):
+            self._text_tag = name
+            self._text = []
+
+    def data(self, text: str) -> None:
+        if self._text_tag is not None:
+            self._text.append(text)
+
+    def end(self, name: str) -> None:
+        if name == self._text_tag:
+            raw = "".join(self._text).strip()
+            if name == _AREA_TAG:
+                self._space_area = raw
+            else:
+                self._space_volume = raw
+            self._text_tag = None
+        elif self._space_depth == self._depth and name == _SPACE_TAG:
+            if self._space_id:
+                self.spaces[self._space_id] = {
+                    "area_m2": float(self._space_area) * self._area_factor if self._space_area else None,
+                    "volume_m3": float(self._space_volume) * self._volume_factor if self._space_volume else None,
                 }
-            open_space = None
-        elif open_space is not None:
-            # Inside an open <Space>: keep its subtree intact until it closes.
-            continue
-        if ancestors:
-            # Finished with this subtree (a <Surface>, a <Building>'s own <Area>, a closed
-            # <Space>, ...): drop its contents AND unlink it from its parent, so the parent's
-            # child list stays at one entry instead of one shell per surface. The root has no
-            # parent and is left alone.
-            elem.clear()
-            ancestors[-1].remove(elem)
-    return spaces
+            self._space_depth = None
+        self._depth -= 1
+
+
+def _parse_gbxml_space_geometry(path: Path) -> dict[str, dict[str, float | None]]:
+    """Stream the gbXML and return {space id: {"area_m2", "volume_m3"}} in SI.
+
+    Drives pyexpat directly with the callbacks in _SpaceGeometryReader, so
+    nothing is retained beyond the current <Space>'s two numbers. The parser
+    is hardened for user-supplied input outside the sandbox: any DOCTYPE/DTD
+    or entity declaration aborts the parse at that token, external entity
+    references are refused, and parameter entities are never parsed. That
+    is a stricter stance than the bundled expat's own amplification cap
+    (2.4.1+) and needs no defusedxml dependency. Revit never emits a DTD.
+
+    Raises expat.ExpatError on malformed XML, _RejectedGbxml on a DTD/entity
+    declaration, and _UnsupportedGbxmlUnits on units outside the tables above.
+    """
+    reader = _SpaceGeometryReader()
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.buffer_text = True
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+    parser.StartDoctypeDeclHandler = _reject_dtd
+    parser.EntityDeclHandler = _reject_dtd
+    parser.ExternalEntityRefHandler = _refuse_external_entity
+    parser.StartElementHandler = reader.start
+    parser.EndElementHandler = reader.end
+    parser.CharacterDataHandler = reader.data
+    with path.open("rb") as f:
+        parser.ParseFile(f)
+    return reader.spaces
 
 
 def find_gbxml_geometry_deltas(gbxml_path: str, model: openstudio.model.Model) -> dict[str, Any]:
@@ -160,9 +203,9 @@ def find_gbxml_geometry_deltas(gbxml_path: str, model: openstudio.model.Model) -
             return {"ok": False, "error": f"gbXML path not allowed: {gbxml_path}"}
         try:
             gbxml_by_id = _parse_gbxml_space_geometry(path)
-        except ET.ParseError as e:
+        except expat.ExpatError as e:
             return {"ok": False, "error": f"Could not parse gbXML: {e}"}
-        except _UnsupportedGbxmlUnits as e:
+        except (_RejectedGbxml, _UnsupportedGbxmlUnits) as e:
             return {"ok": False, "error": str(e)}
 
         area_deltas: list[dict[str, Any]] = []

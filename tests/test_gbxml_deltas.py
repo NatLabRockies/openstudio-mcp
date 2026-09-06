@@ -232,11 +232,11 @@ _SURFACE_TEMPLATE = (
 
 
 def test_parse_gbxml_space_geometry_peak_memory_is_flat_in_surface_count():
-    # Regression: the streaming parser cleared each finished <Surface> but left its empty
-    # shell attached to <Campus>, so peak memory still grew ~80 bytes per surface (about
-    # 1.75 MB at the 20k surfaces below, 4 MB at 50k). Detaching finished subtrees from
-    # their parent holds the peak at ~0.15 MB regardless of surface count; the 1 MB cap
-    # sits well clear of both.
+    # Regression: an earlier ElementTree-based streaming parser cleared each finished
+    # <Surface> but left its empty shell attached to <Campus>, so peak memory still grew
+    # ~80 bytes per surface (about 1.75 MB at the 20k surfaces below, 4 MB at 50k). The
+    # parser now drives expat callbacks and builds no tree at all, so the peak is a few
+    # hundred KB regardless of surface count; the 1 MB cap sits well clear of both.
     n_surfaces = 20_000
     gbxml_path = _allowed_tmp_dir() / "many_surfaces.xml"
     with gbxml_path.open("w", encoding="utf-8") as f:
@@ -281,6 +281,66 @@ def test_find_gbxml_geometry_deltas_converts_imperial_units():
     assert result["ok"] is True, result
     assert result["gbxml_spaces_checked_count"] == 1
     assert result["gbxml_area_delta_count"] == 0, result["gbxml_area_deltas"]
+
+
+_BILLION_LAUGHS_PROLOG = (
+    '<!DOCTYPE gbXML [\n'
+    '  <!ENTITY a "aaaaaaaaaa">\n'
+    '  <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">\n'
+    '  <!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">\n'
+    ']>\n'
+)
+_GBXML_BODY_WITH_ENTITY = (
+    '<gbXML areaUnit="SquareMeters" volumeUnit="CubicMeters" xmlns="http://www.gbxml.org/schema">'
+    '<Campus><Building><Space id="sp-clean"><Area>{ref}</Area></Space></Building></Campus></gbXML>\n'
+)
+
+
+@pytest.mark.parametrize(("label", "prolog", "ref"), [
+    ("nested internal entities (billion laughs)", _BILLION_LAUGHS_PROLOG, "&c;"),
+    ("external entity", '<!DOCTYPE gbXML [<!ENTITY ext SYSTEM "file:///etc/hostname">]>\n', "&ext;"),
+    ("external DTD, no entities", '<!DOCTYPE gbXML SYSTEM "http://example.invalid/gbxml.dtd">\n', "20.0"),
+])
+def test_find_gbxml_geometry_deltas_rejects_dtd_and_entity_payloads(label, prolog, ref):
+    # Regression: the delta check re-parses user-supplied XML inside the long-lived server
+    # process, outside the import sandbox. The standard parser expanded DTD-declared entities,
+    # so a crafted upload could burn server CPU/memory or reference external resources. Any
+    # DOCTYPE/DTD now aborts the parse at that token — before a single entity expands — with
+    # an ok=False error that names the reason instead of a float-conversion failure.
+    tmp_dir = _allowed_tmp_dir()
+    model = _build_model_and_load(tmp_dir)
+    gbxml_path = tmp_dir / "payload.xml"
+    gbxml_path.write_text(
+        '<?xml version="1.0"?>\n' + prolog + _GBXML_BODY_WITH_ENTITY.format(ref=ref),
+        encoding="utf-8",
+    )
+
+    result = find_gbxml_geometry_deltas(str(gbxml_path), model)
+
+    assert result["ok"] is False, f"{label}: {result}"
+    assert "DOCTYPE" in result["error"], f"{label}: {result['error']}"
+    assert "gbxml_spaces_checked_count" not in result
+
+
+def test_find_gbxml_geometry_deltas_predefined_entities_still_parse():
+    # Validates: hardening rejects DTDs, not XML itself — the five predefined entities need no
+    # DTD and must keep working (Revit names routinely contain '&').
+    tmp_dir = _allowed_tmp_dir()
+    model = _build_model_and_load(tmp_dir)
+    gbxml_path = tmp_dir / "predefined.xml"
+    gbxml_path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<gbXML areaUnit="SquareMeters" volumeUnit="CubicMeters" xmlns="http://www.gbxml.org/schema">'
+        '<Campus><Building><Space id="sp-clean"><Name>Lounge &amp; Bar &lt;2&gt;</Name>'
+        '<Area>20.0</Area></Space></Building></Campus></gbXML>\n',
+        encoding="utf-8",
+    )
+
+    result = find_gbxml_geometry_deltas(str(gbxml_path), model)
+
+    assert result["ok"] is True, result
+    assert result["gbxml_spaces_checked_count"] == 1
+    assert result["gbxml_area_delta_count"] == 0
 
 
 def test_find_gbxml_geometry_deltas_missing_file():
