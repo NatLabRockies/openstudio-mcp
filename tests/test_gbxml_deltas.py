@@ -1,4 +1,5 @@
-"""Unit-style tests for find_gbxml_geometry_deltas (mcp_server/skills/geometry/gbxml_deltas.py).
+"""Unit-style tests for find_gbxml_geometry_deltas (mcp_server/skills/geometry/gbxml_deltas.py)
+and the session stash it reads through (mcp_server/skills/gbxml_import/gbxml_source_state.py).
 
 Uses small hand-built synthetic gbXML + a matching in-memory OSM rather than a
 full Revit export — this is the pure comparison function, not the gbXML
@@ -15,6 +16,7 @@ openstudio = pytest.importorskip("openstudio")
 
 from mcp_server import model_manager  # noqa: E402
 from mcp_server.config import user_run_root  # noqa: E402
+from mcp_server.skills.gbxml_import.gbxml_source_state import get_source_for_model, set_source  # noqa: E402
 from mcp_server.skills.geometry.gbxml_deltas import find_gbxml_geometry_deltas  # noqa: E402
 
 # Imports the real openstudio SDK (importorskip above) — integration tier, must not
@@ -47,8 +49,9 @@ SYNTHETIC_GBXML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def _build_model_and_load(tmp_dir: Path) -> None:
-    """Build the synthetic OSM matching SYNTHETIC_GBXML and load it as the current session model."""
+def _build_model_and_load(tmp_dir: Path) -> openstudio.model.Model:
+    """Build the synthetic OSM matching SYNTHETIC_GBXML, load it as the current session
+    model, and return that loaded session model."""
     model = openstudio.model.Model()
 
     space_a = openstudio.model.Space(model)
@@ -76,18 +79,18 @@ def _build_model_and_load(tmp_dir: Path) -> None:
 
     osm_path = tmp_dir / "synthetic.osm"
     model.save(str(osm_path), True)
-    model_manager.load_model(osm_path)
+    return model_manager.load_model(osm_path)
 
 
 def test_find_gbxml_geometry_deltas_detects_area_and_volume_mismatch():
     # Regression: a space whose model floor area/volume drifted from the gbXML source
     # (e.g. via weld_coincident_vertices/merge_coplanar_sliver_surfaces) must be flagged.
     tmp_dir = _allowed_tmp_dir()
-    _build_model_and_load(tmp_dir)
+    model = _build_model_and_load(tmp_dir)
     gbxml_path = tmp_dir / "synthetic.xml"
     gbxml_path.write_text(SYNTHETIC_GBXML, encoding="utf-8")
 
-    result = find_gbxml_geometry_deltas(str(gbxml_path))
+    result = find_gbxml_geometry_deltas(str(gbxml_path), model)
 
     assert result["ok"] is True
     assert result["gbxml_spaces_checked_count"] == 3
@@ -113,11 +116,11 @@ def test_find_gbxml_geometry_deltas_clean_space_not_reported():
     # Validates: an exact area match, and a space with no comparable gbXML data at all,
     # never appear in either delta list — only genuine mismatches are reported.
     tmp_dir = _allowed_tmp_dir()
-    _build_model_and_load(tmp_dir)
+    model = _build_model_and_load(tmp_dir)
     gbxml_path = tmp_dir / "synthetic.xml"
     gbxml_path.write_text(SYNTHETIC_GBXML, encoding="utf-8")
 
-    result = find_gbxml_geometry_deltas(str(gbxml_path))
+    result = find_gbxml_geometry_deltas(str(gbxml_path), model)
 
     flagged_spaces = {d["space"] for d in result["gbxml_area_deltas"]} | \
         {d["space"] for d in result["gbxml_volume_deltas"]}
@@ -125,9 +128,121 @@ def test_find_gbxml_geometry_deltas_clean_space_not_reported():
     assert "Space C" not in flagged_spaces
 
 
+def test_find_gbxml_geometry_deltas_compares_the_model_it_is_given():
+    # Regression: the helper used to re-fetch the session model after parsing the XML, so a
+    # concurrent load_model on the same session could swap the model out from under the
+    # caller and the check would compare the NEW model against the OLD model's gbXML. It
+    # must compare exactly the model it is handed, even when the session's current model
+    # is a different one.
+    tmp_dir = _allowed_tmp_dir()
+    _build_model_and_load(tmp_dir)  # session's current model: 5 spaces, 3 matchable
+    gbxml_path = tmp_dir / "synthetic.xml"
+    gbxml_path.write_text(SYNTHETIC_GBXML, encoding="utf-8")
+
+    other = openstudio.model.Model()  # never loaded into the session
+    only_space = openstudio.model.Space(other)
+    only_space.setName("Other-model space")
+    only_space.setGBXMLId("sp-clean")
+    only_space.setFloorArea(30.0)  # gbXML says 20.0 -> 50% delta the session model does NOT have
+
+    result = find_gbxml_geometry_deltas(str(gbxml_path), other)
+
+    assert result["ok"] is True
+    assert result["gbxml_spaces_checked_count"] == 1, "must count the given model's spaces, not the session's 3"
+    assert result["gbxml_spaces_skipped_no_gbxml_id_count"] == 0
+    assert result["gbxml_area_delta_count"] == 1
+    assert result["gbxml_area_deltas"][0]["space"] == "Other-model space"
+    assert result["gbxml_area_deltas"][0]["osm_area_m2"] == 30.0
+
+
+SCOPED_GBXML = """<?xml version="1.0" encoding="UTF-8"?>
+<gbXML areaUnit="SquareMeters" volumeUnit="CubicMeters" xmlns="http://www.gbxml.org/schema">
+  <Campus>
+    <Location><Name>Somewhere</Name></Location>
+    <Building id="bldg-1" buildingType="Office">
+      <Area>9999.0</Area>
+      <Space id="sp-match-area">
+        <Name>Room 101</Name>
+        <CADObjectId>abc</CADObjectId>
+        <ShellGeometry id="sg-1">
+          <ClosedShell>
+            <PolyLoop>
+              <CartesianPoint><Coordinate>0</Coordinate><Coordinate>0</Coordinate><Coordinate>0</Coordinate></CartesianPoint>
+              <CartesianPoint><Coordinate>5</Coordinate><Coordinate>0</Coordinate><Coordinate>0</Coordinate></CartesianPoint>
+              <CartesianPoint><Coordinate>5</Coordinate><Coordinate>10</Coordinate><Coordinate>0</Coordinate></CartesianPoint>
+            </PolyLoop>
+          </ClosedShell>
+        </ShellGeometry>
+        <Area>50.0</Area>
+        <Volume>150.0</Volume>
+        <PlanarGeometry>
+          <PolyLoop>
+            <CartesianPoint><Coordinate>0</Coordinate><Coordinate>0</Coordinate><Coordinate>0</Coordinate></CartesianPoint>
+          </PolyLoop>
+        </PlanarGeometry>
+      </Space>
+    </Building>
+    <Surface id="su-1" surfaceType="ExteriorWall">
+      <AdjacentSpaceId spaceIdRef="sp-match-area"/>
+      <PlanarGeometry>
+        <PolyLoop>
+          <CartesianPoint><Coordinate>0</Coordinate><Coordinate>0</Coordinate><Coordinate>0</Coordinate></CartesianPoint>
+        </PolyLoop>
+      </PlanarGeometry>
+    </Surface>
+  </Campus>
+</gbXML>
+"""
+
+
+def test_find_gbxml_geometry_deltas_reads_only_the_space_scoped_area_and_volume():
+    # Validates: the streaming parser frees every element outside an open <Space> as it
+    # closes — so a Space's Area/Volume must still be read correctly when they sit AFTER
+    # other children (Name, ShellGeometry polyloops), when a <Building> carries its own
+    # <Area>, and when <Surface> siblings follow the spaces. Reading the Building's 9999
+    # or dropping the Space's children before its end event would each change the delta.
+    tmp_dir = _allowed_tmp_dir()
+    model = _build_model_and_load(tmp_dir)
+    gbxml_path = tmp_dir / "scoped.xml"
+    gbxml_path.write_text(SCOPED_GBXML, encoding="utf-8")
+
+    result = find_gbxml_geometry_deltas(str(gbxml_path), model)
+
+    assert result["ok"] is True, result
+    assert result["gbxml_spaces_checked_count"] == 1
+    assert result["gbxml_area_delta_count"] == 1
+    assert result["gbxml_area_deltas"][0]["gbxml_area_m2"] == 50.0
+    assert result["gbxml_area_deltas"][0]["osm_area_m2"] == 80.0
+    assert result["gbxml_volume_delta_count"] == 1
+    assert result["gbxml_volume_deltas"][0]["gbxml_volume_m3"] == 150.0
+
+
+def test_find_gbxml_geometry_deltas_converts_imperial_units():
+    # Validates: areaUnit="SquareFeet"/volumeUnit="CubicFeet" files are converted to SI
+    # before comparing — 215.278 ft2 is exactly Space B's 20.0 m2, so no delta; without
+    # the conversion this would report a ~976% area delta.
+    tmp_dir = _allowed_tmp_dir()
+    model = _build_model_and_load(tmp_dir)
+    gbxml_path = tmp_dir / "imperial.xml"
+    gbxml_path.write_text(
+        '<?xml version="1.0"?>\n'
+        '<gbXML areaUnit="SquareFeet" volumeUnit="CubicFeet" xmlns="http://www.gbxml.org/schema">'
+        '<Campus><Building>'
+        '<Space id="sp-clean"><Area>215.27820833</Area></Space>'
+        '</Building></Campus></gbXML>\n',
+        encoding="utf-8",
+    )
+
+    result = find_gbxml_geometry_deltas(str(gbxml_path), model)
+
+    assert result["ok"] is True, result
+    assert result["gbxml_spaces_checked_count"] == 1
+    assert result["gbxml_area_delta_count"] == 0, result["gbxml_area_deltas"]
+
+
 def test_find_gbxml_geometry_deltas_missing_file():
     # Validates: a bad path returns ok=False with a specific error, not an exception
-    result = find_gbxml_geometry_deltas("/does/not/exist.xml")
+    result = find_gbxml_geometry_deltas("/does/not/exist.xml", openstudio.model.Model())
     assert result["ok"] is False
     assert "not found" in result["error"]
 
@@ -141,6 +256,57 @@ def test_find_gbxml_geometry_deltas_unsupported_units():
         'xmlns="http://www.gbxml.org/schema"></gbXML>\n',
         encoding="utf-8",
     )
-    result = find_gbxml_geometry_deltas(str(gbxml_path))
+    result = find_gbxml_geometry_deltas(str(gbxml_path), openstudio.model.Model())
     assert result["ok"] is False
     assert "Hectares" in result["error"]
+
+
+def test_gbxml_source_stash_is_bound_to_the_generation_it_was_recorded_for():
+    # Regression: the stash used to read model_generation() itself when set, so a
+    # concurrent load_model between import_gbxml's own load and the stash write bound the
+    # gbXML path to the NEXT model's generation, and the delta check then compared the
+    # wrong model against it. The stash now takes the generation the load returned, answers
+    # only for that generation, and never lets an older import overwrite a newer one.
+    tmp_dir = _allowed_tmp_dir()
+    first_osm = tmp_dir / "first.osm"
+    openstudio.model.Model().save(str(first_osm), True)
+    second_osm = tmp_dir / "second.osm"
+    openstudio.model.Model().save(str(second_osm), True)
+
+    _first, first_gen = model_manager.load_model_with_generation(first_osm)
+    set_source("/runs/first/gbxmls/first.xml", first_gen)
+    assert get_source_for_model(first_gen) == "/runs/first/gbxmls/first.xml"
+
+    _second, second_gen = model_manager.load_model_with_generation(second_osm)
+    assert second_gen == first_gen + 1
+    assert get_source_for_model(second_gen) is None, "a reload must not inherit the previous import's source"
+    assert get_source_for_model(first_gen) == "/runs/first/gbxmls/first.xml", \
+        "a caller still holding the first model must still resolve its own source"
+
+    set_source("/runs/second/gbxmls/second.xml", second_gen)
+    set_source("/runs/late/gbxmls/late.xml", first_gen)  # a slower, older import finishing last
+    assert get_source_for_model(second_gen) == "/runs/second/gbxmls/second.xml", \
+        "an older generation's late write must not clobber the newer import's stash"
+    assert get_source_for_model(first_gen) is None
+
+
+def test_get_model_with_generation_matches_load_model_with_generation():
+    # Validates: the generation get_model_with_generation() pairs with the model is the
+    # same one load_model_with_generation() reported for it — the two ends of the
+    # stash-and-verify contract agree, and the returned model is the loaded one.
+    tmp_dir = _allowed_tmp_dir()
+    osm = tmp_dir / "gen.osm"
+    probe_model = openstudio.model.Model()
+    openstudio.model.Space(probe_model).setName("gen-probe")
+    probe_model.save(str(osm), True)
+
+    loaded, load_gen = model_manager.load_model_with_generation(osm)
+    current, current_gen = model_manager.get_model_with_generation()
+
+    assert current_gen == load_gen
+    assert current_gen == model_manager.model_generation()
+    assert [s.nameString() for s in current.getSpaces()] == ["gen-probe"]
+    # Same underlying Model, not merely equal content: a rename through one handle is
+    # visible through the other.
+    loaded.getSpaces()[0].setName("renamed-via-loaded")
+    assert [s.nameString() for s in current.getSpaces()] == ["renamed-via-loaded"]

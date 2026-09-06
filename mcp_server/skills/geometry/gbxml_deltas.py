@@ -8,7 +8,7 @@ footprint while it still closes cleanly. Revit's own per-Space Area/Volume,
 embedded in the gbXML file itself, is the closest thing to ground truth
 available: this re-parses the source .xml (not the translated OSM) and
 compares those declared values against `Space.floorArea()`/`Space.volume()`
-on the current model.
+on the model it is handed.
 
 Report only, like every sibling check in this package (see
 ground_contact.py's module docstring) — a delta means "look at this space,"
@@ -21,12 +21,16 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+import openstudio
+
 from mcp_server.config import is_path_allowed
-from mcp_server.model_manager import get_model
 
 # gbXML files declare this namespace on the root <gbXML> element; every
 # element lookup below needs it (bare "Space" would never match).
 _GBXML_NS = "{http://www.gbxml.org/schema}"
+_SPACE_TAG = f"{_GBXML_NS}Space"
+_AREA_TAG = f"{_GBXML_NS}Area"
+_VOLUME_TAG = f"{_GBXML_NS}Volume"
 
 # gbXML's areaUnit/volumeUnit root attributes name the units every <Area>/
 # <Volume> element in the file is expressed in — SquareMeters/CubicMeters is
@@ -51,11 +55,88 @@ AREA_VOLUME_DELTA_THRESHOLD = 0.02
 MAX_REPORTED_DELTAS = 20
 
 
-def find_gbxml_geometry_deltas(gbxml_path: str) -> dict[str, Any]:
+class _UnsupportedGbxmlUnits(ValueError):
+    """areaUnit/volumeUnit on the root element is one this check can't convert."""
+
+
+def _parse_gbxml_space_geometry(path: Path) -> dict[str, dict[str, float | None]]:
+    """Stream the gbXML and return {space id: {"area_m2", "volume_m3"}} in SI.
+
+    Streams with iterparse() rather than materializing the whole tree: this
+    runs inside the long-lived MCP server process, a Revit export can run to
+    hundreds of MB, and a full ElementTree costs several times the file size
+    — almost all of it <Surface> polyloops this check never reads. Only the
+    <Space> currently open is held to completion (it is tiny: Area/Volume/
+    Name plus one polyloop); everything else is freed the moment it closes.
+
+    gbXML Area/Volume are both optional per the schema even though every
+    fixture in this repo happens to populate them — a Space with either one
+    absent is recorded as None, never treated as a false 0%/100% delta.
+    <Building> also carries an <Area> child, so only elements inside an open
+    <Space> are ever read.
+
+    Raises ET.ParseError on malformed XML and _UnsupportedGbxmlUnits on units
+    outside the two tables above.
+    """
+    spaces: dict[str, dict[str, float | None]] = {}
+    root = None
+    open_space = None
+    area_factor = volume_factor = 1.0
+    # is_path_allowed() in the caller puts this on the same trust boundary as the rest of
+    # this server's file access, and the file was already parsed once by the real gbXML
+    # translator during import_gbxml_op; defusedxml isn't a dependency this project
+    # otherwise carries.
+    for event, elem in ET.iterparse(str(path), events=("start", "end")):  # noqa: S314
+        if event == "start":
+            if root is None:
+                # Root attributes are complete at its start event; fail on bad units
+                # before streaming a possibly huge file for nothing.
+                root = elem
+                area_unit = root.get("areaUnit", "SquareMeters")
+                volume_unit = root.get("volumeUnit", "CubicMeters")
+                area_factor = _AREA_UNIT_TO_M2.get(area_unit)
+                volume_factor = _VOLUME_UNIT_TO_M3.get(volume_unit)
+                if area_factor is None or volume_factor is None:
+                    raise _UnsupportedGbxmlUnits(
+                        f"Unsupported gbXML units (areaUnit={area_unit!r}, volumeUnit={volume_unit!r})",
+                    )
+            elif open_space is None and elem.tag == _SPACE_TAG:
+                open_space = elem
+            continue
+
+        if elem is open_space:
+            # End of the open <Space>: its children are complete and untouched.
+            space_id = elem.get("id")
+            if space_id:
+                area_el = elem.find(_AREA_TAG)
+                volume_el = elem.find(_VOLUME_TAG)
+                spaces[space_id] = {
+                    "area_m2": float(area_el.text) * area_factor
+                    if area_el is not None and area_el.text else None,
+                    "volume_m3": float(volume_el.text) * volume_factor
+                    if volume_el is not None and volume_el.text else None,
+                }
+            open_space = None
+            elem.clear()
+        elif open_space is None and elem is not root:
+            # Outside any <Space> (a <Surface>, a <Building>'s own <Area>, ...): nothing
+            # here is needed, so free the subtree now instead of at end of file.
+            elem.clear()
+    return spaces
+
+
+def find_gbxml_geometry_deltas(gbxml_path: str, model: openstudio.model.Model) -> dict[str, Any]:
     """Compare each Space's gbXML-declared Area/Volume to the model's current values.
 
     Args:
-        gbxml_path: Path to the source gbXML file this model was imported from.
+        gbxml_path: Path to the gbXML file `model` was translated from — the
+            staged copy import_gbxml_op stashed, not the caller's input, which
+            may since have been deleted or overwritten.
+        model: The exact Model to compare. Passed in rather than re-fetched
+            from model_manager: sync tools on one session run concurrently, so
+            a load landing between the caller's own get_model() and a second
+            fetch here would compare the *new* model against the *old* model's
+            source file.
     """
     try:
         path = Path(gbxml_path)
@@ -64,42 +145,12 @@ def find_gbxml_geometry_deltas(gbxml_path: str) -> dict[str, Any]:
         if not is_path_allowed(path):
             return {"ok": False, "error": f"gbXML path not allowed: {gbxml_path}"}
         try:
-            # is_path_allowed() above puts this on the same trust boundary as the rest of this
-            # server's file access, and the file was already parsed once by the real gbXML
-            # translator during import_gbxml_op; defusedxml isn't a dependency this project
-            # otherwise carries.
-            root = ET.parse(str(path)).getroot()  # noqa: S314
+            gbxml_by_id = _parse_gbxml_space_geometry(path)
         except ET.ParseError as e:
             return {"ok": False, "error": f"Could not parse gbXML: {e}"}
+        except _UnsupportedGbxmlUnits as e:
+            return {"ok": False, "error": str(e)}
 
-        area_unit = root.get("areaUnit", "SquareMeters")
-        volume_unit = root.get("volumeUnit", "CubicMeters")
-        area_factor = _AREA_UNIT_TO_M2.get(area_unit)
-        volume_factor = _VOLUME_UNIT_TO_M3.get(volume_unit)
-        if area_factor is None or volume_factor is None:
-            return {
-                "ok": False,
-                "error": f"Unsupported gbXML units (areaUnit={area_unit!r}, volumeUnit={volume_unit!r})",
-            }
-
-        # gbXML Area/Volume are both optional per the schema even though every
-        # fixture in this repo happens to populate them — a Space with either
-        # one absent must be skipped, never treated as a false 0%/100% delta.
-        gbxml_by_id: dict[str, dict[str, float | None]] = {}
-        for space_el in root.iter(f"{_GBXML_NS}Space"):
-            space_id = space_el.get("id")
-            if not space_id:
-                continue
-            area_el = space_el.find(f"{_GBXML_NS}Area")
-            volume_el = space_el.find(f"{_GBXML_NS}Volume")
-            gbxml_by_id[space_id] = {
-                "area_m2": float(area_el.text) * area_factor
-                if area_el is not None and area_el.text else None,
-                "volume_m3": float(volume_el.text) * volume_factor
-                if volume_el is not None and volume_el.text else None,
-            }
-
-        model = get_model()
         area_deltas: list[dict[str, Any]] = []
         volume_deltas: list[dict[str, Any]] = []
         checked = 0

@@ -13,6 +13,17 @@ Area/Volume values against the post-repair model — see
 mcp_server.skills.geometry.gbxml_deltas) needs this stashed separately, keyed
 to the model generation so a reload/replace invalidates it rather than
 silently comparing against the wrong model.
+
+The path stashed is the staged copy under the import's run_dir/gbxmls/ — the
+bytes the translator actually consumed — not the caller's input path, which
+an uploader is free to delete or overwrite after the import returns.
+
+Sync tools on one session run concurrently (FastMCP dispatches them via
+anyio.to_thread), so the generation is always passed in explicitly by a
+caller that obtained it atomically with the model (see
+model_manager.load_model_with_generation / get_model_with_generation), never
+re-read from model_manager here: a second read could observe a load that
+landed in between and bind this path to the wrong model.
 """
 from __future__ import annotations
 
@@ -29,22 +40,32 @@ class GbxmlSourceState:
     model_generation: int
 
 
-def set_source(gbxml_path: str) -> None:
-    """Record the gbXML path used for the model just loaded into this session."""
-    model_manager.get_session_extra()[_KEY] = GbxmlSourceState(
-        gbxml_path=gbxml_path,
-        model_generation=model_manager.model_generation(),
-    )
+def set_source(gbxml_path: str, model_generation: int) -> None:
+    """Record the gbXML file that produced the model with generation `model_generation`.
+
+    `model_generation` must be the value returned by the load_model_with_generation()
+    call that loaded that model. A concurrent later import on this session may already
+    have stashed a newer generation — never overwrite it with an older one.
+    """
+    extra = model_manager.get_session_extra()
+    existing = extra.get(_KEY)
+    if existing is not None and existing.model_generation > model_generation:
+        return
+    extra[_KEY] = GbxmlSourceState(gbxml_path=gbxml_path, model_generation=model_generation)
 
 
-def get_source_for_current_model() -> str | None:
-    """Return the gbXML path the current session's model was imported from.
+def get_source_for_model(model_generation: int) -> str | None:
+    """Return the gbXML path the model with generation `model_generation` was imported from.
 
-    None if the model was never imported via import_gbxml_op (e.g. loaded
-    directly with load_osm_model), or if the model was reloaded/replaced since
-    the import — a stale stash would silently compare the wrong two files.
+    `model_generation` is the value the caller captured together with the model it
+    holds (model_manager.get_model_with_generation), so the answer describes *that*
+    model even if the session has loaded another one since.
+
+    None if that model was never produced by import_gbxml_op (e.g. loaded directly
+    with load_osm_model), or the stash belongs to a different generation — a stale
+    stash would silently compare the wrong two files.
     """
     state = model_manager.get_session_extra().get(_KEY)
-    if state is None or state.model_generation != model_manager.model_generation():
+    if state is None or state.model_generation != model_generation:
         return None
     return state.gbxml_path

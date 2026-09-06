@@ -30,9 +30,9 @@ from mcp_server.config import (
     is_path_allowed,
     user_run_root,
 )
-from mcp_server.model_manager import get_model
+from mcp_server.model_manager import get_model_with_generation
 from mcp_server.skills.gbxml_import.climate_zone import ensure_climate_zone
-from mcp_server.skills.gbxml_import.gbxml_source_state import get_source_for_current_model
+from mcp_server.skills.gbxml_import.gbxml_source_state import get_source_for_model as get_gbxml_source_for_model
 from mcp_server.skills.gbxml_import.gbxml_source_state import set_source as set_gbxml_source
 from mcp_server.skills.gbxml_import.zone_checks import check_conditioned_zone_volumes
 from mcp_server.skills.geometry.gbxml_deltas import find_gbxml_geometry_deltas
@@ -311,11 +311,15 @@ def import_gbxml_op(
         if not model.save(_os_path(final_osm_path), True):
             return {"ok": False, "error": f"Failed to save model to {final_osm_path}", "run_dir": str(run_dir)}
 
-        model_manager.load_model(final_osm_path)
-        # Must run after load_model(): that call bumps this session's model
-        # generation, and the stash is keyed to it so a later reload/replace
-        # invalidates it instead of silently comparing against a stale model.
-        set_gbxml_source(str(gbxml_src))
+        _loaded, generation = model_manager.load_model_with_generation(final_osm_path)
+        # Stash the staged copy the translator actually consumed (run_dir/gbxmls/),
+        # not the caller's input path: an uploaded input can be deleted or
+        # overwritten after this returns, and a later delta check must compare
+        # against the bytes this model came from. Keyed to the generation the load
+        # itself returned — sync tools on one session run concurrently, so reading
+        # model_generation() afterwards could observe a later load and bind this
+        # file to the wrong model.
+        set_gbxml_source(str(gbxmls_dir / gbxml_name), generation)
 
         result = {
             "ok": True,
@@ -446,7 +450,10 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
     source, still simulates.
     """
     try:
-        model = get_model()
+        # Generation read atomically with the model: the gbXML delta check below must
+        # compare *this* model against *its* source even if a concurrent tool call on
+        # the same session loads a different model while the passes below run.
+        model, generation = get_model_with_generation()
         match_result = match_surfaces()  # mutates: fixes the common cross-space case first
         if not match_result.get("ok"):
             return {"ok": False, "error": "match_surfaces() failed before geometry validation"}
@@ -528,9 +535,9 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
         # been reloaded/replaced since (see gbxml_source_state). Silently skipped otherwise —
         # this is a bonus cross-check, not a requirement, since plenty of valid callers load an
         # OSM directly. Never affects `ok`: a delta flags a space to look at, not a failure.
-        gbxml_path = get_source_for_current_model()
+        gbxml_path = get_gbxml_source_for_model(generation)
         if gbxml_path is not None:
-            deltas_result = find_gbxml_geometry_deltas(gbxml_path)
+            deltas_result = find_gbxml_geometry_deltas(gbxml_path, model)
             if deltas_result.get("ok"):
                 result.update({k: v for k, v in deltas_result.items() if k != "ok"})
             else:

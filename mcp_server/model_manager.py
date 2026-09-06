@@ -86,6 +86,21 @@ def _evict_if_needed(keep: str) -> None:
 
 def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.model.Model:
     """Load an OSM file and set it as the current session's model."""
+    model, _generation = load_model_with_generation(osm_path, version_translate)
+    return model
+
+
+def load_model_with_generation(
+    osm_path: Path, version_translate: bool = True,
+) -> tuple[openstudio.model.Model, int]:
+    """load_model(), also returning the generation this load produced.
+
+    For callers that attach generation-keyed session state to the model they
+    just loaded (see get_session_extra): sync tools run concurrently on the
+    same session (FastMCP dispatches them via anyio.to_thread), so reading
+    model_generation() in a second call could observe a *later* load_model
+    and bind the state to the wrong model.
+    """
     abs_path = str(Path(osm_path).resolve())
     with suppress_openstudio_warnings():
         if version_translate:
@@ -104,7 +119,7 @@ def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.mod
         st.path = Path(osm_path)
         st.generation += 1
         _touch(st)
-    return model
+        return model, st.generation
 
 
 def save_model(save_path: Path | None = None) -> Path:
@@ -135,6 +150,24 @@ def get_model() -> openstudio.model.Model:
             raise RuntimeError("No model loaded. Call load_osm_model first.")
         _touch(st)
         return st.model
+
+
+def get_model_with_generation() -> tuple[openstudio.model.Model, int]:
+    """get_model() plus the generation that model belongs to, read under one lock.
+
+    A separate model_generation() call could observe a concurrent load_model
+    that landed in between, pairing this model with the *next* model's
+    generation. Callers validating generation-keyed session state (see
+    get_session_extra) against the model they hold need the two together.
+    """
+    key = session_key()
+    with _lock:
+        _sweep_idle()
+        st = _sessions.get(key)
+        if st is None or st.model is None:
+            raise RuntimeError("No model loaded. Call load_osm_model first.")
+        _touch(st)
+        return st.model, st.generation
 
 
 def get_model_path() -> Path | None:
