@@ -15,6 +15,7 @@ Configurations tested:
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
 import pytest
@@ -340,6 +341,54 @@ def test_replaced_supply_branch_components_simulate():
                                      "OS_Fan_VariableVolume", "OS_AirLoopHVAC_OutdoorAirSystem"], types
                     swapped += 1
                 assert swapped == 10
+
+                await _save_run_and_check(s, name)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 7. Outlet setpoint manager swapped for outdoor-air reset — loop still simulates
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_replaced_outlet_setpoint_manager_simulates():
+    """System 7 with its outlet SPM replaced by OutdoorAirReset + tuned → EnergyPlus completes."""
+    # Validates: add_setpoint_manager(replace_existing=True) + set_setpoint_manager_properties
+    # leave a loop EnergyPlus accepts (one Temperature SPM on the outlet), no fatal/severe
+    name = f"sim_spm_{uuid.uuid4().hex[:8]}"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                zone_names = await _setup_baseline(s, name)
+                sys7 = unwrap(await s.call_tool("add_baseline_system", {
+                    "system_type": 7, "thermal_zone_names": zone_names, "system_name": "VAV7 Sim",
+                }))
+                assert sys7["ok"] is True, sys7
+                before = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "VAV7 Sim"}))
+                old = before["air_loop"]["setpoint_managers"]
+                assert len(old) == 1, old
+
+                added = unwrap(await s.call_tool("add_setpoint_manager", {
+                    "spm_type": "SetpointManagerOutdoorAirReset", "name": "VAV7 SAT Reset",
+                    "air_loop_name": "VAV7 Sim", "replace_existing": True,
+                }))
+                assert added["ok"] is True, added
+                assert added["replaced"] == old[0]["name"]
+                tuned = unwrap(await s.call_tool("set_setpoint_manager_properties", {
+                    "setpoint_name": "VAV7 SAT Reset",
+                    "properties": json.dumps({
+                        "setpoint_at_outdoor_low_temperature": 15.6, "outdoor_low_temperature": 10.0,
+                        "setpoint_at_outdoor_high_temperature": 12.8, "outdoor_high_temperature": 21.0,
+                    }),
+                }))
+                assert tuned["ok"] is True, tuned
+                after = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "VAV7 Sim"}))
+                assert after["air_loop"]["setpoint_managers"] == [
+                    {"type": "OS_SetpointManager_OutdoorAirReset", "name": "VAV7 SAT Reset"},
+                ]
 
                 await _save_run_and_check(s, name)
 

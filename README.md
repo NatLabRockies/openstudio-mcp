@@ -455,7 +455,7 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Plant loops, air-loop supply branches & zone equipment</b> — 12 tools</summary>
+<summary><b>Plant loops, air-loop supply branches, setpoint managers & zone equipment</b> — 14 tools</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -467,6 +467,8 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 | `add_air_loop_supply_component` | Add a coil or fan to an air loop's supply branch (append or insert before/after) |
 | `remove_air_loop_supply_component` | Remove a coil or fan from an air loop, keeping its setpoint managers |
 | `replace_air_loop_supply_component` | Swap a coil or fan in place (add-first order, avoids the SDK segfault) |
+| `add_setpoint_manager` | Put one of 7 setpoint manager types on a loop node; refuses silent same-control-variable collisions |
+| `remove_setpoint_manager` | Delete a setpoint manager; warns when a loop outlet loses temperature control |
 | `add_zone_equipment` | Add baseboard/unit heater to a zone |
 | `remove_zone_equipment` | Remove zone equipment |
 | `remove_all_zone_equipment` | Batch-remove all equipment from zones |

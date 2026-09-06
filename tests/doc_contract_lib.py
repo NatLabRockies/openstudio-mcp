@@ -82,7 +82,9 @@ def parse_tools_source(src: str, package: str) -> list[ToolSig]:
 def load_tool_registry() -> dict[str, ToolSig]:
     """Registry of every MCP tool, AST-parsed from mcp_server/skills."""
     registry: dict[str, ToolSig] = {}
-    for tools_py in sorted(SKILLS_SRC.glob("*/tools.py")):
+    # tools*.py: a skill may split registrations across sibling modules
+    # (loop_operations/tools_air_loop.py) to stay under the file-size limit
+    for tools_py in sorted(SKILLS_SRC.glob("*/tools*.py")):
         for sig in parse_tools_source(
             tools_py.read_text(encoding="utf-8"), tools_py.parent.name,
         ):
