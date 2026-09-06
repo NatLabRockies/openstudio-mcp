@@ -30,6 +30,7 @@ markers = [
     "unit: pure Python tests, no Docker/OpenStudio needed",
     "integration: requires Docker + OpenStudio + MCP server",
     "llm: requires Claude CLI + MCP server",
+    "sdk_probe: manual SDK-behaviour probes, run by hand on an OPENSTUDIO_VERSION bump (never in CI)",
 ]
 
 [tool.mypy]

@@ -60,6 +60,11 @@ SEARCH_CASES = [
     ("VAV no reheat", "vav_no_reheat"),
     ("air loop from scratch", "air_loop_from_scratch"),
     ("water source heat pump zone", "water_to_air_heat_pump"),
+    # #149: swapping a coil/fan in place must be discoverable by intent AND by symptom
+    ("replace coil in place", "replace_supply_branch_component"),
+    ("swap fan on air loop", "replace_supply_branch_component"),
+    ("addToNode after remove", "replace_supply_branch_component"),
+    ("segfault", "replace_supply_branch_component"),
 ]
 
 
@@ -131,3 +136,59 @@ def test_zone_hvac_recipes_have_addToThermalZone():
         assert "addToThermalZone" in RECIPES[key]["ruby"], (
             f"Zone HVAC recipe '{key}' missing addToThermalZone"
         )
+
+
+# ── #149: replace-in-place recipe + addToNode/remove hazard ─────────────
+
+def test_replace_recipe_orders_addToNode_before_remove():
+    # Regression: #149 — remove() deletes the old component's outlet node; addToNode on a
+    # node handle captured before remove() segfaults Ruby (exit 134) and Python (139), so
+    # the recipe must attach the new component first and say why in the searchable notes
+    recipe = RECIPES["replace_supply_branch_component"]
+    ruby = recipe["ruby"]
+    assert "addToNode" in ruby and ".remove" in ruby
+    assert ruby.index("addToNode") < ruby.index(".remove"), "new.addToNode must precede old.remove"
+    assert "inletModelObject" in ruby, "recipe anchors on the OLD component's inlet node"
+    assert "setName(old_name)" in ruby, "recipe reuses the old name so downstream refs survive"
+    assert "[BUG]" in recipe["notes"] and "segfault" in recipe["notes"].lower()
+    assert "addBranchForZone" in recipe["notes"], "notes must route terminal swaps to addBranchForZone"
+    assert "3.11.0" in recipe["notes"], "verified-on version must be stated"
+
+
+@pytest.mark.parametrize("query", ["addToNode", "remove component", "swap coil", "delete node"])
+def test_hazards_surface_for_node_queries(query):
+    # Validates: the addToNode-after-remove hazard rides along with any node/remove/swap query
+    # so the agent sees it before writing the crashing code, not after a 134 exit
+    result = search_wiring_patterns_op(query)
+    assert result["ok"]
+    assert result["hazards"][0]["id"] == "addToNode_after_remove", result.get("hazards")
+    assert result["hazards"][0]["recipe"] == "replace_supply_branch_component"
+    assert "remove()" in result["hazards"][0]["note"]
+
+
+@pytest.mark.parametrize("query", [
+    "DOAS",
+    "setpoint manager node",          # bare "node" is not the hazard
+    "remove terminal for zone",       # removeBranchForZone is zone-keyed and safe
+    "delete construction layer",      # unrelated delete
+    "bug in schedule",                # bare "bug" no longer fires
+])
+def test_hazards_absent_for_unrelated_query(query):
+    # Validates: existing response shape is untouched when the query does not describe the
+    # dangerous sequence — bare node/remove/delete words must not spam the warning, or the
+    # agent learns to ignore it (review finding on #149)
+    result = search_wiring_patterns_op(query)
+    assert result["ok"]
+    assert "hazards" not in result, result["hazards"]
+
+
+def test_hazards_for_query_helper_tokenizes_and_dedupes():
+    # Validates: hazards_for_query matches whole tokens case-insensitively and returns each
+    # hazard once even when several triggers hit
+    from mcp_server.skills.api_reference.wiring_recipes import HAZARDS, hazards_for_query
+    hits = hazards_for_query("CoilCoolingDXSingleSpeed addToNode remove REPLACE")
+    assert [h["id"] for h in hits] == ["addToNode_after_remove"]
+    assert hazards_for_query("CoilCoolingDXSingleSpeed") == []
+    assert hazards_for_query("") == []
+    assert all({"id", "triggers", "note", "recipe"} <= set(h) for h in HAZARDS)
+    assert all(h["recipe"] in RECIPES for h in HAZARDS), "every hazard points at a real recipe"

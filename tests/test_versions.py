@@ -9,6 +9,8 @@ from mcp.client.stdio import stdio_client
 @pytest.mark.integration
 def test_get_versions_reports_openstudio_versions():
     # Validates: get_versions returns pinned OpenStudio 3.11.0 SDK + Python binding versions
+    # On an OPENSTUDIO_VERSION bump also run `pytest -m sdk_probe tests/test_sdk_probes.py` in
+    # Docker: the addToNode-after-remove crash (#149) is verified behaviour, not a contract.
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 

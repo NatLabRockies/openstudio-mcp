@@ -56,18 +56,22 @@ def register(mcp):
         wire coils to plant loops, terminals to air loops, zone equipment to
         thermal zones, and setpoint managers to nodes.
 
-        24 recipes covering: four-pipe beam, cooled beam, VAV, PIU reheat,
+        Recipes cover: four-pipe beam, cooled beam, VAV, PIU reheat,
         fan coil, baseboard, PTAC, PTHP, WSHP, DOAS, VRF, unitary systems,
         plant loop heat pumps, absorption chillers, air loop construction,
-        hot water / chilled water / condenser plant loops.
+        hot water / chilled water / condenser plant loops, and replacing a
+        coil or fan in place on a supply branch.
 
         Use before authoring measures that create or modify HVAC systems.
+        Queries mentioning remove / replace / swap / node / addToNode also
+        return `hazards`: SDK sequences that crash the measure process.
 
         Examples:
           search_wiring_patterns("four pipe beam")
           search_wiring_patterns("boiler plant loop")
           search_wiring_patterns("DOAS")
           search_wiring_patterns("fan coil chilled water")
+          search_wiring_patterns("replace coil")
 
         Args:
             pattern: Component type or keyword (e.g. "four pipe beam",

@@ -116,6 +116,19 @@ project convention:
     end
 ```
 
+Replace a supply-branch coil or fan in place (add first, THEN remove):
+```ruby
+    old_coil = model.getCoilCoolingDXSingleSpeedByName('Main Cooling Coil').get
+    inlet_node = old_coil.inletModelObject.get.to_Node.get
+    new_coil = OpenStudio::Model::CoilCoolingDXTwoSpeed.new(model)
+    raise 'addToNode failed' unless new_coil.addToNode(inlet_node)
+    old_name = old_coil.nameString
+    old_coil.remove
+    new_coil.setName(old_name)
+```
+
+WARNING: `remove()` deletes the component's outlet node. `addToNode` on a node handle captured before `remove()` segfaults the measure process (`[BUG] Segmentation fault`, exit 134, no Ruby exception). The terminal pattern above is safe only because `addBranchForZone` is keyed by zone, not node. `search_wiring_patterns("replace coil")` returns the full recipe.
+
 ### Zone Equipment
 ```ruby
     model.getThermalZones.each do |zone|
@@ -147,6 +160,7 @@ Python gotchas (different from Ruby):
 - `obj.name()` returns an OptionalString — use `str(obj.name())` or `obj.name().get()`, never bare `obj.name()`.
 - `runner.registerError("msg")` must be followed by `return False` (capital F; it does not halt).
 - Optionals: `opt = surface.construction()` then `if opt.is_initialized(): c = opt.get()`.
+- Dangling nodes crash Python too: `addToNode(node)` on a node captured before `component.remove()` segfaults the interpreter (exit 139, no exception), same as Ruby. Add the new component first, then remove.
 - Unit conversion: `openstudio.convert(val, "W/m^2", "Btu/hr*ft^2").get()` —
   full unit-string table: `get_skill_file(skill_name="measure-authoring", filename="unit-conversions.md")`.
 
@@ -169,6 +183,19 @@ Python gotchas (different from Ruby):
                 loop.removeBranchForZone(zone)
                 # create new terminal...
                 loop.addBranchForZone(zone, terminal.to_StraightComponent().get())
+```
+
+Replace a supply-branch coil or fan in place (add first, THEN remove):
+```python
+        old_coil = model.getCoilCoolingDXSingleSpeedByName("Main Cooling Coil").get()
+        inlet_node = old_coil.inletModelObject().get().to_Node().get()
+        new_coil = openstudio.model.CoilCoolingDXTwoSpeed(model)
+        if not new_coil.addToNode(inlet_node):
+            runner.registerError("addToNode failed")
+            return False
+        old_name = old_coil.nameString()
+        old_coil.remove()
+        new_coil.setName(old_name)
 ```
 
 ### Zone Equipment
