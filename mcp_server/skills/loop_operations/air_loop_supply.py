@@ -90,6 +90,24 @@ def _find_on_supply(air_loop, name: str):
     return None
 
 
+def _hvac_name_taken(model, name: str) -> str | None:
+    """IDD type of an HVACComponent anywhere in the model already named `name`, else None.
+
+    The SDK keeps HVAC component names unique model-wide (case-insensitively) and setName
+    on a collision silently appends ' 1' (probe_name_lookup.py); refusing keeps the reported
+    component_name honest and name-only follow-ups (set_component_properties) unambiguous.
+    """
+    for obj in model.getModelObjectsByName(name, True):
+        if obj.to_HVACComponent().is_initialized():
+            return obj.iddObjectType().valueName()
+    return None
+
+
+def _name_taken_error(name: str, taken_by: str) -> str:
+    return (f"'{name}' is already used by an existing {taken_by} in this model; HVAC component names "
+            "must be unique model-wide (the SDK would silently rename the new one)")
+
+
 def _air_ports(comp):
     """(component, air inlet Node, air outlet Node) for a coil or fan, else None.
 
@@ -209,9 +227,9 @@ def add_air_loop_supply_component(
         air_loop = fetch_object(model, "AirLoopHVAC", name=air_loop_name)
         if air_loop is None:
             return {"ok": False, "error": f"Air loop '{air_loop_name}' not found"}
-        if _find_on_supply(air_loop, component_name) is not None:
-            return {"ok": False, "error": f"'{component_name}' is already on the supply side of "
-                                          f"'{air_loop_name}'"}
+        taken_by = _hvac_name_taken(model, component_name)
+        if taken_by is not None:
+            return {"ok": False, "error": _name_taken_error(component_name, taken_by)}
 
         target_node = air_loop.supplyOutletNode()
         anchor_name = insert_before or insert_after
@@ -325,10 +343,12 @@ def replace_air_loop_supply_component(
             return {"ok": False, "error": f"'{component_name}' is not a coil or fan (not a straight "
                                           "component); outdoor air systems cannot be replaced this way"}
         old_straight, inlet, old_outlet = old_ports
-        if new_component_name is not None and new_component_name != component_name \
-                and _find_on_supply(air_loop, new_component_name) is not None:
-            return {"ok": False, "error": f"'{new_component_name}' is already on the supply side of "
-                                          f"'{air_loop_name}'"}
+        if new_component_name is not None and new_component_name != component_name:
+            # The old component still exists when the new one is built (add-first), so a
+            # name equal to the old one is fine; anything else must be free model-wide
+            taken_by = _hvac_name_taken(model, new_component_name)
+            if taken_by is not None:
+                return {"ok": False, "error": _name_taken_error(new_component_name, taken_by)}
         if inlet is None or old_outlet is None:
             return {"ok": False, "error": f"'{component_name}' is not connected on both sides"}
 
@@ -342,8 +362,9 @@ def replace_air_loop_supply_component(
         # captured node handle dangles and addToNode segfaults the server process.
         old_name = old_straight.nameString()
         old_type = old_straight.iddObjectType().valueName()
-        tmp_name = new_component_name or f"{old_name} (replacement)"
-        new, err = _build_and_attach(model, new_component_type, tmp_name, inlet, plant_loop)
+        # Build under a placeholder: the old component still holds old_name, and the SDK
+        # would silently rename a same-named new one ('Clg' -> 'Clg 1'). Final name after remove
+        new, err = _build_and_attach(model, new_component_type, f"{old_name} (replacement)", inlet, plant_loop)
         if err:
             return {"ok": False, "error": err}
 
@@ -359,8 +380,7 @@ def replace_air_loop_supply_component(
             _new, _new_inlet, survivor = _air_ports(new)
             moved, dropped = _move_spms(old_outlet, survivor)
         old_straight.remove()
-        if new_component_name is None:
-            new.setName(old_name)
+        new.setName(new_component_name or old_name)
 
         result: dict[str, Any] = {
             "ok": True,
