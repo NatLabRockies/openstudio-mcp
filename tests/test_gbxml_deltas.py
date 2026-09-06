@@ -17,6 +17,10 @@ from mcp_server import model_manager  # noqa: E402
 from mcp_server.config import user_run_root  # noqa: E402
 from mcp_server.skills.geometry.gbxml_deltas import find_gbxml_geometry_deltas  # noqa: E402
 
+# Imports the real openstudio SDK (importorskip above) — integration tier, must not
+# be collected by the unit run.
+pytestmark = pytest.mark.integration
+
 
 def _allowed_tmp_dir() -> Path:
     """A writable dir is_path_allowed() accepts — pytest's own tmp_path (/tmp) is outside
