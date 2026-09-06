@@ -358,8 +358,128 @@ def test_test_measure_reports_errors():
                 res = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                # Should report failures or errors
-                assert res["ok"] is False or res.get("failed", 0) > 0 or res.get("errors", 0) > 0
+                assert res["ok"] is False, res
+                assert res["failed"] + res["errors"] >= 1, res
+                # #150: the full test log must be on disk and readable through read_file
+                assert res["log_path"].endswith("test.log"), res["log_path"]
+                assert res["log_path"].startswith(res["run_dir"]), res
+                assert res["crash_marker"] is None, "a Ruby exception is not a native crash"
+                full = unwrap(await s.call_tool("read_file", {"file_path": res["log_path"]}))
+                assert full["ok"] is True, full
+                assert "intentional failure" in full["text"]
+                assert "intentional failure" in res["test_output"]
+    asyncio.run(_run())
+
+
+# Ruby body that kills the interpreter the way an SDK segfault does (issue #149
+# remove-then-addToNode): Ruby's crash handler prints a `[BUG]` report whose tail
+# is a memory map, then aborts (SIGABRT). Deterministic, no UB dependence.
+SEGV_BODY = '    Process.kill("SEGV", Process.pid)'
+
+
+@pytest.mark.integration
+def test_apply_measure_failure_exposes_log_path():
+    # Regression: #150 — apply_measure failures returned only a 50-line log_tail with no
+    # path, so the agent could not read the full openstudio.log via read_file
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("apply_fail"))
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("apply_fail"),
+                    "description": "Failing measure",
+                    "run_body": '    raise "intentional failure"',
+                    "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res["ok"] is False, res
+                assert res["exit_code"] == 1, res
+                assert res["error"] == "Measure run failed (exit code 1)"
+                assert res["crash_marker"] is None
+                assert res["log_path"].endswith("openstudio.log"), res["log_path"]
+                assert res["log_path"].startswith(res["run_dir"]), res
+                assert "intentional failure" in res["log_tail"]
+                assert res["log_hint"] == "Full log: read_file(file_path=log_path)"
+                full = unwrap(await s.call_tool("read_file", {"file_path": res["log_path"]}))
+                assert full["ok"] is True, full
+                assert "intentional failure" in full["text"]
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_apply_measure_native_crash_tail_shows_bug_marker():
+    # Regression: #150 — on a Ruby segfault the last 50 log lines are the process memory
+    # map, hiding the [BUG] line and the measure.rb backtrace
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("apply_segv"))
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("apply_segv"),
+                    "description": "Crashing measure",
+                    "run_body": SEGV_BODY,
+                    "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res["ok"] is False, res
+                assert res["exit_code"] == -6, "SIGABRT reaches the server directly under sandbox.wrap_cmd"
+                assert res["error"] == "Measure run failed (SIGABRT (native crash, see crash_marker))"
+                assert "[BUG] Segmentation fault" in res["crash_marker"], res["crash_marker"]
+                assert "measure.rb:" in res["crash_marker"], "Ruby prefixes the marker with file:line"
+                assert "[BUG] Segmentation fault" in res["log_tail"]
+                assert "-- Ruby level backtrace information" in res["log_tail"]
+                assert "measure.rb" in res["log_tail"], "backtrace must point at the measure line"
+                assert "Process memory map" not in res["log_tail"]
+                assert res["log_path"].endswith("openstudio.log")
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_test_measure_native_crash_tail_shows_bug_marker():
+    # Regression: #150 — test_measure kept only the last 1500 chars of output, which on a
+    # segfault is the memory map; the [BUG] line and backtrace were lost and no log existed
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("test_segv"),
+                    "description": "Crashing measure",
+                    "run_body": SEGV_BODY,
+                    "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                res = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res["ok"] is False, res
+                assert res["exit_code"] == -6, "SIGABRT reaches the server directly under sandbox.wrap_cmd"
+                assert "[BUG] Segmentation fault" in res["crash_marker"], res["crash_marker"]
+                assert "measure.rb:" in res["crash_marker"], "Ruby prefixes the marker with file:line"
+                assert "[BUG] Segmentation fault" in res["test_output"]
+                assert "measure.rb" in res["test_output"]
+                assert "Process memory map" not in res["test_output"]
+                assert res["log_path"].endswith("test.log")
+                full = unwrap(await s.call_tool("read_file", {"file_path": res["log_path"]}))
+                assert full["ok"] is True, full
+                assert "[BUG] Segmentation fault" in full["text"]
     asyncio.run(_run())
 
 
