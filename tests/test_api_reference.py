@@ -21,7 +21,7 @@ def _import_search_api_op():
 
 def _names(entries):
     """Method names from signature strings like 'setName(name) -> Boolean'."""
-    return {e.split("(", 1)[0] for e in entries}
+    return {e.removeprefix("[static] ").split("(", 1)[0] for e in entries}
 
 
 # ── Exact match ──────────────────────────────────────────────────────────
@@ -192,6 +192,7 @@ def test_ruby_python_method_parity_spot_check():
 # ── Signatures (params + return types) ───────────────────────────────────
 
 def test_methods_carry_signatures():
+    # Validates: setter entries render as 'name(params) -> Type' with a real parameter, never bare names
     """Each method entry is 'name(params) -> ReturnType', not a bare name."""
     search = _import_search_api_op()
     result = search("CoilCoolingFourPipeBeam")
@@ -206,7 +207,45 @@ def test_methods_carry_signatures():
     assert setter.split("(", 1)[1].split(")", 1)[0].strip(), "setter should take an arg"
 
 
+def test_static_methods_render_with_static_prefix():
+    # Validates: iddObjectType is a SWIG @staticmethod; rendering it as an instance call
+    # would have agents write zone.iddObjectType and hit NoMethodError in Ruby
+    search = _import_search_api_op()
+    # include_base: static class-level methods are declared on ModelObject and so are
+    # subtracted by the default base filter.
+    result = search("^ThermalZone$", method_pattern="^iddObjectType$", include_base=True)
+    assert result["ok"] is True
+    cls = result["classes"][0]
+    assert cls["class_name"] == "ThermalZone"
+    assert cls["other"] == ["[static] iddObjectType() -> IddObjectType"], cls["other"]
+
+    # Instance methods never carry the prefix
+    result = search("^Model$", method_pattern="^building$")
+    assert result["classes"][0]["other"] == ["building() -> Building, nil"]
+
+
+def test_energyplus_forward_translator_uses_its_own_header():
+    # Regression: six modules declare ForwardTranslator; the cross-module merge let airflow's
+    # win, so translateModel rendered "Object, nil" instead of the real Workspace return
+    search = _import_search_api_op()
+    result = search("^ForwardTranslator$", method_pattern="^translateModel$", max_classes=5)
+    assert result["ok"] is True
+    assert [c["module"] for c in result["classes"]] == ["openstudio.energyplus"]
+    assert result["classes"][0]["other"] == ["translateModel(model, progressBar) -> Workspace"]
+
+
+def test_overloaded_return_types_render_every_form():
+    # Regression: SqlFile#timeSeries collapsed to Array<TimeSeries>; the optional overload
+    # (envPeriod, frequency, name, keyValue) needs .get and was invisible
+    search = _import_search_api_op()
+    result = search("^SqlFile$", method_pattern="^timeSeries$")
+    assert result["classes"][0]["other"] == [
+        "timeSeries(...) -> Array<TimeSeries> | TimeSeries, nil",
+    ]
+
+
 def test_non_model_classes_exclude_swig_data_and_only_return_signatures():
+    # Regression: SqlFile exposed thisown and bare entries; IddFieldProperties constants leaked as methods
     """Regression: non-model classes must not expose SWIG data or bare entries."""
     search = _import_search_api_op()
     cls = search("^SqlFile$", max_classes=1)["classes"][0]
@@ -225,6 +264,7 @@ def test_non_model_classes_exclude_swig_data_and_only_return_signatures():
 
 
 def test_inherited_methods_keep_sourced_signatures():
+    # Regression: inherited addToNode rendered '-> ?' instead of the declaring class 'addToNode(node) -> Boolean'
     """Inherited methods use the parsed signature of their declaring base class."""
     search = _import_search_api_op()
     result = search(
@@ -250,7 +290,7 @@ def _returns(search, class_name, method):
     if cls is None:
         return None
     for entry in cls["setters"] + cls["getters"] + cls["other"]:
-        if entry.split("(", 1)[0] == method:
+        if entry.removeprefix("[static] ").split("(", 1)[0] == method:
             return entry.split("->", 1)[1].strip() if "->" in entry else None
     return None
 
@@ -271,11 +311,13 @@ def _returns(search, class_name, method):
     ],
 )
 def test_return_types_come_from_headers(class_name, method, expected):
+    # Validates: return types for known methods match their C++ header declarations exactly
     search = _import_search_api_op()
     assert _returns(search, class_name, method) == expected
 
 
 def test_swig_synthesized_types_still_resolve():
+    # Validates: Model#getThermalZoneByName (SWIG-synthesized, no header) keeps its wrapper-parsed type
     """The Model#get* family is declared in no header — it must keep its wrapper-parsed
     type. Guards against 'simplifying' the wrapper pass away: headers cover only 4 of the
     2,876 pairs it supplies.
@@ -285,6 +327,7 @@ def test_swig_synthesized_types_still_resolve():
 
 
 def test_return_types_are_never_guessed():
+    # Regression: _infer_return_type guessed isConditioned -> Boolean (really OptionalString); guesser stays deleted
     """A type is either sourced from a real declaration, or admitted unknown. Never
     inferred from the method's name — that heuristic reported `isConditioned -> Boolean`
     when it is really an empty-until-sizing `boost::optional<std::string>`.
@@ -295,6 +338,7 @@ def test_return_types_are_never_guessed():
 
 
 def test_every_returnable_method_has_a_sourced_type():
+    # Validates: ratchet at 0 unknown return types across every class search_api can return
     """**Ratchet: 100% of what search_api can return.** No `?`, no guesses.
 
     search_api lists classes across an explicit module allowlist — the openstudio
@@ -349,6 +393,7 @@ def test_every_returnable_method_has_a_sourced_type():
 
 
 def test_wrapper_parse_surface_pinned():
+    # Validates: wrapper parse covers 940 classes / 26,526 methods and 936 are returnable on 3.11.0
     """The final wrapper numbers on this 3.11.0 install: the SWIG proxy parse covers
     940 classes / 26,526 methods (measured at plan time — adjust pins only if the
     install differs), and search_api can now return 936 of them. The remaining 4
@@ -377,6 +422,7 @@ def test_wrapper_parse_surface_pinned():
 
 
 def test_sql_file_return_types_come_from_headers():
+    # Validates: SqlFile exec/availableEnvPeriods types come from SqlFile.hpp (Float, nil / Array<String>)
     """SqlFile was unreachable before the module-allowlist change — reporting
     measures use it constantly (execAndReturnFirstDouble, availableEnvPeriods, …).
     Its types now come from utilities/sql/SqlFile.hpp, not from the name guesser.
@@ -389,6 +435,7 @@ def test_sql_file_return_types_come_from_headers():
 
 
 def test_module_field_attributes_each_class():
+    # Validates: module field names the exact namespace for root, model, airflow, isomodel, gltf, gbxml, alfalfa
     """Every class entry names the namespace it lives in, so a caller can tell
     openstudio.model.Space from openstudio.SqlFile from openstudio.airflow.RunControl.
     """
@@ -416,6 +463,7 @@ def test_module_field_attributes_each_class():
 
 
 def test_gbxml_and_alfalfa_namespaces_are_searchable():
+    # Regression: openstudio.gbxml and openstudio.alfalfa were missing from _MODULES; exact class sets pinned
     """Public gbXML and Alfalfa classes are included in the API search surface."""
     search = _import_search_api_op()
 
@@ -442,6 +490,7 @@ def test_gbxml_and_alfalfa_namespaces_are_searchable():
 
 
 def test_classes_listed_once_across_modules():
+    # Validates: RunControl/AirflowPath/IndexModel each appear once despite aliased submodule re-exports
     """Aliased submodules and cross-module re-exports must not double-list a class.
     RunControl/AirflowPath/IndexModel live in openstudio.airflow (not in its
     openstudioairflow alias, which is not in the allowlist) — each appears once.
@@ -454,6 +503,7 @@ def test_classes_listed_once_across_modules():
 
 
 def test_include_base_false_keeps_non_model_methods():
+    # Regression: WorkflowStepResult#stepResult was dropped by ModelObject base subtraction on a non-model class
     """Regression: the old model-only logic subtracted dir(ModelObject) from every
     class, silently dropping same-named methods on non-model classes. WorkflowStepResult
     is not a ModelObject — include_base must be irrelevant to it.
@@ -468,6 +518,7 @@ def test_include_base_false_keeps_non_model_methods():
 
 
 def test_loose_pattern_response_stays_bounded():
+    # Validates: max_classes cap (default 10) still bounds responses after widening to 10 namespaces
     """A wider class list makes loose patterns match more; the default cap must keep
     responses bounded — the module allowlist is not too wide if this stays sane.
     """

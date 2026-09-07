@@ -16,8 +16,10 @@ import pytest
 
 from mcp_server.skills.api_reference._headers import (
     _build,
+    _build_by_module,
     _locate_header_dir,
     _parse_header,
+    header_module_for,
     map_cpp_type,
 )
 from mcp_server.skills.api_reference._signatures import _resolve_return_type
@@ -68,6 +70,7 @@ def _write_tree(base: Path, rel: str, body: str) -> Path:
 def test_wrapper_return_types_resolve_primitives_before_classes(
     annotation, known_classes, expected,
 ):
+    # Regression: OptionalString/StringVector were treated as unknown bound classes instead of String primitives
     """Primitive wrapper names must not be mistaken for unknown bound classes."""
     assert _resolve_return_type(annotation, known_classes) == expected
 
@@ -110,10 +113,12 @@ def test_wrapper_return_types_resolve_primitives_before_classes(
     ],
 )
 def test_map_cpp_type(cpp, expected):
+    # Validates: C++ types map to exact Ruby-style renderings (Float, String, nil, Array<X>, Object)
     assert map_cpp_type(cpp) == expected
 
 
 def test_map_cpp_type_gates_unknown_classes():
+    # Validates: header-only classes absent from bindings render as Object, never a name Ruby lacks
     """Header-only classes absent from the bindings must not render a name Ruby lacks.
 
     `Connection`, `ComponentWatcher` and `DesignSpecificationZoneAirDistribution` are
@@ -132,6 +137,7 @@ def test_map_cpp_type_gates_unknown_classes():
 
 
 def test_parses_public_declarations(tmp_path):
+    # Validates: plain, optional, bool, void and static declarations parse with exact C++ return types
     src = """
 class MODEL_API ZoneHVACBaseboardConvectiveElectric : public ZoneHVACComponent {
  public:
@@ -154,6 +160,7 @@ class MODEL_API ZoneHVACBaseboardConvectiveElectric : public ZoneHVACComponent {
 
 
 def test_ignores_declarations_inside_comments(tmp_path):
+    # Regression: CoilCoolingWater.hpp doc comment '<li> bool addToNode(...)' parsed as a real method
     """Real hazard: CoilCoolingWater.hpp:29 has `*  <li> bool addToNode(Node & node);</li>`."""
     src = """
 class MODEL_API CoilCoolingWater : public WaterToAirComponent {
@@ -174,6 +181,7 @@ class MODEL_API CoilCoolingWater : public WaterToAirComponent {
 
 
 def test_ignores_macros(tmp_path):
+    # Validates: OS_DEPRECATED is stripped, REGISTER_LOGGER registers logChannel -> Logger, no macro leaks
     """REGISTER_LOGGER appears 621 times, OS_DEPRECATED 295 times inside class bodies.
 
     OS_DEPRECATED is stripped and the declaration kept; REGISTER_LOGGER expands to
@@ -195,6 +203,7 @@ class MODEL_API ThermalZone : public HVACComponent {
 
 
 def test_access_specifiers_do_not_filter_methods(tmp_path):
+    # Regression: filtering to public: dropped protected Model#addVersionObject type while dir() still lists it
     """Access level is deliberately ignored — this map only answers "what does X return".
 
     search_api lists methods from `dir()` on the live bindings, which expose some protected
@@ -222,6 +231,7 @@ class MODEL_API ThermalZone : public HVACComponent {
 
 
 def test_data_members_are_not_mistaken_for_methods(tmp_path):
+    # Validates: private data members (no parens) like m_handleMapping are never parsed as methods
     """Access level is unfiltered, so private *data* must still be excluded — it is, by
     having no `(`. Real line from PlanarSurface.hpp: `std::map<UUID, UUID> m_handleMapping;`
     """
@@ -239,6 +249,7 @@ class MODEL_API Sneaky : public Base {
 
 
 def test_skips_constructors_and_destructors(tmp_path):
+    # Validates: constructors and destructors are excluded; only real methods remain
     src = """
 class MODEL_API ThermalZone : public HVACComponent {
  public:
@@ -253,6 +264,7 @@ class MODEL_API ThermalZone : public HVACComponent {
 
 
 def test_class_declared_with_macro_taking_arguments(tmp_path):
+    # Regression: TableMultiVariableLookup macro-with-args class line never opened, dropping all 99 methods
     """Real: TableMultiVariableLookup.hpp:51. Allowing only one *bare* macro before the
     name meant the class never opened and all 99 of its methods were dropped.
     """
@@ -270,12 +282,14 @@ class OS_DEPRECATED(3, 5, 0) MODEL_API TableMultiVariableLookup : public Curve {
 
 
 def test_all_caps_class_name_still_parses(tmp_path):
+    # Validates: greedy macro run backtracks so an ALL-CAPS class name (AVM) still parses
     """The macro run is greedy; backtracking must still yield an ALL-CAPS class name."""
     src = "class MODEL_API AVM : public Base {\n public:\n    double x() const;\n};\n"
     assert "AVM" in _parse_header(_write(tmp_path, "A.hpp", src))
 
 
 def test_forward_declaration_is_not_a_class(tmp_path):
+    # Validates: 'class X_Impl;' forward declarations do not create a class entry
     src = "class ThermalZone_Impl;\nclass MODEL_API ThermalZone : public Base {\n public:\n    double x() const;\n};\n"
     parsed = _parse_header(_write(tmp_path, "F.hpp", src))
     assert "ThermalZone_Impl" not in parsed
@@ -283,6 +297,7 @@ def test_forward_declaration_is_not_a_class(tmp_path):
 
 
 def test_inline_deprecated_prefix_keeps_the_declaration(tmp_path):
+    # Regression: 294 OS_DEPRECATED-prefixed declarations were skipped entirely though bindings expose them
     """Real: AirLoopHVACUnitarySystem.hpp. 294 declarations carry this prefix; skipping the
     whole line because it *starts* with a macro discarded every one of them. The methods are
     deprecated, not absent — the bindings still expose them.
@@ -304,6 +319,7 @@ class MODEL_API AirLoopHVACUnitarySystem : public ZoneHVACComponent {
 
 
 def test_uppercase_method_names(tmp_path):
+    # Regression: UtilityBill CVRMSE/NMBE (uppercase names) failed to parse
     """Real: UtilityBill.hpp:250 `boost::optional<double> CVRMSE() const;`"""
     src = """
 class MODEL_API UtilityBill : public ModelObject {
@@ -318,6 +334,7 @@ class MODEL_API UtilityBill : public ModelObject {
 
 
 def test_method_may_return_its_own_class(tmp_path):
+    # Regression: Construction#reverseConstruction was rejected because return type equalled class name
     """`Construction reverseConstruction() const;` — rejecting return-type == class name
     also killed these. Constructors are excluded by name == class, which is sufficient.
     """
@@ -337,6 +354,7 @@ class MODEL_API Construction : public LayeredConstruction {
 
 
 def test_return_type_on_its_own_line(tmp_path):
+    # Regression: clang-format wrapped return type on its own line lost the desiccant setter type
     """clang-format wraps a long declaration by putting the return type on its own line.
 
     Real: HeatExchangerDesiccantBalancedFlowPerformanceDataType1.hpp:209-210. The name is
@@ -359,6 +377,7 @@ def test_return_type_on_its_own_line(tmp_path):
 
 
 def test_doc_comment_continuation_without_a_star(tmp_path):
+    # Regression: ExteriorLoadInstance.hpp doxygen line without '*' ate the quantity() declaration behind it
     """Real: ExteriorLoadInstance.hpp:50-52. The middle line of this doxygen block starts
     with neither `*` nor `//`, and carries a `(` — a line-at-a-time stripper feeds it into
     the continuation buffer and eats the declaration behind it. Block state must be tracked.
@@ -377,6 +396,7 @@ class MODEL_API ExteriorLoadInstance : public ModelObject {
 
 
 def test_openstudio_enum_members(tmp_path):
+    # Validates: OPENSTUDIO_ENUM macro expands to enumName/value/getValues with exact types
     """`OPENSTUDIO_ENUM(DefaultScheduleType, ...)` declares a class by macro expansion —
     no `class` line, no member declarations. The generated set is uniform; every row was
     confirmed against live Ruby. Note the macro sits in DefaultScheduleSet.hpp, a file
@@ -401,6 +421,7 @@ class MODEL_API DefaultScheduleSet : public ResourceObject {
 
 
 def test_swig_extend_block(tmp_path):
+    # Validates: SWIG %extend methods (toIdfObject in ModelCore.i) parse with their return type
     """`toIdfObject` exists in no .hpp — it is a SWIG %extend in ModelCore.i:
     `IdfObject toIdfObject() const { return *self; }`. The .i body is plain C++.
     """
@@ -417,6 +438,7 @@ def test_swig_extend_block(tmp_path):
 
 
 def test_balances_nested_templates(tmp_path):
+    # Regression: '<[^>]*>' truncated nested templates like boost::optional<std::pair<...>>
     """`<[^>]*>` would truncate these; real examples from PlanarSurface / CoilHeating*."""
     src = """
 class MODEL_API PlanarSurface : public ParentObject {
@@ -431,6 +453,7 @@ class MODEL_API PlanarSurface : public ParentObject {
 
 
 def test_joins_multiline_declarations(tmp_path):
+    # Regression: Space#findSurfaces wrapped across lines lost its std::vector<Surface> type
     """Real: Space.hpp `findSurfaces(boost::optional<double> minDegreesFromNorth,` wraps."""
     src = """
 class MODEL_API Space : public PlanarSurfaceGroup {
@@ -445,20 +468,38 @@ class MODEL_API Space : public PlanarSurfaceGroup {
     assert methods["realMethod"] == "double"
 
 
-def test_overload_first_declaration_wins(tmp_path):
-    """Matches _signatures' existing `setdefault` first-occurrence-wins convention."""
+def test_overloads_with_different_returns_are_joined(tmp_path):
+    # Regression: SqlFile#timeSeries rendered only the first overload (Array<TimeSeries>),
+    # hiding the boost::optional<TimeSeries> form that needs .get in Ruby
     src = """
 class MODEL_API Model : public Workspace {
  public:
     bool addObject(const IdfObject& idf);
     boost::optional<double> addObject(int index);
+    bool addObject(const std::string& text);
 };
 """
     methods = _parse_header(_write(tmp_path, "M.hpp", src))["Model"]
-    assert methods["addObject"] == "bool"
+    # Declaration order, same raw type recorded once
+    assert methods["addObject"] == "bool | boost::optional<double>"
+    assert map_cpp_type(methods["addObject"]) == "Boolean | Float, nil"
+
+
+def test_overloads_with_same_rendered_return_stay_single(tmp_path):
+    # Validates: const Foo& vs Foo overloads render one type, not "Foo | Foo"
+    src = """
+class MODEL_API Surface : public PlanarSurface {
+ public:
+    std::vector<Surface> splitSurfaceForSubSurfaces();
+    const std::vector<Surface>& splitSurfaceForSubSurfaces(double offset);
+};
+"""
+    methods = _parse_header(_write(tmp_path, "S.hpp", src))["Surface"]
+    assert map_cpp_type(methods["splitSurfaceForSubSurfaces"]) == "Array<Surface>"
 
 
 def test_default_arguments_do_not_break_parsing(tmp_path):
+    # Validates: default arguments (overwrite = false) do not break parameter parsing
     src = """
 class MODEL_API AdditionalProperties : public ModelObject {
  public:
@@ -477,6 +518,7 @@ class MODEL_API AdditionalProperties : public ModelObject {
 
 
 def test_build_skips_impl_headers(tmp_path):
+    # Validates: *_Impl.hpp detail headers are never parsed into the public type map
     """*_Impl.hpp are detail:: internals, never the public Ruby API."""
     model = tmp_path / "model"
     model.mkdir()
@@ -496,6 +538,7 @@ def test_build_skips_impl_headers(tmp_path):
 
 
 def test_build_discovers_nested_submodule_headers(tmp_path):
+    # Regression: RunControl/AirflowPath in airflow/contam/PrjObjects.hpp missed by glob('model/*.hpp')
     """Real: ``RunControl`` and ``AirflowPath`` are both declared in
     ``airflow/contam/PrjObjects.hpp`` — a nested subdir, and a filename matching
     neither class. The old ``glob("model/*.hpp")`` never saw them.
@@ -518,6 +561,7 @@ class OS_AIRFLOW_API AirflowPath : public AirflowObject {
 
 
 def test_build_skips_impl_headers_in_nested_subdirs(tmp_path):
+    # Validates: the *_Impl.hpp skip applies in nested subdirs (utilities/sql), not just model/
     """The *_Impl.hpp skip applies everywhere, not just model/."""
     _write_tree(
         tmp_path, "model/ThermalZone.hpp",
@@ -538,6 +582,7 @@ def test_build_skips_impl_headers_in_nested_subdirs(tmp_path):
 
 
 def test_build_model_precedence_over_submodule(tmp_path):
+    # Validates: model/ declaration wins over a same-named submodule declaration
     """First-declaration-wins with model/ parsed first: a method declared in both
     model/ and a submodule keeps the model declaration.
     """
@@ -554,6 +599,7 @@ def test_build_model_precedence_over_submodule(tmp_path):
 
 
 def test_build_parses_extend_in_nested_subdir(tmp_path):
+    # Validates: %extend blocks in .i files outside model/ are found by recursion
     """SWIG %extend blocks live in .i files outside model/ too; recursion must find
     them so those methods get types (headers alone don't declare them).
     """
@@ -568,6 +614,7 @@ def test_build_parses_extend_in_nested_subdir(tmp_path):
 
 
 def test_build_hpp_declaration_wins_over_extend(tmp_path):
+    # Validates: .hpp declaration beats a same-method %extend regardless of directory
     """A real .hpp declaration beats a %extend of the same method even when the
     %extend sits in model/ — the .hpp-before-.i ordering is global, not per-module.
     """
@@ -586,6 +633,7 @@ def test_build_hpp_declaration_wins_over_extend(tmp_path):
 
 
 def test_parses_struct_classes(tmp_path):
+    # Regression: 'struct UTILITIES_API IstringFind' was dropped because only 'class' matched
     """Real: `struct UTILITIES_API IstringFind` (Compare.hpp) and
     `struct ISOMODEL_API ISOResults` (SimModel.hpp) — the class regex only matched
     `class` and silently dropped every struct.
@@ -603,6 +651,7 @@ struct UTILITIES_API IstringFind
 
 
 def test_nested_struct_does_not_hijack_enclosing_class(tmp_path):
+    # Regression: nested struct CalendarDay stole every following Calendar method
     """Real: Calendar.hpp — `struct CalendarDay` sits inside `class Calendar`; without
     nesting tracking, the struct stole every method that followed it and Calendar got
     none (its logChannel and accessors rendered unknown).
@@ -628,6 +677,7 @@ class UTILITIES_API Calendar
 
 
 def test_getters_ending_in_close_brace_do_not_close_the_class(tmp_path):
+    # Regression: EpwFile.hpp inline getters ending '};' closed the class early
     """Real: EpwFile.hpp — getters are written `std::string x() const {` / `return …;` /
     `};` — each getter's closing line looks exactly like a class close. Brace-depth
     tracking must keep the class open (the getter close stays at the class depth, the
@@ -656,6 +706,7 @@ class UTILITIES_API EpwHoliday
 
 
 def test_constructor_initializer_list_is_not_a_declaration(tmp_path):
+    # Regression: EpwHoliday initializer list parsed as bogus m_holidayName method with type ':'
     """Real: EpwFile.hpp — `EpwHoliday(const std::string& a, const std::string& b)` is
     followed by `: m_holidayName(holidayName), m_holidayDateString(holidayDateString){};`.
     The ctor line ends with `)` so it is flushed as a (skipped) candidate, and the
@@ -675,6 +726,7 @@ class UTILITIES_API EpwHoliday
 
 
 def test_build_reads_hxx_declarations(tmp_path):
+    # Regression: IddFactory.hxx was never read so IddFactory rendered unknown
     """Real: IddFactory is declared in utilities/idd/IddFactory.hxx — a .hxx, which
     the old glob never read, so IddFactory rendered unknown.
     """
@@ -687,6 +739,7 @@ def test_build_reads_hxx_declarations(tmp_path):
 
 
 def test_build_applies_module_scoped_class_rename(tmp_path):
+    # Regression: %rename(ZUnit) openstudio::Unit left ZUnit without Unit methods
     """Real: `%rename(ZUnit) openstudio::Unit;` — the exposed name differs from the
     declared one. The %extend on openstudio::Unit must also surface as ZUnit.
     """
@@ -704,6 +757,7 @@ def test_build_applies_module_scoped_class_rename(tmp_path):
 
 
 def test_build_rename_does_not_cross_modules(tmp_path):
+    # Regression: six ForwardTranslator renames bled across modules (Sdd inherited Contam methods)
     """Real: six modules declare a `ForwardTranslator`; each is renamed to its own
     XForwardTranslator. The rename must apply per module — sdd's rename must not
     alias airflow's class, or SddForwardTranslator would inherit Contam's methods.
@@ -730,6 +784,7 @@ def test_build_rename_does_not_cross_modules(tmp_path):
 
 
 def test_build_applies_method_rename(tmp_path):
+    # Regression: %rename(toString) OSArgument::print left toString untyped
     """Real: `%rename(toString) openstudio::measure::OSArgument::print;` — a method
     rename: the header declares print, the exposed name is toString.
     """
@@ -747,6 +802,7 @@ def test_build_applies_method_rename(tmp_path):
 
 
 def test_build_applies_inline_swig_class_rename(tmp_path):
+    # Regression: inline 'class any' in CommonImport.i renamed to Any surfaced with no methods
     """Real: CommonImport.i defines `class any { ... }` inline and renames it:
     `%rename(Any) boost::any;` — the inline class's methods must surface as Any.
     """
@@ -763,17 +819,20 @@ def test_build_applies_inline_swig_class_rename(tmp_path):
 
 
 def test_locate_header_dir_honours_env_override(tmp_path, monkeypatch):
+    # Validates: OSMCP_OPENSTUDIO_INCLUDE overrides header directory discovery
     monkeypatch.setenv("OSMCP_OPENSTUDIO_INCLUDE", str(tmp_path))
     assert _locate_header_dir() == tmp_path
 
 
 def test_locate_header_dir_returns_none_when_missing(tmp_path, monkeypatch):
+    # Validates: missing header dir returns None (wheel-only install), not an error
     """No headers is not an error — a wheel-only box simply has no type source."""
     monkeypatch.setenv("OSMCP_OPENSTUDIO_INCLUDE", str(tmp_path / "does-not-exist"))
     assert _locate_header_dir() is None
 
 
 def test_no_name_based_guessing_remains():
+    # Regression: _infer_return_type guessed isConditioned -> Boolean; the name-guesser must stay deleted
     """Guard the core invariant: types are sourced, never inferred from the method name.
 
     `_infer_return_type` guessed `ThermalZone#isConditioned -> Boolean` (really an
@@ -783,3 +842,51 @@ def test_no_name_based_guessing_remains():
     from mcp_server.skills.api_reference import _signatures
 
     assert not hasattr(_signatures, "_infer_return_type")
+
+
+# --------------------------------------------------------------------------------------
+# per-module header precedence (class names reused across modules)
+# --------------------------------------------------------------------------------------
+
+
+def test_build_by_module_keeps_same_named_classes_apart(tmp_path):
+    # Regression: airflow's ForwardTranslator (alphabetically first) shadowed energyplus's in
+    # the merge, so openstudio.energyplus.ForwardTranslator#translateModel rendered Object, nil
+    _write_tree(
+        tmp_path, "airflow/contam/ForwardTranslator.hpp",
+        "class AIRFLOW_API ForwardTranslator {\n public:\n"
+        "    boost::optional<IndexModel> translateModel(const Model& model);\n};\n",
+    )
+    _write_tree(
+        tmp_path, "energyplus/ForwardTranslator.hpp",
+        "class ENERGYPLUS_API ForwardTranslator {\n public:\n"
+        "    Workspace translateModel(const Model& model, ProgressBar* progressBar = nullptr);\n"
+        "};\n",
+    )
+    by_module = _build_by_module(tmp_path)
+    assert by_module["energyplus"]["ForwardTranslator"]["translateModel"] == "Workspace"
+    assert by_module["airflow"]["ForwardTranslator"]["translateModel"] == (
+        "boost::optional<IndexModel>"
+    )
+    # The merged view still picks airflow (first declaration wins) — which is exactly why
+    # _signatures resolves through the bindings module first.
+    assert _build(tmp_path)["ForwardTranslator"]["translateModel"] == "boost::optional<IndexModel>"
+
+
+@pytest.mark.parametrize(
+    ("wrapper_stem", "expected"),
+    [
+        ("openstudioenergyplus", "energyplus"),
+        ("openstudiomodelcore", "model"),
+        ("openstudiomodelgeometry", "model"),
+        ("openstudioutilitiessql", "utilities"),
+        ("openstudioairflow", "airflow"),
+        ("openstudiogbxml", "gbxml"),
+        ("openstudiomeasure", "measure"),
+        ("openstudioopenstudio", None),
+    ],
+)
+def test_header_module_for_maps_wrapper_stems(wrapper_stem, expected):
+    # Validates: every shipped wrapper stem resolves to its include subdir by longest prefix
+    modules = ["model", "utilities", "energyplus", "airflow", "gbxml", "measure", "isomodel"]
+    assert header_module_for(wrapper_stem, modules) == expected

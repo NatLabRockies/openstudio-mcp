@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ._headers import header_types, map_cpp_type
+from ._headers import header_module_for, header_types, header_types_by_module, map_cpp_type
 
 # SWIG internal classes to skip
 SKIP_CLASSES = {"SwigPyIterator", "_SwigNonDynamicMeta"}
@@ -66,6 +66,9 @@ class ParsedMethod:
 @dataclass
 class ParsedClass:
     name: str
+    # Wrapper file stem ("openstudioenergyplus"); selects the header module whose
+    # declarations decorate this class (see _headers.header_module_for).
+    module: str = ""
     instance_methods: dict[str, ParsedMethod] = field(default_factory=dict)
     static_methods: dict[str, ParsedMethod] = field(default_factory=dict)
 
@@ -153,7 +156,7 @@ def _parse_python_file(path: Path) -> list[ParsedClass]:
                 current = None
                 in_static = False
                 continue
-            current = ParsedClass(name=name)
+            current = ParsedClass(name=name, module=path.stem)
             classes.append(current)
             in_static = False
             continue
@@ -220,16 +223,15 @@ def _resolve_return_type(type_str: str | None, all_class_names: set[str]) -> str
     return type_name if type_name in all_class_names else "Object"
 
 
+# Reported when neither a wrapper annotation nor a C++ header declares the return type.
+#
+# Deliberately not a guess. A name-based heuristic used to fill this gap and was wrong in
+# ways no reader could detect: ``ThermalZone#isConditioned`` matched an ``is[A-Z] ->
+# Boolean`` rule but actually returns ``boost::optional<std::string>``, so
+# ``next unless zone.isConditioned`` silently skipped every zone. ``?`` tells the caller to
+# probe; ``Boolean`` told them to write a bug. ``operations._decorate`` already emits this
+# same sentinel when ``inspect.signature`` fails.
 UNKNOWN_TYPE = "?"
-"""Reported when neither a wrapper annotation nor a C++ header declares the return type.
-
-Deliberately not a guess. A name-based heuristic used to fill this gap and was wrong in
-ways no reader could detect: ``ThermalZone#isConditioned`` matched an ``is[A-Z] ->
-Boolean`` rule but actually returns ``boost::optional<std::string>``, so
-``next unless zone.isConditioned`` silently skipped every zone. ``?`` tells the caller to
-probe; ``Boolean`` told them to write a bug. ``operations._decorate`` already emits this
-same sentinel when ``inspect.signature`` fails.
-"""
 
 
 def _wrapper_files(wrapper_dir: Path) -> list[Path]:
@@ -270,11 +272,18 @@ def _build(wrapper_dir: Path) -> dict[str, dict[str, dict]]:
     # them). Empty when no SDK headers are installed — then unannotated methods report
     # UNKNOWN_TYPE, which is honest.
     cpp = header_types()
+    cpp_by_module = header_types_by_module()
 
     # Render to the public shape.
     result: dict[str, dict[str, dict]] = {}
     for class_name, cls in parsed.items():
-        cpp_for_class = cpp.get(class_name, {})
+        # The bindings module's own header wins per method; the cross-module merge
+        # fills the rest. Six modules declare a ForwardTranslator and only energyplus
+        # binds it under that name; the merge alone rendered its translateModel with
+        # airflow's boost::optional<contam::IndexModel>.
+        header_module = header_module_for(cls.module, cpp_by_module)
+        own = cpp_by_module.get(header_module, {}).get(class_name, {}) if header_module else {}
+        cpp_for_class = {**cpp.get(class_name, {}), **own}
         rendered: dict[str, dict] = {}
         for method in cls.static_methods.values():
             rendered[method.name] = _render(

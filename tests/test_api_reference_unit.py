@@ -33,6 +33,7 @@ def _mod(**classes) -> object:
 
 
 def test_collect_classes_dedupes_aliased_modules_by_identity():
+    # Validates: aliased submodules (airflow/openstudioairflow) list each class once under the canonical module
     """openstudio.airflow and openstudio.openstudioairflow expose the SAME class
     objects. Identity dedupe must list each class once — under the first module
     enumerated (the canonical short name).
@@ -54,6 +55,7 @@ def test_collect_classes_dedupes_aliased_modules_by_identity():
 
 
 def test_collect_classes_module_attribution():
+    # Validates: class entries carry the first module they were found in; later-only classes keep their own
     """Each class carries the module it was found in; a class present only in a later
     module keeps that module's label.
     """
@@ -70,6 +72,7 @@ def test_collect_classes_module_attribution():
 
 
 def test_collect_classes_skips_wrapper_private_and_iterator_types():
+    # Validates: Optional*/Vector/object-based Set/Map, SwigPyIterator and _private names never leak as classes
     """Container/optional plumbing must never leak: Optional*, *Vector, *Set/*Map with
     an `object` base, the per-module SwigPyIterator, and underscore-private names.
     Real domain classes sharing a suffix (inheriting a non-object base) are kept.
@@ -98,6 +101,7 @@ def test_collect_classes_skips_wrapper_private_and_iterator_types():
 
 
 def test_collect_classes_ignores_non_class_attributes():
+    # Validates: module-level functions/constants are not returned as classes
     """Module-level functions/constants are not classes and must be skipped."""
     mod = _mod(
         the_answer=42,
@@ -109,6 +113,7 @@ def test_collect_classes_ignores_non_class_attributes():
 
 
 def test_collect_classes_skips_python_only_lowercase_classes():
+    # Validates: lowercase Python-binding internals (path, xml_document) never return as untyped classes
     """path / xml_document / xml_node / baseUnitConversionFactor are Python-binding
     internals at the openstudio root. _signatures excludes lowercase names from the
     wrapper parse (no types exist for them); the class list must mirror that rule so
@@ -124,6 +129,7 @@ def test_collect_classes_skips_python_only_lowercase_classes():
 
 
 def test_collect_classes_prefers_wrapper_parsed_name_for_aliases():
+    # Regression: legacy alias DistrictHeating rendered untyped because parsed name DistrictHeatingWater lost
     """Legacy aliases: model.DistrictHeating IS model.DistrictHeatingWater (same
     object). Identity dedupe keeps whichever name dir() lists first, but the wrapper
     parse knows only the proxy name — so the preferred (parsed) name must win,
@@ -177,6 +183,7 @@ _BASE_METHODS = {m for m in dir(_FakeModelObject) if not m.startswith("_")}
 
 
 def test_own_methods_model_class_subtracts_base_unless_include_base():
+    # Validates: model classes subtract ModelObject methods by name unless include_base=True
     """Model-module classes get ModelObject's method set subtracted (default), by
     name — pre-existing search_api behavior, so an override of a base method is
     excluded too. include_base=True keeps everything.
@@ -199,6 +206,7 @@ def test_own_methods_model_class_subtracts_base_unless_include_base():
 
 
 def test_own_methods_non_model_class_never_subtracts_base():
+    # Regression: SqlFile#name was dropped by model-only base subtraction applied to non-model classes
     """Regression: SqlFile has its own `name` method. Under the old model-only logic it
     would be subtracted as if it were inherited from ModelObject, silently dropping a
     real method from the response.
@@ -210,6 +218,7 @@ def test_own_methods_non_model_class_never_subtracts_base():
 
 
 def test_own_methods_excludes_swig_data_and_thisown_unconditionally():
+    # Regression: thisown and SWIG properties/constants leaked into method buckets as bare entries
     """``dir`` includes SWIG properties/constants and the internal ownership flag.
 
     ``thisown`` is excluded by name even if a binding version exposes it as callable;
@@ -238,6 +247,7 @@ def test_own_methods_excludes_swig_data_and_thisown_unconditionally():
 
 
 def test_decorate_walks_mro_for_inherited_signatures_and_respects_precedence():
+    # Regression: inherited methods rendered '-> ?' (24/45 on coil) because only the leaf class parse was used
     """Parsed signatures come from the first matching class in the live MRO."""
     class _SignatureBase:
         def inherited(self, base_value):
@@ -264,7 +274,31 @@ def test_decorate_walks_mro_for_inherited_signatures_and_respects_precedence():
     ]
 
 
+def test_decorate_prefixes_static_methods():
+    # Validates: parsed static flag renders as "[static] " so agents call Klass.m(), not obj.m()
+    class _WithStatic:
+        @staticmethod
+        def load(_path):
+            return None
+
+        def name(self):
+            return None
+
+    sigs = {
+        "_WithStatic": {
+            "load": {"params": ["path"], "returns": "Model, nil", "static": True},
+            "name": {"params": [], "returns": "String", "static": False},
+        },
+    }
+
+    assert _decorate("_WithStatic", _WithStatic, ["load", "name"], sigs) == [
+        "[static] load(path) -> Model, nil",
+        "name() -> String",
+    ]
+
+
 def test_decorate_never_returns_a_bare_method_name():
+    # Regression: opaque C callables rendered as bare names; must be 'name(...) -> ?'
     """Opaque C/SWIG callables still render as an explicit unknown signature."""
     class _OpaqueCallable:
         __signature__ = "unavailable"
@@ -279,6 +313,7 @@ def test_decorate_never_returns_a_bare_method_name():
 
 
 def test_search_api_reports_degraded_signature_loading(monkeypatch, capsys):
+    # Regression: signature-load failure silently returned ok:true with bare names; needs signatures_available:False
     """Class/method discovery survives a signature parser failure visibly."""
     class ModelObject:
         def name(self):
@@ -320,6 +355,7 @@ def test_search_api_reports_degraded_signature_loading(monkeypatch, capsys):
 
 
 def test_is_wrapper_type_skips_swig_py_iterator():
+    # Validates: per-module SwigPyIterator is skipped so it is not listed once per surfaced namespace
     """SwigPyIterator is re-created per module — without the name skip, a pattern like
     "Iterator" would list it once per surfaced namespace (10 times after widening).
     A real *Set domain class (non-object base) is unaffected.

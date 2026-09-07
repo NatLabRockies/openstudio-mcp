@@ -113,6 +113,13 @@ _PRIMITIVES = {
 }
 
 _cache: dict[str, dict[str, str]] | None = None
+_cache_by_module: dict[str, dict[str, dict[str, str]]] | None = None
+
+# Joins the return types of overloads that disagree (``std::vector<TimeSeries>`` vs
+# ``boost::optional<TimeSeries>`` for SqlFile::timeSeries). SWIG collapses overloads to one
+# ``(*args)`` entry, so the rendered signature must carry every possible return rather
+# than silently pick the first declaration.
+OVERLOAD_SEP = " | "
 
 
 def _strip_comments(line: str, *, in_block: bool) -> tuple[str | None, bool]:
@@ -217,6 +224,14 @@ def map_cpp_type(cpp: str, class_names: set[str] | None = None) -> str:
     optionals as ``"X, nil"``, vectors as ``"Array<X>"``. Only the source of truth
     changes, never the output shape.
     """
+    if OVERLOAD_SEP in cpp:
+        rendered: list[str] = []
+        for part in cpp.split(OVERLOAD_SEP):
+            mapped = map_cpp_type(part, class_names)
+            if mapped not in rendered:
+                rendered.append(mapped)
+        return OVERLOAD_SEP.join(rendered)
+
     text = cpp.strip().removeprefix("const ").strip().rstrip("*&").strip()
 
     optional = re.fullmatch(r"(?:boost|std)::optional\s*<\s*(.+?)\s*>", text)
@@ -349,9 +364,23 @@ def _parse_header(path: Path) -> dict[str, dict[str, str]]:
         if cpp_type is None:
             continue
 
-        out[current].setdefault(name, cpp_type)  # overloads: first declaration wins
+        _add_overload(out[current], name, cpp_type)
 
     return {cls: methods for cls, methods in out.items() if methods}
+
+
+def _add_overload(methods: dict[str, str], name: str, cpp_type: str) -> None:
+    """Record one declaration's return type; overloads that disagree are joined.
+
+    Same-type overloads (three ``bool setX(...)`` forms) stay a single entry. Different
+    types join with ``OVERLOAD_SEP`` in declaration order; ``map_cpp_type`` renders each
+    part and dedupes anything that maps to the same Ruby-style type.
+    """
+    existing = methods.get(name)
+    if existing is None:
+        methods[name] = cpp_type
+    elif cpp_type not in existing.split(OVERLOAD_SEP):
+        methods[name] = existing + OVERLOAD_SEP + cpp_type
 
 
 def _locate_header_dir() -> Path | None:
@@ -369,6 +398,42 @@ def _locate_header_dir() -> Path | None:
 
 
 def _build(header_dir: Path) -> dict[str, dict[str, str]]:
+    """Merge ``_build_by_module`` across modules: model/ first, then first-declaration-wins.
+
+    The merged view is the fallback for classes whose bindings module has no header of
+    its own (SWIG-synthesized classes, utilities bound from several wrapper files).
+    Classes declared in more than one module (``ForwardTranslator`` in energyplus,
+    gbxml, sdd, ...) must be resolved through ``header_types_by_module`` instead: the
+    merge cannot know which module the bindings actually expose.
+    """
+    return _build_merged(_build_by_module(header_dir))
+
+
+def header_module_for(wrapper_module: str, header_modules: Iterable[str]) -> str | None:
+    """Map a SWIG wrapper file stem to the header subdir that declares its classes.
+
+    Wrapper files are ``openstudio<module><part>.py`` (``openstudioenergyplus``,
+    ``openstudiomodelcore``, ``openstudioutilitiessql``) while headers live under the
+    bare module dir (``energyplus/``, ``model/``, ``utilities/``). Longest matching
+    module prefix wins; None when nothing matches (an env-override include dir, a
+    wrapper with no headers).
+    """
+    rest = wrapper_module.removeprefix("openstudio")
+    candidates = [m for m in header_modules if m and rest.startswith(m)]
+    return max(candidates, key=len) if candidates else None
+
+
+def _build_merged(by_module: dict[str, dict[str, dict[str, str]]]) -> dict[str, dict[str, str]]:
+    result: dict[str, dict[str, str]] = {}
+    for module in sorted(by_module, key=lambda m: (m != "model", m)):
+        for cls, methods in by_module[module].items():
+            target = result.setdefault(cls, {})
+            for name, cpp_type in methods.items():
+                target.setdefault(name, cpp_type)  # first declaration wins
+    return result
+
+
+def _build_by_module(header_dir: Path) -> dict[str, dict[str, dict[str, str]]]:
     """Parse every public header under ``header_dir``, recursing into submodules.
 
     Not limited to ``model/``: ``SqlFile`` (utilities/sql), ``RunControl`` and
@@ -414,13 +479,7 @@ def _build(header_dir: Path) -> dict[str, dict[str, str]]:
         parts = path.relative_to(header_dir).parts
         by_module.setdefault(parts[0] if len(parts) > 1 else "", []).append(path)
 
-    result: dict[str, dict[str, str]] = {}
-    for module in sorted(by_module, key=lambda m: (m != "model", m)):
-        for cls, methods in _parse_module(by_module[module]).items():
-            target = result.setdefault(cls, {})
-            for name, cpp_type in methods.items():
-                target.setdefault(name, cpp_type)  # first declaration wins
-    return result
+    return {module: _parse_module(paths) for module, paths in by_module.items()}
 
 
 def _parse_renames(path: Path) -> list[tuple[str, str]]:
@@ -496,6 +555,19 @@ def header_types() -> dict[str, dict[str, str]]:
     """
     global _cache
     if _cache is None:
-        header_dir = _locate_header_dir()
-        _cache = _build(header_dir) if header_dir else {}
+        _cache = _build_merged(header_types_by_module())
     return _cache
+
+
+def header_types_by_module() -> dict[str, dict[str, dict[str, str]]]:
+    """Return ``{header_module: {class_name: {method_name: cpp_return_type}}}``, cached.
+
+    Keyed by the top-level include subdir (``model``, ``utilities``, ``energyplus``, ...)
+    so a class name declared in several modules resolves against the module the
+    bindings expose (see ``header_module_for``). Empty when no headers are installed.
+    """
+    global _cache_by_module
+    if _cache_by_module is None:
+        header_dir = _locate_header_dir()
+        _cache_by_module = _build_by_module(header_dir) if header_dir else {}
+    return _cache_by_module

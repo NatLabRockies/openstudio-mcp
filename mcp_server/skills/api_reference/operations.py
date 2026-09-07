@@ -137,6 +137,8 @@ def _own_methods(
 def _decorate(class_name: str, cls: type, names: list[str], sigs: dict) -> list[str]:
     """Render each method name as ``method(params) -> ReturnType``.
 
+    Static methods carry a ``[static] `` prefix.
+
     Uses the parsed wrapper signature for the class or the first matching class in its
     live MRO; falls back to ``inspect.signature`` for parameter names when a method
     isn't in the parse (e.g. C-level), with ``-> ?`` for the unknown return. If even
@@ -155,7 +157,11 @@ def _decorate(class_name: str, cls: type, names: list[str], sigs: dict) -> list[
                 if info is not None:
                     break
         if info is not None:
-            out.append(f"{name}({', '.join(info['params'])}) -> {info['returns']}")
+            # ``[static]`` marks class-level calls (``Model.load(path)``) so an agent does
+            # not invoke them on an instance. Language-neutral on purpose: Ruby renders
+            # these as ``self.load``, Python as ``@staticmethod``.
+            prefix = "[static] " if info.get("static") else ""
+            out.append(f"{prefix}{name}({', '.join(info['params'])}) -> {info['returns']}")
             continue
         try:
             params = [p for p in inspect.signature(getattr(cls, name)).parameters if p != "self"]
@@ -191,7 +197,9 @@ def search_api_op(
         {"ok": True, "classes": [{"class_name": ..., "module": ..., "setters": [...],
          "getters": [...], "other": [...]}], "query": ...,
          "signatures_available": True} where each setter/getter/other entry is a
-        signature string, e.g. "setSurfaceType(surfaceType) -> Boolean", and module
+        signature string, e.g. "setSurfaceType(surfaceType) -> Boolean" (class-level
+        methods are prefixed "[static] "; overloads with different return types
+        render "-> A | B"), and module
         names the namespace the class lives in ("openstudio", "openstudio.model",
         "openstudio.airflow", ...). If signature loading fails, discovery still
         succeeds with "signatures_available": False, a "warning", and explicit

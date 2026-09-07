@@ -61,6 +61,13 @@ def register(mcp):
           - "-> ?"           genuinely unknown — no header or annotation declares
                              it. Probe the object (print .class) before calling
                              .get. This is an admitted gap, not a hint.
+          - "-> A | B"       overloaded; which return you get depends on the
+                             arguments (e.g. SqlFile#timeSeries(...) ->
+                             Array<TimeSeries> | TimeSeries, nil). Handle the
+                             nil-able form defensively.
+          - "[static] name(...)"  a class-level call (Ruby `Klass.name`, Python
+                             `Klass.name`), never invoked on an instance. e.g.
+                             "[static] iddObjectType() -> IddObjectType".
 
         An Optional being present is not the same as it being meaningful: e.g.
         ThermalZone#thermostat may be initialized while carrying no setpoint
