@@ -1,5 +1,10 @@
 # gbxml_import
 
+> Internal dev notes. Served agent guidance lives in
+> `.claude/skills/gbxml-import/SKILL.md` (via `get_skill("gbxml-import")`),
+> including the zero-volume-zone remedy.
+
+
 Translate a gbXML file (typically exported from Revit 2022+) into an OpenStudio `.osm` model.
 
 ## Why

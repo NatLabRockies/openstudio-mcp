@@ -550,3 +550,19 @@ def test_search_api_via_mcp():
                 assert len(data["classes"]) == 1
 
     asyncio.run(_test())
+
+
+# ── #149: hazard surfacing ───────────────────────────────────────────────
+
+def test_search_api_surfaces_hazard_for_addToNode():
+    # Validates: search_api("...", method_pattern="addToNode") carries the addToNode-after-
+    # remove hazard so the agent learns the crash before writing the measure (#149)
+    search = _import_search_api_op()
+    result = search("CoilCoolingDXSingleSpeed", method_pattern="addToNode")
+    assert result["ok"]
+    assert result["hazards"][0]["id"] == "addToNode_after_remove"
+    assert result["hazards"][0]["recipe"] == "replace_supply_branch_component"
+
+    plain = search("CoilCoolingDXSingleSpeed")
+    assert plain["ok"]
+    assert "hazards" not in plain, "no trigger word → response shape unchanged"

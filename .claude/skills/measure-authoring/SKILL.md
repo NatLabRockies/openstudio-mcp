@@ -18,6 +18,17 @@ Use measure authoring when:
 
 Do NOT use when an existing tool already does the job (e.g., `replace_air_terminals` for terminal swaps, `adjust_thermostat_setpoints` for thermostat changes).
 
+## Reuse Before Writing (find_measure / BCL routing)
+
+For requests to use an EXISTING measure by name, BCL page title, or intent,
+call `find_measure` first. It searches your own custom measures, bundled
+common measures, ComStock measures, and your BCL cache before searching BCL;
+a strong BCL match is downloaded into your per-user `bcl` dir. Pass its
+returned `measure_dir` straight to `list_measure_arguments` or
+`apply_measure`. Use `search_bcl_measures` only to inspect BCL candidates
+without downloading; `list_custom_measures` lists what you've authored.
+Custom measures are private per user — never tell users measures are shared.
+
 ## Workflow
 
 ### 1. Create the Measure
@@ -46,24 +57,39 @@ returns, not a hardcoded one.
 apply_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
 ```
 
+### When test_measure / apply_measure fail
+Both return `log_path` (the full log on disk), a `log_tail` excerpt, `exit_code`,
+and `crash_marker`. The excerpt is a window, not the whole story: read the full log
+before guessing.
+```
+read_file(file_path="<log_path from the failure response>")
+```
+- `crash_marker` set (e.g. `[BUG] Segmentation fault`, error mentions SIGABRT/SIGSEGV):
+  the Ruby/Python process died in native SDK code, not in a raised exception. The
+  excerpt shows the `-- Ruby level backtrace` with the `measure.rb` line. Almost
+  always a use-after-delete: `component.remove()` followed by `addToNode` on a node
+  that `remove()` deleted. Insert the replacement first, then remove the old one.
+- `crash_marker` null: an ordinary Ruby/Python error; the message and backtrace are in
+  `log_tail` / `test_output`.
+
 ### 4. Verify Results (Before/After Comparison)
 For rigorous validation, run a baseline simulation BEFORE applying the measure:
 ```
-save_osm_model(save_path="/runs/baseline.osm")
-run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
+save_osm_model(save_name="baseline")            # response carries osm_path
+run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 extract_summary_metrics(run_id=<baseline_id>)   # record baseline EUI
 
 # reload, apply measure, re-simulate
 load_osm_model(osm_path="<original>")
 apply_measure(measure_dir="/measures/<user>/custom/set_lights_8w")
-save_osm_model(save_path="/runs/retrofit.osm")
-run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
+save_osm_model(save_name="retrofit")
+run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 extract_summary_metrics(run_id=<retrofit_id>)   # compare to baseline
 ```
 
 ## Language Choice
 
-Both are **fully supported** — `create_measure(language="Ruby"|"Python")` scaffolds, tests
+Both are **fully supported** — `create_measure(language="Ruby"|"Python", ...)` scaffolds, tests
 (minitest for Ruby, pytest for Python), and applies either. Pick per the user's request or
 project convention:
 
@@ -89,6 +115,21 @@ project convention:
       end
     end
 ```
+
+Replace a supply-branch coil or fan in place (add first, THEN remove). For a plain swap
+prefer the tool `replace_air_loop_supply_component` (no measure needed); the snippet is for
+measures that must do it themselves:
+```ruby
+    old_coil = model.getCoilCoolingDXSingleSpeedByName('Main Cooling Coil').get
+    inlet_node = old_coil.inletModelObject.get.to_Node.get
+    new_coil = OpenStudio::Model::CoilCoolingDXTwoSpeed.new(model)
+    raise 'addToNode failed' unless new_coil.addToNode(inlet_node)
+    old_name = old_coil.nameString
+    old_coil.remove
+    new_coil.setName(old_name)
+```
+
+WARNING: `remove()` deletes the component's outlet node. `addToNode` on a node handle captured before `remove()` segfaults the measure process (`[BUG] Segmentation fault`, exit 134, no Ruby exception). The terminal pattern above is safe only because `addBranchForZone` is keyed by zone, not node. `search_wiring_patterns("replace coil")` returns the full recipe.
 
 ### Zone Equipment
 ```ruby
@@ -121,7 +162,9 @@ Python gotchas (different from Ruby):
 - `obj.name()` returns an OptionalString — use `str(obj.name())` or `obj.name().get()`, never bare `obj.name()`.
 - `runner.registerError("msg")` must be followed by `return False` (capital F; it does not halt).
 - Optionals: `opt = surface.construction()` then `if opt.is_initialized(): c = opt.get()`.
-- Unit conversion: `openstudio.convert(val, "W/m^2", "Btu/hr*ft^2").get()`.
+- Dangling nodes crash Python too: `addToNode(node)` on a node captured before `component.remove()` segfaults the interpreter (exit 139, no exception), same as Ruby. Add the new component first, then remove.
+- Unit conversion: `openstudio.convert(val, "W/m^2", "Btu/hr*ft^2").get()` —
+  full unit-string table: `get_skill_file(skill_name="measure-authoring", filename="unit-conversions.md")`.
 
 ### Envelope
 ```python
@@ -142,6 +185,19 @@ Python gotchas (different from Ruby):
                 loop.removeBranchForZone(zone)
                 # create new terminal...
                 loop.addBranchForZone(zone, terminal.to_StraightComponent().get())
+```
+
+Replace a supply-branch coil or fan in place (add first, THEN remove):
+```python
+        old_coil = model.getCoilCoolingDXSingleSpeedByName("Main Cooling Coil").get()
+        inlet_node = old_coil.inletModelObject().get().to_Node().get()
+        new_coil = openstudio.model.CoilCoolingDXTwoSpeed(model)
+        if not new_coil.addToNode(inlet_node):
+            runner.registerError("addToNode failed")
+            return False
+        old_name = old_coil.nameString()
+        old_coil.remove()
+        new_coil.setName(old_name)
 ```
 
 ### Zone Equipment

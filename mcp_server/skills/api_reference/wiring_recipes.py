@@ -568,4 +568,92 @@ airloop.addBranchForZone(zone, atu)""",
                  "Water coils need plant loop demand connections.",
         "source": "airterminal_cooledbeam.rb",
     },
+
+    # ── In-place replacement (issue #149) ────────────────────────────────
+
+    "replace_supply_branch_component": {
+        "component_type": "AirLoopHVAC supply branch — swap a coil or fan in place (StraightComponent)",
+        "connections": [
+            "New component → old component's INLET node via addToNode() — BEFORE old.remove()",
+            "Old component → remove() AFTER the new one is attached (remove deletes the old outlet node)",
+            "Water coils → plant loop via addDemandBranchForComponent() before addToNode()",
+            "Name reuse → setName(old_name) after remove()",
+        ],
+        "ruby": """\
+old_coil = model.getCoilCoolingDXSingleSpeedByName('Main Cooling Coil').get
+inlet_node = old_coil.inletModelObject.get.to_Node.get
+new_coil = OpenStudio::Model::CoilCoolingDXTwoSpeed.new(model)
+# water coil? plant.addDemandBranchForComponent(new_coil) goes here, before addToNode
+raise 'addToNode failed' unless new_coil.addToNode(inlet_node)
+old_name = old_coil.nameString
+old_coil.remove
+new_coil.setName(old_name)""",
+        "notes": "ORDER MATTERS. remove() deletes the component's outlet node (its inlet node "
+                 "if it is last before supplyOutletNode) and any SetpointManager on it. A Node "
+                 "handle captured before remove() dangles; addToNode on it segfaults the "
+                 "embedded Ruby ([BUG] Segmentation fault ... in addToNode, SIGABRT = exit 134 "
+                 "in a shell / -6 from subprocess, no exception, no backtrace) and the Python "
+                 "bindings alike (SIGSEGV, exit 139 / -11). Always "
+                 "addToNode first, then remove. This order is safe whether the old component "
+                 "sits mid-branch or last before supplyOutletNode (the SDK splices the new "
+                 "component to the loop outlet and SetpointManagers there survive; verified "
+                 "both). Use to replace / swap / exchange / delete and re-add an existing coil "
+                 "or fan in place on an air loop or plant loop supply branch; for terminals use "
+                 "addBranchForZone (zone-keyed, remove-first is safe). For a plain swap without "
+                 "a measure, the replace_air_loop_supply_component tool does this sequence. "
+                 "Verified OpenStudio 3.11.0.",
+        "source": "verified in-repo 2026-09-06 (not from openstudio-resources)",
+    },
 }
+
+
+# ── Hazards ──────────────────────────────────────────────────────────────
+#
+# Surfaced by search_wiring_patterns AND search_api when a query hits a
+# trigger, so the agent meets the warning before writing the crashing code.
+# Kept here (not in operations.py) so PR #138's search_api rewrite does not
+# collide with it.
+#
+# `triggers` is a list of token sets; a hazard fires when ALL tokens of ANY set
+# appear in the query. Bare "node"/"remove"/"delete" do not fire on their own
+# ("setpoint manager node", "remove terminal for zone" are not this hazard);
+# they need a component-ish word alongside. "addtonode", "segfault" and
+# "crash" fire alone — those are the symptom words an agent searches after
+# the process died.
+
+_COMPONENT_WORDS = ("node", "component", "coil", "fan", "addtonode", "equipment")
+_ACTION_WORDS = ("remove", "delete", "replace", "swap", "exchange")
+
+HAZARDS: list[dict] = [
+    {
+        "id": "addToNode_after_remove",
+        "triggers": (
+            [frozenset({"addtonode"}), frozenset({"segfault"}), frozenset({"crash"})]
+            + [frozenset({a, c}) for a in _ACTION_WORDS for c in _COMPONENT_WORDS]
+        ),
+        "note": "Calling addToNode(node) on a Node handle captured before component.remove() "
+                "segfaults the process (Ruby: [BUG] Segmentation fault, exit 134; Python: "
+                "exit 139) — remove() deletes the component's outlet node. Attach the new "
+                "component to the OLD component's inlet node first, then remove() the old one.",
+        "recipe": "replace_supply_branch_component",
+    },
+]
+
+
+def hazards_for_query(text: str) -> list[dict]:
+    """Hazards whose trigger sets are satisfied by the query's tokens.
+
+    Tokens are [a-z0-9]+ runs, lower-cased, so "CoilCoolingDXSingleSpeed
+    addToNode" yields "addtonode" but a bare class name yields nothing. Each
+    hazard is returned at most once, in HAZARDS order.
+    """
+    import re
+
+    tokens = set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+    if not tokens:
+        return []
+    return [
+        {"id": h["id"], "note": h["note"], "recipe": h["recipe"]}
+        for h in HAZARDS
+        if any(trigger <= tokens for trigger in h["triggers"])
+    ]

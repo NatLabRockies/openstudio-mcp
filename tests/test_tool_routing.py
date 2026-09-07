@@ -60,7 +60,9 @@ def test_all_tools_have_tags():
 
 
 def test_group_sizes_balanced():
-    # Validates: no tool group exceeds 40 members (prevents core group bloat)
+    # Validates: no tool group exceeds 45 members (prevents core group bloat). Was 40 until
+    # #148 put the hvac group at 41 with three air-loop supply-branch tools that belong there;
+    # the cap is a bloat budget, not a routing contract, so it moved with the roster
     tools = _register_tools_with_tags()
     groups: dict[str, list[str]] = {}
     for name, t in tools.items():
@@ -73,8 +75,8 @@ def test_group_sizes_balanced():
     print("\nGroup distribution:")
     for group, members in sorted(groups.items()):
         print(f"  {group}: {len(members)} tools")
-        assert len(members) <= 40, (
-            f"Group '{group}' has {len(members)} tools (max 40)"
+        assert len(members) <= 45, (
+            f"Group '{group}' has {len(members)} tools (max 45)"
         )
 
 
@@ -89,6 +91,9 @@ ROUTING_CASES = [
     ("generate a report of simulation results", "results", "generate_results_report"),
     ("add VAV reheat to all zones", "hvac", "add_baseline_system"),
     ("add a boiler to the hot water loop", "hvac", "add_supply_equipment"),
+    ("replace the cooling coil on the air loop", "hvac", "replace_air_loop_supply_component"),
+    ("swap the constant volume fan for a variable speed fan", "hvac", "replace_air_loop_supply_component"),
+    ("add a scheduled setpoint manager to the hot water loop", "hvac", "add_setpoint_manager"),
     ("set chiller COP to 5.5", "hvac", "set_component_properties"),
     ("create a 2-story office building", "core", "create_new_building"),
     ("run an annual simulation", "simulation", "run_simulation"),

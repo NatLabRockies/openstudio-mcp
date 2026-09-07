@@ -89,7 +89,8 @@ mcp = FastMCP(
         "List tools default to 10 results — use filters to narrow, or "
         "max_results=0 for all. Prefer list tools before detail tools to "
         "find the right name. "
-        "When polling get_run_status, wait at least 1-2 minutes between calls. "
+        "Poll get_run_status no more than once per minute — first check "
+        "~60 s after submitting, every 2-3 minutes for long simulations. "
         "For multi-step workflows, call list_skills() first."
     ),
     auth=_build_auth(),

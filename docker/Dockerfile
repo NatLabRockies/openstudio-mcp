@@ -1,3 +1,4 @@
+# On bump: run `pytest -m sdk_probe tests/test_sdk_probes.py` in the new image (issue #149)
 ARG OPENSTUDIO_VERSION=3.11.0
 FROM nrel/openstudio:${OPENSTUDIO_VERSION}
 ARG OPENSTUDIO_VERSION

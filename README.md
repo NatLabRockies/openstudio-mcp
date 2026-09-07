@@ -4,7 +4,7 @@
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**150+ tools · 13 workflow skills · 480+ integration tests**
+**150+ tools · bundled workflow skills · 480+ integration tests**
 
 ---
 
@@ -245,7 +245,7 @@ OSM, SQL, report, and log files as untrusted outputs.
 
 ## Skills & Tools (150+ total)
 
-In Claude Code, 16 bundled skills add workflow automation and domain knowledge:
+In Claude Code, the bundled skills add workflow automation and domain knowledge:
 
 | Skill | Type | What it does |
 |-------|------|--------------|
@@ -265,6 +265,7 @@ In Claude Code, 16 bundled skills add workflow automation and domain knowledge:
 | `/gbxml-import` | Task | Revit gbXML import + geometry-defect repair workflow |
 | `/osaf-analysis` | Task | OpenStudio Analysis Framework workflow: algorithm selection, validation, submission |
 | `/python-ems` | Task | custom EnergyPlus Python Plugin control/reporting logic (EMS) |
+| `file-transfer` | Task | move files to/from a remote server (signed upload/download URLs) |
 
 Workflow/task skills are invoked with `/name`; knowledge skills load automatically. Any MCP host can also discover these guides via the `list_skills()` and `get_skill(name)` tools (mount `-v ./.claude/skills:/skills:ro`).
 
@@ -454,7 +455,7 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Plant loops & zone equipment</b> — 9 tools</summary>
+<summary><b>Plant loops, air-loop supply branches, setpoint managers & zone equipment</b> — 14 tools</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -463,6 +464,11 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 | `remove_supply_equipment` | Remove supply-side equipment |
 | `add_demand_component` | Add coil/heater to the demand side |
 | `remove_demand_component` | Remove a demand-side component |
+| `add_air_loop_supply_component` | Add a coil or fan to an air loop's supply branch (append or insert before/after) |
+| `remove_air_loop_supply_component` | Remove a coil or fan from an air loop, keeping its setpoint managers |
+| `replace_air_loop_supply_component` | Swap a coil or fan in place (add-first order, avoids the SDK segfault) |
+| `add_setpoint_manager` | Put one of 7 setpoint manager types on a loop node; refuses silent same-control-variable collisions |
+| `remove_setpoint_manager` | Delete a setpoint manager; warns when a loop outlet loses temperature control |
 | `add_zone_equipment` | Add baseboard/unit heater to a zone |
 | `remove_zone_equipment` | Remove zone equipment |
 | `remove_all_zone_equipment` | Batch-remove all equipment from zones |
@@ -640,7 +646,7 @@ Typed wrappers over ~79 bundled [common measures](https://github.com/NREL/openst
 | `get_skill` | Step-by-step instructions for a workflow |
 | `recommend_tools` | Recommend the relevant tool group for a task |
 | `search_api` | Look up OpenStudio SDK classes + methods (verify before calling) |
-| `search_wiring_patterns` | Ruby wiring recipes for HVAC (24 patterns) |
+| `search_wiring_patterns` | Ruby wiring recipes for HVAC, plus SDK crash hazards for remove/addToNode queries |
 | `get_server_status` | Server health check |
 | `get_versions` | OpenStudio, EnergyPlus, Ruby versions |
 
@@ -736,7 +742,7 @@ CI runs the same pre-commit check in `.github/workflows/format_and_lint.yml`.
 
 - **Transport:** stdio (default) or streamable HTTP for [remote/multi-user](#remote--multi-user-http)
 - **Protocol:** MCP (JSON-RPC); in stdio prod mode, stdout is reserved for JSON-RPC and logs go to stderr
-- **Skills:** 27 skill modules under `mcp_server/skills/<name>/`, each with `tools.py` (MCP registration) + `operations.py` (business logic); they auto-register
+- **Skills:** 30+ skill modules under `mcp_server/skills/<name>/`, each with `tools.py` (MCP registration) + `operations.py` (business logic); they auto-register
 - **State:** per-session in-memory model via `model_manager`; runs under `/runs/<run_id>/` (or `/runs/<user>/<run_id>/` in HTTP mode)
 
 Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full system diagram, security analysis, and hardening notes: **[docs/architecture.md](docs/architecture.md)**.
@@ -749,7 +755,7 @@ Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full syste
 2. `operations.py` — pure logic, returns `{"ok": True/False, ...}`
 3. `tools.py` — exports `register(mcp)`, defines tool schemas
 4. Add `tests/test_<name>.py` and a CI step in `.github/workflows/ci.yml`
-5. Auto-registers via `skills/__init__.py`; add names to `EXPECTED_TOOLS` and bump counts in `tests/test_tool_baseline.py`
+5. Auto-registers via `skills/__init__.py`; add each tool name to `EXPECTED_TOOLS` in `tests/test_skill_registration.py` — the roster's single source of truth (never hardcode counts)
 
 **New Claude Code skill (workflow guide)**
 1. Create `.claude/skills/<name>/SKILL.md` with YAML frontmatter (`name`, `description`)

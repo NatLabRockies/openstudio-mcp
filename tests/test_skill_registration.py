@@ -91,6 +91,11 @@ EXPECTED_TOOLS = {
     "remove_zone_equipment",
     "remove_all_zone_equipment",
     "set_zone_equipment_priority",
+    "add_air_loop_supply_component",
+    "remove_air_loop_supply_component",
+    "replace_air_loop_supply_component",
+    "add_setpoint_manager",
+    "remove_setpoint_manager",
     # Phase 6A: Loads
     "get_load_details",
     "create_people_definition",
@@ -210,6 +215,7 @@ EXPECTED_TOOLS = {
     # Skill Discovery
     "list_skills",
     "get_skill",
+    "get_skill_file",
     # API Reference
     "search_api",
     "search_wiring_patterns",
@@ -279,7 +285,7 @@ def test_all_tool_names_registered():
 
 # The exact roster removed by the benchmark ablation arm (reviewer-response
 # plan D3) — keep in lockstep with _KNOWLEDGE_SKILLS in mcp_server/skills.
-KNOWLEDGE_TOOLS = {"list_skills", "get_skill", "recommend_tools"}
+KNOWLEDGE_TOOLS = {"list_skills", "get_skill", "get_skill_file", "recommend_tools"}
 
 
 def test_knowledge_skills_ablation_flag(monkeypatch):
@@ -308,6 +314,17 @@ def test_knowledge_skills_ablation_flag(monkeypatch):
         f"diff: missing={EXPECTED_TOOLS - KNOWLEDGE_TOOLS - registered_names}, "
         f"extra={registered_names - (EXPECTED_TOOLS - KNOWLEDGE_TOOLS)}"
     )
+
+    # Validates: the ToolDescriptor collector sees the same ablated roster —
+    # catalog/router surfaces built from it exclude exactly the knowledge
+    # skills' descriptors, nothing else (plan PR 5)
+    from mcp_server.tool_registry import descriptors
+
+    collected = descriptors()
+    assert set(collected) == EXPECTED_TOOLS - KNOWLEDGE_TOOLS
+    assert not {d.package for d in collected.values()} & {
+        "skill_discovery", "tool_router",
+    }
 
 
 def test_export_tool_table_matches_expected_roster():

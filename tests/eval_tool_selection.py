@@ -24,11 +24,12 @@ def _load_all_tool_docstrings() -> dict[str, str]:
     """Load all tool names and docstrings from skills."""
     tools: dict[str, str] = {}
     skills_dir = Path(__file__).resolve().parent.parent / "mcp_server" / "skills"
-    for tools_py in sorted(skills_dir.rglob("tools.py")):
-        text = tools_py.read_text()
-        # Extract @mcp.tool(name="...") and following docstring
+    # tools*.py: registrations may be split across sibling modules; the decorator's
+    # keyword order varies (tags first is the common form), so match name= anywhere
+    for tools_py in sorted(skills_dir.rglob("tools*.py")):
+        text = tools_py.read_text(encoding="utf-8")
         for m in re.finditer(
-            r'@mcp\.tool\(name="([^"]+)"\)\s*\n\s*def \w+\([^)]*\)(?:\s*->[^:]+)?:\s*\n\s*"""(.*?)"""',
+            r'@mcp\.tool\([^)]*name="([^"]+)"[^)]*\)\s*\n\s*def \w+\([^)]*\)(?:\s*->[^:]+)?:\s*\n\s*"""(.*?)"""',
             text,
             re.DOTALL,
         ):
@@ -138,6 +139,11 @@ EVAL_CASES = [
     ("set economizer properties", "set_economizer_properties"),
     # Loop operations
     ("add supply equipment to plant loop", "add_supply_equipment"),
+    ("add a heating coil to the air loop supply branch", "add_air_loop_supply_component"),
+    ("remove the fan from the air loop", "remove_air_loop_supply_component"),
+    ("replace the cooling coil on the air loop", "replace_air_loop_supply_component"),
+    ("add a setpoint manager to the loop supply outlet", "add_setpoint_manager"),
+    ("remove a setpoint manager", "remove_setpoint_manager"),
     ("remove zone equipment", "remove_zone_equipment"),
     ("remove all zone equipment batch", "remove_all_zone_equipment"),
     # Object management

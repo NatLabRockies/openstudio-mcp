@@ -1,4 +1,4 @@
-# Python EMS skill
+# python_ems — internal dev notes
 
 EnergyPlus Python Plugin authoring + EMS actuator discovery.
 

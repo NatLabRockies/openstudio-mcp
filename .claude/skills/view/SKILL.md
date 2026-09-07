@@ -2,7 +2,7 @@
 name: view
 description: Generate 3D visualization of the current model. Use when user says "show me the model", "visualize", or "view".
 disable-model-invocation: true
-argument-hint: [format]
+argument-hint: [geometry_diagnostics]
 ---
 
 # View Model

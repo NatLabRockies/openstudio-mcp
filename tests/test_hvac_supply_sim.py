@@ -15,6 +15,7 @@ Configurations tested:
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
 import pytest
@@ -290,6 +291,104 @@ def test_doas_radiant_equip_simulates():
                     "DOAS Radiant needs HW loop"
                 assert isinstance(sys["condenser_water_loop"], str) and sys["condenser_water_loop"], \
                     "DOAS Radiant needs condenser loop"
+
+                await _save_run_and_check(s, name)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 6. Air-loop supply branch edited in place (#148) — replaced components still simulate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_replaced_supply_branch_components_simulate():
+    """System 3 with the fan and DX coil swapped in place → EnergyPlus completes cleanly."""
+    # Validates: replace_air_loop_supply_component leaves a branch that forward-translates and
+    # runs (fan CV→VAV, DX single→two-speed on every PSZ loop), no fatal/severe errors
+    name = f"sim_als_{uuid.uuid4().hex[:8]}"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                zone_names = await _setup_baseline(s, name)
+                sys3 = unwrap(await s.call_tool("add_baseline_system", {
+                    "system_type": 3, "thermal_zone_names": zone_names,
+                }))
+                assert sys3["ok"] is True, sys3
+                loops = unwrap(await s.call_tool("list_air_loops", {}))["air_loops"]
+                assert len(loops) == 10, "System 3 = one PSZ loop per zone"
+
+                swapped = 0
+                for loop in loops:
+                    details = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": loop["name"]}))
+                    comps = details["air_loop"]["detailed_components"]
+                    fan = comps["fans"][0]["name"]
+                    coil = comps["cooling_coils"][0]["name"]
+                    r1 = unwrap(await s.call_tool("replace_air_loop_supply_component", {
+                        "air_loop_name": loop["name"], "component_name": fan,
+                        "new_component_type": "FanVariableVolume",
+                    }))
+                    assert r1["ok"] is True, r1
+                    r2 = unwrap(await s.call_tool("replace_air_loop_supply_component", {
+                        "air_loop_name": loop["name"], "component_name": coil,
+                        "new_component_type": "CoilCoolingDXTwoSpeed",
+                    }))
+                    assert r2["ok"] is True, r2
+                    types = [c["type"] for c in r2["supply_order"]]
+                    assert types == ["OS_Coil_Cooling_DX_TwoSpeed", "OS_Coil_Heating_Gas",
+                                     "OS_Fan_VariableVolume", "OS_AirLoopHVAC_OutdoorAirSystem"], types
+                    swapped += 1
+                assert swapped == 10
+
+                await _save_run_and_check(s, name)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 7. Outlet setpoint manager swapped for outdoor-air reset — loop still simulates
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+def test_replaced_outlet_setpoint_manager_simulates():
+    """System 7 with its outlet SPM replaced by OutdoorAirReset + tuned → EnergyPlus completes."""
+    # Validates: add_setpoint_manager(replace_existing=True) + set_setpoint_manager_properties
+    # leave a loop EnergyPlus accepts (one Temperature SPM on the outlet), no fatal/severe
+    name = f"sim_spm_{uuid.uuid4().hex[:8]}"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                zone_names = await _setup_baseline(s, name)
+                sys7 = unwrap(await s.call_tool("add_baseline_system", {
+                    "system_type": 7, "thermal_zone_names": zone_names, "system_name": "VAV7 Sim",
+                }))
+                assert sys7["ok"] is True, sys7
+                before = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "VAV7 Sim"}))
+                old = before["air_loop"]["setpoint_managers"]
+                assert len(old) == 1, old
+
+                added = unwrap(await s.call_tool("add_setpoint_manager", {
+                    "spm_type": "SetpointManagerOutdoorAirReset", "name": "VAV7 SAT Reset",
+                    "air_loop_name": "VAV7 Sim", "replace_existing": True,
+                }))
+                assert added["ok"] is True, added
+                assert added["replaced"] == old[0]["name"]
+                tuned = unwrap(await s.call_tool("set_setpoint_manager_properties", {
+                    "setpoint_name": "VAV7 SAT Reset",
+                    "properties": json.dumps({
+                        "setpoint_at_outdoor_low_temperature": 15.6, "outdoor_low_temperature": 10.0,
+                        "setpoint_at_outdoor_high_temperature": 12.8, "outdoor_high_temperature": 21.0,
+                    }),
+                }))
+                assert tuned["ok"] is True, tuned
+                after = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "VAV7 Sim"}))
+                assert after["air_loop"]["setpoint_managers"] == [
+                    {"type": "OS_SetpointManager_OutdoorAirReset", "name": "VAV7 SAT Reset"},
+                ]
 
                 await _save_run_and_check(s, name)
 

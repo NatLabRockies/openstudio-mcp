@@ -46,12 +46,15 @@ def register(mcp):
             f'weather_file="/inputs/{climate_city}.epw")  # builds typical model\n'
             f'2. create_typical_building(system_type="{system_a}", '
             'hvac_only=True)  # standards-tuned swap, loads untouched\n'
-            '3. save_osm_model() and run_simulation()\n'
-            "4. get_run_status() until complete\n"
+            '3. save_osm_model(save_name="sweep_a") and '
+            "run_simulation(osm_path=<osm_path from save>)\n"
+            "4. get_run_status(run_id=<id from run_simulation>) until complete\n"
             f'5. create_typical_building(system_type="{system_b}", '
             'hvac_only=True)  # swap to candidate B on the SAME model\n'
-            "6. save_osm_model() and run_simulation()\n"
-            "7. compare_runs(run_id_a, run_id_b) — EUI, end uses, unmet hours\n\n"
+            '6. save_osm_model(save_name="sweep_b") and '
+            "run_simulation(osm_path=<osm_path from save>)\n"
+            "7. compare_runs(baseline_run_id=<run A id>, "
+            "retrofit_run_id=<run B id>) — EUI, end uses, unmet hours\n\n"
             "Note: system_type takes openstudio-standards names — call "
             "create_typical_building's docs or list them via the tool schema. "
             "Do NOT use add_baseline_system for comparisons; it is a generic "
@@ -86,9 +89,10 @@ def register(mcp):
             "5. add_layer_to_construction(construction_name=<current "
             'construction>, material_name="New_Insulation") — keeps all '
             "existing layers; verify assembly_r_si_after > before\n"
-            "6. assign_construction_to_surface() with the new construction "
-            "for each target surface\n"
-            "7. save_osm_model()"
+            "6. assign_construction_to_surface(surface_name=<target surface>, "
+            "construction_name=<new construction>) for each target surface\n"
+            '7. save_osm_model(save_name="retrofit") — the server picks a '
+            "new path, never over a read-only input"
         )
 
     @mcp.prompt(
@@ -99,19 +103,25 @@ def register(mcp):
         ),
     )
     def full_building_simulation_prompt(
-        system_type: str = "05",
+        system_type: str = "Inferred",
         climate_city: str = "Chicago",
     ) -> str:
+        # system_type takes openstudio-standards names ("VAV chiller with gas
+        # boiler reheat", ...); "Inferred" auto-selects by building type
         return (
-            f"Create a full building model with ASHRAE System {system_type} "
+            f"Create a full building model with HVAC system '{system_type}' "
             f"in {climate_city}, add loads, and simulate.\n\n"
             "Steps:\n"
             f'1. create_new_building(building_type="SmallOffice", '
-            f'weather_file="/inputs/{climate_city}.epw")\n'
+            f'weather_file="/inputs/{climate_city}.epw", '
+            f'system_type="{system_type}")\n'
             "2. list_spaces() — verify geometry and loads\n"
-            "3. save_osm_model() and run_simulation()\n"
-            "4. Poll get_run_status() until complete\n"
-            "5. extract_summary_metrics() — review EUI and unmet hours"
+            '3. save_osm_model(save_name="full_building") and '
+            "run_simulation(osm_path=<osm_path from save>)\n"
+            "4. Poll get_run_status(run_id=<id from run_simulation>) "
+            "until complete\n"
+            "5. extract_summary_metrics(run_id=<id>) — review EUI and "
+            "unmet hours"
         )
 
     @mcp.prompt(
@@ -162,7 +172,8 @@ def register(mcp):
             "4. get_model_summary() — verify what was added\n"
             "5. list_air_loops() — inspect HVAC\n"
             '6. list_model_objects(object_type="Construction") — inspect envelope\n'
-            "7. save_osm_model()"
+            '7. save_osm_model(save_name="typical") — the server picks a '
+            "path, never over a read-only input"
         )
 
     @mcp.prompt(
@@ -183,7 +194,8 @@ def register(mcp):
             "5. get_weather_info() — verify weather file is set\n"
             "6. get_run_period() — verify simulation period\n"
             "7. get_simulation_control() — check sizing flags\n"
-            "8. run_qaqc_checks() — automated diagnostics\n"
+            "8. validate_model() — automated pre-flight diagnostics "
+            "(run_qaqc_checks needs a completed simulation)\n"
             "9. Report any issues found before proceeding"
         )
 
@@ -283,124 +295,14 @@ def register(mcp):
         mime_type="application/json",
     )
     def tool_catalog_resource() -> str:
-        catalog = {
-            "server_info": ["get_server_status", "get_versions"],
-            "model_management": [
-                "create_example_osm", "create_baseline_osm",
-                "inspect_osm_summary", "load_osm_model",
-                "save_osm_model", "list_files",
-            ],
-            "simulation": [
-                "validate_osw", "run_osw", "run_simulation",
-                "get_run_status", "get_run_logs",
-                "get_run_artifacts", "cancel_run",
-            ],
-            "results": [
-                "extract_summary_metrics", "read_file",
-                "copy_file", "extract_end_use_breakdown",
-                "extract_envelope_summary", "extract_hvac_sizing",
-                "extract_zone_summary", "extract_component_sizing",
-                "query_timeseries",
-            ],
-            "building": [
-                "get_building_info", "get_model_summary",
-            ],
-            "spaces": [
-                "list_spaces", "get_space_details",
-                "list_thermal_zones", "get_thermal_zone_details",
-                "create_space", "create_thermal_zone",
-            ],
-            "geometry": [
-                "list_surfaces", "get_surface_details",
-                "list_subsurfaces", "create_surface",
-                "create_subsurface", "create_space_from_floor_print",
-                "match_surfaces", "set_window_to_wall_ratio",
-                "import_floorspacejs",
-            ],
-            "constructions": [
-                "list_materials", "get_construction_details",
-                "create_standard_opaque_material",
-                "create_construction",
-                "add_layer_to_construction",
-                "assign_construction_to_surface",
-            ],
-            "schedules": [
-                "get_schedule_details",
-                "create_schedule_ruleset",
-            ],
-            "hvac": [
-                "list_air_loops", "get_air_loop_details",
-                "list_plant_loops", "get_plant_loop_details",
-                "list_zone_hvac_equipment", "get_zone_hvac_details",
-                "add_air_loop",
-            ],
-            "loads": [
-                "get_load_details",
-                "create_people_definition",
-                "create_lights_definition",
-                "create_electric_equipment",
-                "create_gas_equipment", "create_infiltration",
-            ],
-            "space_types": [
-                "get_space_type_details",
-            ],
-            "simulation_outputs": [
-                "add_output_variable", "add_output_meter",
-            ],
-            "hvac_systems": [
-                "add_baseline_system", "list_baseline_systems",
-                "get_baseline_system_info", "replace_air_terminals",
-                "replace_zone_terminal", "add_doas_system",
-                "add_vrf_system", "add_radiant_system",
-            ],
-            "component_properties": [
-                "get_component_properties",
-                "set_component_properties",
-                "set_economizer_properties",
-                "set_sizing_properties",
-                "set_sizing_system_properties", "get_sizing_system_properties",
-                "set_sizing_zone_properties", "get_sizing_zone_properties",
-                "get_setpoint_manager_properties", "set_setpoint_manager_properties",
-            ],
-            "loop_operations": [
-                "create_plant_loop",
-                "add_supply_equipment", "remove_supply_equipment",
-                "add_demand_component", "remove_demand_component",
-                "add_zone_equipment", "remove_zone_equipment",
-                "remove_all_zone_equipment",
-            ],
-            "object_management": [
-                "delete_object", "rename_object",
-                "list_model_objects", "get_object_fields",
-                "set_object_property",
-            ],
-            "weather": [
-                "get_weather_info",
-                "add_design_day", "get_simulation_control",
-                "set_simulation_control", "get_run_period",
-                "set_run_period",
-            ],
-            "measures": [
-                "list_measure_arguments", "apply_measure",
-            ],
-            "comstock": [
-                "list_comstock_measures", "create_typical_building",
-                "create_bar_building", "create_new_building",
-            ],
-            "common_measures": [
-                "list_common_measures", "view_model",
-                "view_simulation_data", "generate_results_report",
-                "run_qaqc_checks", "adjust_thermostat_setpoints",
-                "replace_window_constructions",
-                "enable_ideal_air_loads", "clean_unused_objects",
-                "change_building_location",
-                "set_thermostat_schedules",
-                "replace_thermostat_schedules",
-                "shift_schedule_time", "add_rooftop_pv",
-                "add_pv_to_shading", "add_ev_load",
-                "add_zone_ventilation", "set_lifecycle_cost_params",
-                "add_cost_per_floor_area", "set_adiabatic_boundaries",
-            ],
-            "skill_discovery": ["list_skills", "get_skill"],
-        }
+        # Derived from the registration collector — never hand-maintained.
+        # Grouped by owning skill package; value is the tool's first
+        # docstring line.
+        from mcp_server.tool_registry import descriptors, ensure_collected
+
+        ensure_collected()
+        catalog: dict[str, dict[str, str]] = {}
+        for d in sorted(descriptors().values(),
+                        key=lambda d: (d.package, d.name)):
+            catalog.setdefault(d.package, {})[d.name] = d.description
         return json.dumps(catalog, indent=2)

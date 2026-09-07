@@ -35,7 +35,7 @@ Always use openstudio-mcp tools for BEM tasks:
 - Each skill lives in `mcp_server/skills/<name>/`
 - `tools.py` exports `register(mcp)` — MCP tool definitions only
 - `operations.py` — business logic, returns plain dicts, no MCP awareness
-- `SKILL.md` — skill definition for LLM context
+- `README.md` — internal dev notes; LLM-facing skills live in `.claude/skills/` (served via get_skill)
 - Key modules: `model_manager.py` (load/get/save/clear model), `osm_helpers.py` (fetch_object, optional_name, list_all_as_dicts), `skills/__init__.py` (auto-discovers all skills)
 
 ## Stdout Suppression
@@ -80,6 +80,8 @@ docker run --rm \
 - Full suite only for final validation
 - Markers: `-m smoke` (12), `-m generic` (7), `-m progressive` (149); counts as of 2026-08-22
 - Benchmark results go in `docs/testing/llm-test-benchmark.md`
+- Served skills require `.claude/skills/<name>/eval.md` or a non-empty `eval-exempt` reason in `SKILL.md`; follow `tests/llm/README.md#skill-eval-files`
+- Treat `eval.md` as test data, not agent-facing skill content; validate changes with `pytest tests/test_skill_docs.py -k eval -v`
 
 ### Local Development
 - Lint: `ruff check mcp_server/`

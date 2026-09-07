@@ -211,6 +211,148 @@ def test_repair_and_validate_gbxml_geometry_on_real_import():
 
 
 @pytest.mark.integration
+def test_repair_and_validate_gbxml_geometry_checks_gbxml_area_volume_deltas():
+    """Test the gbxml_deltas wiring: import_gbxml stashes the source path, repair reads it back."""
+    # Validates: repair_and_validate_gbxml_geometry, run against a model produced by
+    # import_gbxml in the same session, automatically cross-checks each Space's
+    # floorArea()/volume() against the Area/Volume the gbXML source declared —
+    # gbxml_deltas_checked is True (the session-scoped stash from
+    # gbxml_source_state.set_source() round-tripped correctly), and on this small,
+    # unmutated fixture there is nothing to flag.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH, "epw_path": EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert result["gbxml_deltas_checked"] is True, result
+                assert result["gbxml_spaces_checked_count"] == 25, result
+                assert result["gbxml_area_delta_count"] == 0, result
+                assert result["gbxml_volume_delta_count"] == 0, result
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_repair_and_validate_gbxml_geometry_skips_gbxml_deltas_without_import():
+    """Test that loading an OSM directly (not via import_gbxml) skips the gbXML delta check."""
+    # Validates: gbxml_deltas_checked is False with a reason, not an error or a crash,
+    # when the current session's model has no recorded gbXML source
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": "/repo/tests/assets/SystemD_baseline.osm"},
+                ))
+                assert load_result["ok"] is True, load_result
+
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert result["gbxml_deltas_checked"] is False, result
+                assert "gbxml_deltas_skip_reason" in result, result
+                assert "gbxml_area_deltas" not in result, result
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_gbxml_delta_check_reads_the_staged_copy_not_the_deleted_input():
+    """Test that the delta check survives the caller deleting the gbXML it uploaded."""
+    # Regression: import_gbxml stashed the caller's input path, not the staged copy under
+    # run_dir/gbxmls/ that the translator actually consumed. An uploaded input is free to be
+    # deleted or overwritten after the import returns, which made a later
+    # repair_and_validate_gbxml_geometry silently skip the check (file not found) or compare
+    # against different bytes than the model came from.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+    upload_dir = RUN_ROOT / _unique_name("gbxml_upload")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    uploaded_gbxml = upload_dir / "25_SpacesOneZE.xml"
+    shutil.copy2(GBXML_PATH, uploaded_gbxml)
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": str(uploaded_gbxml), "epw_path": EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+                staged = Path(import_result["run_dir"]) / "gbxmls" / "25_SpacesOneZE.xml"
+                assert staged.is_file(), f"import must stage its input under run_dir/gbxmls, missing {staged}"
+
+                # The caller cleans up its upload before asking for validation.
+                shutil.rmtree(upload_dir)
+                assert not uploaded_gbxml.exists()
+
+                result = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert result["gbxml_deltas_checked"] is True, result
+                assert result["gbxml_spaces_checked_count"] == 25, result
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_gbxml_delta_check_skipped_after_model_reload():
+    """Test that loading a different OSM after import_gbxml turns the delta check off."""
+    # Validates: the gbXML source stash is bound to the model generation import_gbxml
+    # produced. Once the session loads another model, repair_and_validate_gbxml_geometry
+    # must report gbxml_deltas_checked False with the reload reason rather than comparing the
+    # new model against the old model's gbXML. The stash-present-then-invalidated sequence is
+    # what distinguishes this from the never-imported skip test above: removing the
+    # generation comparison would leave that test green and fail this one.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+
+    run_name = _unique_name()
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                import_result = unwrap(await session.call_tool(
+                    "import_gbxml",
+                    {"gbxml_path": GBXML_PATH, "epw_path": EPW_PATH, "run_name": run_name},
+                ))
+                assert import_result["ok"] is True, import_result
+                before = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert before["gbxml_deltas_checked"] is True, before
+
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": "/repo/tests/assets/SystemD_baseline.osm"},
+                ))
+                assert load_result["ok"] is True, load_result
+
+                after = unwrap(await session.call_tool("repair_and_validate_gbxml_geometry", {}))
+                assert after["gbxml_deltas_checked"] is False, after
+                assert "reloaded" in after["gbxml_deltas_skip_reason"], after
+                assert "gbxml_area_deltas" not in after, after
+                assert "gbxml_spaces_checked_count" not in after, after
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_repair_and_validate_gbxml_geometry_detects_same_space_overlap():
     """Test that a deliberately injected duplicate Floor surface is flagged."""
     # Validates: a second Floor surface covering the same footprint in the same

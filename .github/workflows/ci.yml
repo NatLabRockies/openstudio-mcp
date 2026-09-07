@@ -136,7 +136,7 @@ jobs:
           case ${{ matrix.shard }} in
             1)
               # Mirrors amd64 shard 1: SEB4 sim + component/weather + loop ops + skill_retrofit
-              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py"
+              FILES="tests/test_air_loop_supply.py tests/test_air_loop_supply_topology.py tests/test_add_setpoint_manager.py tests/test_add_setpoint_manager_placement.py tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py"
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
             2)
@@ -285,7 +285,7 @@ jobs:
               # sim test + component/weather + loop ops + skill_retrofit
               # + load/save model & file listing tools (moved from shard 4 to balance runtime)
               # + merge_coplanar_sliver_surfaces real-fixture regression (moved from shard 4, see timing note above)
-              FILES="tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py tests/test_load_save_model.py tests/test_gbxml_import.py::test_geometry_repair_pipeline_on_austin_apartment_fixture"
+              FILES="tests/test_air_loop_supply.py tests/test_air_loop_supply_topology.py tests/test_add_setpoint_manager.py tests/test_add_setpoint_manager_placement.py tests/test_example_workflows.py tests/test_component_properties.py tests/test_comstock.py tests/test_weather.py tests/test_weather_files.py tests/test_mcp_seb4.py tests/test_create_constructions.py tests/test_loop_operations.py tests/test_plant_loop_demand.py tests/test_sizing_properties.py tests/test_skill_retrofit.py tests/test_integration.py tests/test_load_save_model.py tests/test_gbxml_import.py::test_geometry_repair_pipeline_on_austin_apartment_fixture"
               EXTRA_ENV="-e MCP_OSW_PATH=tests/assets/SEB_model/SEB4_baseboard/workflow.osw -e EXPECTED_EUI=1.8750760248144998 -e EXPECTED_EUI_RTOL=0.02 -e EXPECTED_EUI_ATOL=0.0"
               ;;
             2)
@@ -295,7 +295,7 @@ jobs:
               # + python_ems (plugin templates, actuator discovery, plugin sims)
               # + outcome grader (LLM benchmark gate-2 ground truth, ~7s)
               # + gbXML .stat-file climate-zone resolution test (moved from shard 4 to balance runtime)
-              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py tests/test_measure_discovery.py tests/test_python_ems.py tests/test_knowledge_ablation.py tests/test_outcome_grader_integration.py tests/test_gbxml_import.py::test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture"
+              FILES="tests/test_common_measures.py tests/test_hvac_systems.py tests/test_replace_zone_terminal.py tests/test_geometry.py tests/test_skill_energy_report.py tests/test_http_transport.py tests/test_session_isolation.py tests/test_auth.py tests/test_session_eviction.py tests/test_file_transfer.py tests/test_measure_discovery.py tests/test_python_ems.py tests/test_knowledge_ablation.py tests/test_outcome_grader_integration.py tests/test_apply_measure_run_id.py tests/test_gbxml_import.py::test_import_gbxml_resolves_climate_zone_from_stat_file_on_austin_fixture"
               EXTRA_ENV=""
               ;;
             3)
@@ -308,7 +308,7 @@ jobs:
               # + geometry repair write guards (in-process setVertices fault injection, ~2s —
               #   must not go to shard 2 with test_geometry.py: that file drives the same three
               #   tools through the stdio server subprocess, which monkeypatch cannot reach)
-              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_generic_access.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_measure_authoring.py tests/test_skill_qaqc.py tests/test_hvac_supply_wiring.py tests/test_validate_model.py tests/test_api_reference.py tests/test_paired_vertex_sync.py tests/test_geometry_write_guards.py tests/test_ground_contact.py tests/test_gbxml_import_timeout.py tests/test_trim_order_invariance.py tests/test_patch_construction_choice.py tests/test_gbxml_import.py::test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable"
+              FILES="tests/test_component_controls.py tests/test_object_management.py tests/test_generic_access.py tests/test_create_loads.py tests/test_building.py tests/test_doas_system.py tests/test_hvac.py tests/test_measures.py tests/test_measure_authoring.py tests/test_skill_qaqc.py tests/test_hvac_supply_wiring.py tests/test_validate_model.py tests/test_api_reference.py tests/test_paired_vertex_sync.py tests/test_geometry_write_guards.py tests/test_ground_contact.py tests/test_gbxml_import_timeout.py tests/test_trim_order_invariance.py tests/test_patch_construction_choice.py tests/test_registry_discovery.py tests/test_gbxml_import.py::test_import_gbxml_falls_back_to_wmo_lookup_when_stat_file_unusable"
               EXTRA_ENV=""
               ;;
             4)
@@ -328,7 +328,8 @@ jobs:
               # + generic HVAC template comfort benchmark (issue #97)
               # + weather fail-fast + failed-run extraction guard
               # + hvac_only standards swap parity benchmark (issue #97, moved from shard 4 to balance runtime)
-              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_sim_queue.py tests/test_per_user_run_dirs.py tests/test_audit_log.py tests/test_retention.py tests/test_python_ems_phase2.py tests/test_generic_hvac_comfort.py tests/test_hvac_only_swap.py tests/test_run_simulation_weather_guard.py"
+              # + gbxml_deltas (pure-Python unit-style, no MCP round trip — cheap)
+              FILES="tests/test_hvac_supply_sim.py tests/test_hvac_validation.py tests/test_bar_building.py tests/test_concurrent_tools.py tests/test_stdout_logger_silence.py tests/test_sim_queue.py tests/test_per_user_run_dirs.py tests/test_audit_log.py tests/test_retention.py tests/test_python_ems_phase2.py tests/test_generic_hvac_comfort.py tests/test_hvac_only_swap.py tests/test_run_simulation_weather_guard.py tests/test_save_name_delivery.py tests/test_gbxml_deltas.py"
               EXTRA_ENV=""
               ;;
           esac

@@ -1,6 +1,7 @@
 ---
 name: ashrae-baseline-guide
 description: ASHRAE 90.1 Appendix G baseline system selection criteria. Use when recommending HVAC system types, creating baseline models, or answering questions about ASHRAE 90.1 compliance.
+eval-exempt: "reference knowledge; no discrete action-tool selection to assert"
 user-invocable: false
 ---
 

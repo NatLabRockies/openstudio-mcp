@@ -51,6 +51,35 @@ Guide the user through selecting and applying an HVAC system to their model.
 
 6. Report what was created: system name, zones served, equipment types, plant loops.
 
+## Edit an Existing Air Loop's Supply Branch
+
+Swap, add, or drop a coil or fan on a loop that already exists. No measure needed:
+```
+get_air_loop_details(air_loop_name="PSZ-AC 1")            # exact component names + order
+replace_air_loop_supply_component(air_loop_name="PSZ-AC 1",
+    component_name="PSZ-AC 1 DX Cooling Coil", new_component_type="CoilCoolingDXTwoSpeed")
+add_air_loop_supply_component(air_loop_name="PSZ-AC 1", component_type="CoilHeatingWater",
+    component_name="Preheat Coil", insert_before="PSZ-AC 1 DX Cooling Coil", plant_loop_name="HW Loop")
+remove_air_loop_supply_component(air_loop_name="PSZ-AC 1", component_name="Preheat Coil")
+set_component_properties(component_name="PSZ-AC 1 DX Cooling Coil", properties={"rated_high_speed_cop": 4.0})
+```
+Water coils need `plant_loop_name` (a water-for-water swap inherits the old coil's loop).
+Setpoint managers on a deleted node are moved to the surviving node and listed in the response.
+These are for coils and fans; plant equipment uses `add_supply_equipment`, terminals use
+`replace_zone_terminal`.
+
+Setpoint managers (supply air temperature control) get their own pair:
+```
+add_setpoint_manager(spm_type="SetpointManagerOutdoorAirReset", name="SAT Reset",
+    air_loop_name="PSZ-AC 1", replace_existing=True)      # swaps the builder's outlet SPM
+set_setpoint_manager_properties(setpoint_name="SAT Reset",
+    properties={"setpoint_at_outdoor_low_temperature": 15.6, "setpoint_at_outdoor_high_temperature": 12.8})
+remove_setpoint_manager(name="SAT Reset")
+```
+A node that already has a same-control-variable setpoint manager is refused unless
+`replace_existing=True`; the SDK would otherwise delete the old one silently. Placement:
+`node="supply_outlet"` (default) / `"supply_inlet"` / `"mixed_air"`, or `after_component=<coil>`.
+
 ## Custom HVAC Wiring
 
 For custom HVAC configurations beyond the baseline templates:
@@ -73,7 +102,7 @@ create_typical_building(system_type="PVAV with gas boiler reheat",
     template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
 save_osm_model(...); run_simulation(...)   # then next candidate
 
-compare_runs(run_id_a, run_id_b)           # EUI + unmet-hours deltas
+compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-hours deltas
 ```
 
 ## Notes
@@ -83,3 +112,23 @@ compare_runs(run_id_a, run_id_b)           # EUI + unmet-hours deltas
   call, the tool fans out automatically
 - Systems 5-8 create one shared air loop for all zones (multi-zone VAV)
 - Systems 1-2, 9-10 create zone equipment only (no air loops)
+- Plant loops: System 5 creates a HW loop; 7 creates CHW + HW + condenser;
+  8 creates CHW + condenser; 6 creates none (electric PFP reheat)
+- DOAS zone equipment types: FanCoil (CHW+HW), Radiant (CHW+HW),
+  ChilledBeams (CHW only), FourPipeBeam (CHW+HW)
+
+## Why These Defaults (comfort tuning, issue #97)
+
+The generic templates apply these automatically so systems are viable out of
+the box — don't undo them without a reason:
+
+- App G sizing factors (1.25 heating / 1.15 cooling) + night-cycle
+  availability managers on air-loop systems
+- VAV reheat terminals use DamperHeatingAction=Reverse (Normal caps heating
+  at minimum airflow — 1807 unmet heating hours on the benchmark)
+- System 4 heat pump: -12.2 C compressor lockout, cycling Fan:OnOff, 40 C max
+  supplemental supply temperature (autosized 16.7 C could not heat a 21 C zone)
+- DOAS loop availability defaults to the served zones' People schedule
+  (24/7 buildings stay always-on); override via availability_schedule_name
+- VRF uses the standard outdoor-unit family with waste-heat recovery
+  (the FluidTemperatureControl family needs different terminal coils)

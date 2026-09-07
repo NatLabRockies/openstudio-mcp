@@ -26,15 +26,26 @@ def register(mcp):
         return load_osm_model(osm_path=osm_path, version_translate=version_translate)
 
     @mcp.tool(name="save_osm_model", tags={"core"})
-    def save_osm_model_tool(osm_path: str | None = None):
+    def save_osm_model_tool(
+        osm_path: str | None = None,
+        save_name: str | None = None,
+    ):
         """Save the currently loaded model to disk as an OSM file.
         IMPORTANT: call after making changes to persist the model. Changes
         are lost if you don't save before loading a different model.
 
+        Prefer save_name — the server picks a private writable path and the
+        response returns the actual osm_path to pass to run_simulation.
+        A model loaded from a read-only area (staged inputs, repo assets)
+        cannot be saved back in place; save_name always works.
+
         Args:
-            osm_path: Optional path to save to. If not provided, saves to original load path.
+            osm_path: Optional explicit server-side path. If neither arg is
+                given, saves to the original load path.
+            save_name: Bare file name, e.g. "baseline" (".osm" appended;
+                no directories). Mutually exclusive with osm_path.
         """
-        return save_osm_model(osm_path=osm_path)
+        return save_osm_model(osm_path=osm_path, save_name=save_name)
 
     @mcp.tool(name="create_example_osm", tags={"geometry"})
     def create_example_osm_tool(name: str | None = None, out_dir: str | None = None):

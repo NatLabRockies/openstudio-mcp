@@ -358,8 +358,128 @@ def test_test_measure_reports_errors():
                 res = unwrap(await s.call_tool("test_measure", {
                     "measure_dir": create["measure_dir"],
                 }))
-                # Should report failures or errors
-                assert res["ok"] is False or res.get("failed", 0) > 0 or res.get("errors", 0) > 0
+                assert res["ok"] is False, res
+                assert res["failed"] + res["errors"] >= 1, res
+                # #150: the full test log must be on disk and readable through read_file
+                assert res["log_path"].endswith("test.log"), res["log_path"]
+                assert res["log_path"].startswith(res["run_dir"]), res
+                assert res["crash_marker"] is None, "a Ruby exception is not a native crash"
+                full = unwrap(await s.call_tool("read_file", {"file_path": res["log_path"]}))
+                assert full["ok"] is True, full
+                assert "intentional failure" in full["text"]
+                assert "intentional failure" in res["test_output"]
+    asyncio.run(_run())
+
+
+# Ruby body that kills the interpreter the way an SDK segfault does (issue #149
+# remove-then-addToNode): Ruby's crash handler prints a `[BUG]` report whose tail
+# is a memory map, then aborts (SIGABRT). Deterministic, no UB dependence.
+SEGV_BODY = '    Process.kill("SEGV", Process.pid)'
+
+
+@pytest.mark.integration
+def test_apply_measure_failure_exposes_log_path():
+    # Regression: #150 — apply_measure failures returned only a 50-line log_tail with no
+    # path, so the agent could not read the full openstudio.log via read_file
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("apply_fail"))
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("apply_fail"),
+                    "description": "Failing measure",
+                    "run_body": '    raise "intentional failure"',
+                    "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res["ok"] is False, res
+                assert res["exit_code"] == 1, res
+                assert res["error"] == "Measure run failed (exit code 1)"
+                assert res["crash_marker"] is None
+                assert res["log_path"].endswith("openstudio.log"), res["log_path"]
+                assert res["log_path"].startswith(res["run_dir"]), res
+                assert "intentional failure" in res["log_tail"]
+                assert res["log_hint"] == "Full log: read_file(file_path=log_path)"
+                full = unwrap(await s.call_tool("read_file", {"file_path": res["log_path"]}))
+                assert full["ok"] is True, full
+                assert "intentional failure" in full["text"]
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_apply_measure_native_crash_tail_shows_bug_marker():
+    # Regression: #150 — on a Ruby segfault the last 50 log lines are the process memory
+    # map, hiding the [BUG] line and the measure.rb backtrace
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("apply_segv"))
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("apply_segv"),
+                    "description": "Crashing measure",
+                    "run_body": SEGV_BODY,
+                    "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res["ok"] is False, res
+                assert res["exit_code"] == -6, "SIGABRT reaches the server directly under sandbox.wrap_cmd"
+                assert res["error"] == "Measure run failed (SIGABRT (native crash, see crash_marker))"
+                assert "[BUG] Segmentation fault" in res["crash_marker"], res["crash_marker"]
+                assert "measure.rb:" in res["crash_marker"], "Ruby prefixes the marker with file:line"
+                assert "[BUG] Segmentation fault" in res["log_tail"]
+                assert "-- Ruby level backtrace information" in res["log_tail"]
+                assert "measure.rb" in res["log_tail"], "backtrace must point at the measure line"
+                assert "Process memory map" not in res["log_tail"]
+                assert res["log_path"].endswith("openstudio.log")
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_test_measure_native_crash_tail_shows_bug_marker():
+    # Regression: #150 — test_measure kept only the last 1500 chars of output, which on a
+    # segfault is the memory map; the [BUG] line and backtrace were lost and no log existed
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("test_segv"),
+                    "description": "Crashing measure",
+                    "run_body": SEGV_BODY,
+                    "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                res = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"],
+                }))
+                assert res["ok"] is False, res
+                assert res["exit_code"] == -6, "SIGABRT reaches the server directly under sandbox.wrap_cmd"
+                assert "[BUG] Segmentation fault" in res["crash_marker"], res["crash_marker"]
+                assert "measure.rb:" in res["crash_marker"], "Ruby prefixes the marker with file:line"
+                assert "[BUG] Segmentation fault" in res["test_output"]
+                assert "measure.rb" in res["test_output"]
+                assert "Process memory map" not in res["test_output"]
+                assert res["log_path"].endswith("test.log")
+                full = unwrap(await s.call_tool("read_file", {"file_path": res["log_path"]}))
+                assert full["ok"] is True, full
+                assert "[BUG] Segmentation fault" in full["text"]
     asyncio.run(_run())
 
 
@@ -799,7 +919,8 @@ def test_create_reporting_measure_ruby():
                 assert "def run(runner, user_arguments)" in text
                 assert "super(runner, user_arguments)" in text
                 assert "lastOpenStudioModel" in text
-                assert "lastEnergyPlusSqlFilePath" in text
+                assert "lastEnergyPlusSqlFile" in text
+                assert "lastEnergyPlusSqlFilePath" not in text  # nonexistent in 3.11.0 (B1)
                 assert "energyPlusOutputRequests" in text
     asyncio.run(_run())
 
@@ -834,7 +955,8 @@ def test_create_reporting_measure_python():
                 assert "ReportingMeasure" in text
                 assert "def run(self, runner, user_arguments)" in text
                 assert "lastOpenStudioModel" in text
-                assert "lastEnergyPlusSqlFilePath" in text
+                assert "lastEnergyPlusSqlFile" in text
+                assert "lastEnergyPlusSqlFilePath" not in text  # nonexistent in 3.11.0 (B1)
                 assert "energyPlusOutputRequests" in text
     asyncio.run(_run())
 
@@ -1256,4 +1378,103 @@ def test_uppercase_arg_name_rejected():
                 }))
                 assert res["ok"] is False, f"uppercase arg name must be rejected: {res}"
                 assert "argument name" in res.get("error", "").lower(), res
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_replace_recipe_ruby_runs_via_apply_measure():
+    # Validates: #149 — the replace_supply_branch_component recipe is executable Ruby, not
+    # prose: it swaps a baseline DX single-speed coil for a two-speed one in place, keeps the
+    # supply-branch length, reuses the old name, and does not crash the measure process
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from mcp_server.skills.api_reference.wiring_recipes import RECIPES
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("recipe149"))
+                zones = unwrap(await s.call_tool("list_thermal_zones", {"max_results": 1}))
+                zone = zones["thermal_zones"][0]["name"]
+                sys3 = unwrap(await s.call_tool("add_baseline_system", {
+                    "system_type": 3, "thermal_zone_names": [zone], "system_name": "PSZ Test",
+                }))
+                assert sys3["ok"] is True, sys3
+                before = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "PSZ Test"}))
+                assert before["ok"] is True, before
+                clg_before = before["air_loop"]["detailed_components"]["cooling_coils"]
+                assert [c["type"] for c in clg_before] == ["OS_Coil_Cooling_DX_SingleSpeed"], clg_before
+                n_supply_before = before["air_loop"]["num_supply_components"]
+
+                # Recipe verbatim; only the coil-name placeholder substituted
+                body = RECIPES["replace_supply_branch_component"]["ruby"]
+                body = body.replace("'Main Cooling Coil'", "'PSZ Test DX Cooling Coil'")
+                run_body = "\n".join("    " + line for line in body.splitlines())
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("swap_coil"),
+                    "description": "Swap DX coil in place (recipe #149)",
+                    "run_body": run_body, "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                applied = unwrap(await s.call_tool("apply_measure", {"measure_dir": create["measure_dir"]}))
+                assert applied["ok"] is True, applied.get("log_tail") or applied
+
+                after = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "PSZ Test"}))
+                clg_after = after["air_loop"]["detailed_components"]["cooling_coils"]
+                assert [c["type"] for c in clg_after] == ["OS_Coil_Cooling_DX_TwoSpeed"], clg_after
+                assert clg_after[0]["name"] == "PSZ Test DX Cooling Coil", "old name must be reused"
+                assert after["air_loop"]["num_supply_components"] == n_supply_before, \
+                    "in-place swap must not add or drop nodes on the supply branch"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_replace_recipe_handles_last_component_via_apply_measure():
+    # Validates: #149 review edge case — when the old component is LAST before
+    # supplyOutletNode, remove() deletes its INLET node (the new component's outlet). The
+    # recipe's add-first order must still splice the new coil to the loop outlet, keep the
+    # outlet-node setpoint manager and the branch's node count, and not crash the process
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from mcp_server.skills.api_reference.wiring_recipes import RECIPES
+
+    build = "\n".join([
+        "    loop = OpenStudio::Model::AirLoopHVAC.new(model); loop.setName('Edge Loop')",
+        "    s = model.alwaysOnDiscreteSchedule",
+        "    fan = OpenStudio::Model::FanConstantVolume.new(model, s); fan.setName('Edge Fan')",
+        "    htg = OpenStudio::Model::CoilHeatingElectric.new(model, s); htg.setName('Edge Htg')",
+        "    clg = OpenStudio::Model::CoilCoolingDXSingleSpeed.new(model); clg.setName('Main Cooling Coil')",
+        "    [fan, htg, clg].each { |c| c.addToNode(loop.supplyOutletNode) }  # coil ends up LAST",
+        "    sch = OpenStudio::Model::ScheduleConstant.new(model); sch.setValue(12.8)",
+        "    OpenStudio::Model::SetpointManagerScheduled.new(model, sch).addToNode(loop.supplyOutletNode)",
+    ])
+    recipe = RECIPES["replace_supply_branch_component"]["ruby"]
+    run_body = build + "\n" + "\n".join("    " + line for line in recipe.splitlines())
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique("recipe149last"))
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": _unique("swap_last"),
+                    "description": "Swap the last supply component in place (recipe #149)",
+                    "run_body": run_body, "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                applied = unwrap(await s.call_tool("apply_measure", {"measure_dir": create["measure_dir"]}))
+                assert applied["ok"] is True, applied.get("log_tail") or applied
+
+                after = unwrap(await s.call_tool("get_air_loop_details", {"air_loop_name": "Edge Loop"}))
+                assert after["ok"] is True, after
+                supply = [c["type"] for c in after["air_loop"]["supply_components"]]
+                assert supply == [
+                    "OS_Node", "OS_Fan_ConstantVolume", "OS_Node", "OS_Coil_Heating_Electric",
+                    "OS_Node", "OS_Coil_Cooling_DX_TwoSpeed", "OS_Node",
+                ], supply
+                clg = after["air_loop"]["detailed_components"]["cooling_coils"]
+                assert [c["name"] for c in clg] == ["Main Cooling Coil"], "old name must be reused"
+                assert len(after["air_loop"]["setpoint_managers"]) == 1, \
+                    "SPM on the supply outlet node must survive the swap"
     asyncio.run(_run())

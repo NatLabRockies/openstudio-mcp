@@ -73,7 +73,7 @@ pytest (tests/llm/conftest.py)
 | Benchmark collection | `conftest.py` `pytest_runtest_logreport` / `pytest_sessionfinish` | Stores per-test metrics; session end writes `benchmark.json` / `benchmark.md` / `benchmark_history.json`. |
 | Failure classification | conftest (`fail_with_mode`) | `timeout` · `no_mcp_tool` · `wrong_tool` · `wrong_args` · `tool_error` · `outcome_mismatch` (+ `recovered` tag). |
 | Prompt budget | `conftest.py` `LLM_TESTS_MAX_PROMPTS` (default 300) | Hard cap prevents runaway cost during iteration. |
-| Skill eval auto-discovery | `eval_parser.py` `load_should_trigger()` / `load_should_not_trigger()` | Scrapes "Should trigger" / "Should NOT trigger" tables from `.claude/skills/*/eval.md`. |
+| Skill eval auto-discovery | `eval_parser.py` `load_should_trigger()` / `load_should_not_trigger()` | Parses machine-checkable positive and negative routing tables from `.claude/skills/*/eval.md`; see the [authoring contract](../../tests/llm/README.md#skill-eval-files). |
 
 ### Environment knobs
 
@@ -96,13 +96,15 @@ pytest (tests/llm/conftest.py)
 
 ## 3. Test taxonomy
 
-Eleven test files (259 tests collected on 2026-08-22), organized by what the agent is asked to do.
+Eleven test files, organized by what the agent is asked to do. Counts are snapshots
+except for auto-discovered cases; use `pytest tests/llm --collect-only -q` for the
+current collection.
 
 | File | Tier | Count | Purpose | Pass‑rate signal |
 |---|---|---|---|---|
 | `test_01_setup.py` | setup | 8 | Creates baseline/HVAC/example models and seed fixtures in `/runs`. All other tests depend on these. Prompts use explicit tool names to minimize non-determinism. | Dependency gate |
 | `test_02_tool_selection.py` | tier1 | 4 | Single-tool discovery, **no model state** (e.g., "What is the server status?"). Fastest tests. | Baseline discovery |
-| `test_03_eval_cases.py` | tier3 | 26 | Auto-parsed from `.claude/skills/*/eval.md` "Should trigger" tables. Keeps tests DRY and co-located with skill definitions. | Skill discovery |
+| `test_03_eval_cases.py` | tier1 | auto | Positive and negative action-routing cases parsed from `.claude/skills/*/eval.md`, plus explicit `get_skill` guide-routing cases. Keeps tests DRY and co-located with skill definitions. | Skill and tool routing |
 | `test_04_workflows.py` | tier2 | 37 | Multi-step chains (3-5 MCP calls): load → weather → HVAC → simulate → extract. | Multi-step composition |
 | `test_05_guardrails.py` | tier4 | 3 | **Regression gate**: agent must **NOT** use `Bash`/`Edit`/`Write` to bypass MCP tools. | Safety/bypass |
 | `test_06_progressive.py` | progressive | 149 | **The core diagnostic.** Operations posed at L1 and L2, plus L3 for the `L3_KEEP` subset; the benchmark's 16-task hard set is a `-k` selection from this file. | Tool description quality |

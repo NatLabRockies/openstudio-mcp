@@ -9,6 +9,17 @@ disable-model-invocation: true
 Use this skill when working with OpenStudio Server / OSAF analysis JSON,
 support ZIPs, sampling sweeps, optimization, calibration, or server smoke tests.
 
+## Defaults That Matter
+
+- Omit `output_variables` when creating OSA JSON unless the user explicitly
+  asks for a custom set — the tools then include the foundational OpenStudio
+  Results outputs (EUI, site energy, peak demand, unmet hours, per-fuel end
+  uses) with export+visualize enabled so OSAF plots work. Use
+  `openstudio_analysis_default_output_variables` to inspect or extend the
+  default payload.
+- The OSA seed weather file is an **EPW**. DDY/STAT files are support files —
+  never set one as the analysis weather file.
+
 ## Discover Algorithms
 
 For “list OSAF algorithms” or “what is this algorithm best for”, call:

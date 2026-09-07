@@ -22,6 +22,7 @@ from mcp_server.config import (
     user_custom_measures_dir,
     user_run_root,
 )
+from mcp_server.log_excerpt import describe_exit, excerpt_log_file
 from mcp_server.util import (
     create_run_dir,
     read_file_bounded,
@@ -274,13 +275,14 @@ def _build_ruby_reporting_run(args: list[dict], run_body: str) -> str:
     if extraction:
         lines.append(extraction)
     lines += [
-        "    model = runner.lastOpenStudioModel",
-        "    if model.is_initialized",
-        "      model = model.get",
-        "    end",
-        "    sql_path = runner.lastEnergyPlusSqlFilePath",
-        "    if sql_path.is_initialized",
-        "      sql = OpenStudio::SqlFile.new(sql_path.get)",
+        # OSRunner 3.11.0 has lastEnergyPlusSqlFile (Optional<SqlFile>) but no
+        # lastEnergyPlusSqlFilePath getter — the OSW runner sets the path via
+        # setLastEnergyPlusSqlFilePath and measures read the SqlFile optional
+        "    model_opt = runner.lastOpenStudioModel",
+        "    model = model_opt.is_initialized ? model_opt.get : nil",
+        "    sql_opt = runner.lastEnergyPlusSqlFile",
+        "    if sql_opt.is_initialized",
+        "      sql = sql_opt.get",
         "      model.setSqlFile(sql) if model",
         "    end",
         f"    {_BEGIN_MARKER}",
@@ -324,11 +326,13 @@ def _build_python_reporting_run(args: list[dict], run_body: str) -> str:
     if extraction:
         lines.append(extraction)
     lines += [
+        # Same 3.11.0 API note as the Ruby template: read the SqlFile
+        # optional, not the nonexistent lastEnergyPlusSqlFilePath getter
         "        model_opt = runner.lastOpenStudioModel()",
         "        model = model_opt.get() if model_opt.is_initialized() else None",
-        "        sql_path = runner.lastEnergyPlusSqlFilePath()",
-        "        if sql_path.is_initialized():",
-        "            sql = openstudio.SqlFile(sql_path.get())",
+        "        sql_opt = runner.lastEnergyPlusSqlFile()",
+        "        if sql_opt.is_initialized():",
+        "            sql = sql_opt.get()",
         "            if model:",
         "                model.setSqlFile(sql)",
         f"        {_BEGIN_MARKER}",
@@ -1021,28 +1025,61 @@ def _test_reporting_measure_with_run(
     log_path = run_dir / "openstudio.log"
     run_env = sandbox.build_env(run_dir)
     sandbox.prepare_workdir(run_dir)
-    with log_path.open("w", encoding="utf-8") as log_f:
-        proc = subprocess.run(
-            sandbox.wrap_cmd(cmd, run_dir), cwd=str(run_dir),
-            stdout=log_f, stderr=subprocess.STDOUT,
-            env=run_env, timeout=120, check=False,
-        )
+    try:
+        with log_path.open("w", encoding="utf-8") as log_f:
+            proc = subprocess.run(
+                sandbox.wrap_cmd(cmd, run_dir), cwd=str(run_dir),
+                stdout=log_f, stderr=subprocess.STDOUT,
+                env=run_env, timeout=120, check=False,
+            )
+    except subprocess.TimeoutExpired:
+        # Caught here, not in test_measure_op: its run_dir/log_path are still
+        # None for this path, so the partial log would be lost (#150).
+        return {
+            "ok": False,
+            "error": "ReportingMeasure test timed out (120s)",
+            "run_dir": str(run_dir),
+            "log_path": str(log_path),
+            "log_hint": "Partial log: read_file(file_path=log_path)",
+        }
 
-    log_text = log_path.read_text(encoding="utf-8", errors="replace")
-    display = log_text[-2000:] if len(log_text) > 2000 else log_text
+    # Symlink-refusing read (PR #105): the log was written by the confined subprocess.
+    # #150: crash → window around the [BUG] line; otherwise the last 2000 chars.
+    try:
+        excerpt, crash_marker, log_text = excerpt_log_file(log_path)
+    except ValueError as e:
+        excerpt, crash_marker, log_text = "", None, f"(log unreadable: {e})"
+    display = excerpt if crash_marker is not None else log_text[-2000:]
 
     if proc.returncode != 0:
         return {
             "ok": False,
             "passed": 0, "failed": 1, "errors": 0,
-            "test_output": f"ReportingMeasure test failed (exit {proc.returncode}):\n{display}",
+            "test_output": f"ReportingMeasure test failed ({describe_exit(proc.returncode)}):\n{display}",
+            "exit_code": proc.returncode,
+            "crash_marker": crash_marker,
+            "log_path": str(log_path),
+            "run_dir": str(run_dir),
+            "log_hint": "Full log: read_file(file_path=log_path)",
         }
 
-    return {
+    from mcp_server.skills.measures.runner_messages import parse_runner_messages
+
+    result = {
         "ok": True,
         "passed": 1, "failed": 0, "errors": 0,
         "test_output": f"ReportingMeasure ran successfully via --postprocess_only:\n{display}",
+        "exit_code": 0,
+        "crash_marker": None,
+        "log_path": str(log_path),
+        "run_dir": str(run_dir),
     }
+    # Surface the measure's registered messages (registerValue/Info/Final) —
+    # the CLI log is often empty on success, which told the caller nothing
+    runner_messages = parse_runner_messages(run_dir / "out.osw")
+    if runner_messages:
+        result["runner_messages"] = runner_messages
+    return result
 
 
 def _detect_measure_type(mdir: Path) -> str:
@@ -1074,6 +1111,8 @@ def test_measure_op(
     4. No test_model.osm → test template falls back to empty Model.new()
     """
     _private_copy: Path | None = None
+    run_dir: Path | None = None
+    log_path: Path | None = None
     try:
         mdir = Path(measure_dir)
         if not mdir.is_dir():
@@ -1144,21 +1183,34 @@ def test_measure_op(
         # pytest's capture uses an unlinked tempfile the bind mount can't keep open.
         # It's granted to Landlock as an extra writable root and HOME stays in mdir.
         tmp_dir = Path(tempfile.mkdtemp(prefix="osmcp_mtest_"))
+        # #150: the full test output goes to a retained log under the caller's run
+        # root (not the private copy, which is rmtree'd below) so read_file can
+        # fetch it after a failure. The parent owns the fd — no sandbox grant needed.
+        _test_run_id, run_dir = create_run_dir(user_run_root(), "measure_test", mdir.name)
+        log_path = run_dir / "test.log"
         try:
             env = sandbox.build_env(mdir)          # HOME=mdir (granted rw)
             env["TMPDIR"] = str(tmp_dir)           # off the bind mount, Landlock-granted below
             sandbox.prepare_workdir(mdir)
             sandbox.prepare_workdir(tmp_dir)
-            proc = subprocess.run(
-                sandbox.wrap_cmd(test_cmd, mdir, extra_rw=(str(tmp_dir),)),
-                cwd=str(mdir),
-                env=env,
-                capture_output=True, text=True, timeout=60, check=False,
-            )
+            with log_path.open("w", encoding="utf-8") as log_f:
+                proc = subprocess.run(
+                    sandbox.wrap_cmd(test_cmd, mdir, extra_rw=(str(tmp_dir),)),
+                    cwd=str(mdir),
+                    env=env,
+                    stdout=log_f, stderr=subprocess.STDOUT,
+                    timeout=60, check=False,
+                )
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        output = proc.stdout + proc.stderr
+        # Symlink-refusing, bounded read (PR #105). `output` is the tail (holds the
+        # minitest/pytest summary); `excerpt`/`crash_marker` come from a crash
+        # scan that also checks the head of an oversize log (#150).
+        try:
+            excerpt, crash_marker, output = excerpt_log_file(log_path)
+        except ValueError as e:
+            excerpt, crash_marker, output = "", None, f"(log unreadable: {e})"
         passed = failed = errors = 0
 
         if language == "Python":
@@ -1181,9 +1233,13 @@ def test_measure_op(
                 failed = int(m.group(2))
                 errors = int(m.group(3))
 
-        # Truncate for display but keep minitest summary if found
+        # Truncate for display but keep minitest summary if found. On a native
+        # crash (#150) the tail is Ruby's memory-map dump, so show the window
+        # around the [BUG] line (measure.rb backtrace) instead.
         display = output
-        if len(display) > 2000:
+        if crash_marker is not None:
+            display = excerpt
+        elif len(display) > 2000:
             # For Ruby, try to include the minitest summary line
             minitest_line = ""
             ml = re.search(r"^\d+ runs,.*$", output, re.MULTILINE)
@@ -1205,7 +1261,14 @@ def test_measure_op(
             "failed": failed,
             "errors": errors,
             "test_output": display,
+            "exit_code": proc.returncode,
+            "crash_marker": crash_marker,
+            "log_path": str(log_path),
+            "run_dir": str(run_dir),
         }
+        if proc.returncode != 0:
+            result["error"] = f"Measure test failed ({describe_exit(proc.returncode)})"
+            result["log_hint"] = "Full log: read_file(file_path=log_path)"
         try:
             _update_measure_xml(mdir, language)
         except RuntimeError as e:
@@ -1213,7 +1276,13 @@ def test_measure_op(
         return result
 
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "Test run timed out (60s)"}
+        result = {"ok": False, "error": "Test run timed out (60s)"}
+        if run_dir is not None:
+            result["run_dir"] = str(run_dir)
+        if log_path is not None:
+            result["log_path"] = str(log_path)
+            result["log_hint"] = "Partial log: read_file(file_path=log_path)"
+        return result
     except Exception as e:
         return {"ok": False, "error": f"Failed to test measure: {e}"}
     finally:

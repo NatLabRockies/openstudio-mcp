@@ -25,11 +25,15 @@ def register_all_skills(mcp) -> list[str]:
 
     Returns list of registered skill names.
     """
+    from mcp_server.tool_registry import CollectingMCP, reset_descriptors
+
     registered = []
     package = importlib.import_module(__name__)
     ablate = os.environ.get("OSMCP_DISABLE_KNOWLEDGE_SKILLS") == "1"
+    # Fresh descriptor collection per full registration (tests re-register)
+    reset_descriptors()
 
-    for importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
+    for _importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
         if not ispkg:
             continue
         if ablate and modname in _KNOWLEDGE_SKILLS:
@@ -38,7 +42,9 @@ def register_all_skills(mcp) -> list[str]:
         try:
             tools_mod = importlib.import_module(f"{__name__}.{modname}.tools")
             if hasattr(tools_mod, "register"):
-                tools_mod.register(mcp)
+                # Collecting facade: delegates to the real MCP while recording
+                # ToolDescriptors — catalog/router derive from that registry
+                tools_mod.register(CollectingMCP(mcp, modname))
                 registered.append(modname)
                 logger.info("Registered skill: %s", modname)
             else:

@@ -31,11 +31,11 @@ template fits.
                         rules=[{"days": "weekdays", "start_hour": 5, "end_hour": 19, "value": 21.0}])
    ```
 4. `save_osm_model()` — the script lives in the model's companion `files/` dir and travels with it.
-5. `run_simulation(...)`, then verify the plugin loaded: `extract_simulation_errors(run_id)`
+5. `run_simulation(...)`, then verify the plugin loaded: `extract_simulation_errors(run_id=<run_id>)`
    should show no severe messages; the .err file logs `PythonPlugin: Class X imported`.
 6. Read the plugin's outputs:
    ```
-   query_timeseries(run_id, variable_name="PythonPlugin:OutputVariable",
+   query_timeseries(run_id=<run_id>, variable_name="PythonPlugin:OutputVariable",
                     key_value="Night Setback Applied Value")
    ```
 
@@ -97,7 +97,7 @@ first for valid actuator triples.
   For third-party packages (numpy etc.): `install_plugin_packages(["numpy"])`
   first — wheels-only, quota-capped, wired in automatically. `pkg==version`
   pins allowed; URLs/paths are not.
-- To revise a plugin: `edit_python_plugin(name, code)` (validated; the class
+- To revise a plugin: `edit_python_plugin(name=..., code=...)` (validated; the class
   name must stay unchanged). `delete_object` on the instance removes it.
 - `trend_timesteps=N` on create logs the plugin global as a
   PythonPlugin:TrendVariable for `get_trend_average/min/max` history access.

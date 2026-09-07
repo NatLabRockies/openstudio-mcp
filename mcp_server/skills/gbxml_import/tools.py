@@ -91,5 +91,16 @@ def register(mcp):
         Review before applying — a slab over a crawlspace is not ground
         contact. See also ground_surfaces_existing_count,
         partially_below_grade_count, and adiabatic_below_grade_count.
+
+        If the current model was produced by import_gbxml in this session (and
+        hasn't been reloaded/replaced since), also cross-checks each Space's
+        floorArea()/volume() against the Area/Volume Revit declared in the
+        source gbXML file — catches a room silently shrinking or ballooning
+        during weld_coincident_vertices/merge_coplanar_sliver_surfaces while it
+        still closes cleanly. gbxml_deltas_checked reports whether this ran;
+        gbxml_area_deltas/gbxml_volume_deltas list spaces over a 2% delta.
+        Report only, ok is NOT affected, and a delta does not mean the gbXML
+        value is right — a Revit room-boundary bug can just as easily be the
+        actual mismatch.
         """
         return repair_and_validate_gbxml_geometry_op()

@@ -14,6 +14,7 @@ so the 100+ call sites are untouched by the multi-user refactor.
 from __future__ import annotations
 
 import atexit
+import itertools
 import os
 import threading
 import time
@@ -38,10 +39,15 @@ class _SessionState:
     model: openstudio.model.Model | None = None
     path: Path | None = None
     last_access: float = 0.0  # time.monotonic() of last touch
-    # Bumped every time `model` is replaced. Session-scoped skill state (see
-    # `extra`) records this at capture time to detect that the model it
-    # references was swapped out — id(model) can't be trusted for that
-    # because CPython reuses freed addresses.
+    # Token of the load_model() that produced `model`, drawn from the
+    # process-wide _load_tokens counter so it is never reused — not a
+    # per-session count, which would restart at 1 in the fresh state a
+    # TTL/LRU-evicted session gets on its next load and let an in-flight
+    # operation that captured generation N mistake the replacement model for
+    # its own. Session-scoped skill state (see `extra`) records this at
+    # capture time to detect that the model it references was swapped out —
+    # id(model) can't be trusted for that because CPython reuses freed
+    # addresses.
     generation: int = 0
     # Generic scratch space for skills that need session-scoped state beyond
     # the model itself (e.g. a multi-turn wizard). Keyed by skill name so
@@ -52,6 +58,10 @@ class _SessionState:
 
 _lock = threading.RLock()
 _sessions: dict[str, _SessionState] = {}
+# One token per load_model() across every session for the life of the process
+# (advanced under _lock). See _SessionState.generation for why it is not
+# per-session.
+_load_tokens = itertools.count(1)
 
 
 def _now() -> float:
@@ -72,7 +82,15 @@ def _sweep_idle() -> None:
 
 
 def _evict_if_needed(keep: str) -> None:
-    """Evict least-recently-used sessions until under cap (never `keep`)."""
+    """Evict least-recently-used sessions until there is room to add `keep`.
+
+    No-op when `keep` already has a session: nothing new is being added, so
+    there is nothing to make room for. Without this, every load_model() or
+    get_session_extra() from an existing session at the cap dropped an
+    unrelated session's model.
+    """
+    if keep in _sessions:
+        return
     while len(_sessions) >= MAX_SESSIONS:
         victim = min(
             (k for k in _sessions if k != keep),
@@ -86,6 +104,21 @@ def _evict_if_needed(keep: str) -> None:
 
 def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.model.Model:
     """Load an OSM file and set it as the current session's model."""
+    model, _generation = load_model_with_generation(osm_path, version_translate)
+    return model
+
+
+def load_model_with_generation(
+    osm_path: Path, version_translate: bool = True,
+) -> tuple[openstudio.model.Model, int]:
+    """load_model(), also returning the generation this load produced.
+
+    For callers that attach generation-keyed session state to the model they
+    just loaded (see get_session_extra): sync tools run concurrently on the
+    same session (FastMCP dispatches them via anyio.to_thread), so reading
+    model_generation() in a second call could observe a *later* load_model
+    and bind the state to the wrong model.
+    """
     abs_path = str(Path(osm_path).resolve())
     with suppress_openstudio_warnings():
         if version_translate:
@@ -102,9 +135,9 @@ def load_model(osm_path: Path, version_translate: bool = True) -> openstudio.mod
         st = _sessions.setdefault(key, _SessionState())
         st.model = model
         st.path = Path(osm_path)
-        st.generation += 1
+        st.generation = next(_load_tokens)
         _touch(st)
-    return model
+        return model, st.generation
 
 
 def save_model(save_path: Path | None = None) -> Path:
@@ -137,6 +170,42 @@ def get_model() -> openstudio.model.Model:
         return st.model
 
 
+def get_model_with_generation() -> tuple[openstudio.model.Model, int]:
+    """get_model() plus the generation that model belongs to, read under one lock.
+
+    A separate model_generation() call could observe a concurrent load_model
+    that landed in between, pairing this model with the *next* model's
+    generation. Callers validating generation-keyed session state (see
+    get_session_extra) against the model they hold need the two together.
+    """
+    key = session_key()
+    with _lock:
+        _sweep_idle()
+        st = _sessions.get(key)
+        if st is None or st.model is None:
+            raise RuntimeError("No model loaded. Call load_osm_model first.")
+        _touch(st)
+        return st.model, st.generation
+
+
+def ensure_generation_unchanged(generation: int) -> None:
+    """Raise if this session's model has been replaced since `generation` was captured.
+
+    For multi-step operations whose helpers each call get_model(): a
+    load_model from a concurrent tool call on the same session between two
+    steps would otherwise let one response silently mix results from two
+    different models. Capture the generation with get_model_with_generation()
+    at the start and call this before returning; the RuntimeError surfaces as
+    the operation's ok=False error.
+    """
+    current = model_generation()
+    if current != generation:
+        raise RuntimeError(
+            "The session model was replaced by another tool call while this operation "
+            f"ran (model generation {generation} -> {current}); re-run it on the current model.",
+        )
+
+
 def get_model_path() -> Path | None:
     """Return the file path of the current session's model, or None."""
     with _lock:
@@ -160,11 +229,13 @@ def get_model_if_loaded() -> openstudio.model.Model | None:
 
 
 def model_generation() -> int:
-    """Monotonic per-session counter, bumped on every load_model.
+    """Token of the load that produced this session's current model.
 
-    Session-scoped skill state (see get_session_extra) records this at
-    capture time and compares later to detect that the model it references
-    was replaced. Returns 0 if the session has never loaded a model.
+    Process-wide monotonic and never reused, so it survives the session
+    being evicted and re-created (see _SessionState.generation). Session-
+    scoped skill state (see get_session_extra) records this at capture time
+    and compares later to detect that the model it references was replaced.
+    Returns 0 if the session currently holds no model.
     """
     with _lock:
         st = _sessions.get(session_key())

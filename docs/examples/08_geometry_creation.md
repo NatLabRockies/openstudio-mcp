@@ -61,6 +61,8 @@ An engineer wants to model a two-zone office from scratch: a west and east zone,
 
 **`create_surface`** is for advanced cases: non-rectangular surfaces, skylights, or explicit control over boundary conditions.
 
+**Reading geometry back.** `get_surface_details`, `list_surfaces(detailed=True)` and `list_subsurfaces(detailed=True)` return `vertices` as `[[x, y, z], ...]` metres in the parent space's local frame — the same frame `create_surface` / `create_subsurface` accept, so a wall's vertices can be edited and fed straight back in. For building coordinates apply the space transformation (origin and `direction_of_relative_north_deg` from `get_space_details`); adding the origin alone is only right for unrotated spaces.
+
 ## Integration Test
 
 See `tests/test_example_workflows.py::test_workflow_geometry_from_scratch`

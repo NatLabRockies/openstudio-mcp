@@ -55,48 +55,58 @@ GROUP_KEYWORDS: dict[str, set[str]] = {
         "ev", "charging", "ventilation", "adiabatic", "ideal_air",
         "cleanup", "unused", "cost", "lifecycle", "window_construction",
     },
+    "analysis": {
+        "osaf", "analysis", "analyses", "osa", "sampling", "sample",
+        "sweep", "sweeps", "optimization", "optimize", "calibration",
+        "calibrate", "algorithm", "algorithms", "datapoint", "datapoints",
+        "submit", "batch", "lhs", "doe", "morris", "sobol", "nsga",
+        "pareto", "sensitivity", "seed", "server",
+    },
+    "files": {
+        "upload", "uploads", "download", "downloads", "transfer", "file",
+        "files", "laptop", "local", "remote", "stage", "staging", "url",
+        "quota", "zip",
+    },
+    "meta": {
+        "version", "versions", "status", "health", "server", "sdk",
+        "energyplus", "openstudio", "installed",
+    },
+    "space_types": {
+        "space_type", "space_types", "standards", "wizard", "attribution",
+        "attribute", "template", "templates", "gbxml", "building_type",
+        "assign", "conditioned",
+    },
 }
 
-# Tool descriptions per group — built from the FakeMCP registry at module
-# load time. We define them statically here to avoid import-time side effects.
-# Maps group -> list of {"name": ..., "description": ...}
+# Tool descriptions per group — derived from the registration collector
+# (mcp_server.tool_registry), lazily and once per collected roster.
+# Maps group (tag) -> list of {"name": ..., "description": ...}
 _TOOL_INDEX: dict[str, list[dict[str, str]]] = {}
 _INDEX_BUILT = False
 
 
+def reset_tool_index() -> None:
+    """Drop the cached index (tests re-seed the descriptor registry)."""
+    global _INDEX_BUILT
+    _TOOL_INDEX.clear()
+    _INDEX_BUILT = False
+
+
 def _build_tool_index() -> None:
-    """Build tool index from skill registration (lazy, once)."""
+    """Build the tag -> tools index from collected ToolDescriptors (lazy)."""
     global _INDEX_BUILT
     if _INDEX_BUILT:
         return
 
-    from mcp_server.skills import register_all_skills
+    from mcp_server.tool_registry import descriptors, ensure_collected
 
-    tools_by_group: dict[str, list[dict[str, str]]] = {}
-
-    class IndexMCP:
-        def tool(self, name=None, tags=None, **kwargs):
-            def decorator(fn):
-                tool_name = name or fn.__name__
-                doc = fn.__doc__ or ""
-                # First line of docstring as description
-                desc = doc.strip().split("\n")[0] if doc.strip() else ""
-                for tag in (tags or set()):
-                    tools_by_group.setdefault(tag, []).append({
-                        "name": tool_name,
-                        "description": desc,
-                    })
-                return fn
-            return decorator
-
-        def prompt(self, **kw):
-            return lambda fn: fn
-
-        def resource(self, *a, **kw):
-            return lambda fn: fn
-
-    register_all_skills(IndexMCP())
-    _TOOL_INDEX.update(tools_by_group)
+    ensure_collected()
+    for d in sorted(descriptors().values(), key=lambda d: d.name):
+        for tag in d.tags:
+            _TOOL_INDEX.setdefault(tag, []).append({
+                "name": d.name,
+                "description": d.description,
+            })
     _INDEX_BUILT = True
 
 

@@ -1,6 +1,8 @@
-# analysis
+# analysis — internal dev notes
 
-OpenStudio Server / OSAF analysis workflows.
+OpenStudio Server / OSAF analysis workflows. Served agent guidance lives in
+`.claude/skills/osaf-analysis/SKILL.md` (via `get_skill("osaf-analysis")`),
+including the output_variables default and EPW-seed-weather doctrine.
 
 ## Defaults
 

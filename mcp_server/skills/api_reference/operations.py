@@ -14,6 +14,7 @@ import re
 import sys
 
 from ._signatures import signatures
+from .wiring_recipes import hazards_for_query
 
 # SWIG downcast family inherited from ModelObject (to_Space, to_ThermalZone, ...).
 # Hundreds of these exist; enumerating them buries the real domain API. Requires the
@@ -336,12 +337,17 @@ def search_api_op(
             "other": other,
         })
 
-    return {
+    out = {
         "ok": True,
         "classes": results,
         "query": class_pattern,
         **response_metadata,
     }
+    # #149: warn about addToNode-after-remove when the query mentions node/remove/etc.
+    hazards = hazards_for_query(f"{class_pattern} {method_pattern or ''}")
+    if hazards:
+        out["hazards"] = hazards
+    return out
 
 
 def search_wiring_patterns_op(
@@ -392,8 +398,13 @@ def search_wiring_patterns_op(
             "source": recipe.get("source", ""),
         })
 
-    return {
+    out = {
         "ok": True,
         "recipes": results,
         "available_recipes": sorted(RECIPES.keys()),
     }
+    # #149: only present when a query token hits a hazard trigger — shape unchanged otherwise
+    hazards = hazards_for_query(pattern)
+    if hazards:
+        out["hazards"] = hazards
+    return out

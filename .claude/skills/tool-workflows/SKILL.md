@@ -1,6 +1,7 @@
 ---
 name: tool-workflows
 description: Multi-tool recipes for common building energy modeling tasks. Use when chaining tools together for operations like adding windows, changing insulation, setting up HVAC, or running simulations.
+eval-exempt: "reference workflows; no single action-tool selection to assert"
 user-invocable: false
 ---
 
@@ -41,7 +42,7 @@ assign_construction_to_surface(
 
 Repeat `assign_construction_to_surface` for each target surface, or use
 `replace_window_constructions` for bulk window replacement. Reserve
-`create_construction(material_names=[...])` for building NEW assemblies from
+`create_construction(name=..., material_names=[...])` for building NEW assemblies from
 scratch, where you specify every layer deliberately.
 
 ## Add Internal Loads to a Space
@@ -59,39 +60,52 @@ create_electric_equipment(
 
 ## Set Up Weather
 
-User must provide an EPW file in the docker-mounted input directory.
+Weather files are SERVER-side (remote clients stage their own with `request_upload`).
 `change_building_location` sets weather, design days (from DDY), and climate zone in one call.
 The EPW must have companion `.stat` and `.ddy` files alongside it (same directory, same base filename).
 
 ```
-list_files()                              # find available weather files
+list_weather_files()                      # find available weather files
 change_building_location(weather_file="/inputs/Chicago.epw")
 ```
 
 ## Fair HVAC System Sweep (decision-grade comparison)
 
-Compare candidate systems on the SAME configured model — standards-tuned
-equipment/controls each time, loads and schedules never touched:
+Owned by the `add-hvac` skill — see its "Comparing Systems / Decision-Grade
+Results" section (`get_skill("add-hvac")`): per-candidate
+`create_typical_building(system_type=..., hvac_only=True)` swaps on the SAME
+configured model, then `compare_runs`. Do NOT use
+add_baseline_system/add_doas_system for comparative studies — generic wiring
+templates, no standards tuning.
 
+## Edit an Existing Air Loop's Supply Branch
+
+Swap, add, or drop a coil or fan on an air loop that already exists (no measure):
 ```
-# One-time setup: geometry + weather + typical build + any load customizations
-create_bar_building(...); change_building_location(...)
-create_typical_building(template="90.1-2019", climate_zone="ASHRAE 169-2013-5A")
-# ... apply load reductions, setbacks, etc. ...
-
-# Per candidate: swap ONLY the HVAC, simulate, compare
-create_typical_building(system_type="PVAV with gas boiler reheat",
-    template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
-save_osm_model(osm_path="/runs/sweep_pvav.osm"); run_simulation(...)
-
-create_typical_building(system_type="PSZ-HP", ..., hvac_only=True)
-save_osm_model(osm_path="/runs/sweep_pszhp.osm"); run_simulation(...)
-
-compare_runs(run_id_a, run_id_b)          # EUI + unmet-hours deltas
+get_air_loop_details(air_loop_name="PSZ-AC 1")        # exact names + supply order
+replace_air_loop_supply_component(air_loop_name="PSZ-AC 1",
+    component_name="PSZ-AC 1 DX Cooling Coil", new_component_type="CoilCoolingDXTwoSpeed")
+set_component_properties(component_name="PSZ-AC 1 DX Cooling Coil",
+    properties={"rated_high_speed_cop": 4.0})
 ```
+`add_air_loop_supply_component(..., insert_before=/insert_after=)` places a new coil or fan
+relative to an existing one; `remove_air_loop_supply_component` drops one and moves the
+setpoint managers off the deleted node. Water coils need `plant_loop_name`.
 
-Do NOT use add_baseline_system/add_doas_system for comparative studies — they
-are generic wiring templates without standards tuning (see add-hvac skill).
+## Supply Air Temperature Reset
+
+Swap a loop's outlet setpoint manager for an outdoor-air reset and tune it:
+```
+get_air_loop_details(air_loop_name="VAV 1")            # setpoint_managers on the outlet
+add_setpoint_manager(spm_type="SetpointManagerOutdoorAirReset", name="VAV 1 SAT Reset",
+    air_loop_name="VAV 1", replace_existing=True)
+set_setpoint_manager_properties(setpoint_name="VAV 1 SAT Reset",
+    properties={"setpoint_at_outdoor_low_temperature": 15.6, "outdoor_low_temperature": 10.0,
+                "setpoint_at_outdoor_high_temperature": 12.8, "outdoor_high_temperature": 21.0})
+```
+Without `replace_existing=True` the call is refused when the node already has a Temperature
+setpoint manager (the SDK would delete it silently). `remove_setpoint_manager(name=...)` warns
+if a loop outlet is left with no Temperature control.
 
 ## Tune Component Properties
 
@@ -105,14 +119,13 @@ set_component_properties(component_name="Heating Coil 1",
 ### Economizer
 ```
 set_economizer_properties(air_loop_name="VAV System",
-    economizer_type="DifferentialEnthalpy")
+    properties='{"economizer_control_type": "DifferentialEnthalpy"}')
 ```
 
 ### Plant Loop Sizing
 ```
-set_sizing_properties(component_name="Chilled Water Loop",
-    design_loop_exit_temperature_c=6.67,
-    loop_design_temperature_difference_c=5.56)
+set_sizing_properties(loop_name="Chilled Water Loop",
+    properties='{"design_loop_exit_temperature_c": 6.67, "loop_design_temperature_difference_c": 5.56}')
 ```
 
 ## Apply External Measure
@@ -125,57 +138,17 @@ apply_measure(measure_dir="/inputs/measures/my_measure",
 
 Note: All measure arguments are strings. Booleans → `"true"` / `"false"`. Numbers → `"42"`.
 
-## Write and Apply a Custom Measure
+## Write and Apply a Custom Measure / ReportingMeasure
 
-Full chain: create → test → apply → simulate → compare results.
-
-```
-# 1. Baseline simulation
-save_osm_model(save_path="/runs/baseline.osm")
-run_simulation(osm_path="/runs/baseline.osm", epw_path="<epw>")
-extract_summary_metrics(run_id=<baseline_id>)
-
-# 2. Create custom measure
-create_measure(name="my_measure", description="...",
-    language="Ruby", run_body="    model.get...each { |x| ... }")
-test_measure(measure_dir="/runs/custom_measures/my_measure")
-
-# 3. Reload original model, apply measure, re-simulate
-load_osm_model(osm_path="<original>")
-apply_measure(measure_dir="/runs/custom_measures/my_measure")
-save_osm_model(save_path="/runs/retrofit.osm")
-run_simulation(osm_path="/runs/retrofit.osm", epw_path="<epw>")
-extract_summary_metrics(run_id=<retrofit_id>)
-
-# 4. Compare baseline vs retrofit EUI
-```
-
-See the `measure-authoring` skill for run_body patterns and language guidance.
-
-For HVAC measures, verify methods exist and get wiring code first:
+Owned by the `measure-authoring` skill (`get_skill("measure-authoring")`):
+the create_measure → test_measure → apply_measure chain, run_body patterns
+(Ruby + Python), ReportingMeasures against a completed run
+(`test_measure(measure_dir=..., run_id=...)` /
+`apply_measure(measure_dir=..., run_id=...)`), and the before/after
+comparison workflow. For HVAC measures, verify methods and wiring first:
 ```
 search_api("CoilCoolingFourPipeBeam")             # check real setter/getter names
 search_wiring_patterns("four pipe beam")           # get working Ruby wiring code
-```
-
-## Write and Apply a Custom ReportingMeasure
-
-ReportingMeasures run after simulation to analyze SQL results.
-
-```
-# 1. Run simulation first
-run_simulation(osm_path="/runs/model.osm", epw_path="<epw>")
-
-# 2. Create reporting measure
-create_measure(name="custom_report", description="...",
-    language="Ruby", measure_type="ReportingMeasure",
-    run_body="    val = sql.execAndReturnFirstDouble('SELECT ...')\n    runner.registerValue('metric', val.get) if val.is_initialized")
-
-# 3. Test against completed simulation
-test_measure(measure_dir="/runs/custom_measures/custom_report", run_id="<run_id>")
-
-# 4. Apply to completed simulation
-apply_measure(measure_dir="/runs/custom_measures/custom_report", run_id="<run_id>")
 ```
 
 ## Object Cleanup

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.loop_operations import operations
+from mcp_server.skills.loop_operations.tools_air_loop import register_air_loop_tools
 
 if TYPE_CHECKING:
     from mcp import FastMCP
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
 def register(mcp: FastMCP) -> None:
     """Register loop operations tools with MCP server."""
+    register_air_loop_tools(mcp)  # air-loop supply branch + setpoint managers (split for file size)
 
     @mcp.tool(tags={"hvac"}, name="create_plant_loop")
     def create_plant_loop_tool(
@@ -84,6 +86,9 @@ def register(mcp: FastMCP) -> None:
     ) -> str:
         """Create boiler, chiller, cooling tower, heat pump, or pump and add to plant loop supply side.
 
+        Plant loops only (parallel supply branches). For coils and fans on an
+        AIR loop's supply branch use add_air_loop_supply_component.
+
         Supported types:
         - BoilerHotWater: props -- nominal_thermal_efficiency, fuel_type, nominal_capacity_w
         - ChillerElectricEIR: props -- reference_cop, reference_capacity_w
@@ -114,6 +119,9 @@ def register(mcp: FastMCP) -> None:
         equipment_name: str,
     ) -> str:
         """Remove boiler, chiller, or other equipment from a plant loop's supply side.
+
+        Plant loops only. For coils and fans on an AIR loop's supply branch use
+        remove_air_loop_supply_component (keeps setpoint managers).
 
         Args:
             plant_loop_name: Name of the plant loop
