@@ -23,6 +23,31 @@ def test_silence_openstudio_stdout_logger_sets_fatal_level():
 
 
 @pytest.mark.integration
+def test_skip_env_var_disables_silencing(monkeypatch):
+    # Validates: OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE=false/0/no opts out of
+    # suppression (default is "true" — suppressed) for local debugging.
+    import openstudio
+
+    from mcp_server.stdout_suppression import silence_openstudio_stdout_logger
+
+    # Reset to default Warn level so we can detect whether silencing ran.
+    openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Warn)
+
+    monkeypatch.setenv("OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE", "false")
+    silence_openstudio_stdout_logger()
+    level = openstudio.Logger.instance().standardOutLogger().logLevel()
+    assert level.get() == openstudio.Warn, (
+        "OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE=false must skip silencing"
+    )
+
+    # Restore silence so remaining tests in the file see Fatal.
+    monkeypatch.delenv("OSMCP_SKIP_OPENSTUDIO_LOGGER_SILENCE", raising=False)
+    silence_openstudio_stdout_logger()
+    level = openstudio.Logger.instance().standardOutLogger().logLevel()
+    assert level.get() == openstudio.Fatal
+
+
+@pytest.mark.integration
 def test_polyhedron_warnings_do_not_reach_stdout_after_silence():
     # Regression: [utilities.Polyhedron] / [openstudio.model.Space] warnings were
     # reaching C stdout during Space::volume() on non-enclosed geometry, corrupting
