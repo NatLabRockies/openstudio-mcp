@@ -25,7 +25,13 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ._headers import header_module_for, header_types, header_types_by_module, map_cpp_type
+from ._headers import (
+    header_module_for,
+    header_typedefs,
+    header_types,
+    header_types_by_module,
+    map_cpp_type,
+)
 
 # SWIG internal classes to skip
 SKIP_CLASSES = {"SwigPyIterator", "_SwigNonDynamicMeta"}
@@ -273,6 +279,7 @@ def _build(wrapper_dir: Path) -> dict[str, dict[str, dict]]:
     # UNKNOWN_TYPE, which is honest.
     cpp = header_types()
     cpp_by_module = header_types_by_module()
+    typedefs = header_typedefs()
 
     # Render to the public shape.
     result: dict[str, dict[str, dict]] = {}
@@ -287,11 +294,13 @@ def _build(wrapper_dir: Path) -> dict[str, dict[str, dict]]:
         rendered: dict[str, dict] = {}
         for method in cls.static_methods.values():
             rendered[method.name] = _render(
-                method, all_class_names, static=True, cpp_type=cpp_for_class.get(method.name),
+                method, all_class_names, static=True,
+                cpp_type=cpp_for_class.get(method.name), typedefs=typedefs,
             )
         for method in cls.instance_methods.values():
             rendered[method.name] = _render(
-                method, all_class_names, static=False, cpp_type=cpp_for_class.get(method.name),
+                method, all_class_names, static=False,
+                cpp_type=cpp_for_class.get(method.name), typedefs=typedefs,
             )
         result[class_name] = rendered
     return result
@@ -303,6 +312,7 @@ def _render(
     *,
     static: bool,
     cpp_type: str | None = None,
+    typedefs: dict[str, str] | None = None,
 ) -> dict:
     """Resolve a return type from the best available source of truth.
 
@@ -314,7 +324,7 @@ def _render(
     if method.return_type:
         returns = _resolve_return_type(method.return_type, all_class_names)
     elif cpp_type:
-        returns = map_cpp_type(cpp_type, all_class_names)
+        returns = map_cpp_type(cpp_type, all_class_names, typedefs)
     else:
         returns = UNKNOWN_TYPE
     return {"params": method.params, "returns": returns, "static": static}

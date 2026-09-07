@@ -17,8 +17,10 @@ import pytest
 from mcp_server.skills.api_reference._headers import (
     _build,
     _build_by_module,
+    _build_typedefs,
     _locate_header_dir,
     _parse_header,
+    _parse_typedefs,
     header_module_for,
     map_cpp_type,
 )
@@ -890,3 +892,85 @@ def test_header_module_for_maps_wrapper_stems(wrapper_stem, expected):
     # Validates: every shipped wrapper stem resolves to its include subdir by longest prefix
     modules = ["model", "utilities", "energyplus", "airflow", "gbxml", "measure", "isomodel"]
     assert header_module_for(wrapper_stem, modules) == expected
+
+
+# --------------------------------------------------------------------------------------
+# typedef / using aliases (OptionalTime, Point3dVector, ...)
+# --------------------------------------------------------------------------------------
+
+
+def test_parse_typedefs_collects_using_and_typedef_forms(tmp_path):
+    # Regression: TimeSeries#intervalLength returns the alias OptionalTime, which rendered as
+    # Object because no source resolved the alias to boost::optional<Time>
+    src = """
+namespace openstudio {
+using OptionalTime = boost::optional<Time>;
+typedef std::vector<Point3d> Point3dVector;
+// using OptionalDouble = boost::optional<double>;
+/* typedef std::vector<int> IntVector; */
+template <class T> using Wrapped = std::vector<T>;
+class UTILITIES_API TimeSeries {
+ public:
+  using OptionalUnsigned = boost::optional<unsigned int>;
+};
+}
+"""
+    assert _parse_typedefs(_write(tmp_path, "T.hpp", src)) == {
+        "OptionalTime": "boost::optional<Time>",
+        "Point3dVector": "std::vector<Point3d>",
+        "OptionalUnsigned": "boost::optional<unsigned int>",
+    }
+
+
+_TYPEDEFS = {
+    "OptionalTime": "boost::optional<Time>",
+    "OptionalUnsigned": "boost::optional<unsigned int>",
+    "Point3dVector": "std::vector<Point3d>",
+    "Point3dVectorVector": "std::vector<Point3dVector>",
+    "OptionalIddObjectTypeVector": "boost::optional<std::vector<IddObjectType>>",
+    "Loop": "Loop",
+    "string": "std::wstring",
+}
+
+
+@pytest.mark.parametrize(
+    ("cpp", "expected"),
+    [
+        ("OptionalTime", "Time, nil"),
+        ("const OptionalTime&", "Time, nil"),
+        ("OptionalUnsigned", "Integer, nil"),
+        ("Point3dVector", "Array<Point3d>"),
+        ("Point3dVectorVector", "Array<Array<Point3d>>"),
+        ("OptionalIddObjectTypeVector", "Array<IddObjectType>, nil"),
+        ("std::vector<Point3dVector>", "Array<Array<Point3d>>"),
+        ("openstudio::OptionalTime", "Time, nil"),  # TimeSeries::intervalLength declares it qualified
+        ("openstudio::model::Point3d", "Point3d"),
+        ("std::map<std::string, Point3dVector>", "Object"),
+        ("std::string", "String"),  # a header aliases `string` to std::wstring; primitives win
+        ("boost::optional<std::string>", "String, nil"),
+        ("Loop", "Object"),  # self-referential alias must terminate, not recurse forever
+        ("NotAnAlias", "Object"),
+    ],
+)
+def test_map_cpp_type_resolves_typedef_aliases(cpp, expected):
+    # Regression: OptionalModelObject / Point3dVector / StringVector returns rendered Object
+    # (10 bound methods on 3.11.0), hiding the Optional and Array shapes agents must handle
+    classes = {"Time", "Point3d", "IddObjectType"}
+    assert map_cpp_type(cpp, classes, _TYPEDEFS) == expected
+
+
+def test_map_cpp_type_without_typedefs_is_unchanged():
+    # Validates: callers that pass no alias table keep the pre-alias behaviour (Object)
+    assert map_cpp_type("OptionalTime", {"Time"}) == "Object"
+
+
+def test_build_typedefs_walks_nested_dirs_model_first(tmp_path):
+    # Validates: aliases are gathered from every module dir, model/ declaration winning a clash
+    _write_tree(tmp_path, "model/ModelObject.hpp", "using OptionalX = boost::optional<ModelX>;\n")
+    _write_tree(tmp_path, "utilities/core/Optional.hpp",
+                "using OptionalX = boost::optional<UtilX>;\nusing OptionalDouble = boost::optional<double>;\n")
+    _write_tree(tmp_path, "utilities/core/Optional_Impl.hpp", "using OptionalHidden = boost::optional<int>;\n")
+    assert _build_typedefs(tmp_path) == {
+        "OptionalX": "boost::optional<ModelX>",
+        "OptionalDouble": "boost::optional<double>",
+    }

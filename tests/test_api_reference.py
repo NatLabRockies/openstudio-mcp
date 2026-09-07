@@ -244,6 +244,24 @@ def test_overloaded_return_types_render_every_form():
     ]
 
 
+@pytest.mark.parametrize(
+    ("class_name", "method", "expected"),
+    [
+        ("TimeSeries", "intervalLength", "intervalLength() -> Time, nil"),
+        ("ThermalZone", "returnAirModelObject", "returnAirModelObject() -> ModelObject, nil"),
+        ("SqlFile", "getElecOrGasUse", "getElecOrGasUse(t_getGas) -> Float, nil"),
+        ("Polygon3d", "getOuterPath", "getOuterPath() -> Array<Point3d>"),
+    ],
+)
+def test_typedef_alias_returns_resolve_to_optional_and_array(class_name, method, expected):
+    # Regression: header aliases (OptionalTime, OptionalModelObject, OptionalDouble,
+    # Point3dVector) rendered as an opaque Object, hiding the .get / Array handling required
+    search = _import_search_api_op()
+    result = search(f"^{class_name}$", method_pattern=f"^{method}$", include_base=True)
+    cls = result["classes"][0]
+    assert cls["getters"] + cls["other"] == [expected]
+
+
 def test_non_model_classes_exclude_swig_data_and_only_return_signatures():
     # Regression: SqlFile exposed thisown and bare entries; IddFieldProperties constants leaked as methods
     """Regression: non-model classes must not expose SWIG data or bare entries."""

@@ -114,6 +114,14 @@ _PRIMITIVES = {
 
 _cache: dict[str, dict[str, str]] | None = None
 _cache_by_module: dict[str, dict[str, dict[str, str]]] | None = None
+_cache_typedefs: dict[str, str] | None = None
+
+# `using OptionalTime = boost::optional<Time>;` / `typedef std::vector<Point3d> Point3dVector;`
+# Headers return these aliases directly (TimeSeries::intervalLength -> OptionalTime); without
+# resolving them the type is a name the bindings lack and renders as an opaque Object.
+_TYPEDEF_RE = re.compile(
+    r"^\s*(?:typedef\s+(?P<t_target>.+?)\s+(?P<t_name>\w+)|using\s+(?P<u_name>\w+)\s*=\s*(?P<u_target>.+?))\s*;",
+)
 
 # Joins the return types of overloads that disagree (``std::vector<TimeSeries>`` vs
 # ``boost::optional<TimeSeries>`` for SqlFile::timeSeries). SWIG collapses overloads to one
@@ -217,33 +225,59 @@ def _split_return_type(prefix: str) -> str | None:
     return text or None
 
 
-def map_cpp_type(cpp: str, class_names: set[str] | None = None) -> str:
+def map_cpp_type(
+    cpp: str,
+    class_names: set[str] | None = None,
+    typedefs: dict[str, str] | None = None,
+    _depth: int = 0,
+) -> str:
     """Render a C++ return type the way _signatures renders Python annotations.
 
     Conventions are deliberately identical to ``_signatures._resolve_return_type``:
     optionals as ``"X, nil"``, vectors as ``"Array<X>"``. Only the source of truth
-    changes, never the output shape.
+    changes, never the output shape. ``typedefs`` (``header_typedefs``) expands
+    ``OptionalTime`` / ``Point3dVector`` style aliases before rendering.
     """
     if OVERLOAD_SEP in cpp:
         rendered: list[str] = []
         for part in cpp.split(OVERLOAD_SEP):
-            mapped = map_cpp_type(part, class_names)
+            mapped = map_cpp_type(part, class_names, typedefs)
             if mapped not in rendered:
                 rendered.append(mapped)
         return OVERLOAD_SEP.join(rendered)
 
     text = cpp.strip().removeprefix("const ").strip().rstrip("*&").strip()
 
+    # Primitives before aliases: a header declares ``using string = std::wstring;`` which
+    # would otherwise hijack every ``std::string`` return into Object.
+    if text in _PRIMITIVES:
+        return _PRIMITIVES[text]
+
+    # Alias chains are short (Point3dVectorVector -> std::vector<Point3dVector> ->
+    # std::vector<Point3d>); the depth cap only guards a pathological self-reference.
+    if typedefs and text in typedefs and _depth < 8:
+        return map_cpp_type(typedefs[text], class_names, typedefs, _depth + 1)
+
+    # Namespace-qualified alias or class (``openstudio::OptionalTime``,
+    # ``openstudio::model::Space``): resolve by the bare name. Templates keep their
+    # ``::`` and fall through to the std::map/pair "Object" rule below.
+    if "::" in text and "<" not in text:
+        bare = text.rsplit("::", 1)[-1]
+        if typedefs and bare in typedefs and _depth < 8:
+            return map_cpp_type(typedefs[bare], class_names, typedefs, _depth + 1)
+        if class_names is not None and bare in class_names:
+            return bare
+
     optional = re.fullmatch(r"(?:boost|std)::optional\s*<\s*(.+?)\s*>", text)
     if optional:
-        inner = map_cpp_type(optional.group(1), class_names)
+        inner = map_cpp_type(optional.group(1), class_names, typedefs)
         # Optional<Optional<T>> is not a thing; a nested "X, nil" would render nonsense.
         inner = inner.split(",")[0].strip()
         return f"{inner}, nil"
 
     vector = re.fullmatch(r"std::vector\s*<\s*(.+?)\s*>", text)
     if vector:
-        inner = map_cpp_type(vector.group(1), class_names)
+        inner = map_cpp_type(vector.group(1), class_names, typedefs)
         return f"Array<{inner}>" if inner not in ("Object", "void") else "Array"
 
     if text in _PRIMITIVES:
@@ -369,6 +403,27 @@ def _parse_header(path: Path) -> dict[str, dict[str, str]]:
     return {cls: methods for cls, methods in out.items() if methods}
 
 
+def _parse_typedefs(path: Path) -> dict[str, str]:
+    """Collect ``typedef T Alias;`` / ``using Alias = T;`` from one header, comments stripped.
+
+    Template aliases (``template <class T> using X = ...``) start with ``template`` and
+    do not match; multi-line declarations are rare in the SDK and are skipped.
+    """
+    out: dict[str, str] = {}
+    in_block = False
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line, in_block = _strip_comments(raw, in_block=in_block)
+        if line is None:
+            continue
+        match = _TYPEDEF_RE.match(line)
+        if not match:
+            continue
+        name = match.group("t_name") or match.group("u_name")
+        target = match.group("t_target") or match.group("u_target")
+        out.setdefault(name, target.strip())
+    return out
+
+
 def _add_overload(methods: dict[str, str], name: str, cpp_type: str) -> None:
     """Record one declaration's return type; overloads that disagree are joined.
 
@@ -421,6 +476,29 @@ def header_module_for(wrapper_module: str, header_modules: Iterable[str]) -> str
     rest = wrapper_module.removeprefix("openstudio")
     candidates = [m for m in header_modules if m and rest.startswith(m)]
     return max(candidates, key=len) if candidates else None
+
+
+def _build_typedefs(header_dir: Path) -> dict[str, str]:
+    """``{alias: cpp_type}`` across every public header; model/ first, first declaration wins."""
+    model_dir = header_dir / "model"
+    headers = sorted(
+        (p for ext in ("*.hpp", "*.hxx") for p in header_dir.rglob(ext) if "_Impl" not in p.name),
+        key=lambda p: (not p.is_relative_to(model_dir), p),
+    )
+    out: dict[str, str] = {}
+    for path in headers:
+        for name, target in _parse_typedefs(path).items():
+            out.setdefault(name, target)
+    return out
+
+
+def header_typedefs() -> dict[str, str]:
+    """Return ``{alias: cpp_type}`` for the installed headers, cached; empty without headers."""
+    global _cache_typedefs
+    if _cache_typedefs is None:
+        header_dir = _locate_header_dir()
+        _cache_typedefs = _build_typedefs(header_dir) if header_dir else {}
+    return _cache_typedefs
 
 
 def _build_merged(by_module: dict[str, dict[str, dict[str, str]]]) -> dict[str, dict[str, str]]:
