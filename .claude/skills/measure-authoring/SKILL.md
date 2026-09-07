@@ -87,6 +87,23 @@ run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
 extract_summary_metrics(run_id=<retrofit_id>)   # compare to baseline
 ```
 
+## Verify SDK Methods Before Writing run_body
+
+Guessed method names are the top cause of `NoMethodError` / `AttributeError` in measures.
+`search_api` returns each method as a signature, not a bare name:
+```
+search_api("BoilerHotWater", method_pattern="Efficiency")
+# -> "setNominalThermalEfficiency(nominalThermalEfficiency) -> Boolean"
+search_api("SqlFile", method_pattern="^annual")     # non-model classes too (openstudio root, gbxml, alfalfa, ...)
+```
+Read the signature literally; names are identical in Ruby and Python:
+- `-> Float` plain value; `-> Float, nil` is an Optional (`.is_initialized` then `.get`)
+- `-> ?` return type unknown (no header/annotation); probe the object before calling `.get`
+- `-> Array<TimeSeries> | TimeSeries, nil` overloaded; the return depends on the arguments
+- `[static] load(path) -> Model, nil` class-level call (`Model.load`), never on an instance
+- `signatures_available: false` in the response = signatures could not be loaded; the method
+  names are still real, only the parameter/return details are missing
+
 ## Language Choice
 
 Both are **fully supported** — `create_measure(language="Ruby"|"Python", ...)` scaffolds, tests

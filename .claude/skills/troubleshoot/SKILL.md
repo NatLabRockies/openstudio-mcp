@@ -80,6 +80,9 @@ If a measure fails due to nonexistent API methods:
 ```
 search_api("CoilCoolingFourPipeBeam")              # list real setters/getters
 search_api("BoilerHotWater", method_pattern="Efficiency")
+# each entry is a signature: "setNominalThermalEfficiency(nominalThermalEfficiency) -> Boolean"
+# "-> X, nil" = Optional (.get after .is_initialized); "-> ?" = unknown, probe first;
+# "[static] " prefix = call on the class, not an instance
 ```
 
 ## Quick Fixes
