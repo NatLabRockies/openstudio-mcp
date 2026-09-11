@@ -41,6 +41,7 @@ from mcp_server.skills.geometry.operations import match_surfaces
 from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_vertices
 from mcp_server.skills.geometry.winding import normalize_local_frame_winding
 from mcp_server.skills.measures.runner_messages import OSW_MAX_BYTES, parse_all_step_messages
+from mcp_server.skills.weather.ground_temperatures import find_missing_ground_temperatures
 from mcp_server.util import create_run_dir, read_file_bounded, read_tail_bounded, reject_escaping_symlinks
 
 # Failure-path log tail: 50 lines fit comfortably in 200KB; read_tail_bounded
@@ -319,7 +320,14 @@ def import_gbxml_op(
         # itself returned — sync tools on one session run concurrently, so reading
         # model_generation() afterwards could observe a later load and bind this
         # file to the wrong model.
-        set_gbxml_source(str(gbxmls_dir / gbxml_name), generation)
+        # The EPW is stashed on the same terms and for the same reason: set_ground_temperatures
+        # needs the file this model's location came from, and the OSM keeps only a weather-file
+        # url that may be a bare basename.
+        set_gbxml_source(
+            str(gbxmls_dir / gbxml_name),
+            generation,
+            epw_path=str(weather_dir / epw_src.name),
+        )
 
         result = {
             "ok": True,
@@ -532,6 +540,12 @@ def repair_and_validate_gbxml_geometry_op() -> dict[str, Any]:
         # deliberately NOT affected: a model with no ground connection still simulates, it is
         # just wrong thermally, and this fires on essentially every gbXML import.
         result.update({k: v for k, v in ground_result.items() if k != "ok"})
+
+        # Same contract for ground TEMPERATURES: report only, `ok` untouched. A gbXML
+        # translation sets none of the Site:GroundTemperature:* objects, so E+ silently uses
+        # its own defaults (18 C on every Ground surface). Needs no EPW to detect.
+        temperature_result = find_missing_ground_temperatures()
+        result.update({k: v for k, v in temperature_result.items() if k != "ok"})
 
         # Optional: only runs when this session's model came from import_gbxml_op and hasn't
         # been reloaded/replaced since (see gbxml_source_state). Silently skipped otherwise —

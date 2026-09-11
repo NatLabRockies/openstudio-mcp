@@ -87,6 +87,21 @@ left once merge and weld have closed what they can.
   partly below grade gets its above-grade portion buried too. `partially_below_grade` holds walls
   crossing grade with less than half buried — reported, not proposed for a batch fix. `ok` is
   unaffected by any of this, so it will not stop you; check the count yourself.
+- **Check `ground_temperatures_missing`.** A translated model sets none of the four
+  `Site:GroundTemperature:*` objects, so EnergyPlus falls back to its own defaults — 18 °C
+  every month on every `Ground` surface, in Boston and in Austin alike. Report only, `ok` is
+  unaffected, so check the count yourself. Two remedies, and they are not equivalent:
+  `set_ground_temperatures()` reads the project EPW's own header and is instant, but it is
+  approximate — EPW ground temperatures are *undisturbed* soil (the EPW's own `.stat` says they
+  "should NOT BE USED ... to compute building floor losses"), so `Site:GroundTemperature:Shallow`,
+  `:Deep` and `:FCfactorMethod` get the raw values while `BuildingSurface` gets a value derived
+  from the model's heating setpoints. Note what each object actually does: `BuildingSurface`
+  drives the floor heat balance, `Shallow`/`Deep` are inert without a ground heat exchanger, and
+  `FCfactorMethod` only matters for F/C-factor constructions. If the model has no thermostats yet,
+  `BuildingSurface` is skipped with a reason — run the tool again after HVAC, or pass
+  `set_ground_temperatures(building_surface_method="constant", building_surface_constant_c=18.0)`.
+  For real slab-edge heat transfer, use Kiva (the `Foundation` boundary condition) instead of
+  monthly temperatures at all.
 - **The repair tools above can desynchronize interior surface pairs**, since each rewrites one
   side of a pair in isolation. Two sides with different vertex counts make EnergyPlus abort at
   `GetSurfaceData` before simulating — nothing else in this server catches it, `validate_model`

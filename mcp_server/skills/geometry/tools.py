@@ -18,11 +18,15 @@ from mcp_server.skills.geometry.operations import (
 )
 from mcp_server.skills.geometry.patch_missing_surfaces import patch_missing_surfaces
 from mcp_server.skills.geometry.repair import repair_missing_roof_ceiling
+from mcp_server.skills.geometry.tools_kiva import register_kiva_tools
 from mcp_server.skills.geometry.trim_overlapping_surfaces import trim_overlapping_surfaces
 from mcp_server.skills.geometry.weld_coincident_vertices import weld_coincident_vertices
 
 
 def register(mcp):
+    # Kiva tools live in their own module: this file was already at the ~400 line budget.
+    register_kiva_tools(mcp)
+
     @mcp.tool(tags={"geometry"}, name="list_surfaces")
     def list_surfaces_tool(
         detailed: bool = False,

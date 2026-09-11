@@ -1,6 +1,7 @@
 """MCP tool definitions for weather, design days, simulation control, and run periods."""
 from __future__ import annotations
 
+from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 from mcp_server.skills.weather.operations import (
     add_design_day,
     get_run_period,
@@ -21,6 +22,56 @@ def register(mcp):
         Returns name, path, and whether .ddy/.stat companion files exist.
         """
         return list_weather_files()
+
+    @mcp.tool(tags={"simulation"}, name="set_ground_temperatures")
+    def set_ground_temperatures_tool(
+        epw_path: str | None = None,
+        building_surface_method: str = "setpoint_offset",
+        building_surface_constant_c: float | None = None,
+        overwrite: bool = False,
+    ):
+        """Apply an EPW weather file's ground temperatures to the model's Site:GroundTemperature objects.
+
+        A gbXML-translated model has no ground temperatures, so EnergyPlus uses its own
+        defaults (18 C every month on Ground-boundary surfaces). This reads the EPW header's
+        GROUND TEMPERATURES record and writes Shallow, Deep and FCfactorMethod from the
+        nearest available depths (0.5 m and 4.0 m), reporting the depth actually used.
+
+        BuildingSurface is treated differently on purpose. EPW ground temperatures are
+        UNDISTURBED soil — an open field, no building — and the EPW's own .stat file says
+        they "should NOT BE USED in the GroundTemperatures object to compute building floor
+        losses". Boston's January value is -0.29 C; writing that to BuildingSurface overstates
+        slab heat loss badly. So BuildingSurface gets a value derived from the model's own
+        heating setpoints instead, unless you ask otherwise.
+
+        Be aware which objects actually matter for your model: BuildingSurface drives the
+        floor heat balance; Shallow and Deep feed ground heat exchangers and are inert without
+        one; FCfactorMethod affects only F/C-factor constructions. For real slab-edge heat
+        transfer, use Kiva instead (the Foundation boundary condition).
+
+        Changes the in-memory model — call save_osm_model to persist.
+
+        Args:
+            epw_path: EPW to read. Defaults to the EPW import_gbxml used for this model, then
+                to the model's own weather file.
+            building_surface_method: "setpoint_offset" (default) writes mean heating setpoint
+                minus 2 C, and writes nothing if the model has no thermostats; "epw_raw"
+                writes the undisturbed 0.5 m values and warns; "constant" writes
+                building_surface_constant_c; "none" leaves the object alone.
+            building_surface_constant_c: Required by building_surface_method="constant".
+            overwrite: Replace objects that already carry chosen values. Default False skips
+                them and says so.
+
+        Returns:
+            applied, skipped, warnings, epw_path, epw_source, depth_sets_available,
+            building_surface_method, ground_temperatures
+        """
+        return set_ground_temperatures(
+            epw_path=epw_path,
+            building_surface_method=building_surface_method,
+            building_surface_constant_c=building_surface_constant_c,
+            overwrite=overwrite,
+        )
 
     @mcp.tool(tags={"simulation"}, name="get_weather_info")
     def get_weather_info_tool():

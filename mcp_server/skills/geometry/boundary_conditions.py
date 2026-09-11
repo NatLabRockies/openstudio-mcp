@@ -32,6 +32,13 @@ from mcp_server.osm_helpers import fetch_object, parse_str_list
 # would leave a dangling reference.
 _REQUIRES_PAIRING = "Surface"
 
+# "Foundation" is in the SDK's valid list, but a surface set to it with no FoundationKiva object
+# attached is a guaranteed EnergyPlus fatal ("references a Foundation Outside Boundary Condition
+# but there is no corresponding SURFACEPROPERTY:EXPOSEDFOUNDATIONPERIMETER object defined").
+# set_kiva_foundation writes the boundary condition, the Foundation object and the perimeter
+# object together, which is the only combination that simulates.
+_REQUIRES_KIVA = "Foundation"
+
 
 def _valid(values_fn) -> list[str]:
     """Allowed values straight from the SDK, so this can't drift from the bindings."""
@@ -78,6 +85,14 @@ def set_surface_boundary_conditions(
                 "error": "'Surface' cannot be set directly — it means 'adjacent to a "
                          "specific other surface' and needs that partner. Use "
                          "match_surfaces() to pair surfaces between adjacent spaces.",
+            }
+        if outside_boundary_condition == _REQUIRES_KIVA:
+            return {
+                "ok": False,
+                "error": "'Foundation' cannot be set directly — EnergyPlus also needs a "
+                         "Foundation:Kiva object and a SurfaceProperty:ExposedFoundationPerimeter "
+                         "on the surface, and fails fatally without them. Use "
+                         "set_kiva_foundation(), which writes all three together.",
             }
         if outside_boundary_condition not in valid_bcs:
             return {
