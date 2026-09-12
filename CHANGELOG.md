@@ -1,5 +1,42 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **`set_ground_temperatures`** (weather skill): applies an EPW header's `GROUND TEMPERATURES`
+  record to the model's four `Site:GroundTemperature:*` objects. A gbXML translation sets none of
+  them, so EnergyPlus silently assumes 18 °C every month on every `Ground` surface. Shallow, Deep
+  and FCfactorMethod take the raw EPW values at the nearest available depths to 0.5 m and 4.0 m;
+  BuildingSurface takes a value derived from the model's heating setpoints instead, because EPW
+  ground temperatures are undisturbed soil and the EPW's own `.stat` warns they "should NOT BE
+  USED ... to compute building floor losses". `building_surface_method` selects
+  `setpoint_offset` (default), `epw_raw`, `constant` or `none`.
+- **`repair_and_validate_gbxml_geometry`** now reports `ground_temperatures_missing` (report-only;
+  `ok` is unaffected, matching `ground_contact_missing_count`), with a four-state
+  absent/defaulted/partial/set breakdown per object.
+- **`get_weather_info`** now returns a `ground_temperatures` read-back, including on models with
+  no weather file attached.
+- `import_gbxml` stashes the staged EPW alongside the staged gbXML, so `set_ground_temperatures`
+  needs no argument after an import.
+- **`set_kiva_foundation` and `get_foundation_options`** (geometry skill): EnergyPlus Kiva, a 2D
+  finite-difference foundation model, as the detailed alternative to monthly ground temperatures.
+  A `Foundation` surface ignores `Site:GroundTemperature:BuildingSurface` and gets a solved soil
+  domain including slab-edge losses and insulation geometry. Driven by an archetype menu
+  (slab on grade uninsulated / perimeter-insulated, heated or unheated basement, vented crawlspace)
+  so the workflow can ask the user one question instead of ten; every applied value reports its
+  provenance. **The insulation R-values are conventional starting points, not code-derived** — there
+  is no vendored source for Kiva insulation geometry, so the ASHRAE 90.1 F-factor/C-factor target for
+  the model's climate zone is reported alongside as a cross-check rather than used as a derivation.
+  Exposed perimeter is computed from the joined building footprint.
+- `set_surface_boundary_conditions` now refuses `"Foundation"`, which produced a model that failed
+  fatally in EnergyPlus for want of the two companion objects; it points at `set_kiva_foundation`,
+  which writes all three together.
+- `find_missing_ground_temperatures()` reports `kiva_foundation_surface_count`; once every
+  ground-coupled surface uses Kiva, `Site:GroundTemperature:BuildingSurface` moves from
+  `ground_temperatures_missing_objects` to `ground_temperatures_superseded_by_kiva`
+- New `foundation-modeling` skill and worked example
+  `docs/examples/25_ground_and_foundation_heat_transfer.md` covering both methods.
+
 ## [1.0.0-beta] - 2026-06-05
 
 First major release (beta): openstudio-mcp can now run as a shared, multi-user

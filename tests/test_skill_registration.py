@@ -42,6 +42,8 @@ EXPECTED_TOOLS = {
     "weld_coincident_vertices",
     "patch_missing_surfaces",
     "set_surface_boundary_conditions",
+    "get_foundation_options",
+    "set_kiva_foundation",
     "trim_overlapping_surfaces",
     "set_window_to_wall_ratio",
     "list_materials",
@@ -112,6 +114,7 @@ EXPECTED_TOOLS = {
     # Phase 6C: Weather, Design Days, SimControl, RunPeriod
     "list_weather_files",
     "get_weather_info",
+    "set_ground_temperatures",
     "add_design_day",
     "get_simulation_control",
     "set_simulation_control",

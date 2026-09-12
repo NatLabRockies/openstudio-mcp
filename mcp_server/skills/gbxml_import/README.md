@@ -263,9 +263,36 @@ skipped, with the specific reason, rather than guessed at, in every one of these
 `docs/examples/22_repair_and_validate_gbxml_geometry.md` for a worked example with exact
 before/after counts on a real fixture.
 
+## Missing ground temperatures
+
+A seventh defect on the same terms as missing ground connections: report-only, `ok` unaffected,
+and it fires on essentially every import. A translation sets none of the four
+`Site:GroundTemperature:*` objects, so EnergyPlus uses its own IDD defaults — 18 °C every month
+on BuildingSurface, regardless of climate.
+
+`find_missing_ground_temperatures()` (weather skill) is merged into
+`repair_and_validate_gbxml_geometry`'s result exactly like `find_missing_ground_contact()`. It
+reports four states per object rather than a boolean, because presence is not evidence of intent:
+an all-defaulted object is written to the OSM and survives a reload, and a typical OpenStudio
+model ships BuildingSurface and Deep already present at their defaults (see
+`measures/local/custom/*/tests/example_model.osm:77,92`). So `absent`, `defaulted` and `partial`
+all count as missing; only `set` does not.
+
+The fix is `set_ground_temperatures()`, which reads the EPW header's GROUND TEMPERATURES record.
+Note the physics limit, which is why the tool does not simply copy the EPW values across: those
+are *undisturbed* soil temperatures, and the EPW's own `.stat` says so
+(`tests/assets/USA_MA_Boston-Logan...stat:498-500` — "should NOT BE USED in the GroundTemperatures
+object to compute building floor losses"). Shallow, Deep and FCfactorMethod take the raw values at
+the nearest available depths to 0.5 m and 4.0 m; BuildingSurface — the only one that drives the
+floor heat balance — takes a value derived from the model's own heating setpoints instead.
+
+`import_gbxml_op` stashes the staged EPW alongside the staged gbXML in `gbxml_source_state`, on
+the same generation contract, so the fix needs no argument after an import.
+
 ## Tools
 
-`import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `repair_missing_roof_ceiling`,
+`import_gbxml`, `repair_and_validate_gbxml_geometry`. See also `set_ground_temperatures`
+(weather skill, for the ground-temperature gap above), `repair_missing_roof_ceiling`,
 `merge_coplanar_sliver_surfaces`, `weld_coincident_vertices`, `patch_missing_surfaces`, and
 `trim_overlapping_surfaces` (geometry skill) for the five automatable non-enclosed-space causes,
 and `change_building_location` (common_measures skill, to set climate zone explicitly if

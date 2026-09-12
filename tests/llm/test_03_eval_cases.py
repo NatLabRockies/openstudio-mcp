@@ -93,6 +93,9 @@ SKILL_CONTEXT_PREFIX = {
 }
 GBXML_MODEL_TOOLS = {
     "repair_and_validate_gbxml_geometry",
+    "set_ground_temperatures",
+    "get_foundation_options",
+    "set_kiva_foundation",
     "list_spaces",
     "get_model_summary",
     "validate_model",

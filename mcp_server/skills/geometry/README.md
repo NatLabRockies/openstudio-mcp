@@ -1,0 +1,127 @@
+# geometry skill — internal notes
+
+Most of this package is gbXML repair (see `mcp_server/skills/gbxml_import/README.md` for the defect
+catalogue those tools address). This note covers only the Kiva foundation work, because its
+constraints were expensive to establish and are not discoverable from the OpenStudio API.
+
+## Kiva: what EnergyPlus actually enforces
+
+Read out of the EnergyPlus 25.2.0 binary's own error strings, not from documentation:
+
+| Rule | Consequence |
+|---|---|
+| only one floor per `Foundation:Kiva` | one Kiva object **per floor surface**, always |
+| floor and wall surfaces only | anything else is refused |
+| a `Foundation` surface with no `SurfaceProperty:ExposedFoundationPerimeter` | **fatal** |
+| Kiva walls must have ≤ 4 vertices | refused |
+| `"Foundation" ... must use only regular material objects` | no massless / no-mass / air-gap layers |
+| `Exterior boundary condition = Foundation is not allowed with windows` | no subsurfaces |
+| requires a weather file | Kiva cannot run design-day-only |
+| paired wall lengths ≤ the floor's exposed perimeter | severe at run time; `kiva_apply._walls_exceeding_perimeter()` refuses it before writing |
+
+`kiva_surface_blockers()` in `kiva_eligibility.py` checks every one that is cheap, and refuses the
+surface with a reason rather than writing a model that dies at run time. Matched interior surfaces
+(`Surface` boundary) are never candidates however deep they sit: a two-storey basement's middle
+floor or a partition between two basement zones has a partner, not soil, and converting it would
+reset the pairing and drop the partner to Outdoors. On a real Revit model the
+massless-layer rule is the most common outcome — `openstudio.model.exampleModel()`'s own floors fail
+it on `CP02 CARPET PAD`.
+
+## Three SDK traps, all verified by probe
+
+**1. `Surface.exposedPerimeter()` segfaults on a surface with no parent Space.** No Python
+exception, no error dict — the interpreter dies and takes the MCP session with it. gbXML imports
+produce parentless surfaces routinely (that is why `patch_missing_surfaces` exists). `_has_space()`
+guards every call and `test_space_less_floor_is_reported_not_crashed` is the regression.
+
+**2. `createSurfacePropertyExposedFoundationPerimeter(method, value)` reports success when it
+silently discarded the input.** It returns an initialized Optional either way:
+
+| call | initialized | method reads back |
+|---|---|---|
+| `("TotalExposedPerimeter", 12.0)` | True | `'TotalExposedPerimeter'` |
+| `("ExposedPerimeterFraction", 1.0)` | True | `'ExposedPerimeterFraction'` |
+| `("Calculate", 12.0)` | **True** | `''` |
+| `("Bogus", 12.0)` | **True** | `''` |
+
+An out-of-range fraction (a fraction must be 0..1) gets the same treatment — method set, value
+unset. So the method is whitelisted here, the value is range-checked against it, and
+`_write_exposed_perimeter()` reads both back and compares. `is_initialized()` is never treated as
+success. `BySegment` is legal in the IDD but not offered: EnergyPlus cannot auto-correct a clockwise
+floor polygon under it, OpenStudio exposes no segment API, and gbXML winding is exactly what
+`weld_coincident_vertices` exists to clean up.
+
+**3. `Surface.setAdjacentFoundation()` leaves `SunExposed`/`WindExposed` intact.** It sets the
+boundary condition but not the exposure, so a buried slab would keep taking solar gain — the same
+defect `ground_contact.py`'s docstring is about. `setOutsideBoundaryCondition("Foundation")` is
+called **first** because that one derives NoSun/NoWind.
+
+Also: `model.getFoundationKivaSettings()` creates the unique object;
+`getOptionalFoundationKivaSettings()` does not. Same hazard as the `Site:GroundTemperature:*`
+objects in `weather/ground_temperatures.py`, and the read paths use the Optional form throughout.
+
+## Exposed perimeter
+
+Each candidate floor's edges are projected to z = 0, and its exposed perimeter is the length of
+those edges minus every interval that lies under a collinear edge of another at-or-below-grade
+floor (`kiva_eligibility.compute_exposed_perimeters`). Interval subtraction handles partial
+overlaps and T-junctions; a courtyard's edges stay exposed because no floor lies on their other
+side; duplicated footprints are reported and do not cover each other. All candidate floors take
+part as neighbours, not only the selected ones, or an interior bay will not correctly score zero.
+
+The SDK route is deliberately not used. `Surface.exposedPerimeter()` and `joinAllPolygons()` both
+assert |z| <= tolerance, so a basement floor scores 0.0 through them, and the join fills holes, so a
+3x3 ring of 10 m slabs around an open courtyard reported 120 m instead of 160 m. A computed zero
+(a fully enclosed interior bay) is clamped to `MIN_EXPOSED_PERIMETER_M` (Kiva rejects a zero
+perimeter), matching the vendored `tbd` gem.
+
+## Two Foundation:Kiva fields are measured from the wall top, not from grade
+
+From `Energy+.idd`: *Exterior Vertical Insulation Depth* is "the extent of insulation as measured
+from the wall top to the bottom edge", and *Wall Height Above Grade* is "the distance from the
+exterior grade to the wall top". So a full-depth basement run (`MATCH_WALL_DEPTH`) is the paired
+walls' top-to-bottom span, and the wall height is their `z_max` — both derived per foundation in
+`kiva_apply._wall_geometry_by_floor()` from world coordinates, reported under
+`wall_geometry_by_floor` in the plan and on each `applied.foundations[i]`. A user-supplied
+`exterior_vertical_insulation_depth_m` or `wall_height_above_grade_m` is written verbatim. Walls of
+differing height on one floor share one Foundation object; the largest span is used and
+`mixed_heights` says so.
+
+## The archetype numbers, and what they are not
+
+`kiva_archetypes.py` carries five foundation types. **There is no vendored basis for Kiva insulation
+geometry in this image, and the module says so rather than implying one:**
+
+- openstudio-standards has 90 `GroundContact*` rows, but as F-factor and C-factor — code performance
+  per unit perimeter, with no insulation depth, width or position. Inverting them needs ASHRAE 90.1
+  Appendix A tables that are not vendored.
+- NECB's `apply_kiva_foundation` applies no insulation at all; ComStock has none.
+- The `tbd-3.5.0` gem supplies the XPS properties and the 0.6 m interior-horizontal width. Those are
+  cited; everything else is a conventional starting point carrying a `basis` string that says so.
+
+The 90.1 F/C-factor target for the model's climate zone is reported alongside as a cross-check, which
+is what that data legitimately is.
+
+Provenance is not decoration. `wall_height_above_grade = 0.2` is both the archetype value and the IDD
+default, so where they agree the field is left defaulted and reported as
+`openstudio_default (archetype agrees)` — claiming `archetype:*` for a field never written would make
+the whole mechanism theatre.
+
+## File layout
+
+| File | Role |
+|---|---|
+| `kiva_archetypes.py` | The table, R→thickness, provenance merge. **No `openstudio` import** — unit-testable. |
+| `kiva_eligibility.py` | Blockers, candidate classification, wall pairing, exposed perimeter. |
+| `kiva_foundation.py` | Read side: `get_foundation_options`, code targets, object helpers. |
+| `kiva_apply.py` | Write side: `set_kiva_foundation`. |
+| `tools_kiva.py` | MCP registration, split out because `tools.py` was already at ~389/400 lines. |
+
+## Interaction with `Site:GroundTemperature:*`
+
+A `Foundation` surface ignores `Site:GroundTemperature:BuildingSurface` entirely, and Kiva is
+incompatible with the F/C-factor constructions that `FCfactorMethod` affects. `set_kiva_foundation`
+reports this in `ground_temperature_interaction`, and
+`weather/ground_temperatures.find_missing_ground_temperatures()` goes quiet about BuildingSurface once
+every ground-coupled surface is Kiva — otherwise `repair_and_validate_gbxml_geometry` nags forever at
+the user who did the higher-fidelity thing.

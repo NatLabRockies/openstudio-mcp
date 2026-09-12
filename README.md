@@ -356,7 +356,7 @@ Read/write any OpenStudio object by introspection — covers types without a ded
 </details>
 
 <details>
-<summary><b>Geometry</b> — 15 tools</summary>
+<summary><b>Geometry</b> — 17 tools</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -375,6 +375,8 @@ Read/write any OpenStudio object by introspection — covers types without a ded
 | `merge_coplanar_sliver_surfaces` | Merge same-space coplanar fragments into fewer, larger surfaces |
 | `trim_overlapping_surfaces` | Trim same-space surfaces with a genuine 2D overlap to their remainder |
 | `patch_missing_surfaces` | Reconstruct a space's missing surfaces from unpaired polyhedron edges |
+| `get_foundation_options` | Kiva-eligible floors/walls, blockers, exposed perimeter, foundation archetype menu |
+| `set_kiva_foundation` | Model foundation heat transfer with EnergyPlus Kiva (2D soil domain per floor) |
 
 </details>
 
@@ -527,12 +529,13 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Weather & simulation config</b> — 7 tools</summary>
+<summary><b>Weather & simulation config</b> — 8 tools</summary>
 
 | Tool | Description |
 |------|-------------|
 | `list_weather_files` | Available EPW files (with .stat/.ddy) |
-| `get_weather_info` | City, lat, lon, timezone from a weather file |
+| `get_weather_info` | City, lat, lon, timezone, and ground-temperature state |
+| `set_ground_temperatures` | Apply an EPW header's ground temperatures to the model |
 | `add_design_day` | Add a heating/cooling design day |
 | `get_simulation_control` | Read sizing flags and timesteps/hour |
 | `set_simulation_control` | Modify sizing flags and/or timestep |
@@ -762,7 +765,7 @@ The component-properties tools query/modify these 15 types:
 
 ## Examples
 
-24 worked examples with full tool-call sequences:
+25 worked examples with full tool-call sequences:
 
 | # | Example | # | Example |
 |---|---------|---|---------|
@@ -778,6 +781,7 @@ The component-properties tools query/modify these 15 types:
 | 10 | [Typical Building (ComStock)](docs/examples/10_comstock_typical_building.md) | 21 | [gbXML Import from Revit](docs/examples/21_gbxml_import.md) |
 | 11 | [Results Deep Dive](docs/examples/11_results_extraction.md) | 22 | [Repairing & Validating gbXML Geometry](docs/examples/22_repair_and_validate_gbxml_geometry.md) |
 | 23 | [Attributing Space Types (post-gbXML)](docs/examples/23_attribute_space_types.md) | 24 | [Guaranteed Climate Zone & Zone Volume Checks](docs/examples/24_gbxml_climate_zone_and_zone_volume_checks.md) |
+| 25 | [Ground &amp; Foundation Heat Transfer](docs/examples/25_ground_and_foundation_heat_transfer.md) | | |
 
 ---
 
