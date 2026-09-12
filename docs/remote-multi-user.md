@@ -23,7 +23,10 @@ another user's runs or files. Simulations are queued so the box isn't thrashed.
 
 The server stays single-box (model state is heavy and in-memory). Put it on a
 machine your users can reach — see [Network & security](#4-network--security).
-Build the image once: `docker build -f docker/Dockerfile -t openstudio-mcp:dev .`
+Get the image once: pull a release (`docker pull nrel/openstudio-mcp:v1.2.1`; `dev`
+tracks the develop branch) or build locally (`docker build -f docker/Dockerfile -t
+openstudio-mcp:dev .`). The commands below use the local name `openstudio-mcp:dev`;
+if you pulled, substitute the tag you pulled (e.g. `nrel/openstudio-mcp:v1.2.1`).
 
 **macOS / Linux — per-user tokens (the default for HTTP):**
 ```bash

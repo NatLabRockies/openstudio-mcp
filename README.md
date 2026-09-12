@@ -3,7 +3,7 @@
 [![DOI](https://zenodo.org/badge/1160362004.svg)](https://doi.org/10.5281/zenodo.21905081)
 [![SoftwareX paper](https://img.shields.io/badge/SoftwareX-10.1016%2Fj.softx.2026.103020-orange)](https://doi.org/10.1016/j.softx.2026.103020)
 
-**Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
+**Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Codex, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
 **150+ tools · bundled workflow skills · 500+ integration tests**
 
@@ -202,7 +202,7 @@ Any MCP host can launch the same `docker run` command. See the [MCP documentatio
 
 ## Remote & multi-user (HTTP)
 
-The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, Cursor, and VS Code.
+The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, VS Code, and any host that supports streamable-HTTP MCP servers.
 
 Since a remote server can't see files on your laptop, the `file_transfer` tools (`request_upload` / `get_upload` / `request_download`) move models, weather files, and measure `.zip`s in and out over a signed, out-of-band channel — see **[docs/remote-multi-user.md §6](docs/remote-multi-user.md)**.
 
@@ -263,8 +263,9 @@ untrusted measures.
 - Mount `/inputs` read-only: `-v /host/inputs:/inputs:ro`.
 - Mount only the output directory at `/runs`; any process allowed to write
   `/runs` can modify that host directory by design.
-- Mount workflow guides read-only at `/skills`, or use the copy already baked
-  into the image: `-v /host/.claude/skills:/skills:ro`.
+- Workflow guides are already baked into the image at `/skills`; no mount is
+  needed. If you override them for development, mount read-only
+  (`-v /host/.claude/skills:/skills:ro`).
 - Do not mount the repository, home directory, Docker socket, credentials, or
   broad host paths into production containers. The `/repo` source mount in the
   testing commands is for development only.
@@ -547,136 +548,23 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Measures</b> — 6 tools</summary>
+<summary><b>Measures</b> — 11 tools</summary>
+
+Find, download, and apply bundled/BCL measures, or write/test/apply custom ones. See examples [1](docs/examples/01_custom_measure_lighting.md), [2](docs/examples/02_custom_measure_hvac.md), [19](docs/examples/19_systemd_fourpipebeam_retrofit.md).
 
 | Tool | Description |
 |------|-------------|
 | `list_local_measures` | Discover mounted, downloaded, bundled, and custom OpenStudio measures |
 | `find_measure` | Find a measure locally first, then BCL; download a strong BCL match |
 | `search_bcl_measures` | Search BCL measure candidates without downloading |
-| `list_measure_arguments` | List measure arguments with defaults and choices |
 | `download_measure_from_bcl` | Download and extract a measure ZIP into your per-user BCL cache (`/measures/<user>/bcl`) |
-| `apply_measure` | Apply OpenStudio measure to in-memory model |
-
-</details>
-
-<details>
-<summary><b>Simulation & outputs</b> — 10 tools</summary>
-
-| Tool | Description |
-|------|-------------|
-| `run_simulation` | Run a simulation from an OSM + optional EPW |
-| `run_osw` | Run EnergyPlus from an OSW file |
-| `validate_osw` | Validate an OSW workflow file |
-| `validate_model` | Pre-sim check: weather, design days, HVAC, constructions |
-| `get_run_status` | Poll run status |
-| `get_run_logs` | Tail simulation logs |
-| `get_run_artifacts` | List output files |
-| `cancel_run` | Cancel a running simulation |
-| `add_output_variable` | Add an EnergyPlus output variable |
-| `add_output_meter` | Add an EnergyPlus output meter |
-
-</details>
-
-<details>
-<summary><b>Run retention</b> — 4 tools</summary>
-
-Reclaim disk from old run directories. See [docs/run-retention.md](docs/run-retention.md).
-
-| Tool | Description |
-|------|-------------|
-| `cleanup_runs` | Delete old run dirs you own (preview with `dry_run`, then delete) |
-| `delete_run` | Delete one of your run directories |
-| `pin_run` | Protect a run from automatic cleanup |
-| `unpin_run` | Allow a pinned run to be cleaned up again |
-
-</details>
-
-<details>
-<summary><b>File transfer (remote HTTP mode)</b> — 5 tools</summary>
-
-Move files between your machine and a remote server over signed, one-time URLs. See [Remote & multi-user](#remote--multi-user-http).
-
-| Tool | Description |
-|------|-------------|
-| `request_upload` | Get a one-time URL to upload a local file to the server |
-| `get_upload` | Check an upload's status and get its server-side path |
-| `list_uploads` | List your uploaded files |
-| `delete_upload` | Delete an uploaded file and free its quota |
-| `request_download` | Get a one-time URL to download a server file to your machine |
-
-</details>
-
-<details>
-<summary><b>OpenStudio Server analysis</b> — 20 tools</summary>
-
-OSA JSON validation blocks DOE analyses with fewer than two measure variables
-and, by default, requires the foundational `view_model`, `openstudio_results`,
-and `generic_qaqc` measures in the workflow. Package validation also requires
-those measures in the support ZIP. Use `single_run` for a single datapoint, a
-schema-supported sampling type such as `lhs` for one-variable sampling, or add
-another real variable before choosing DOE. OSAF's DOE runner accepts a
-one-variable payload but later fails during analysis startup.
-
-| Tool | Description |
-|------|-------------|
-| `openstudio_analysis_create_osa_json` | Create an OpenStudio Server OSA JSON file |
-| `openstudio_analysis_validate_osa_json` | Validate an OSA JSON file locally |
-| `openstudio_analysis_default_output_variables` | Return the foundational output variables used by generated OSA JSON |
-| `openstudio_analysis_foundational_measures` | Return the common measures appended to generated OSA workflows |
-| `openstudio_analysis_preflight_seed` | Simulate/reuse a seed run and write seed QA/QC evidence before packaging |
-| `openstudio_analysis_prepare_package` | Create an OSAF support ZIP only after seed simulation QA/QC passes |
-| `openstudio_analysis_create_osa_json_from_measures` | Create OSA JSON from measure directories, static arguments, and variable parameters |
-| `openstudio_analysis_add_measure_to_osa_json` | Add a measure step and optional algorithm variables to an existing OSA JSON workflow |
-| `openstudio_analysis_create_project` | Create an OpenStudio Server project |
-| `openstudio_analysis_submit` | Submit OSA JSON and optional support ZIP to a project |
-| `openstudio_analysis_status` | Check analysis status |
-| `openstudio_analysis_start` | Start an existing analysis with OSAF's action endpoint |
-| `openstudio_analysis_wait` | Poll analysis status until completion/failure/timeout |
-| `openstudio_analysis_test_server_config` | Check server health, submit a single_run smoke test, and run one datapoint |
-| `openstudio_analysis_download_data` | Download exported analysis data |
-| `openstudio_analysis_results_json` | Fetch analysis result data as JSON |
-| `openstudio_analysis_submit_wait_download` | Submit analysis, wait for completion, and download results |
-| `openstudio_analysis_algorithms` | List OSAF analysis algorithms and when to use them |
-| `openstudio_analysis_validate_package` | Validate an OSAF analysis support ZIP before upload |
-| `openstudio_analysis_start_sampled_run` | Start a sampled analysis in the required OSAF order |
-
-</details>
-
-<details>
-<summary><b>Results extraction</b> — 12 tools</summary>
-
-| Tool | Description |
-|------|-------------|
-| `extract_summary_metrics` | EUI, energy, unmet hours |
-| `extract_end_use_breakdown` | Energy by end use and fuel (IP/SI) |
-| `extract_envelope_summary` | Opaque + fenestration U-values and areas |
-| `extract_hvac_sizing` | Autosized zone/system HVAC capacities |
-| `extract_zone_summary` | Per-zone areas, conditions, multipliers |
-| `extract_component_sizing` | Autosized component values (filterable) |
-| `query_timeseries` | Time-series output data with date/cap filters |
-| `extract_simulation_errors` | Parse eplusout.err into Fatal/Severe/Warning |
-| `list_output_variables` | Output variables from a completed run |
-| `compare_runs` | Compare two runs: EUI delta + end-use breakdown |
-| `read_file` | Read any file by absolute path (mounts only) |
-| `copy_file` | Copy a file to a host-mounted path |
-
-</details>
-
-<details>
-<summary><b>Measures & authoring</b> — 7 tools</summary>
-
-Apply bundled measures, or write/test/apply custom ones. See examples [1](docs/examples/01_custom_measure_lighting.md), [2](docs/examples/02_custom_measure_hvac.md), [19](docs/examples/19_systemd_fourpipebeam_retrofit.md).
-
-| Tool | Description |
-|------|-------------|
-| `apply_measure` | Apply an OpenStudio measure to the in-memory model |
+| `list_comstock_measures` | List ~61 bundled [ComStock](https://github.com/NREL/ComStock) measures |
 | `list_measure_arguments` | List a measure's arguments, defaults, choices |
+| `apply_measure` | Apply an OpenStudio measure to the in-memory model |
 | `create_measure` | Create a custom Ruby/Python ModelMeasure |
 | `edit_measure` | Edit a custom measure's code or arguments |
 | `test_measure` | Run a custom measure's tests (auto-detects language) |
 | `list_custom_measures` | List custom measures you've created |
-| `list_comstock_measures` | List ~61 bundled [ComStock](https://github.com/NREL/ComStock) measures |
 
 </details>
 
