@@ -168,10 +168,10 @@ The AI reads your prompt, picks the right tools from the 150+ available, calls t
 
 ### Working with Your Own Files
 
-**Place files in the host folder mapped to `/inputs`** (see [step 2](#2-configure-your-host)) rather than uploading them through the chat interface. Uploads never reach the MCP tools; mounted files do.
+**Place files in the host folder mapped to `/inputs`** (see [step 2](#2-configure-your-host)) rather than uploading them (drag-and-drop or attach) through the web or desktop chat interface. Uploads never reach the MCP tools; mounted files do.
 
 ```bash
-# Example: analyzing an EnergyPlus error file
+# Example: analyzing an EnergyPlus error file in an AI-chat session
 # 1. Copy to the host folder mounted at /inputs
 cp eplusout.err /path/to/models/
 
