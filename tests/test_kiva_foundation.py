@@ -632,6 +632,44 @@ def test_user_soil_override_creates_settings_and_reports_provenance():
     assert settings.get().soilConductivity() == pytest.approx(2.2)
 
 
+def test_existing_custom_soil_is_reported_as_existing_and_left_alone():
+    # Regression: with a FoundationKivaSettings object already holding custom soil values, the plan
+    # reported them as openstudio_default and the writer left the custom values in place — the
+    # response misstated what the new foundations would actually use
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    _build_quadrants()
+    settings = get_model().getFoundationKivaSettings()
+    assert settings.setSoilConductivity(2.4)
+
+    result = set_kiva_foundation(archetype="slab_on_grade_uninsulated",
+                                 include_below_grade_walls=False, epw_path=BOSTON_EPW)
+
+    assert result["ok"] is True, result
+    assert result["plan"]["soil"]["soil_conductivity_w_mk"] == {
+        "value": 2.4, "provenance": "existing_model", "written": False}
+    assert result["plan"]["soil"]["soil_density_kg_m3"]["provenance"] == "openstudio_default"
+    assert get_model().getFoundationKivaSettings().soilConductivity() == pytest.approx(2.4)
+
+
+def test_dry_run_reports_insulation_with_provenance():
+    # Regression: the dry-run plan omitted the insulation entirely, so the user could not see the
+    # R-value and extent — or where they came from — before committing
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    _build_quadrants()
+    result = set_kiva_foundation(archetype="slab_on_grade_perimeter_insulated",
+                                 include_below_grade_walls=False, epw_path=BOSTON_EPW,
+                                 exterior_vertical_insulation_r_si=3.52, dry_run=True)
+
+    assert result["ok"] is True, result
+    layer = result["plan"]["insulation"]["exterior_vertical"]
+    assert layer["r_si_m2k_w"] == {"value": 3.52, "provenance": "user"}
+    assert layer["depth_m"] == {"value": 0.6,
+                                "provenance": "archetype:slab_on_grade_perimeter_insulated"}
+
+
 def test_dry_run_changes_nothing():
     # Validates: dry_run returns the full plan for the user to inspect while creating no
     # FoundationKiva objects — the preview must not be a partial apply

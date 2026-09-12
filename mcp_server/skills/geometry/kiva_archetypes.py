@@ -46,7 +46,7 @@ never written would make provenance theatre, so `resolve_kiva_parameters` report
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # XPS, from tbd-3.5.0/lib/tbd/geo.rb ("XPS 25mm"). The one vendored material basis available.
 XPS_CONDUCTIVITY_W_MK = 0.029
@@ -78,6 +78,7 @@ TBD_BASIS = "material properties and interior-horizontal width from the vendored
 # Provenance vocabulary. Every reported value carries exactly one of these.
 PROVENANCE_USER = "user"
 PROVENANCE_EPW = "epw_header"
+PROVENANCE_EXISTING = "existing_model"
 PROVENANCE_DEFAULT = "openstudio_default"
 PROVENANCE_DEFAULT_AGREES = "openstudio_default (archetype agrees)"
 PROVENANCE_COMPUTED = "computed_geometry"
@@ -105,6 +106,18 @@ class InsulationSpec:
     r_si_m2k_w: float
     depth_m: float | str | None = None
     width_m: float | None = None
+    # Per-field origin, filled by resolve_insulation: "user" or "archetype:<name>". Empty on the
+    # table entries themselves, which are the archetype by definition.
+    provenance: dict[str, str] = field(default_factory=dict, compare=False)
+
+    def as_plan(self) -> dict[str, object]:
+        """The layer as the plan reports it: every value next to where it came from."""
+        return {
+            "r_si_m2k_w": {"value": self.r_si_m2k_w,
+                           "provenance": self.provenance.get("r_si_m2k_w")},
+            "depth_m": {"value": self.depth_m, "provenance": self.provenance.get("depth_m")},
+            "width_m": {"value": self.width_m, "provenance": self.provenance.get("width_m")},
+        }
 
 
 @dataclass(frozen=True)
@@ -268,17 +281,17 @@ def resolve_kiva_parameters(
         "wall_depth_below_slab_m": archetype.wall_depth_below_slab_m,
         "footing_depth_m": archetype.footing_depth_m,
     }
-    for field, idd_default in _GEOMETRY_DEFAULTS.items():
-        if field in supplied:
-            resolved[field] = ResolvedValue(supplied[field], PROVENANCE_USER)
+    for name, idd_default in _GEOMETRY_DEFAULTS.items():
+        if name in supplied:
+            resolved[name] = ResolvedValue(supplied[name], PROVENANCE_USER)
             continue
-        archetype_value = archetype_values[field]
+        archetype_value = archetype_values[name]
         if archetype_value == idd_default:
-            resolved[field] = ResolvedValue(
+            resolved[name] = ResolvedValue(
                 archetype_value, PROVENANCE_DEFAULT_AGREES, write=False,
             )
         else:
-            resolved[field] = ResolvedValue(archetype_value, f"archetype:{archetype_name}")
+            resolved[name] = ResolvedValue(archetype_value, f"archetype:{archetype_name}")
 
     unknown = sorted(set(supplied) - set(_GEOMETRY_DEFAULTS))
     if unknown:
@@ -302,7 +315,16 @@ def resolve_insulation(
     supplied = {k: v for k, v in (overrides or {}).items() if v is not None}
     warnings: list[str] = []
 
-    by_position = {spec.position: spec for spec in archetype.insulation}
+    from_archetype = f"archetype:{archetype_name}"
+    by_position = {
+        spec.position: InsulationSpec(
+            position=spec.position, r_si_m2k_w=spec.r_si_m2k_w, depth_m=spec.depth_m,
+            width_m=spec.width_m,
+            provenance={"r_si_m2k_w": from_archetype, "depth_m": from_archetype,
+                        "width_m": from_archetype},
+        )
+        for spec in archetype.insulation
+    }
     for position in (POSITION_INTERIOR_HORIZONTAL, POSITION_EXTERIOR_VERTICAL):
         r_si = supplied.get(f"{position}_r_si")
         depth = supplied.get(f"{position}_depth_m")
@@ -316,11 +338,17 @@ def resolve_insulation(
                 f"applies no {position} insulation.",
             )
             continue
+        base = existing.provenance if existing else {}
         by_position[position] = InsulationSpec(
             position=position,
             r_si_m2k_w=r_si if r_si is not None else existing.r_si_m2k_w,
             depth_m=depth if depth is not None else (existing.depth_m if existing else None),
             width_m=width if width is not None else (existing.width_m if existing else None),
+            provenance={
+                "r_si_m2k_w": PROVENANCE_USER if r_si is not None else base.get("r_si_m2k_w"),
+                "depth_m": PROVENANCE_USER if depth is not None else base.get("depth_m"),
+                "width_m": PROVENANCE_USER if width is not None else base.get("width_m"),
+            },
         )
 
     ordered = [by_position[p] for p in
@@ -331,18 +359,25 @@ def resolve_insulation(
 def resolve_soil_properties(
     ground_temperature_set=None,
     overrides: dict[str, float | None] | None = None,
+    existing: dict[str, float | None] | None = None,
 ) -> tuple[dict[str, ResolvedValue], list[str]]:
     """Soil conductivity, density and specific heat for FoundationKivaSettings.
 
-    Precedence: caller override, then the EPW header's GROUND TEMPERATURES soil fields, then the
-    OpenStudio defaults. Those three EPW fields are blank in every EPW bundled with this repo, so
-    the defaulted path is the normal one — and when nothing is chosen the writer should not create
-    the settings object at all, which is why every value carries `write`.
+    Precedence: caller override, then a value already chosen on the model's FoundationKivaSettings
+    (reported as `existing_model`, never overwritten), then the EPW header's GROUND TEMPERATURES
+    soil fields, then the OpenStudio defaults. Those three EPW fields are blank in every EPW bundled
+    with this repo, so the defaulted path is the normal one — and when nothing is chosen the writer
+    should not create the settings object at all, which is why every value carries `write`.
+
+    `existing` maps the three field names to the model's non-defaulted values (None when the
+    field is still at its IDD default, or when the settings object does not exist). Without it the
+    plan would report `openstudio_default` for a value the simulation will not actually use.
 
     `ground_temperature_set` is an epw_ground_temperatures.GroundTemperatureSet or None; it is
     duck-typed so this module stays free of that import at runtime.
     """
     supplied = {k: v for k, v in (overrides or {}).items() if v is not None}
+    chosen = {k: v for k, v in (existing or {}).items() if v is not None}
     warnings: list[str] = []
     resolved: dict[str, ResolvedValue] = {}
 
@@ -357,15 +392,18 @@ def resolve_soil_properties(
             "soil_density_kg_m3": ground_temperature_set.density_kg_m3,
             "soil_specific_heat_j_kgk": ground_temperature_set.specific_heat_j_kgk,
         }
-    for field, default in _SOIL_DEFAULTS.items():
-        if field in supplied:
-            resolved[field] = ResolvedValue(supplied[field], PROVENANCE_USER)
+    for name, default in _SOIL_DEFAULTS.items():
+        if name in supplied:
+            resolved[name] = ResolvedValue(supplied[name], PROVENANCE_USER)
             continue
-        epw_value = epw_values[field]
+        if name in chosen:
+            resolved[name] = ResolvedValue(chosen[name], PROVENANCE_EXISTING, write=False)
+            continue
+        epw_value = epw_values[name]
         if epw_value is not None:
-            resolved[field] = ResolvedValue(epw_value, PROVENANCE_EPW)
+            resolved[name] = ResolvedValue(epw_value, PROVENANCE_EPW)
         else:
-            resolved[field] = ResolvedValue(default, PROVENANCE_DEFAULT, write=False)
+            resolved[name] = ResolvedValue(default, PROVENANCE_DEFAULT, write=False)
 
     if ground_temperature_set is not None and all(
         r.provenance == PROVENANCE_DEFAULT for r in resolved.values()

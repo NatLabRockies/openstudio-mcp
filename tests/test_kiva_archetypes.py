@@ -27,6 +27,7 @@ from mcp_server.skills.geometry.kiva_archetypes import (
     PROVENANCE_DEFAULT,
     PROVENANCE_DEFAULT_AGREES,
     PROVENANCE_EPW,
+    PROVENANCE_EXISTING,
     PROVENANCE_USER,
     XPS_CONDUCTIVITY_W_MK,
     UnknownArchetypeError,
@@ -307,6 +308,42 @@ def test_user_soil_override_beats_the_epw():
 
     assert resolved["soil_conductivity_w_mk"].value == 2.2
     assert resolved["soil_conductivity_w_mk"].provenance == PROVENANCE_USER
+
+
+def test_existing_model_soil_value_is_reported_and_not_overwritten():
+    # Regression: a FoundationKivaSettings object already carrying custom soil values was reported
+    # as `openstudio_default` with written=False, so the plan misstated what the simulation uses
+    resolved, _ = resolve_soil_properties(
+        _FakeGroundTemperatureSet(conductivity_w_mk=1.95),
+        {"soil_density_kg_m3": 1900.0},
+        existing={"soil_conductivity_w_mk": 2.4, "soil_density_kg_m3": 1700.0,
+                  "soil_specific_heat_j_kgk": None},
+    )
+
+    assert resolved["soil_conductivity_w_mk"].value == 2.4
+    assert resolved["soil_conductivity_w_mk"].provenance == PROVENANCE_EXISTING
+    assert resolved["soil_conductivity_w_mk"].write is False
+    # A caller value still beats the model's own.
+    assert resolved["soil_density_kg_m3"].value == 1900.0
+    assert resolved["soil_density_kg_m3"].provenance == PROVENANCE_USER
+    # Still defaulted on the model, blank in the EPW: IDD default, not written.
+    assert resolved["soil_specific_heat_j_kgk"].provenance == PROVENANCE_DEFAULT
+
+
+def test_insulation_layers_carry_per_field_provenance():
+    # Regression: resolve_insulation dropped whether each value came from the user or the
+    # archetype, so dry_run could not show provenance for the insulation at all
+    specs, _ = resolve_insulation(
+        "slab_on_grade_perimeter_insulated", {"exterior_vertical_depth_m": 1.2},
+    )
+
+    assert len(specs) == 1
+    layer = specs[0].as_plan()
+    assert layer["r_si_m2k_w"] == {"value": CONVENTIONAL_R_SI,
+                                   "provenance": "archetype:slab_on_grade_perimeter_insulated"}
+    assert layer["depth_m"] == {"value": 1.2, "provenance": PROVENANCE_USER}
+    assert layer["width_m"] == {"value": None,
+                                "provenance": "archetype:slab_on_grade_perimeter_insulated"}
 
 
 def test_soil_with_no_epw_at_all_defaults_quietly():

@@ -136,6 +136,26 @@ def code_ground_targets(climate_zone: str | None) -> dict[str, Any] | None:
     return targets
 
 
+def existing_soil_properties(model) -> dict[str, float | None]:
+    """The soil values already chosen on FoundationKivaSettings, None where still defaulted.
+
+    Optional getter, so calling this never creates the settings object.
+    """
+    optional = model.getOptionalFoundationKivaSettings()
+    if not optional.is_initialized():
+        return {"soil_conductivity_w_mk": None, "soil_density_kg_m3": None,
+                "soil_specific_heat_j_kgk": None}
+    settings = optional.get()
+    return {
+        "soil_conductivity_w_mk": (
+            None if settings.isSoilConductivityDefaulted() else settings.soilConductivity()),
+        "soil_density_kg_m3": (
+            None if settings.isSoilDensityDefaulted() else settings.soilDensity()),
+        "soil_specific_heat_j_kgk": (
+            None if settings.isSoilSpecificHeatDefaulted() else settings.soilSpecificHeat()),
+    }
+
+
 def read_kiva_state(model) -> dict[str, Any]:
     """What Kiva content the model already carries. Creates nothing."""
     settings = model.getOptionalFoundationKivaSettings()
@@ -220,12 +240,20 @@ def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) ->
                 return f"OpenStudio refused the interior horizontal insulation material on {kiva.nameString()}"
             if spec.width_m is not None and not kiva.setInteriorHorizontalInsulationWidth(spec.width_m):
                 return f"OpenStudio refused an interior horizontal insulation width of {spec.width_m} m"
+        depth_provenance = spec.provenance.get("depth_m")
+        if spec.depth_m == MATCH_WALL_DEPTH:
+            depth_provenance = PROVENANCE_COMPUTED
         provenance[f"{spec.position}_insulation"] = {
             "r_si_m2k_w": spec.r_si_m2k_w,
             "material": material.nameString(),
             "material_disposition": disposition,
             "depth_m": depth,
             "width_m": spec.width_m,
+            "provenance": {
+                "r_si_m2k_w": spec.provenance.get("r_si_m2k_w"),
+                "depth_m": depth_provenance,
+                "width_m": spec.provenance.get("width_m"),
+            },
         }
     return None
 

@@ -47,6 +47,7 @@ from mcp_server.skills.geometry.kiva_foundation import (
     _wall_depth_for,
     _write_exposed_perimeter,
     code_ground_targets,
+    existing_soil_properties,
 )
 
 # Slack for the wall-length check, in metres. The EnergyPlus comparison is exact; this only
@@ -387,6 +388,7 @@ def set_kiva_foundation(
                 "soil_density_kg_m3": soil_density_kg_m3,
                 "soil_specific_heat_j_kgk": soil_specific_heat_j_kgk,
             },
+            existing=existing_soil_properties(model),
         )
         warnings.extend(soil_warnings)
 
@@ -439,6 +441,7 @@ def set_kiva_foundation(
                          for k, v in geometry.items()},
             "soil": {k: {"value": v.value, "provenance": v.provenance, "written": v.write}
                      for k, v in soil.items()},
+            "insulation": {spec.position: spec.as_plan() for spec in insulation},
             "exposed_perimeter": {n: {"method": m, "value": val, "provenance": p}
                                   for n, (m, val, p) in perimeters.items()},
         }
