@@ -221,10 +221,12 @@ def _resolve_epw(model, generation: int, epw_path: str | None) -> tuple[Path | N
         candidate = Path(epw_path)
         if candidate.suffix.lower() != ".epw":
             return None, f"Not an EPW file (expected .epw): {epw_path}"
-        if not candidate.is_file():
-            return None, f"EPW file not found: {epw_path}"
+        # Allowlist before existence, so a path outside it gets the same answer whether or
+        # not a file is there — the existence check must not double as a probe.
         if not is_path_allowed(candidate):
             return None, f"EPW path not allowed: {epw_path}. {path_denied_hint()}"
+        if not candidate.is_file():
+            return None, f"EPW file not found: {epw_path}"
         return candidate, "argument"
 
     from mcp_server.skills.gbxml_import.gbxml_source_state import get_epw_for_model

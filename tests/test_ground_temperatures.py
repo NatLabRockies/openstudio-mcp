@@ -196,6 +196,8 @@ def test_epw_raw_applies_undisturbed_values_and_warns_loudly():
 
 
 def test_constant_method_writes_the_given_value():
+    # Validates: building_surface_method="constant" writes the caller's value to all 12 months
+    # of BuildingSurface, ignoring both the EPW profile and any thermostat-derived setpoint
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -208,6 +210,8 @@ def test_constant_method_writes_the_given_value():
 
 
 def test_none_method_leaves_building_surface_absent():
+    # Validates: building_surface_method="none" never creates the BuildingSurface object (so a
+    # Kiva/other-source user gets no stray unique object) and the skip is reported by name
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -224,6 +228,8 @@ def test_none_method_leaves_building_surface_absent():
 
 
 def test_constant_method_without_a_value_is_rejected():
+    # Validates: "constant" with no building_surface_constant_c is an argument error naming the
+    # missing parameter, not a silent fall-through to the IDD default of 18.0
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -234,6 +240,8 @@ def test_constant_method_without_a_value_is_rejected():
 
 
 def test_implausible_constant_is_rejected():
+    # Validates: the plausibility range guard on building_surface_constant_c — a 500 C value
+    # (unit mix-up) is refused before any object is written, and the error says it was out of range
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -246,6 +254,8 @@ def test_implausible_constant_is_rejected():
 
 
 def test_unknown_building_surface_method_is_rejected_listing_the_valid_ones():
+    # Validates: an unrecognised building_surface_method is rejected with the accepted choices
+    # in the error text, so an LLM caller can self-correct without reading the docstring
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -267,6 +277,8 @@ def test_no_model_loaded_reports_instead_of_raising():
 
 
 def test_missing_epw_is_rejected():
+    # Validates: a nonexistent epw_path yields ok=False with a "not found" message rather than
+    # an unhandled OSError escaping through MCP
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -276,7 +288,23 @@ def test_missing_epw_is_rejected():
     assert "not found" in result["error"]
 
 
+def test_disallowed_epw_path_is_refused_before_existence_is_checked():
+    # Validates: the allowlist check runs before is_file(), so a caller outside the allowed roots
+    # cannot tell from the error whether a file exists there — "not found" vs "not allowed" would
+    # be an existence probe on another tenant's tree
+    from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
+
+    _load_empty_model()
+    result = set_ground_temperatures(epw_path="/etc/does_not_exist.epw")
+
+    assert result["ok"] is False
+    assert "not allowed" in result["error"]
+    assert "not found" not in result["error"]
+
+
 def test_non_epw_suffix_is_rejected():
+    # Validates: the .epw suffix check — handing the sibling .stat file (an easy mistake, it
+    # also holds ground temperatures) is refused instead of being parsed as EPW header lines
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -304,6 +332,8 @@ def test_epw_without_a_ground_temperature_record_reports_and_writes_nothing():
 
 
 def test_no_epw_anywhere_names_every_route_it_tried():
+    # Validates: with no epw_path argument, no gbXML-import EPW and no OS:WeatherFile, the error
+    # lists all three routes (epw_path / import_gbxml / change_building_location) the caller can take
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -354,6 +384,8 @@ def test_get_weather_info_reports_ground_temperatures_without_a_weather_file():
 
 
 def test_get_weather_info_reflects_applied_values():
+    # Validates: get_weather_info's ground_temperatures block reads the live model — after
+    # set_ground_temperatures, Deep reports state="set", months_set=12 and the Boston Jan value
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
     from mcp_server.skills.weather.operations import get_weather_info
 
@@ -420,6 +452,8 @@ def test_existing_values_are_not_replaced_without_overwrite():
 
 
 def test_overwrite_replaces_and_reports_the_previous_values():
+    # Validates: overwrite=True actually replaces the 12 months (Boston -> Austin) and echoes the
+    # displaced values in replaced_monthly_c so the caller can see what was lost
     from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
 
     _load_empty_model()
@@ -439,6 +473,8 @@ def test_overwrite_replaces_and_reports_the_previous_values():
 
 
 def test_report_flags_a_fresh_model_and_clears_after_applying():
+    # Validates: find_missing_ground_temperatures' contract — a fresh model reports all 4 objects
+    # missing (count=4, state "absent"), and one set_ground_temperatures call drives it to 0/False
     from mcp_server.skills.weather.ground_temperatures import (
         find_missing_ground_temperatures,
         set_ground_temperatures,
@@ -459,6 +495,8 @@ def test_report_flags_a_fresh_model_and_clears_after_applying():
 
 
 def test_report_with_no_model_loaded_reports_instead_of_raising():
+    # Validates: the no-model guard on find_missing_ground_temperatures returns ok=False with an
+    # error instead of raising through MCP (CLAUDE.md rule 5)
     from mcp_server.skills.weather.ground_temperatures import find_missing_ground_temperatures
 
     result = find_missing_ground_temperatures()
