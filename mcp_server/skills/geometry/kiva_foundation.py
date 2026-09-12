@@ -192,7 +192,12 @@ def _wall_depth_for(model, wall_names: list[str]) -> float | None:
     return round(max(depths), 3) if depths and max(depths) > 0 else None
 
 
-def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) -> None:
+def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) -> str | None:
+    """Attach the insulation layers to one FoundationKiva. Returns an error string, or None.
+
+    A setter refusal is an error, not a warning: recording the requested extent while the object
+    kept its default would report insulation that is not in the model.
+    """
     for spec in specs:
         depth = spec.depth_m
         if depth == MATCH_WALL_DEPTH:
@@ -207,18 +212,14 @@ def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) ->
         material, disposition = _insulation_material(model, spec.r_si_m2k_w)
         if spec.position == POSITION_EXTERIOR_VERTICAL:
             if not kiva.setExteriorVerticalInsulationMaterial(material):
-                warnings.append("OpenStudio refused the exterior vertical insulation material.")
-                continue
+                return f"OpenStudio refused the exterior vertical insulation material on {kiva.nameString()}"
             if depth is not None and not kiva.setExteriorVerticalInsulationDepth(depth):
-                warnings.append(f"OpenStudio refused an exterior vertical insulation depth of {depth} m.")
+                return f"OpenStudio refused an exterior vertical insulation depth of {depth} m"
         elif spec.position == POSITION_INTERIOR_HORIZONTAL:
             if not kiva.setInteriorHorizontalInsulationMaterial(material):
-                warnings.append("OpenStudio refused the interior horizontal insulation material.")
-                continue
+                return f"OpenStudio refused the interior horizontal insulation material on {kiva.nameString()}"
             if spec.width_m is not None and not kiva.setInteriorHorizontalInsulationWidth(spec.width_m):
-                warnings.append(
-                    f"OpenStudio refused an interior horizontal insulation width of {spec.width_m} m.",
-                )
+                return f"OpenStudio refused an interior horizontal insulation width of {spec.width_m} m"
         provenance[f"{spec.position}_insulation"] = {
             "r_si_m2k_w": spec.r_si_m2k_w,
             "material": material.nameString(),
@@ -226,6 +227,7 @@ def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) ->
             "depth_m": depth,
             "width_m": spec.width_m,
         }
+    return None
 
 
 def _write_exposed_perimeter(surface, method: str, value: float) -> str | None:
@@ -335,10 +337,12 @@ def _resolve_perimeter(model, floor_names, mode, total_m, fraction, warnings):
     if mode == "fraction":
         if fraction is None:
             return None, "exposed_perimeter_method='fraction' requires exposed_perimeter_fraction"
-        if not 0.0 <= fraction <= 1.0:
+        if not 0.0 < fraction <= 1.0:
             return None, (
-                f"exposed_perimeter_fraction must be between 0 and 1, got {fraction} — "
-                f"OpenStudio discards an out-of-range fraction without reporting it."
+                f"exposed_perimeter_fraction must be greater than 0 and at most 1, got {fraction} "
+                f"— OpenStudio discards an out-of-range fraction without reporting it, and Kiva "
+                f"refuses a zero exposed perimeter (the computed path clamps zero to "
+                f"{MIN_EXPOSED_PERIMETER_M} m for the same reason)."
             )
         return dict.fromkeys(floor_names, (PERIMETER_METHOD_FRACTION, fraction, PROVENANCE_USER)), None
 

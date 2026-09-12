@@ -181,17 +181,21 @@ def _retire_foundation(kiva) -> str | None:
 def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perimeters,
            archetype, warnings) -> tuple[dict[str, Any], str | None]:
     """Write the Kiva objects. Returns (applied, error)."""
+    applied: dict[str, Any] = {"floors": [], "walls": [], "insulation": {}, "foundations": []}
+
     settings_written = {k: v for k, v in soil.items() if v.write}
     if settings_written:
         settings = model.getFoundationKivaSettings()   # creating here is the intent
-        if "soil_conductivity_w_mk" in settings_written:
-            settings.setSoilConductivity(settings_written["soil_conductivity_w_mk"].value)
-        if "soil_density_kg_m3" in settings_written:
-            settings.setSoilDensity(settings_written["soil_density_kg_m3"].value)
-        if "soil_specific_heat_j_kgk" in settings_written:
-            settings.setSoilSpecificHeat(settings_written["soil_specific_heat_j_kgk"].value)
-
-    applied: dict[str, Any] = {"floors": [], "walls": [], "insulation": {}, "foundations": []}
+        for field, setter in (
+            ("soil_conductivity_w_mk", settings.setSoilConductivity),
+            ("soil_density_kg_m3", settings.setSoilDensity),
+            ("soil_specific_heat_j_kgk", settings.setSoilSpecificHeat),
+        ):
+            if field in settings_written and not setter(settings_written[field].value):
+                return applied, (
+                    f"OpenStudio refused {field}={settings_written[field].value} on "
+                    f"FoundationKivaSettings"
+                )
 
     for floor_name in floor_names:
         floor = model.getSurfaceByName(floor_name).get()
@@ -213,8 +217,10 @@ def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perim
             if resolved.write and not setter(resolved.value):
                 return applied, f"OpenStudio refused {field}={resolved.value} on '{floor_name}'"
 
-        _apply_insulation(model, kiva, insulation, _wall_depth_for(model, wall_names),
-                          applied["insulation"], warnings)
+        error = _apply_insulation(model, kiva, insulation, _wall_depth_for(model, wall_names),
+                                  applied["insulation"], warnings)
+        if error is not None:
+            return applied, error
 
         # Boundary condition FIRST: setAdjacentFoundation leaves sun/wind exposure alone, and a
         # buried slab left SunExposed takes fictitious solar gain.
@@ -278,6 +284,31 @@ def set_kiva_foundation(
         get_archetype(archetype)
     except UnknownArchetypeError as e:
         return {"ok": False, "error": str(e), "valid_values": sorted(ARCHETYPES)}
+
+    # Every dimensional input must be positive. OpenStudio's setters refuse a bad value, but they
+    # do so one object at a time, after earlier objects are written; check before touching anything.
+    not_positive = {
+        name: value for name, value in {
+            "wall_height_above_grade_m": wall_height_above_grade_m,
+            "footing_depth_m": footing_depth_m,
+            "interior_horizontal_insulation_r_si": interior_horizontal_insulation_r_si,
+            "interior_horizontal_insulation_width_m": interior_horizontal_insulation_width_m,
+            "exterior_vertical_insulation_r_si": exterior_vertical_insulation_r_si,
+            "exterior_vertical_insulation_depth_m": exterior_vertical_insulation_depth_m,
+            "soil_conductivity_w_mk": soil_conductivity_w_mk,
+            "soil_density_kg_m3": soil_density_kg_m3,
+            "soil_specific_heat_j_kgk": soil_specific_heat_j_kgk,
+        }.items() if value is not None and value <= 0
+    }
+    if wall_depth_below_slab_m is not None and wall_depth_below_slab_m < 0:
+        not_positive["wall_depth_below_slab_m"] = wall_depth_below_slab_m
+    if not_positive:
+        return {
+            "ok": False,
+            "error": f"{len(not_positive)} argument(s) must be positive (wall_depth_below_slab_m "
+                     f"may be 0); no changes were made.",
+            "invalid_arguments": not_positive,
+        }
 
     try:
         model, generation = get_model_with_generation()

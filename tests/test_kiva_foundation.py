@@ -400,7 +400,51 @@ def test_out_of_range_perimeter_fraction_is_refused_before_the_sdk_sees_it():
     )
 
     assert result["ok"] is False
-    assert "between 0 and 1" in result["error"]
+    assert "at most 1" in result["error"]
+
+
+def test_zero_perimeter_fraction_is_refused():
+    # Regression: the fraction range check accepted 0.0 while the total path required > 0 and the
+    # computed path clamped zero to 1 mm — the explicit-fraction route could write the zero
+    # exposed perimeter Kiva refuses
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    _build_quadrants()
+    result = set_kiva_foundation(
+        archetype="slab_on_grade_uninsulated", include_below_grade_walls=False,
+        exposed_perimeter_method="fraction", exposed_perimeter_fraction=0.0, epw_path=BOSTON_EPW,
+    )
+
+    assert result["ok"] is False
+    assert "greater than 0" in result["error"]
+    assert len(get_model().getFoundationKivas()) == 0
+
+
+@pytest.mark.parametrize(("argument", "value"), [
+    ("soil_conductivity_w_mk", -1.0),
+    ("soil_density_kg_m3", 0.0),
+    ("exterior_vertical_insulation_depth_m", -0.5),
+    ("interior_horizontal_insulation_width_m", 0.0),
+    ("footing_depth_m", -0.3),
+])
+def test_non_positive_dimension_is_refused_before_anything_is_written(argument, value):
+    # Regression: OpenStudio's setters return False on these, but the soil setters' results were
+    # discarded (value reported as written) and an insulation setter refusal only warned while
+    # `applied` recorded the requested extent. Now refused up front, model untouched.
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    _build_quadrants()
+    result = set_kiva_foundation(
+        archetype="slab_on_grade_perimeter_insulated", include_below_grade_walls=False,
+        epw_path=BOSTON_EPW, **{argument: value},
+    )
+
+    assert result["ok"] is False, result
+    assert result["invalid_arguments"] == {argument: value}
+    assert len(get_model().getFoundationKivas()) == 0
+    assert not get_model().getOptionalFoundationKivaSettings().is_initialized()
 
 
 def test_total_perimeter_across_several_floors_is_refused():
