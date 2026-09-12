@@ -432,6 +432,53 @@ def test_reapplying_without_overwrite_is_refused():
     assert "overwrite=True" in second["error"]
 
 
+def test_overwrite_does_not_accumulate_foundation_objects():
+    # Regression: overwrite=True reset the floor's reference but never removed the previous
+    # FoundationKiva, so every re-run added four orphan Foundation:Kiva objects to the OSM/IDF
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    floors = _build_quadrants()
+    first = set_kiva_foundation(archetype="slab_on_grade_uninsulated",
+                                include_below_grade_walls=False, epw_path=BOSTON_EPW)
+    assert first["ok"] is True, first
+    second = set_kiva_foundation(archetype="slab_on_grade_perimeter_insulated",
+                                 include_below_grade_walls=False, epw_path=BOSTON_EPW,
+                                 overwrite=True)
+
+    assert second["ok"] is True, second
+    kivas = get_model().getFoundationKivas()
+    assert len(kivas) == len(floors), sorted(k.nameString() for k in kivas)
+    assert all("slab_on_grade_perimeter_insulated" in k.nameString() for k in kivas)
+    for name in floors:
+        assert _surface(name).adjacentFoundation().get().nameString().startswith(
+            "Kiva slab_on_grade_perimeter_insulated")
+
+
+def test_overwrite_keeps_a_previous_foundation_that_walls_still_use_and_warns():
+    # Validates: when the re-run does not re-pair the walls, the old Foundation object is the only
+    # thing keeping their reference valid — it is kept and the response says which walls and why
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    floor, walls = _build_basement()
+    first = set_kiva_foundation(archetype="unheated_basement", include_below_grade_walls=True,
+                                epw_path=BOSTON_EPW)
+    assert first["ok"] is True, first
+    second = set_kiva_foundation(archetype="unheated_basement", include_below_grade_walls=False,
+                                 epw_path=BOSTON_EPW, overwrite=True)
+
+    assert second["ok"] is True, second
+    assert len(get_model().getFoundationKivas()) == 2
+    kept = [w for w in second["warnings"] if "was kept because" in w]
+    assert len(kept) == 1, second["warnings"]
+    for name in walls:
+        assert name in kept[0]
+    floor_kiva = _surface(floor).adjacentFoundation().get().nameString()
+    wall_kiva = _surface(walls[0]).adjacentFoundation().get().nameString()
+    assert floor_kiva != wall_kiva
+
+
 def test_no_model_loaded_reports_instead_of_raising():
     # Validates: the operations contract (CLAUDE.md rule 5) — both Kiva tools return ok=False
     # with no model loaded rather than raising RuntimeError through MCP
@@ -752,6 +799,10 @@ def test_basement_archetype_on_a_slab_model_applies_without_wall_insulation():
     assert any("no below-grade wall was paired" in w for w in result["warnings"]), result["warnings"]
     for kiva in get_model().getFoundationKivas():
         assert not kiva.exteriorVerticalInsulationMaterial().is_initialized()
+    # A skipped layer must not leave an unused XPS material behind either.
+    xps = [m.nameString() for m in get_model().getStandardOpaqueMaterials()
+           if m.nameString().startswith("Kiva XPS")]
+    assert xps == [], xps
 
 
 def _build_stacked_basement() -> dict[str, object]:

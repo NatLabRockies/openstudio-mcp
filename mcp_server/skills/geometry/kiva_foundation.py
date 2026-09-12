@@ -35,6 +35,7 @@ floor polygon under BySegment, OpenStudio exposes no segment API, and gbXML wind
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -193,7 +194,6 @@ def _wall_depth_for(model, wall_names: list[str]) -> float | None:
 
 def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) -> None:
     for spec in specs:
-        material, disposition = _insulation_material(model, spec.r_si_m2k_w)
         depth = spec.depth_m
         if depth == MATCH_WALL_DEPTH:
             depth = wall_depth_m
@@ -203,6 +203,8 @@ def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) ->
                     f"below-grade wall was paired to this floor; the insulation was not applied.",
                 )
                 continue
+        # Resolve the depth first: a layer that is skipped must not leave an unused XPS material.
+        material, disposition = _insulation_material(model, spec.r_si_m2k_w)
         if spec.position == POSITION_EXTERIOR_VERTICAL:
             if not kiva.setExteriorVerticalInsulationMaterial(material):
                 warnings.append("OpenStudio refused the exterior vertical insulation material.")
@@ -236,11 +238,21 @@ def _write_exposed_perimeter(surface, method: str, value: float) -> str | None:
 
     obj = created.get()
     # is_initialized() is NOT a success signal here — an unknown method or an out-of-range value
-    # still hands back an object with the field silently unset.
+    # still hands back an object with the field silently unset. Read both fields back.
     if obj.exposedPerimeterCalculationMethod() != method:
         return (
             f"Exposed perimeter method did not take on '{surface.nameString()}': asked for "
             f"{method!r}, model holds {obj.exposedPerimeterCalculationMethod()!r}"
+        )
+    if method == PERIMETER_METHOD_TOTAL:
+        stored = obj.totalExposedPerimeter()          # OptionalDouble
+        held = stored.get() if stored.is_initialized() else None
+    else:
+        held = obj.exposedPerimeterFraction()         # plain double, defaulted to 1.0
+    if held is None or not math.isclose(held, value, rel_tol=1e-9, abs_tol=1e-9):
+        return (
+            f"Exposed perimeter value did not take on '{surface.nameString()}': asked for "
+            f"{value}, model holds {held}"
         )
     return None
 

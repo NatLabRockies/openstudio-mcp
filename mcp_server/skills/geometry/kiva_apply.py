@@ -139,6 +139,26 @@ def _walls_exceeding_perimeter(model, walls_by_floor, perimeters) -> dict[str, A
     return exceeding
 
 
+def _retire_foundation(kiva, warnings: list[str]) -> None:
+    """Remove a Foundation object the overwrite has just replaced, unless walls still use it.
+
+    Called after the floor's new walls are attached, so anything still on the old object is a
+    wall this run did not re-pair (include_below_grade_walls=False, or a wall that no longer
+    shares an edge). Removing it then would leave those walls with a dangling Foundation
+    reference; leaving it silently would ship a Foundation:Kiva with walls and no floor.
+    """
+    stranded = sorted(s.nameString() for s in kiva.surfaces())
+    if stranded:
+        warnings.append(
+            f"Previous foundation '{kiva.nameString()}' was kept because {len(stranded)} wall(s) "
+            f"still reference it and were not re-paired this run: {stranded}. EnergyPlus needs a "
+            f"floor on every Foundation:Kiva — re-run with include_below_grade_walls=True or set "
+            f"those walls' boundary condition explicitly.",
+        )
+        return
+    kiva.remove()
+
+
 def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perimeters,
            archetype, warnings) -> tuple[dict[str, Any], str | None]:
     """Write the Kiva objects. Returns (applied, error)."""
@@ -158,7 +178,8 @@ def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perim
         floor = model.getSurfaceByName(floor_name).get()
         wall_names = walls_by_floor.get(floor_name, [])
 
-        if floor.adjacentFoundation().is_initialized():
+        previous = floor.adjacentFoundation()
+        if previous.is_initialized():
             floor.resetAdjacentFoundation()
 
         kiva = openstudio.model.FoundationKiva(model)
@@ -201,6 +222,8 @@ def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perim
             "walls": wall_names,
             "exposed_perimeter": {"method": method, "value": value, "provenance": provenance},
         })
+        if previous.is_initialized():
+            _retire_foundation(previous.get(), warnings)
 
     applied["settings_written"] = sorted(settings_written)
     return applied, None
