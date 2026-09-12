@@ -455,9 +455,11 @@ def test_overwrite_does_not_accumulate_foundation_objects():
             "Kiva slab_on_grade_perimeter_insulated")
 
 
-def test_overwrite_keeps_a_previous_foundation_that_walls_still_use_and_warns():
-    # Validates: when the re-run does not re-pair the walls, the old Foundation object is the only
-    # thing keeping their reference valid — it is kept and the response says which walls and why
+def test_overwrite_that_would_strand_walls_is_refused_before_mutation():
+    # Regression: an overwrite that re-paired fewer walls than the previous run kept the old
+    # Foundation object for them, returned ok=True and only warned — shipping a Foundation:Kiva
+    # with walls and no floor, which EnergyPlus refuses ("must also reference [it] in a floor
+    # surface within the same Zone"). It is now refused up front with nothing written.
     from mcp_server.model_manager import get_model
     from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
 
@@ -465,18 +467,45 @@ def test_overwrite_keeps_a_previous_foundation_that_walls_still_use_and_warns():
     first = set_kiva_foundation(archetype="unheated_basement", include_below_grade_walls=True,
                                 epw_path=BOSTON_EPW)
     assert first["ok"] is True, first
+    original = _surface(floor).adjacentFoundation().get().nameString()
+
     second = set_kiva_foundation(archetype="unheated_basement", include_below_grade_walls=False,
                                  epw_path=BOSTON_EPW, overwrite=True)
 
-    assert second["ok"] is True, second
-    assert len(get_model().getFoundationKivas()) == 2
-    kept = [w for w in second["warnings"] if "was kept because" in w]
-    assert len(kept) == 1, second["warnings"]
+    assert second["ok"] is False, second
+    assert "no floor" in second["error"]
+    assert second["stranded_walls"] == {floor: walls}
+    assert len(get_model().getFoundationKivas()) == 1
+    assert _surface(floor).adjacentFoundation().get().nameString() == original
     for name in walls:
-        assert name in kept[0]
-    floor_kiva = _surface(floor).adjacentFoundation().get().nameString()
-    wall_kiva = _surface(walls[0]).adjacentFoundation().get().nameString()
-    assert floor_kiva != wall_kiva
+        assert _surface(name).adjacentFoundation().get().nameString() == original
+
+
+def test_wall_in_a_different_zone_is_not_paired_to_the_floor():
+    # Validates: EnergyPlus requires the floor and wall of one Foundation:Kiva to be in the same
+    # zone, so a wall that shares an edge with a floor in another zone is reported, not attached
+    import openstudio
+
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_eligibility import pair_walls_to_floors
+
+    floor, walls = _build_basement()
+    model = get_model()
+    other_space = openstudio.model.Space(model)
+    other_space.setName("Other Basement Room")
+    other_zone = openstudio.model.ThermalZone(model)
+    other_zone.setName("Other Basement Zone")
+    other_space.setThermalZone(other_zone)
+    moved = walls[0]
+    assert _surface(moved).setSpace(other_space)
+
+    pairing = pair_walls_to_floors(model, [floor], walls)
+
+    assert sorted(pairing["pairs"][floor]) == walls[1:]
+    assert len(pairing["unpaired"]) == 1
+    entry = pairing["unpaired"][0]
+    assert entry["surface"] == moved
+    assert "different thermal zone" in entry["reason"]
 
 
 def test_no_model_loaded_reports_instead_of_raising():

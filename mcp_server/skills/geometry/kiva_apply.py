@@ -139,24 +139,43 @@ def _walls_exceeding_perimeter(model, walls_by_floor, perimeters) -> dict[str, A
     return exceeding
 
 
-def _retire_foundation(kiva, warnings: list[str]) -> None:
-    """Remove a Foundation object the overwrite has just replaced, unless walls still use it.
+def _stranded_walls(model, floor_names, walls_by_floor) -> dict[str, list[str]]:
+    """Walls that would be left on a floorless Foundation object if these floors were overwritten.
 
-    Called after the floor's new walls are attached, so anything still on the old object is a
-    wall this run did not re-pair (include_below_grade_walls=False, or a wall that no longer
-    shares an edge). Removing it then would leave those walls with a dangling Foundation
-    reference; leaving it silently would ship a Foundation:Kiva with walls and no floor.
+    EnergyPlus: a wall referencing a Foundation:Kiva "must also reference [it] in a floor surface
+    within the same Zone" — severe at run time. So an overwrite that re-pairs fewer walls than the
+    previous run is refused up front, never written and warned about.
     """
-    stranded = sorted(s.nameString() for s in kiva.surfaces())
-    if stranded:
-        warnings.append(
-            f"Previous foundation '{kiva.nameString()}' was kept because {len(stranded)} wall(s) "
-            f"still reference it and were not re-paired this run: {stranded}. EnergyPlus needs a "
-            f"floor on every Foundation:Kiva — re-run with include_below_grade_walls=True or set "
-            f"those walls' boundary condition explicitly.",
+    stranded: dict[str, list[str]] = {}
+    for floor_name in floor_names:
+        floor = model.getSurfaceByName(floor_name).get()
+        previous = floor.adjacentFoundation()
+        if not previous.is_initialized():
+            continue
+        re_paired = set(walls_by_floor.get(floor_name, []))
+        left = sorted(
+            s.nameString() for s in previous.get().surfaces()
+            if s.nameString() != floor_name and s.nameString() not in re_paired
         )
-        return
+        if left:
+            stranded[floor_name] = left
+    return stranded
+
+
+def _retire_foundation(kiva) -> str | None:
+    """Remove the Foundation object an overwrite has just replaced. Returns an error, or None.
+
+    _stranded_walls() has already refused any run that would leave a wall on it, so by the time
+    this runs the object must be empty; anything else is a bug worth failing loudly on.
+    """
+    remaining = sorted(s.nameString() for s in kiva.surfaces())
+    if remaining:
+        return (
+            f"Previous foundation '{kiva.nameString()}' still carries {remaining} after its floor "
+            f"was moved; refusing to leave a Foundation:Kiva with no floor."
+        )
     kiva.remove()
+    return None
 
 
 def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perimeters,
@@ -223,7 +242,9 @@ def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perim
             "exposed_perimeter": {"method": method, "value": value, "provenance": provenance},
         })
         if previous.is_initialized():
-            _retire_foundation(previous.get(), warnings)
+            error = _retire_foundation(previous.get())
+            if error is not None:
+                return applied, error
 
     applied["settings_written"] = sorted(settings_written)
     return applied, None
@@ -366,6 +387,16 @@ def set_kiva_foundation(
                 "error": f"{len(already)} floor(s) already carry a Kiva foundation; pass "
                          f"overwrite=True to replace them.",
                 "already_kiva": sorted(already),
+            }
+        stranded = _stranded_walls(model, already, wall_pairing["pairs"])
+        if stranded:
+            return {
+                "ok": False,
+                "error": f"Overwriting would leave {sum(len(v) for v in stranded.values())} wall(s) "
+                         f"on a Foundation object with no floor, which EnergyPlus refuses at run "
+                         f"time. No changes were made. Re-run with include_below_grade_walls=True, "
+                         f"or move those walls off the Foundation boundary condition first.",
+                "stranded_walls": stranded,
             }
 
         plan = {

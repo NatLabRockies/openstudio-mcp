@@ -302,12 +302,24 @@ def classify_foundation_candidates(model, include_adiabatic: bool = False) -> di
     }
 
 
-def pair_walls_to_floors(model, floor_names: list[str], wall_names: list[str]) -> dict[str, Any]:
-    """Attach each below-grade wall to the floor it shares an edge with.
+def _zone_key(surface) -> str | None:
+    """The thermal zone a surface belongs to, or its space when the space has no zone yet."""
+    space = surface.space()
+    if not space.is_initialized():
+        return None
+    zone = space.get().thermalZone()
+    if zone.is_initialized():
+        return f"zone:{zone.get().nameString()}"
+    return f"space:{space.get().nameString()}"
 
-    EnergyPlus requires a Kiva wall to reference the *same* Foundation object as its floor, so this
-    is adjacency rather than selection. A wall touching no eligible floor is reported and dropped —
-    never attached to an arbitrary foundation.
+
+def pair_walls_to_floors(model, floor_names: list[str], wall_names: list[str]) -> dict[str, Any]:
+    """Attach each below-grade wall to the floor it shares an edge with, in the same zone.
+
+    EnergyPlus requires a Kiva wall to reference the *same* Foundation object as its floor, and
+    that floor must be "within the same Zone" (its own error text), so this is adjacency plus
+    zone rather than selection. A wall touching no eligible floor in its zone is reported and
+    dropped — never attached to an arbitrary foundation.
     """
     floors = {n: model.getSurfaceByName(n).get() for n in floor_names
               if model.getSurfaceByName(n).is_initialized()}
@@ -320,15 +332,28 @@ def pair_walls_to_floors(model, floor_names: list[str], wall_names: list[str]) -
             unpaired.append({"surface": wall_name, "reason": "surface not found"})
             continue
         wall = optional.get()
+        wall_zone = _zone_key(wall)
         best_floor, best_length = None, 0.0
+        touches_other_zone = False
         for floor_name, floor in floors.items():
             length = _shared_edge_length(wall, floor)
+            if length <= 0.0:
+                continue
+            if _zone_key(floor) != wall_zone:
+                touches_other_zone = True
+                continue
             if length > best_length:
                 best_floor, best_length = floor_name, length
         if best_floor is None:
             unpaired.append({
                 "surface": wall_name,
-                "reason": "shares no edge with an eligible foundation floor",
+                "reason": (
+                    "shares an edge only with foundation floors in a different thermal zone; "
+                    "EnergyPlus requires the floor and wall of one Foundation:Kiva to be in the "
+                    "same zone"
+                    if touches_other_zone else
+                    "shares no edge with an eligible foundation floor"
+                ),
             })
             continue
         pairs[best_floor].append(wall_name)
