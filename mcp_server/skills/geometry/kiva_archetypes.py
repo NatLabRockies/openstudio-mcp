@@ -207,11 +207,6 @@ _SOIL_DEFAULTS = {
     "soil_specific_heat_j_kgk": IDD_SOIL_SPECIFIC_HEAT_J_KGK,
 }
 
-_EPW_SOIL_FIELDS = {
-    "soil_conductivity_w_mk": "conductivity_w_mk",
-    "soil_density_kg_m3": "density_kg_m3",
-    "soil_specific_heat_j_kgk": "specific_heat_j_kgk",
-}
 
 
 class UnknownArchetypeError(ValueError):
@@ -268,11 +263,16 @@ def resolve_kiva_parameters(
     warnings: list[str] = []
     resolved: dict[str, ResolvedValue] = {}
 
+    archetype_values = {
+        "wall_height_above_grade_m": archetype.wall_height_above_grade_m,
+        "wall_depth_below_slab_m": archetype.wall_depth_below_slab_m,
+        "footing_depth_m": archetype.footing_depth_m,
+    }
     for field, idd_default in _GEOMETRY_DEFAULTS.items():
         if field in supplied:
             resolved[field] = ResolvedValue(supplied[field], PROVENANCE_USER)
             continue
-        archetype_value = getattr(archetype, field)
+        archetype_value = archetype_values[field]
         if archetype_value == idd_default:
             resolved[field] = ResolvedValue(
                 archetype_value, PROVENANCE_DEFAULT_AGREES, write=False,
@@ -346,13 +346,22 @@ def resolve_soil_properties(
     warnings: list[str] = []
     resolved: dict[str, ResolvedValue] = {}
 
+    epw_values = {
+        "soil_conductivity_w_mk": None,
+        "soil_density_kg_m3": None,
+        "soil_specific_heat_j_kgk": None,
+    }
+    if ground_temperature_set is not None:
+        epw_values = {
+            "soil_conductivity_w_mk": ground_temperature_set.conductivity_w_mk,
+            "soil_density_kg_m3": ground_temperature_set.density_kg_m3,
+            "soil_specific_heat_j_kgk": ground_temperature_set.specific_heat_j_kgk,
+        }
     for field, default in _SOIL_DEFAULTS.items():
         if field in supplied:
             resolved[field] = ResolvedValue(supplied[field], PROVENANCE_USER)
             continue
-        epw_value = None
-        if ground_temperature_set is not None:
-            epw_value = getattr(ground_temperature_set, _EPW_SOIL_FIELDS[field], None)
+        epw_value = epw_values[field]
         if epw_value is not None:
             resolved[field] = ResolvedValue(epw_value, PROVENANCE_EPW)
         else:
