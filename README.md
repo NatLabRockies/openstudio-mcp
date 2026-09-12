@@ -1,10 +1,40 @@
 # OpenStudio®-MCP SWR 26-035
 
 [![DOI](https://zenodo.org/badge/1160362004.svg)](https://doi.org/10.5281/zenodo.21905081)
+[![SoftwareX paper](https://img.shields.io/badge/SoftwareX-10.1016%2Fj.softx.2026.103020-orange)](https://doi.org/10.1016/j.softx.2026.103020)
 
 **Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
 **150+ tools · bundled workflow skills · 480+ integration tests**
+
+Published in *SoftwareX* — see [Cite this work](#cite-this-work).
+
+## Contents
+
+- [What you can ask for](#what-you-can-ask-for)
+- [Quick start (local)](#quick-start-local)
+  - [1. Build the image](#1-build-the-image)
+  - [2. Configure your host](#2-configure-your-host)
+  - [3. Verify and chat](#3-verify-and-chat)
+  - [Working with your own files](#working-with-your-own-files)
+  - [Other MCP hosts](#other-mcp-hosts)
+  - [Client compatibility](#client-compatibility)
+- [Remote & multi-user (HTTP)](#remote--multi-user-http)
+- [Security and simulation sandbox](#security-and-simulation-sandbox)
+  - [Sandbox options](#sandbox-options)
+  - [Secure deployment guidance](#secure-deployment-guidance)
+- [Skills & Tools](#skills--tools-150-total)
+- [Tool reference](#tool-reference)
+- [Reference](#reference)
+  - [ASHRAE baseline systems](#ashrae-baseline-systems)
+  - [HVAC component types](#hvac-component-types)
+- [Examples](#examples)
+- [Testing](#testing)
+- [Linting and formatting](#linting-and-formatting-uv--pre-commit)
+- [Architecture](#architecture)
+  - [Contributing](#contributing)
+- [Cite this work](#cite-this-work)
+- [License](#license)
 
 ---
 
@@ -688,7 +718,7 @@ The component-properties tools query/modify these 15 types:
 
 ## Examples
 
-23 worked examples with full tool-call sequences:
+24 worked examples with full tool-call sequences:
 
 | # | Example | # | Example |
 |---|---------|---|---------|
@@ -747,8 +777,10 @@ CI runs the same pre-commit check in `.github/workflows/format_and_lint.yml`.
 
 Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full system diagram, security analysis, and hardening notes: **[docs/architecture.md](docs/architecture.md)**.
 
+### Contributing
+
 <details>
-<summary><b>Contributing</b> — adding skills, tools, and component types</summary>
+<summary>Adding skills, tools, and component types</summary>
 
 **New MCP skill**
 1. Create `mcp_server/skills/<name>/__init__.py`, `operations.py`, `tools.py`
@@ -769,6 +801,29 @@ Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full syste
 3. No dynamic dispatch — every OpenStudio API call must be explicit and grepable
 
 </details>
+
+---
+
+## Cite this work
+
+If you use OpenStudio-MCP in research, please cite the *SoftwareX* article:
+
+> Ball, B.L., Long, N., Fleming, K., Goldwasser, D., 2026. OpenStudio-MCP: a model context protocol (MCP) server for AI agent-driven building energy modeling with the OpenStudio SDK. *SoftwareX* 36, 103020. https://doi.org/10.1016/j.softx.2026.103020
+
+```bibtex
+@article{ball2026openstudiomcp,
+  title   = {{OpenStudio-MCP}: a model context protocol ({MCP}) server for {AI} agent-driven building energy modeling with the {OpenStudio} {SDK}},
+  author  = {Ball, Brian L. and Long, Nicholas and Fleming, Katherine and Goldwasser, David},
+  journal = {SoftwareX},
+  volume  = {36},
+  pages   = {103020},
+  year    = {2026},
+  issn    = {2352-7110},
+  doi     = {10.1016/j.softx.2026.103020}
+}
+```
+
+To cite a specific software release, use the Zenodo DOI [10.5281/zenodo.21905081](https://doi.org/10.5281/zenodo.21905081) (resolves to the latest version; each release has its own DOI). GitHub's **Cite this repository** button uses [CITATION.cff](CITATION.cff).
 
 ---
 
