@@ -706,17 +706,42 @@ def test_basement_insulation_depth_comes_from_the_wall_geometry():
     assert kiva.exteriorVerticalInsulationMaterial().is_initialized()
 
 
-def test_basement_archetype_on_a_slab_model_is_refused():
-    # Validates: a basement archetype reaching a slab-on-grade model would write a foundation wall
-    # that is not there
+def test_user_stem_wall_depth_on_a_slab_model_is_honoured():
+    # Regression: a "suspicious depth" guard refused any wall_depth_below_slab_m above 0.5 m on a
+    # model with no below-grade walls, while telling the user to "pass the value explicitly" —
+    # which was the only way to reach it, since every archetype's own value is 0.0. A frost-depth
+    # stem wall on a slab is a real detail and must be writable.
+    from mcp_server.model_manager import get_model
     from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
 
     _build_quadrants()
-    result = set_kiva_foundation(archetype="heated_basement_insulated",
-                                 wall_depth_below_slab_m=2.4, epw_path=BOSTON_EPW)
+    result = set_kiva_foundation(archetype="slab_on_grade_uninsulated",
+                                 wall_depth_below_slab_m=1.2, epw_path=BOSTON_EPW)
 
-    assert result["ok"] is False
-    assert "no below-grade walls" in result["error"]
+    assert result["ok"] is True, result
+    depth = result["plan"]["geometry"]["wall_depth_below_slab_m"]
+    assert depth == {"value": 1.2, "provenance": "user", "written": True}
+    for kiva in get_model().getFoundationKivas():
+        assert kiva.wallDepthBelowSlab() == pytest.approx(1.2, abs=1e-6)
+
+
+def test_basement_archetype_on_a_slab_model_applies_without_wall_insulation():
+    # Validates: an archetype is an insulation strategy, not a geometry claim — with no below-grade
+    # wall to pair, the full-depth exterior insulation is skipped with a warning naming why, and the
+    # floors still get their Foundation objects
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    floors = _build_quadrants()
+    result = set_kiva_foundation(archetype="heated_basement_insulated", epw_path=BOSTON_EPW)
+
+    assert result["ok"] is True, result
+    assert sorted(result["applied"]["floors"]) == floors
+    assert result["applied"]["walls"] == []
+    assert result["applied"]["insulation"] == {}
+    assert any("no below-grade wall was paired" in w for w in result["warnings"]), result["warnings"]
+    for kiva in get_model().getFoundationKivas():
+        assert not kiva.exteriorVerticalInsulationMaterial().is_initialized()
 
 
 def _build_stacked_basement() -> dict[str, object]:

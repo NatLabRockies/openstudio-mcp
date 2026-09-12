@@ -53,10 +53,6 @@ from mcp_server.skills.geometry.kiva_foundation import (
 # absorbs floating-point noise between a wall width and the matching floor edge.
 WALL_LENGTH_TOLERANCE_M = 0.001
 
-# A basement archetype landing on a slab-on-grade model is the most likely misuse, and it writes a
-# foundation wall that is not there. Above this depth we require corroborating geometry.
-SUSPICIOUS_WALL_DEPTH_M = 0.5
-
 
 def _epw_soil_set(model, generation: int, epw_path: str | None, warnings: list[str]):
     """The EPW's GROUND TEMPERATURES soil properties, or None.
@@ -300,15 +296,6 @@ def set_kiva_foundation(
             "footing_depth_m": footing_depth_m,
         })
         warnings.extend(geometry_warnings)
-
-        depth = geometry["wall_depth_below_slab_m"]
-        if depth.value and depth.value > SUSPICIOUS_WALL_DEPTH_M and not candidates["eligible_walls"]:
-            return {
-                "ok": False,
-                "error": f"wall_depth_below_slab_m resolved to {depth.value} m but this model has "
-                         f"no below-grade walls — that looks like a basement archetype applied to a "
-                         f"slab-on-grade model. Pass the value explicitly if it is intended.",
-            }
 
         insulation, insulation_warnings = resolve_insulation(archetype, {
             "interior_horizontal_r_si": interior_horizontal_insulation_r_si,
