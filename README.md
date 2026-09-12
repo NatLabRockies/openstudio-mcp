@@ -145,8 +145,6 @@ args = [
 | `/runs` | simulation output | Every run writes to `/runs/<run_id>/` (OSM, SQL, HTML reports). Without the mount, results vanish when the container exits |
 | `/measures` | authored + BCL measures | `create_measure` and BCL downloads land under `/measures/<user>/{custom,bcl}`. Mount it so measures survive restarts; `list_local_measures` discovers them |
 
-Workflow guides (`list_skills()` / `get_skill()`) are baked into the image at `/skills`; mount `-v /path/to/openstudio-mcp/.claude/skills:/skills:ro` only if you are editing them.
-
 **Use absolute paths.** On Windows, use forward slashes in Docker args:
 ```json
 "-v", "C:/Users/you/models:/inputs:ro",
