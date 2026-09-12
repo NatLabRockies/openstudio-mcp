@@ -179,7 +179,7 @@ cp eplusout.err /path/to/models/
 "Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
 ```
 
-**Why not upload?** File uploads in Claude Desktop go to an analysis sandbox that can't talk to MCP tools, so the AI may fall back to writing scripts instead of using the 150+ MCP tools. Simulation outputs (results, SQL, HTML reports) are already under `/runs` and need no copying.
+**Why not upload?** Attaching a file to the chat (drag-and-drop, the paperclip button, or paste) only gives the AI the file's contents in the conversation. It never lands on disk inside the Docker container, so MCP tools like `load_osm_model` can't open it, and the AI may fall back to writing scripts instead of using the 150+ MCP tools. A file in the `/inputs` mount is on disk where the tools can read it. Simulation outputs (results, SQL, HTML reports) are already under `/runs` and need no copying.
 
 ### Client Compatibility
 
