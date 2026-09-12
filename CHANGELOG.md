@@ -31,9 +31,9 @@
 - `set_surface_boundary_conditions` now refuses `"Foundation"`, which produced a model that failed
   fatally in EnergyPlus for want of the two companion objects; it points at `set_kiva_foundation`,
   which writes all three together.
-- `find_missing_ground_temperatures()` reports `kiva_foundation_surface_count` and stops flagging
-  `Site:GroundTemperature:BuildingSurface` once every ground-coupled surface uses Kiva and the object
-  would be inert.
+- `find_missing_ground_temperatures()` reports `kiva_foundation_surface_count`; once every
+  ground-coupled surface uses Kiva, `Site:GroundTemperature:BuildingSurface` moves from
+  `ground_temperatures_missing_objects` to `ground_temperatures_superseded_by_kiva`
 - New `foundation-modeling` skill and worked example
   `docs/examples/25_ground_and_foundation_heat_transfer.md` covering both methods.
 

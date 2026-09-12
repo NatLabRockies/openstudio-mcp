@@ -132,25 +132,33 @@ def read_ground_temperature_state(model) -> dict[str, Any]:
 
 def _missing_from_state(state: dict[str, Any], kiva_surface_count: int = 0,
                        ground_surface_count: int = 0) -> dict[str, Any]:
-    missing = [
-        _IDF_NAMES[key] for key in _OBJECT_KEYS
+    unset = [
+        key for key in _OBJECT_KEYS
         if state[key]["state"] in ("absent", "defaulted", "partial")
     ]
+    # Every ground-coupled surface is solved by Kiva, which ignores BuildingSurface outright.
+    # Flagging it then would nag the user for having done the higher-fidelity thing, so it is
+    # reported as superseded rather than missing. The other three are inert with or without
+    # Kiva (no GHX, no F/C-factor constructions) and stay in the list on the same terms as before.
+    all_kiva = kiva_surface_count > 0 and ground_surface_count == 0
+    superseded = [_IDF_NAMES[k] for k in unset if all_kiva and k == "building_surface"]
+    missing = [_IDF_NAMES[k] for k in unset if _IDF_NAMES[k] not in superseded]
     result: dict[str, Any] = {
         "ground_temperatures_missing": bool(missing),
         "ground_temperatures_missing_count": len(missing),
         "ground_temperatures_state": {k: state[k]["state"] for k in _OBJECT_KEYS},
+        "kiva_foundation_surface_count": kiva_surface_count,
     }
-    result["kiva_foundation_surface_count"] = kiva_surface_count
+    if superseded:
+        result["ground_temperatures_superseded_by_kiva"] = superseded
     if missing:
         result["ground_temperatures_missing_objects"] = missing
-        if kiva_surface_count > 0 and ground_surface_count == 0:
-            # Every ground-coupled surface is solved by Kiva, which ignores these objects. Nagging
-            # about them would punish the user for having done the higher-fidelity thing.
+        if all_kiva:
             result["ground_temperatures_hint"] = (
                 f"All {kiva_surface_count} ground-coupled surface(s) use Kiva, which solves its own "
-                f"2D soil domain and ignores Site:GroundTemperature:BuildingSurface — these objects "
-                f"would be inert here."
+                f"2D soil domain and ignores Site:GroundTemperature:BuildingSurface. The remaining "
+                f"objects would be inert here: Shallow and Deep feed ground heat exchangers, "
+                f"FCfactorMethod affects only F/C-factor constructions."
             )
         else:
             result["ground_temperatures_hint"] = (

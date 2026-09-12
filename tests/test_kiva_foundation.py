@@ -925,6 +925,9 @@ def test_ground_temperature_report_goes_quiet_once_every_surface_uses_kiva():
     _build_quadrants()
     before = find_missing_ground_temperatures()
     assert before["kiva_foundation_surface_count"] == 0
+    assert before["ground_temperatures_missing_count"] == 4
+    assert "Site:GroundTemperature:BuildingSurface" in before["ground_temperatures_missing_objects"]
+    assert "ground_temperatures_superseded_by_kiva" not in before
     assert "set_ground_temperatures()" in before["ground_temperatures_hint"]
     assert "set_kiva_foundation()" in before["ground_temperatures_hint"]
 
@@ -932,6 +935,11 @@ def test_ground_temperature_report_goes_quiet_once_every_surface_uses_kiva():
                                include_below_grade_walls=False, epw_path=BOSTON_EPW)["ok"]
 
     after = find_missing_ground_temperatures()
-    assert after["kiva_foundation_surface_count"] == 4
-    assert "would be inert here" in after["ground_temperatures_hint"]
     assert after["ok"] is True
+    assert after["kiva_foundation_surface_count"] == 4
+    # BuildingSurface is no longer "missing": Kiva ignores it. The other three stay listed.
+    assert after["ground_temperatures_superseded_by_kiva"] == [
+        "Site:GroundTemperature:BuildingSurface"]
+    assert after["ground_temperatures_missing_count"] == 3
+    assert "Site:GroundTemperature:BuildingSurface" not in after["ground_temperatures_missing_objects"]
+    assert "would be inert here" in after["ground_temperatures_hint"]
