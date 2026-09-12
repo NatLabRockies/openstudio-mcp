@@ -58,6 +58,10 @@ from mcp_server.skills.geometry.ground_contact import (
 
 MAX_KIVA_WALL_VERTICES = 4
 
+# A matched interior boundary condition: the surface has a partner, not soil. Never a Kiva
+# candidate regardless of depth, and never part of the ground-contact footprint.
+_MATCHED_INTERIOR = "Surface"
+
 # joinAllPolygons tolerance. Matches the value both vendored implementations use and the scale of
 # the sibling geometry guards (PLANE_TOLERANCE, GRADE_TOLERANCE_M).
 POLYGON_JOIN_TOLERANCE_M = 0.01
@@ -187,7 +191,8 @@ def classify_foundation_candidates(model, include_adiabatic: bool = False) -> di
 
     Adiabatic surfaces are excluded by default: `patch_missing_surfaces` sets that condition
     deliberately on facets it could not identify, and silently burying them would undo a decision
-    another tool made on purpose.
+    another tool made on purpose. Matched interior surfaces (`Surface`) are always excluded: depth
+    says nothing about whether a floor or wall touches soil when it has a partner on the other side.
     """
     eligible_floors: list[dict[str, Any]] = []
     eligible_walls: list[dict[str, Any]] = []
@@ -201,6 +206,12 @@ def classify_foundation_candidates(model, include_adiabatic: bool = False) -> di
 
         condition = surface.outsideBoundaryCondition()
         if condition == "Adiabatic" and not include_adiabatic:
+            continue
+        if condition == _MATCHED_INTERIOR:
+            # A matched interior boundary has a partner surface, not soil, however deep it sits —
+            # a two-storey basement's middle floor, a crawlspace modelled as a zone, a partition
+            # between two basement zones. ground_contact.py makes the same cut. Converting one
+            # would also reset the pairing and drop its partner to Outdoors/SunExposed.
             continue
 
         if not _has_space(surface):
@@ -292,6 +303,7 @@ def compute_exposed_perimeters(model, floor_names: list[str]) -> tuple[dict[str,
     candidates = [
         s for s in model.getSurfaces()
         if s.surfaceType() == "Floor" and _has_space(s) and _floor_is_at_or_below_grade(s)
+        and s.outsideBoundaryCondition() != _MATCHED_INTERIOR
     ]
     if not candidates:
         return {}, ["No at-or-below-grade floors found to build a footprint from."]

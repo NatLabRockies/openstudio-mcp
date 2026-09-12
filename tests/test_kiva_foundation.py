@@ -675,6 +675,99 @@ def test_basement_archetype_on_a_slab_model_is_refused():
     assert "no below-grade walls" in result["error"]
 
 
+def _build_stacked_basement() -> dict[str, object]:
+    """Two basement levels plus a neighbour, matched, so interior floors and partitions exist.
+
+    Lower (z -5..-2.5) and Lower2 beside it share a partition wall; Upper (z -2.5..0) sits on
+    Lower, so Upper's floor is matched to Lower's ceiling. Only the two bottom floors and the
+    exterior below-grade walls touch soil.
+    """
+    import openstudio
+
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.constructions.operations import assign_construction_to_surface
+    from mcp_server.skills.geometry.operations import create_space_from_floor_print, match_surfaces
+
+    _load_empty_model()
+    construction = _slab_construction()
+    model = get_model()
+
+    def build(name, footprint, dz):
+        created = create_space_from_floor_print(
+            name=name, floor_vertices=footprint, floor_to_ceiling_height=2.5,
+        )
+        assert created["ok"] is True, created
+        space = next(s for s in model.getSpaces() if s.nameString() == name)
+        zone = openstudio.model.ThermalZone(model)
+        zone.setName(f"{name} Zone")
+        space.setThermalZone(zone)
+        for surface in space.surfaces():
+            moved = openstudio.Point3dVector([
+                openstudio.Point3d(v.x(), v.y(), v.z() + dz) for v in surface.vertices()
+            ])
+            assert surface.setVertices(moved)
+            assign_construction_to_surface(
+                surface_name=surface.nameString(), construction_name=construction,
+            )
+        return space
+
+    lower = build("Lower", QUADRANTS["SW"], -5.0)
+    lower2 = build("Lower2", QUADRANTS["SE"], -5.0)
+    upper = build("Upper", QUADRANTS["SW"], -2.5)
+    matched = match_surfaces()
+    assert matched["ok"] is True, matched
+    # Upper floor <-> Lower ceiling, and the Lower <-> Lower2 partition: two pairs, four surfaces.
+    assert matched["matched_surfaces"] == 4, matched
+
+    def one(space, kind):
+        return next(s.nameString() for s in space.surfaces() if s.surfaceType() == kind)
+
+    partition = sorted(
+        s.nameString() for s in [*lower.surfaces(), *lower2.surfaces()]
+        if s.surfaceType() == "Wall" and s.outsideBoundaryCondition() == "Surface"
+    )
+    assert len(partition) == 2, partition
+    return {
+        "lower_floor": one(lower, "Floor"),
+        "lower2_floor": one(lower2, "Floor"),
+        "upper_floor": one(upper, "Floor"),
+        "lower_ceiling": one(lower, "RoofCeiling"),
+        "partition_walls": partition,
+    }
+
+
+def test_matched_interior_surfaces_are_not_kiva_candidates():
+    # Regression: eligibility filtered only Adiabatic, so a matched interior floor (a two-storey
+    # basement, a crawlspace modelled as a zone) and buried partition walls were converted to
+    # Foundation, and setOutsideBoundaryCondition dropped their partners to Outdoors/SunExposed
+    # 2.5 m underground. ground_contact.py already excludes "Surface"; this path must too.
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+    from mcp_server.skills.geometry.kiva_eligibility import classify_foundation_candidates
+
+    names = _build_stacked_basement()
+    candidates = classify_foundation_candidates(get_model())
+    floors = sorted(f["surface"] for f in candidates["eligible_floors"])
+    walls = sorted(w["surface"] for w in candidates["eligible_walls"])
+
+    assert floors == sorted([names["lower_floor"], names["lower2_floor"]]), floors
+    assert names["upper_floor"] not in floors
+    assert not set(names["partition_walls"]) & set(walls), walls
+    # 3 exterior walls on each lower space plus Upper's 4, all fully buried; no partitions.
+    assert len(walls) == 10, walls
+
+    result = set_kiva_foundation(archetype="unheated_basement", epw_path=BOSTON_EPW)
+
+    assert result["ok"] is True, result
+    assert sorted(result["applied"]["floors"]) == floors
+    assert _surface(names["upper_floor"]).outsideBoundaryCondition() == "Surface"
+    ceiling = _surface(names["lower_ceiling"])
+    assert ceiling.outsideBoundaryCondition() == "Surface"
+    assert ceiling.adjacentSurface().get().nameString() == names["upper_floor"]
+    for name in names["partition_walls"]:
+        assert _surface(name).outsideBoundaryCondition() == "Surface"
+
+
 # --------------------------------------------------------------------------- guards elsewhere
 
 
