@@ -195,7 +195,6 @@ Any MCP host can launch the same `docker run` command. See the [MCP documentatio
 | VS Code Copilot | Compatible | MCP support via config |
 | Windsurf | Compatible | Host tool cap is ~100; use includeTools/excludeTools to limit the exposed tool set |
 | Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
-| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
 | OpenAI API | Compatible | Use defer_loading for best results |
 
 ---

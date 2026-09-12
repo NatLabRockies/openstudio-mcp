@@ -162,7 +162,8 @@ only, no code change).
 ## 2. Connect a client
 
 `url` points at the server's `/mcp` path; add the bearer header only if you ran
-with `MCP_AUTH=token`. **Claude Code, Cursor, and VS Code** all support this.
+with `MCP_AUTH=token`. Any host that supports streamable-HTTP MCP servers works;
+**Claude Code** and **VS Code** are shown below.
 Copy [`.mcp.json.example`](../.mcp.json.example) and fill in your host + token.
 
 **Claude Code** — add to `.mcp.json` (or `claude mcp add`):
@@ -176,14 +177,6 @@ Copy [`.mcp.json.example`](../.mcp.json.example) and fill in your host + token.
     }
   }
 }
-```
-
-**Cursor** — `~/.cursor/mcp.json` (or project `.cursor/mcp.json`), same shape:
-```json
-{ "mcpServers": { "openstudio-mcp": {
-  "url": "http://10.0.0.5:8000/mcp",
-  "headers": { "Authorization": "Bearer s3cret-alice" }
-}}}
 ```
 
 **VS Code (Copilot)** — `.vscode/mcp.json`:
