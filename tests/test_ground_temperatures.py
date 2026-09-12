@@ -331,6 +331,30 @@ def test_epw_without_a_ground_temperature_record_reports_and_writes_nothing():
     assert _months("deep") is None
 
 
+def test_no_argument_call_uses_the_epw_stashed_by_import_gbxml():
+    # Validates: the documented workflow — import_gbxml then set_ground_temperatures() with no
+    # arguments — reads the staged EPW that import stashed for this model generation, reports
+    # that route, and applies that file's values
+    from uuid import uuid4
+
+    from mcp_server.skills.gbxml_import.operations import import_gbxml_op
+    from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
+
+    imported = import_gbxml_op("/repo/tests/assets/2026_11Ja_path1.xml", BOSTON_EPW,
+                               run_name=f"pytest_gt_stash_{uuid4().hex[:8]}")
+    assert imported["ok"] is True, imported
+
+    result = set_ground_temperatures()
+
+    assert result["ok"] is True, result
+    assert result["epw_source"] == "gbxml_import_stash"
+    assert result["epw_path"] != BOSTON_EPW
+    assert result["epw_path"].endswith(".epw")
+    assert "/weather/" in result["epw_path"]
+    assert _months("deep")[0] == BOSTON_DEEP_JAN
+    assert _months("shallow")[11] == BOSTON_SHALLOW_DEC
+
+
 def test_no_epw_anywhere_names_every_route_it_tried():
     # Validates: with no epw_path argument, no gbXML-import EPW and no OS:WeatherFile, the error
     # lists all three routes (epw_path / import_gbxml / change_building_location) the caller can take

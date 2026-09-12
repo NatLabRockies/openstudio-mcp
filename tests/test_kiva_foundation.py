@@ -52,6 +52,9 @@ pytestmark = [
 ]
 
 BOSTON_EPW = "/repo/tests/assets/USA_MA_Boston-Logan.Intl.AP.725090_TMY3.epw"
+# A Revit-exported residential model with a real basement: 292 surfaces, 1 declared Ground
+# surface, walls -3.05 m to +0.91 m, two 6-vertex walls. The geometry the wall pairing is for.
+REVIT_BASEMENT_GBXML = "/repo/tests/assets/2026_11Ja_path1.xml"
 
 # Four 10x10 quadrants of a 20x20 building: each floor has two outer edges, so 20.0 m exposed
 # each and 80.0 m for the footprint.
@@ -1037,6 +1040,51 @@ def test_matched_interior_surfaces_are_not_kiva_candidates():
     assert ceiling.adjacentSurface().get().nameString() == names["upper_floor"]
     for name in names["partition_walls"]:
         assert _surface(name).outsideBoundaryCondition() == "Surface"
+
+
+def test_real_revit_basement_export_pairs_every_buried_wall():
+    # Validates: wall pairing on a real export, not synthetic geometry — Revit slivers and
+    # unwelded vertices are exactly what shared-edge matching could miss. On this fixture every
+    # buried 4-vertex wall must land on the one basement floor, in its zone, with the insulation
+    # depth taken from the wall geometry, and the two 6-vertex walls refused by name.
+    from uuid import uuid4
+
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.gbxml_import.operations import import_gbxml_op
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+    from mcp_server.skills.geometry.kiva_foundation import get_foundation_options
+
+    imported = import_gbxml_op(REVIT_BASEMENT_GBXML, BOSTON_EPW,
+                               run_name=f"pytest_kiva_revit_{uuid4().hex[:8]}")
+    assert imported["ok"] is True, imported
+
+    options = get_foundation_options()
+    assert options["ok"] is True, options
+    assert options["eligible_floor_count"] == 1
+    floor = options["eligible_floors"][0]
+    assert floor["surface"] == "su-b-0-u-f-19"
+    assert floor["outside_boundary_condition"] == "Ground"
+    assert floor["exposed_perimeter_m"] == pytest.approx(41.6241, abs=0.01)
+    assert options["eligible_wall_count"] == 15
+    assert len(options["blocked"]) == 2, options["blocked"]
+    for blocked in options["blocked"]:
+        assert blocked["reasons"] == ["wall has 6 vertices; Kiva walls are limited to 4"]
+
+    result = set_kiva_foundation(archetype="heated_basement_insulated", epw_path=BOSTON_EPW)
+
+    assert result["ok"] is True, result
+    assert result["applied"]["floors"] == ["su-b-0-u-f-19"]
+    assert len(result["applied"]["walls"]) == 15
+    assert not any("was not applied" in w for w in result["warnings"]), result["warnings"]
+    kivas = get_model().getFoundationKivas()
+    assert len(kivas) == 1
+    assert len(kivas[0].surfaces()) == 16
+    assert kivas[0].exteriorVerticalInsulationDepth().get() == pytest.approx(3.048, abs=0.01)
+    zones = {s.space().get().thermalZone().get().nameString() for s in kivas[0].surfaces()}
+    assert zones == {"0 Basement (Unconditioned)"}
+    perimeter = result["applied"]["foundations"][0]["exposed_perimeter"]
+    assert perimeter["value"] == pytest.approx(41.6241, abs=0.01)
+    assert perimeter["provenance"] == "computed_geometry"
 
 
 # --------------------------------------------------------------------------- guards elsewhere
