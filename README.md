@@ -262,9 +262,6 @@ untrusted measures.
 - Mount `/inputs` read-only: `-v /host/inputs:/inputs:ro`.
 - Mount only the output directory at `/runs`; any process allowed to write
   `/runs` can modify that host directory by design.
-- Workflow guides are already baked into the image at `/skills`; no mount is
-  needed. If you override them for development, mount read-only
-  (`-v /host/.claude/skills:/skills:ro`).
 - Do not mount the repository, home directory, Docker socket, credentials, or
   broad host paths into production containers. The `/repo` source mount in the
   testing commands is for development only.
