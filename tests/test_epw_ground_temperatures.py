@@ -137,6 +137,7 @@ def test_non_numeric_soil_property_is_rejected():
 
 
 def test_record_with_no_depth_set_count_is_rejected():
+    # Validates: a record cut off right after the keyword is a named error, not an IndexError on the count field
     with pytest.raises(EpwGroundTemperatureError, match="no depth-set count"):
         parse_ground_temperature_header("GROUND TEMPERATURES,")
 
@@ -148,6 +149,7 @@ def test_zero_declared_sets_is_rejected():
 
 
 def test_negative_declared_sets_is_rejected():
+    # Validates: a negative count is rejected up front instead of driving an empty loop that yields zero sets
     with pytest.raises(EpwGroundTemperatureError, match="declares -1 depth sets"):
         parse_ground_temperature_header("GROUND TEMPERATURES,-1")
 
@@ -159,6 +161,7 @@ def test_absurd_declared_set_count_is_rejected_before_allocating():
 
 
 def test_non_numeric_declared_count_is_rejected():
+    # Validates: a non-integer count is reported by name, not as a raw ValueError escaping int()
     with pytest.raises(EpwGroundTemperatureError, match="not an integer"):
         parse_ground_temperature_header("GROUND TEMPERATURES,three,.5,,,," + _TWELVE)
 
@@ -171,6 +174,7 @@ def test_eleven_monthly_values_is_rejected():
 
 
 def test_non_numeric_temperature_is_rejected_naming_the_month():
+    # Validates: a non-numeric monthly value is rejected and the error names the offending month
     bad = "0.5,,,,1,2,3,NA,5,6,7,8,9,10,11,12"
     with pytest.raises(EpwGroundTemperatureError, match="month 4 temperature"):
         parse_ground_temperature_header(_line(bad))
@@ -184,28 +188,33 @@ def test_blank_temperature_is_rejected():
 
 
 def test_blank_depth_is_rejected():
+    # Validates: a blank depth field gets a depth-specific message, not a ValueError from float('')
     bad = ",,,,1,2,3,4,5,6,7,8,9,10,11,12"
     with pytest.raises(EpwGroundTemperatureError, match="depth is blank"):
         parse_ground_temperature_header(_line(bad))
 
 
 def test_implausible_depth_is_rejected():
+    # Validates: a 500 m depth trips the plausibility bound instead of being accepted as a valid set
     with pytest.raises(EpwGroundTemperatureError, match="implausible depth"):
         parse_ground_temperature_header(_line(_set(depth="500")))
 
 
 def test_zero_depth_is_rejected():
+    # Validates: depth 0 is rejected — the lower plausibility bound is exclusive, a zero-depth set is meaningless
     with pytest.raises(EpwGroundTemperatureError, match="implausible depth"):
         parse_ground_temperature_header(_line(_set(depth="0")))
 
 
 def test_implausible_temperature_is_rejected():
+    # Validates: a 900 C value trips the temperature bound and the error names both the value and the month
     bad = "0.5,,,,1,2,900,4,5,6,7,8,9,10,11,12"
     with pytest.raises(EpwGroundTemperatureError, match=r"implausible temperature 900\.0 C in month 3"):
         parse_ground_temperature_header(_line(bad))
 
 
 def test_line_that_is_not_a_ground_temperature_record_is_rejected():
+    # Validates: a LOCATION line is refused outright rather than having its fields parsed as depth sets
     with pytest.raises(EpwGroundTemperatureError, match="Not a GROUND TEMPERATURES record"):
         parse_ground_temperature_header("LOCATION,Boston,MA,USA")
 
@@ -232,6 +241,7 @@ def test_declared_count_mismatch_warns_and_uses_the_actual_sets():
 
 
 def test_duplicate_depth_keeps_the_first_and_warns():
+    # Validates: a repeated depth collapses to the first set and warns, so nearest_depth_set never sees an ambiguous tie
     sets, warnings = parse_ground_temperature_header(
         _line(_set(depth="0.5"), _set(depth="0.5")),
     )
@@ -297,6 +307,7 @@ def test_single_enormous_line_is_rejected_rather_than_parsed():
 
 
 def test_file_without_a_ground_temperature_record_is_rejected():
+    # Validates: an EPW header lacking the record is a named error, not an empty set list handed to the caller
     path = _writable_dir() / "nogt.epw"
     path.write_text("LOCATION,x\nDESIGN CONDITIONS,0\nDATA PERIODS,1\n", encoding="utf-8")
 
@@ -305,11 +316,13 @@ def test_file_without_a_ground_temperature_record_is_rejected():
 
 
 def test_missing_file_is_rejected_as_unreadable():
+    # Validates: a missing path is wrapped in EpwGroundTemperatureError, not a raw FileNotFoundError through MCP
     with pytest.raises(EpwGroundTemperatureError, match="Cannot read EPW header"):
         read_ground_temperature_sets(_writable_dir() / "absent.epw")
 
 
 def test_directory_is_rejected_as_not_a_regular_file():
+    # Validates: a directory path is wrapped in EpwGroundTemperatureError, not a raw IsADirectoryError
     with pytest.raises(EpwGroundTemperatureError, match="Cannot read EPW header"):
         read_ground_temperature_sets(_writable_dir())
 
@@ -349,6 +362,7 @@ def test_nearest_depth_on_nonstandard_depths():
 
 
 def test_nearest_depth_with_a_single_set_serves_every_target():
+    # Validates: a one-set file serves both the shallow and deep targets with correct deltas instead of failing
     sets, _ = parse_ground_temperature_header(_line(_set(depth="2")))
 
     assert nearest_depth_set(sets, 0.5) == (sets[0], 1.5)
@@ -378,5 +392,6 @@ def test_depth_order_in_the_file_does_not_change_the_selection():
 
 
 def test_nearest_depth_on_an_empty_list_is_rejected():
+    # Validates: an empty set list raises a named error rather than min() failing on an empty sequence
     with pytest.raises(EpwGroundTemperatureError, match="No ground temperature sets"):
         nearest_depth_set([], 0.5)

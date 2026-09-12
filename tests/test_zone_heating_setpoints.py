@@ -161,6 +161,8 @@ def test_setback_higher_than_default_still_takes_the_maximum():
 
 
 def test_zone_without_a_thermostat_is_skipped_and_named():
+    # Validates: an unconditioned zone (no dual-setpoint thermostat) is excluded from the mean
+    # and counts, and named in zones_skipped with its reason rather than dropped silently
     zones = [
         _FakeThermalZone("Conditioned", _FakeThermostat(_FakeScheduleConstant(21.0))),
         _FakeThermalZone("Corridor", None),
@@ -199,6 +201,8 @@ def test_unsupported_schedule_type_is_skipped_not_guessed():
 
 
 def test_empty_ruleset_is_skipped():
+    # Validates: a ScheduleRuleset whose day schedules carry no values is skipped with a
+    # specific reason — max() over an empty list must not raise or yield a bogus setpoint
     zones = [_FakeThermalZone("Empty", _FakeThermostat(_FakeScheduleRuleset([])))]
 
     result = zone_heating_setpoints(_FakeModel(zones))
@@ -220,7 +224,9 @@ def test_model_with_no_thermostats_reports_that_specific_reason():
 
 
 def test_model_with_no_zones_at_all():
-    result = zone_heating_setpoints(_FakeModel([]))
+    # Validates: a zone-less model (fresh or geometry-only) returns mean_c=None, zone_count=0
+    # and the "no thermostat" skip reason instead of a division-by-zero or a crash
+    result =zone_heating_setpoints(_FakeModel([]))
 
     assert result["mean_c"] is None
     assert result["zone_count"] == 0
@@ -257,6 +263,8 @@ def test_wide_setpoint_spread_is_warned_but_still_averaged():
 
 
 def test_narrow_spread_produces_no_warning():
+    # Validates: the spread warning has a threshold — a 2 K span between zones is ordinary and
+    # must not produce noise that trains callers to ignore spread_warning
     zones = [
         _FakeThermalZone("A", _FakeThermostat(_FakeScheduleConstant(20.0))),
         _FakeThermalZone("B", _FakeThermostat(_FakeScheduleConstant(22.0))),

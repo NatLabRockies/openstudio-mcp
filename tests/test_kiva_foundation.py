@@ -377,6 +377,8 @@ def test_requested_surface_that_is_not_eligible_aborts_with_nothing_written():
 
 
 def test_unknown_archetype_is_refused_with_the_valid_names():
+    # Validates: a mistyped archetype is refused with the full valid list in the response, so an
+    # agent can self-correct in one step instead of guessing names
     from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
 
     _build_quadrants()
@@ -416,6 +418,8 @@ def test_total_perimeter_across_several_floors_is_refused():
 
 
 def test_reapplying_without_overwrite_is_refused():
+    # Validates: idempotence guard — a floor that already carries a Foundation object is not
+    # silently re-pointed; the error names the overwrite flag that allows it
     from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
 
     _build_quadrants()
@@ -429,6 +433,8 @@ def test_reapplying_without_overwrite_is_refused():
 
 
 def test_no_model_loaded_reports_instead_of_raising():
+    # Validates: the operations contract (CLAUDE.md rule 5) — both Kiva tools return ok=False
+    # with no model loaded rather than raising RuntimeError through MCP
     from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
     from mcp_server.skills.geometry.kiva_foundation import get_foundation_options
 
@@ -488,6 +494,8 @@ def test_blank_epw_soil_leaves_settings_uncreated():
 
 
 def test_user_soil_override_creates_settings_and_reports_provenance():
+    # Validates: a caller-supplied soil property is the one case that must create the unique
+    # FoundationKivaSettings object, land on it, and be attributed to the user
     from mcp_server.model_manager import get_model
     from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
 
@@ -505,6 +513,8 @@ def test_user_soil_override_creates_settings_and_reports_provenance():
 
 
 def test_dry_run_changes_nothing():
+    # Validates: dry_run returns the full plan for the user to inspect while creating no
+    # FoundationKiva objects — the preview must not be a partial apply
     from mcp_server.model_manager import get_model
     from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
 

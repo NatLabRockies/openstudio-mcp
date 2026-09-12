@@ -116,6 +116,7 @@ def test_heated_basement_insulation_depth_defers_to_geometry():
 
 
 def test_unknown_archetype_lists_the_valid_names():
+    # Validates: a mistyped archetype name gets the full menu in the error so the agent can self-correct in one step
     with pytest.raises(UnknownArchetypeError) as excinfo:
         get_archetype("walkout_basement")
 
@@ -133,6 +134,7 @@ def test_r_si_converts_to_xps_thickness():
 
 
 def test_non_positive_r_value_is_rejected():
+    # Validates: R <= 0 is rejected before it becomes a zero or negative XPS Material thickness
     with pytest.raises(ValueError, match="must be positive"):
         xps_thickness_m(0.0)
 
@@ -163,6 +165,7 @@ def test_archetype_value_differing_from_the_default_is_written_and_attributed():
 
 
 def test_user_override_beats_the_archetype():
+    # Validates: an explicit geometry override wins over the archetype value and is attributed to the user
     resolved, _ = resolve_kiva_parameters(
         "crawlspace_vented", {"wall_height_above_grade_m": 0.45},
     )
@@ -185,6 +188,7 @@ def test_user_override_equal_to_the_default_is_still_written_as_user():
 
 
 def test_overriding_one_field_leaves_the_others_at_their_archetype_provenance():
+    # Validates: provenance is per-field — overriding one value must not relabel the untouched ones
     resolved, _ = resolve_kiva_parameters(
         "crawlspace_vented", {"wall_depth_below_slab_m": 0.9},
     )
@@ -203,6 +207,7 @@ def test_none_overrides_are_ignored_rather_than_written_as_null():
 
 
 def test_unrecognised_geometry_override_warns_rather_than_silently_vanishing():
+    # Validates: a misspelled override key is warned about by name rather than dropped silently
     _, warnings = resolve_kiva_parameters(
         "crawlspace_vented", {"wall_thickness_m": 0.3},
     )
@@ -214,6 +219,7 @@ def test_unrecognised_geometry_override_warns_rather_than_silently_vanishing():
 
 
 def test_insulation_defaults_to_the_archetypes_layers():
+    # Validates: with no overrides the archetype's own layers come back at CONVENTIONAL_R_SI with no warnings
     specs, warnings = resolve_insulation("slab_on_grade_perimeter_insulated")
 
     assert [s.position for s in specs] == [POSITION_EXTERIOR_VERTICAL]
@@ -222,6 +228,7 @@ def test_insulation_defaults_to_the_archetypes_layers():
 
 
 def test_r_value_override_replaces_the_archetype_value_and_keeps_the_extent():
+    # Validates: an R override changes only the R-value; the archetype's 0.6 m extent survives the merge
     specs, _ = resolve_insulation(
         "slab_on_grade_perimeter_insulated", {"exterior_vertical_r_si": 3.52},
     )
@@ -269,6 +276,7 @@ def test_soil_falls_back_to_openstudio_defaults_when_the_epw_is_blank():
 
 
 def test_soil_seeds_from_a_populated_epw_header():
+    # Validates: populated EPW soil fields are written and attributed to the EPW, not left at the IDD defaults
     resolved, _ = resolve_soil_properties(
         _FakeGroundTemperatureSet(conductivity_w_mk=1.95, density_kg_m3=1900.0,
                                   specific_heat_j_kgk=430.0),
@@ -291,6 +299,7 @@ def test_a_partially_populated_epw_header_mixes_provenance():
 
 
 def test_user_soil_override_beats_the_epw():
+    # Validates: a user soil value outranks an EPW-supplied one and is attributed to the user
     resolved, _ = resolve_soil_properties(
         _FakeGroundTemperatureSet(conductivity_w_mk=1.95),
         {"soil_conductivity_w_mk": 2.2},
@@ -301,6 +310,7 @@ def test_user_soil_override_beats_the_epw():
 
 
 def test_soil_with_no_epw_at_all_defaults_quietly():
+    # Validates: None (no EPW) yields IDD defaults without the 'no soil properties' warning a blank header gets
     resolved, warnings = resolve_soil_properties(None)
 
     assert all(r.provenance == PROVENANCE_DEFAULT for r in resolved.values())
@@ -325,6 +335,7 @@ def test_menu_shows_every_archetype_with_its_numbers_and_basis():
 
 
 def test_menu_reports_the_geometry_deferred_depth_verbatim():
+    # Validates: the MATCH_WALL_DEPTH sentinel passes through the menu unchanged rather than rendered as a number
     menu = archetype_menu()
     entry = next(e for e in menu if e["name"] == "heated_basement_insulated")
 
