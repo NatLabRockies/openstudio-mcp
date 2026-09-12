@@ -436,6 +436,54 @@ def test_out_of_range_perimeter_fraction_is_refused_before_the_sdk_sees_it():
     assert "at most 1" in result["error"]
 
 
+@pytest.mark.parametrize(("argument", "missing", "dry_run"), [
+    ("interior_horizontal_insulation_r_si", "interior_horizontal_insulation_width_m", False),
+    ("exterior_vertical_insulation_r_si", "exterior_vertical_insulation_depth_m", False),
+    ("interior_horizontal_insulation_r_si", "interior_horizontal_insulation_width_m", True),
+])
+def test_insulation_without_its_extent_is_refused_before_anything_is_written(argument, missing, dry_run):
+    # Regression: an R-value for a position the archetype does not insulate was applied with no
+    # width/depth and reported ok; EnergyPlus 25.2 then failed fatally on the half-specified
+    # Foundation:Kiva. Dry run approved the same plan. Both must refuse and name the argument.
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    _build_quadrants()
+    result = set_kiva_foundation(
+        archetype="slab_on_grade_uninsulated", include_below_grade_walls=False,
+        epw_path=BOSTON_EPW, dry_run=dry_run, **{argument: 2.0},
+    )
+
+    assert result["ok"] is False, result
+    assert result["missing_argument"] == missing
+    assert missing in result["error"]
+    model = get_model()
+    assert len(model.getFoundationKivas()) == 0
+    assert not any(m.nameString().startswith("Kiva XPS") for m in model.getStandardOpaqueMaterials())
+    assert not any(s.outsideBoundaryCondition() == "Foundation" for s in model.getSurfaces())
+
+
+def test_insulation_with_its_extent_is_written_in_full():
+    # Validates: the same override with the width lands on every FoundationKiva with both the
+    # material and the extent, which is the complete specification EnergyPlus accepts
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    floors = _build_quadrants()
+    result = set_kiva_foundation(
+        archetype="slab_on_grade_uninsulated", include_below_grade_walls=False,
+        epw_path=BOSTON_EPW, interior_horizontal_insulation_r_si=2.0,
+        interior_horizontal_insulation_width_m=0.9,
+    )
+
+    assert result["ok"] is True, result
+    kivas = get_model().getFoundationKivas()
+    assert len(kivas) == len(floors)
+    for kiva in kivas:
+        assert kiva.interiorHorizontalInsulationMaterial().is_initialized()
+        assert kiva.interiorHorizontalInsulationWidth().get() == pytest.approx(0.9)
+
+
 def test_zero_perimeter_fraction_is_refused():
     # Regression: the fraction range check accepted 0.0 while the total path required > 0 and the
     # computed path clamped zero to 1 mm — the explicit-fraction route could write the zero

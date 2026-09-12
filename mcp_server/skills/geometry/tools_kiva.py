@@ -103,10 +103,15 @@ def register_kiva_tools(mcp) -> None:
             wall_depth_below_slab_m: Override the footing stem depth below the slab. Note this is
                 not the basement depth, which comes from the below-grade wall geometry.
             footing_depth_m: Override the footing depth.
-            interior_horizontal_insulation_r_si: Under-slab insulation R-value, m2K/W.
+            interior_horizontal_insulation_r_si: Under-slab insulation R-value, m2K/W. Adding it
+                to an archetype that has no interior-horizontal layer also requires the width.
             interior_horizontal_insulation_width_m: How far it extends inward from the wall.
-            exterior_vertical_insulation_r_si: Outside-face wall insulation R-value, m2K/W.
-            exterior_vertical_insulation_depth_m: How far down it runs.
+                EnergyPlus refuses an interior-horizontal material without it.
+            exterior_vertical_insulation_r_si: Outside-face wall insulation R-value, m2K/W. Adding
+                it to an archetype that has no exterior-vertical layer also requires the depth.
+            exterior_vertical_insulation_depth_m: How far down it runs, measured from the WALL TOP
+                (the EnergyPlus definition), not from grade. EnergyPlus refuses an
+                exterior-vertical material without it.
             soil_conductivity_w_mk: Override the soil conductivity, W/m-K.
             soil_density_kg_m3: Override the soil density.
             soil_specific_heat_j_kgk: Override the soil specific heat.

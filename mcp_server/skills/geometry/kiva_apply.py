@@ -26,6 +26,7 @@ from mcp_server.model_manager import ensure_generation_unchanged, get_model_with
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.geometry.kiva_archetypes import (
     ARCHETYPES,
+    IncompleteInsulationError,
     UnknownArchetypeError,
     get_archetype,
     resolve_insulation,
@@ -373,12 +374,15 @@ def set_kiva_foundation(
         })
         warnings.extend(geometry_warnings)
 
-        insulation, insulation_warnings = resolve_insulation(archetype, {
-            "interior_horizontal_r_si": interior_horizontal_insulation_r_si,
-            "interior_horizontal_width_m": interior_horizontal_insulation_width_m,
-            "exterior_vertical_r_si": exterior_vertical_insulation_r_si,
-            "exterior_vertical_depth_m": exterior_vertical_insulation_depth_m,
-        })
+        try:
+            insulation, insulation_warnings = resolve_insulation(archetype, {
+                "interior_horizontal_r_si": interior_horizontal_insulation_r_si,
+                "interior_horizontal_width_m": interior_horizontal_insulation_width_m,
+                "exterior_vertical_r_si": exterior_vertical_insulation_r_si,
+                "exterior_vertical_depth_m": exterior_vertical_insulation_depth_m,
+            })
+        except IncompleteInsulationError as e:
+            return {"ok": False, "error": str(e), "missing_argument": e.argument}
         warnings.extend(insulation_warnings)
 
         soil, soil_warnings = resolve_soil_properties(

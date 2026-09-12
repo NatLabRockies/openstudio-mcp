@@ -226,6 +226,34 @@ class UnknownArchetypeError(ValueError):
     """The caller named a foundation archetype that does not exist."""
 
 
+class IncompleteInsulationError(ValueError):
+    """An insulation layer has a material but not the extent EnergyPlus needs to place it.
+
+    Foundation:Kiva: an interior-horizontal material needs a width ("extent of insulation as
+    measured from the wall interior"); an exterior-vertical material needs a depth ("measured
+    from the wall top to the bottom edge"). OpenStudio accepts the half-specified object and the
+    ForwardTranslator passes it through; EnergyPlus then terminates fatally. `argument` names the
+    set_kiva_foundation parameter that supplies the missing extent.
+    """
+
+    def __init__(self, position: str, argument: str):
+        self.position = position
+        self.argument = argument
+        super().__init__(
+            f"{position} insulation has an R-value but no extent; EnergyPlus refuses a "
+            f"Foundation:Kiva whose {position.replace('_', ' ')} material has no "
+            f"{'width' if position == POSITION_INTERIOR_HORIZONTAL else 'depth'}. "
+            f"Pass {argument} (this archetype supplies none for that position).",
+        )
+
+
+# The tool argument that supplies each position's required extent.
+_EXTENT_ARGUMENT = {
+    POSITION_INTERIOR_HORIZONTAL: "interior_horizontal_insulation_width_m",
+    POSITION_EXTERIOR_VERTICAL: "exterior_vertical_insulation_depth_m",
+}
+
+
 @dataclass(frozen=True)
 class ResolvedValue:
     """One parameter, its origin, and whether the writer should actually write it.
@@ -309,7 +337,10 @@ def resolve_insulation(
 
     Overrides are per position: `<position>_r_si`, `<position>_depth_m`, `<position>_width_m`.
     Supplying an R-value for a position the archetype does not use adds that layer; supplying one
-    the archetype does use replaces its value.
+    the archetype does use replaces its value. A layer whose required extent (width for interior
+    horizontal, depth for exterior vertical) is still None after the merge raises
+    IncompleteInsulationError rather than being returned: the SDK would write it and EnergyPlus
+    would refuse it.
     """
     archetype = get_archetype(archetype_name)
     supplied = {k: v for k, v in (overrides or {}).items() if v is not None}
@@ -353,6 +384,10 @@ def resolve_insulation(
 
     ordered = [by_position[p] for p in
                (POSITION_INTERIOR_HORIZONTAL, POSITION_EXTERIOR_VERTICAL) if p in by_position]
+    for spec in ordered:
+        extent = spec.width_m if spec.position == POSITION_INTERIOR_HORIZONTAL else spec.depth_m
+        if extent is None:
+            raise IncompleteInsulationError(spec.position, _EXTENT_ARGUMENT[spec.position])
     return ordered, warnings
 
 

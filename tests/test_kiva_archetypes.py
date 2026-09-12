@@ -30,6 +30,7 @@ from mcp_server.skills.geometry.kiva_archetypes import (
     PROVENANCE_EXISTING,
     PROVENANCE_USER,
     XPS_CONDUCTIVITY_W_MK,
+    IncompleteInsulationError,
     UnknownArchetypeError,
     archetype_menu,
     get_archetype,
@@ -328,6 +329,46 @@ def test_existing_model_soil_value_is_reported_and_not_overwritten():
     assert resolved["soil_density_kg_m3"].provenance == PROVENANCE_USER
     # Still defaulted on the model, blank in the EPW: IDD default, not written.
     assert resolved["soil_specific_heat_j_kgk"].provenance == PROVENANCE_DEFAULT
+
+
+@pytest.mark.parametrize(("overrides", "argument"), [
+    ({"interior_horizontal_r_si": 2.0}, "interior_horizontal_insulation_width_m"),
+    ({"exterior_vertical_r_si": 2.0}, "exterior_vertical_insulation_depth_m"),
+])
+def test_r_value_at_a_position_the_archetype_lacks_needs_its_extent(overrides, argument):
+    # Regression: an R-value override for a position the archetype does not insulate produced a
+    # layer with a material and no width/depth; OpenStudio wrote it and EnergyPlus terminated
+    # fatally ("material defined, but no ... width/depth provided") after the tool said ok
+    with pytest.raises(IncompleteInsulationError) as excinfo:
+        resolve_insulation("slab_on_grade_uninsulated", overrides)
+
+    assert excinfo.value.argument == argument
+    assert argument in str(excinfo.value)
+
+
+def test_r_value_with_its_extent_adds_the_layer():
+    # Validates: the same override is valid once the extent comes with it, and both carry user
+    # provenance
+    specs, warnings = resolve_insulation(
+        "slab_on_grade_uninsulated",
+        {"interior_horizontal_r_si": 2.0, "interior_horizontal_width_m": 0.9},
+    )
+
+    assert warnings == []
+    assert [s.position for s in specs] == [POSITION_INTERIOR_HORIZONTAL]
+    assert specs[0].width_m == 0.9
+    assert specs[0].provenance["width_m"] == PROVENANCE_USER
+
+
+def test_r_value_override_on_an_insulated_archetype_keeps_the_inherited_extent():
+    # Validates: overriding only the R-value where the archetype already supplies the extent is
+    # complete — the inherited depth satisfies the requirement
+    specs, _ = resolve_insulation(
+        "slab_on_grade_perimeter_insulated", {"exterior_vertical_r_si": 3.52},
+    )
+
+    assert specs[0].r_si_m2k_w == 3.52
+    assert specs[0].depth_m == 0.6
 
 
 def test_insulation_layers_carry_per_field_provenance():
