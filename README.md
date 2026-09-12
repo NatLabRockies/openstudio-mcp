@@ -548,6 +548,109 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
+<summary><b>Simulation & outputs</b> — 10 tools</summary>
+
+| Tool | Description |
+|------|-------------|
+| `run_simulation` | Run a simulation from an OSM + optional EPW |
+| `run_osw` | Run EnergyPlus from an OSW file |
+| `validate_osw` | Validate an OSW workflow file |
+| `validate_model` | Pre-sim check: weather, design days, HVAC, constructions |
+| `get_run_status` | Poll run status |
+| `get_run_logs` | Tail simulation logs |
+| `get_run_artifacts` | List output files |
+| `cancel_run` | Cancel a running simulation |
+| `add_output_variable` | Add an EnergyPlus output variable |
+| `add_output_meter` | Add an EnergyPlus output meter |
+
+</details>
+
+<details>
+<summary><b>Run retention</b> — 4 tools</summary>
+
+Reclaim disk from old run directories. See [docs/run-retention.md](docs/run-retention.md).
+
+| Tool | Description |
+|------|-------------|
+| `cleanup_runs` | Delete old run dirs you own (preview with `dry_run`, then delete) |
+| `delete_run` | Delete one of your run directories |
+| `pin_run` | Protect a run from automatic cleanup |
+| `unpin_run` | Allow a pinned run to be cleaned up again |
+
+</details>
+
+<details>
+<summary><b>File transfer (remote HTTP mode)</b> — 5 tools</summary>
+
+Move files between your machine and a remote server over signed, one-time URLs. See [Remote & multi-user](#remote--multi-user-http).
+
+| Tool | Description |
+|------|-------------|
+| `request_upload` | Get a one-time URL to upload a local file to the server |
+| `get_upload` | Check an upload's status and get its server-side path |
+| `list_uploads` | List your uploaded files |
+| `delete_upload` | Delete an uploaded file and free its quota |
+| `request_download` | Get a one-time URL to download a server file to your machine |
+
+</details>
+
+<details>
+<summary><b>OpenStudio Server analysis</b> — 20 tools</summary>
+
+OSA JSON validation blocks DOE analyses with fewer than two measure variables
+and, by default, requires the foundational `view_model`, `openstudio_results`,
+and `generic_qaqc` measures in the workflow. Package validation also requires
+those measures in the support ZIP. Use `single_run` for a single datapoint, a
+schema-supported sampling type such as `lhs` for one-variable sampling, or add
+another real variable before choosing DOE. OSAF's DOE runner accepts a
+one-variable payload but later fails during analysis startup.
+
+| Tool | Description |
+|------|-------------|
+| `openstudio_analysis_create_osa_json` | Create an OpenStudio Server OSA JSON file |
+| `openstudio_analysis_validate_osa_json` | Validate an OSA JSON file locally |
+| `openstudio_analysis_default_output_variables` | Return the foundational output variables used by generated OSA JSON |
+| `openstudio_analysis_foundational_measures` | Return the common measures appended to generated OSA workflows |
+| `openstudio_analysis_preflight_seed` | Simulate/reuse a seed run and write seed QA/QC evidence before packaging |
+| `openstudio_analysis_prepare_package` | Create an OSAF support ZIP only after seed simulation QA/QC passes |
+| `openstudio_analysis_create_osa_json_from_measures` | Create OSA JSON from measure directories, static arguments, and variable parameters |
+| `openstudio_analysis_add_measure_to_osa_json` | Add a measure step and optional algorithm variables to an existing OSA JSON workflow |
+| `openstudio_analysis_create_project` | Create an OpenStudio Server project |
+| `openstudio_analysis_submit` | Submit OSA JSON and optional support ZIP to a project |
+| `openstudio_analysis_status` | Check analysis status |
+| `openstudio_analysis_start` | Start an existing analysis with OSAF's action endpoint |
+| `openstudio_analysis_wait` | Poll analysis status until completion/failure/timeout |
+| `openstudio_analysis_test_server_config` | Check server health, submit a single_run smoke test, and run one datapoint |
+| `openstudio_analysis_download_data` | Download exported analysis data |
+| `openstudio_analysis_results_json` | Fetch analysis result data as JSON |
+| `openstudio_analysis_submit_wait_download` | Submit analysis, wait for completion, and download results |
+| `openstudio_analysis_algorithms` | List OSAF analysis algorithms and when to use them |
+| `openstudio_analysis_validate_package` | Validate an OSAF analysis support ZIP before upload |
+| `openstudio_analysis_start_sampled_run` | Start a sampled analysis in the required OSAF order |
+
+</details>
+
+<details>
+<summary><b>Results extraction</b> — 12 tools</summary>
+
+| Tool | Description |
+|------|-------------|
+| `extract_summary_metrics` | EUI, energy, unmet hours |
+| `extract_end_use_breakdown` | Energy by end use and fuel (IP/SI) |
+| `extract_envelope_summary` | Opaque + fenestration U-values and areas |
+| `extract_hvac_sizing` | Autosized zone/system HVAC capacities |
+| `extract_zone_summary` | Per-zone areas, conditions, multipliers |
+| `extract_component_sizing` | Autosized component values (filterable) |
+| `query_timeseries` | Time-series output data with date/cap filters |
+| `extract_simulation_errors` | Parse eplusout.err into Fatal/Severe/Warning |
+| `list_output_variables` | Output variables from a completed run |
+| `compare_runs` | Compare two runs: EUI delta + end-use breakdown |
+| `read_file` | Read any file by absolute path (mounts only) |
+| `copy_file` | Copy a file to a host-mounted path |
+
+</details>
+
+<details>
 <summary><b>Measures</b> — 11 tools</summary>
 
 Find, download, and apply bundled/BCL measures, or write/test/apply custom ones. See examples [1](docs/examples/01_custom_measure_lighting.md), [2](docs/examples/02_custom_measure_hvac.md), [19](docs/examples/19_systemd_fourpipebeam_retrofit.md).
