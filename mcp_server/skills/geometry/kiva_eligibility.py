@@ -14,19 +14,21 @@ touching that method. `_has_space()` is the guard and it is not optional.
 
 ## Computing exposed perimeter
 
-Verified recipe, and the only one that works:
-
     polys = openstudio.Point3dVectorVector()
     for f in every_candidate_floor:                  # ALL of them, not just the selected ones
-        polys.append(f.space().get().transformation() * f.vertices())
+        polys.append(project_to_z0(f.space().get().transformation() * f.vertices()))
     joined = openstudio.joinAllPolygons(polys, 0.01)
-    exposed = sum(f.exposedPerimeter(j) for j in joined)
+    exposed = sum(overlap length of each floor edge (at z=0) against each joined polygon)
 
 On `exampleModel()` this gives each of the four quadrant floors 20.0 and a total of 80.0 — exactly
-the footprint. A hand-built `Polygon3d` returns 0.0 because the winding does not match, so the join
-is mandatory. Neighbouring floors must be in the join or an interior slab bay will not correctly
-score zero. A disjoint-wing model produces several polygons and each floor scores against exactly
-one, so summing across them is both required and safe.
+the footprint, and identical to `Surface.exposedPerimeter(joined)`. That SDK method is NOT used:
+both it and `joinAllPolygons` assert |z| <= tolerance on every point, so a floor below grade — a
+basement, the whole point of Kiva walls — scores 0.0 through it. The z = 0 projection plus
+`Polygon3d.overlap` per edge is what the SDK does internally, minus the assertion. A hand-built
+`Polygon3d` returns 0.0 because the winding does not match, so the join is mandatory.
+Neighbouring floors must be in the join or an interior slab bay will not correctly score zero. A
+disjoint-wing model produces several polygons and each floor scores against exactly one, so summing
+across them is both required and safe.
 
 ## The EnergyPlus rules, from the 25.2 binary's own error strings
 
@@ -186,6 +188,47 @@ def _shared_edge_length(surface_a, surface_b) -> float:
     return total
 
 
+def _xy_extent(vertices) -> float:
+    """Longest horizontal distance between any two vertices — a rectangular wall's width."""
+    best = 0.0
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            dx = vertices[i].x() - vertices[j].x()
+            dy = vertices[i].y() - vertices[j].y()
+            best = max(best, (dx * dx + dy * dy) ** 0.5)
+    return best
+
+
+def paired_wall_length(model, wall_names: list[str]) -> float:
+    """Combined horizontal length of the named walls, in metres.
+
+    EnergyPlus compares the walls' combined length against the floor's exposed perimeter and
+    refuses the Foundation:Kiva at run time when it is larger; this is the number it compares.
+    Kiva walls are limited to four vertices, so the XY extent is the wall's width.
+    """
+    total = 0.0
+    for name in wall_names:
+        optional = model.getSurfaceByName(name)
+        if not optional.is_initialized():
+            continue
+        vertices = _world_vertices(optional.get())
+        if vertices is not None:
+            total += _xy_extent(vertices)
+    return total
+
+
+def floor_perimeter(model, floor_name: str) -> float | None:
+    """The floor polygon's full perimeter in metres, or None when it has no parent space."""
+    optional = model.getSurfaceByName(floor_name)
+    if not optional.is_initialized():
+        return None
+    vertices = _world_vertices(optional.get())
+    if vertices is None:
+        return None
+    count = len(vertices)
+    return sum((vertices[i] - vertices[(i + 1) % count]).length() for i in range(count))
+
+
 def classify_foundation_candidates(model, include_adiabatic: bool = False) -> dict[str, Any]:
     """Split the model's surfaces into Kiva-eligible floors, pairable walls, and blocked.
 
@@ -310,7 +353,7 @@ def compute_exposed_perimeters(model, floor_names: list[str]) -> tuple[dict[str,
 
     polys = openstudio.Point3dVectorVector()
     for surface in candidates:
-        polys.append(_world_vertices(surface))
+        polys.append(_at_grade(_world_vertices(surface)))
 
     try:
         joined = openstudio.joinAllPolygons(polys, POLYGON_JOIN_TOLERANCE_M)
@@ -327,9 +370,39 @@ def compute_exposed_perimeters(model, floor_names: list[str]) -> tuple[dict[str,
             continue
         surface = optional.get()
         if not _has_space(surface):
-            # The segfault guard. Reported, never called.
+            # The segfault guard. Reported, never touched.
             warnings.append(f"Floor '{name}' has no parent space; its perimeter cannot be computed.")
             continue
-        perimeters[name] = round(sum(surface.exposedPerimeter(p) for p in joined), 4)
+        perimeters[name] = round(_exposed_length(_world_vertices(surface), joined), 4)
 
     return perimeters, warnings
+
+
+def _at_grade(vertices):
+    """The same polygon projected onto z = 0.
+
+    joinAllPolygons and Surface.exposedPerimeter both assert |z| <= tolerance on every point
+    (utilities/geometry/Intersection.cpp), so a basement floor at -2.5 m scores 0.0 through the
+    SDK method — which the clamp would then report as an interior bay. Projecting first is what
+    makes below-grade floors work at all.
+    """
+    return openstudio.Point3dVector([openstudio.Point3d(p.x(), p.y(), 0.0) for p in vertices])
+
+
+def _exposed_length(world_vertices, joined) -> float:
+    """Length of the floor's edges that lie on the joined footprint's outline.
+
+    This is what Surface.exposedPerimeter does internally — each edge against
+    Polygon3d.overlap — reproduced here on the z = 0 projection so it works below grade. Verified
+    to match the SDK method to 1e-3 on at-grade geometry, including unequal subdivision (a
+    neighbour whose shared edge is shorter than this floor's).
+    """
+    flat = _at_grade(world_vertices)
+    count = len(flat)
+    total = 0.0
+    for i in range(count):
+        edge = openstudio.Point3dVector([flat[i], flat[(i + 1) % count]])
+        for polygon in joined:
+            for segment in polygon.overlap(edge):
+                total += (segment[0] - segment[1]).length()
+    return total

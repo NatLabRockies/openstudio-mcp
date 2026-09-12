@@ -35,9 +35,12 @@ from mcp_server.skills.geometry.kiva_archetypes import (
 from mcp_server.skills.geometry.kiva_eligibility import (
     KIVA_DOMAIN_WARN_THRESHOLD,
     classify_foundation_candidates,
+    floor_perimeter,
     pair_walls_to_floors,
+    paired_wall_length,
 )
 from mcp_server.skills.geometry.kiva_foundation import (
+    PERIMETER_METHOD_FRACTION,
     _apply_insulation,
     _model_climate_zone,
     _resolve_perimeter,
@@ -45,6 +48,10 @@ from mcp_server.skills.geometry.kiva_foundation import (
     _write_exposed_perimeter,
     code_ground_targets,
 )
+
+# Slack for the wall-length check, in metres. The EnergyPlus comparison is exact; this only
+# absorbs floating-point noise between a wall width and the matching floor edge.
+WALL_LENGTH_TOLERANCE_M = 0.001
 
 # A basement archetype landing on a slab-on-grade model is the most likely misuse, and it writes a
 # foundation wall that is not there. Above this depth we require corroborating geometry.
@@ -104,6 +111,36 @@ def _ground_temperature_interaction(model, applied: dict[str, Any]) -> dict[str,
             )
         )
     return result
+
+
+def _walls_exceeding_perimeter(model, walls_by_floor, perimeters) -> dict[str, Any]:
+    """Floors whose paired walls are longer than the exposed perimeter EnergyPlus will see.
+
+    EnergyPlus: "the Wall surfaces referencing the same Foundation:Kiva have a combined length
+    greater than the exposed perimeter of the foundation" — a severe error at run time, so it is
+    refused here before anything is written. Under ExposedPerimeterFraction the perimeter
+    EnergyPlus uses is the fraction of the floor polygon's full perimeter.
+    """
+    exceeding: dict[str, Any] = {}
+    for floor_name, wall_names in walls_by_floor.items():
+        if not wall_names:
+            continue
+        method, value, _ = perimeters[floor_name]
+        if method == PERIMETER_METHOD_FRACTION:
+            full = floor_perimeter(model, floor_name)
+            if full is None:
+                continue
+            exposed = value * full
+        else:
+            exposed = value
+        wall_length = paired_wall_length(model, wall_names)
+        if wall_length > exposed + WALL_LENGTH_TOLERANCE_M:
+            exceeding[floor_name] = {
+                "paired_wall_length_m": round(wall_length, 3),
+                "exposed_perimeter_m": round(exposed, 3),
+                "walls": list(wall_names),
+            }
+    return exceeding
 
 
 def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perimeters,
@@ -297,6 +334,19 @@ def set_kiva_foundation(
         )
         if perimeter_error is not None:
             return {"ok": False, "error": perimeter_error}
+
+        exceeding = _walls_exceeding_perimeter(model, wall_pairing["pairs"], perimeters)
+        if exceeding:
+            return {
+                "ok": False,
+                "error": f"On {len(exceeding)} floor(s) the paired below-grade walls are longer "
+                         f"than the exposed perimeter, which EnergyPlus refuses at run time "
+                         f"('combined length greater than the exposed perimeter of the "
+                         f"foundation'). No changes were made. Pass "
+                         f"include_below_grade_walls=False, narrow floor_surface_names, or give "
+                         f"the real exposed_perimeter_m.",
+                "wall_length_exceeds_perimeter": exceeding,
+            }
 
         already = [n for n in floor_names
                    if model.getSurfaceByName(n).get().adjacentFoundation().is_initialized()]

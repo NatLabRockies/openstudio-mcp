@@ -17,10 +17,13 @@ Read out of the EnergyPlus 25.2.0 binary's own error strings, not from documenta
 | `"Foundation" ... must use only regular material objects` | no massless / no-mass / air-gap layers |
 | `Exterior boundary condition = Foundation is not allowed with windows` | no subsurfaces |
 | requires a weather file | Kiva cannot run design-day-only |
-| paired wall lengths ≤ the floor's exposed perimeter | validated before writing |
+| paired wall lengths ≤ the floor's exposed perimeter | severe at run time; `kiva_apply._walls_exceeding_perimeter()` refuses it before writing |
 
 `kiva_surface_blockers()` in `kiva_eligibility.py` checks every one that is cheap, and refuses the
-surface with a reason rather than writing a model that dies at run time. On a real Revit model the
+surface with a reason rather than writing a model that dies at run time. Matched interior surfaces
+(`Surface` boundary) are never candidates however deep they sit: a two-storey basement's middle
+floor or a partition between two basement zones has a partner, not soil, and converting it would
+reset the pairing and drop the partner to Outdoors. On a real Revit model the
 massless-layer rule is the most common outcome — `openstudio.model.exampleModel()`'s own floors fail
 it on `CP02 CARPET PAD`.
 

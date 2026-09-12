@@ -646,6 +646,50 @@ def test_excluding_walls_leaves_them_alone():
         assert _surface(name).outsideBoundaryCondition() != "Foundation"
 
 
+def test_below_grade_floor_gets_its_real_exposed_perimeter():
+    # Regression: joinAllPolygons and Surface.exposedPerimeter assert |z| <= tolerance, so a
+    # basement floor at -2.5 m scored 0.0 and was clamped to 1 mm as an "interior bay" — every
+    # basement got a foundation with no exposed edge. The footprint is now scored at z = 0.
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+    from mcp_server.skills.geometry.kiva_eligibility import compute_exposed_perimeters
+
+    floor, _walls = _build_basement()
+    perimeters, warnings = compute_exposed_perimeters(get_model(), [floor])
+    assert perimeters == {floor: pytest.approx(40.0, abs=0.001)}, (perimeters, warnings)
+
+    result = set_kiva_foundation(archetype="unheated_basement", epw_path=BOSTON_EPW)
+    assert result["ok"] is True, result
+    exposed = result["applied"]["foundations"][0]["exposed_perimeter"]
+    assert exposed["method"] == "TotalExposedPerimeter"
+    assert exposed["value"] == pytest.approx(40.0, abs=0.001)
+    assert exposed["provenance"] == "computed_geometry"
+    assert not any("interior bay" in w for w in result["warnings"]), result["warnings"]
+
+
+def test_paired_walls_longer_than_the_exposed_perimeter_are_refused():
+    # Validates: EnergyPlus refuses a Foundation:Kiva whose wall surfaces have "a combined length
+    # greater than the exposed perimeter of the foundation" (severe, at run time). Four 10 m walls
+    # against a stated 10 m perimeter must be refused here, with nothing written.
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    floor, walls = _build_basement()
+    result = set_kiva_foundation(
+        archetype="unheated_basement", include_below_grade_walls=True,
+        exposed_perimeter_method="total", exposed_perimeter_m=10.0, epw_path=BOSTON_EPW,
+    )
+
+    assert result["ok"] is False, result
+    assert "exposed perimeter" in result["error"]
+    detail = result["wall_length_exceeds_perimeter"][floor]
+    assert detail["paired_wall_length_m"] == pytest.approx(40.0, abs=0.01)
+    assert detail["exposed_perimeter_m"] == pytest.approx(10.0, abs=0.001)
+    assert sorted(detail["walls"]) == walls
+    assert _surface(floor).outsideBoundaryCondition() != "Foundation"
+    for name in walls:
+        assert _surface(name).outsideBoundaryCondition() != "Foundation"
+
+
 def test_basement_insulation_depth_comes_from_the_wall_geometry():
     # Regression: basement depth is NOT a Kiva input. The archetype defers with MATCH_WALL_DEPTH
     # and the writer must resolve it from the paired walls, not invent a number.
