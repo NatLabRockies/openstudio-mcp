@@ -319,6 +319,36 @@ def test_insulated_archetype_creates_and_reuses_one_xps_material():
 # --------------------------------------------------------------------------- refusals
 
 
+def test_close_r_values_get_distinct_materials():
+    # Regression: the material name rounded R to two decimals, so 1.760 and 1.764 resolved to the
+    # same "Kiva XPS R-SI 1.76 (51 mm)" and the second run reused the first thickness while
+    # reporting the newer R-value
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+    from mcp_server.skills.geometry.kiva_archetypes import xps_thickness_m
+
+    _build_quadrants()
+    first = set_kiva_foundation(archetype="slab_on_grade_perimeter_insulated",
+                                include_below_grade_walls=False, epw_path=BOSTON_EPW,
+                                exterior_vertical_insulation_r_si=1.760)
+    assert first["ok"] is True, first
+    second = set_kiva_foundation(archetype="slab_on_grade_perimeter_insulated",
+                                 include_below_grade_walls=False, epw_path=BOSTON_EPW,
+                                 exterior_vertical_insulation_r_si=1.764, overwrite=True)
+    assert second["ok"] is True, second
+
+    # (material_disposition reports the last floor written, which reuses the material the first
+    # floor of the same run created — so it says "reused" here by design.)
+    xps = {m.nameString(): m.thickness() for m in get_model().getStandardOpaqueMaterials()
+           if m.nameString().startswith("Kiva XPS")}
+    assert len(xps) == 2, xps
+    assert sorted(xps.values()) == pytest.approx(
+        sorted([xps_thickness_m(1.760), xps_thickness_m(1.764)]), rel=1e-6)
+    for kiva in get_model().getFoundationKivas():
+        material = kiva.exteriorVerticalInsulationMaterial().get().to_StandardOpaqueMaterial().get()
+        assert material.thickness() == pytest.approx(xps_thickness_m(1.764), rel=1e-6)
+
+
 def test_massless_construction_layer_is_refused():
     # Validates: EnergyPlus refuses a Foundation surface with no-mass layers. exampleModel's own
     # floors use "CP02 CARPET PAD", so this is the real case, not a contrived one.

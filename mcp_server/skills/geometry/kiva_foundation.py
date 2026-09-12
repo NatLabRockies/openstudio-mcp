@@ -182,10 +182,21 @@ def _insulation_material(model, r_si: float):
     its own model and returns a dict with no handle to attach to a FoundationKiva.
     """
     thickness = xps_thickness_m(r_si)
-    name = f"Kiva XPS R-SI {r_si:.2f} ({round(thickness * 1000)} mm)"
+    # Four decimals: at 0.029 W/m-K the thickness changes by 0.03 mm per 0.001 m2K/W, so two
+    # decimals collided (1.760 and 1.764 both read "1.76 (51 mm)") and the second request reused
+    # the first thickness while reporting its own R-value.
+    name = f"Kiva XPS R-SI {r_si:.4f} ({thickness * 1000:.2f} mm)"
     existing = model.getStandardOpaqueMaterialByName(name)
     if existing.is_initialized():
-        return existing.get(), "reused"
+        found = existing.get()
+        if (math.isclose(found.thickness(), thickness, rel_tol=1e-6)
+                and math.isclose(found.conductivity(), XPS_CONDUCTIVITY_W_MK, rel_tol=1e-6)):
+            return found, "reused"
+        # Same name, different properties: someone edited it. Never silently adopt it.
+        name = f"{name} [kiva]"
+        existing = model.getStandardOpaqueMaterialByName(name)
+        if existing.is_initialized():
+            return existing.get(), "reused"
 
     material = openstudio.model.StandardOpaqueMaterial(model)
     material.setName(name)
