@@ -1057,6 +1057,28 @@ def test_set_surface_boundary_conditions_refuses_a_dangling_foundation():
     assert _surface(floors[0]).outsideBoundaryCondition() != "Foundation"
 
 
+def test_setting_ground_temperatures_after_kiva_reports_the_interaction():
+    # Regression: set_ground_temperatures run after Kiva wrote BuildingSurface, reported it as
+    # applied and said nothing about the Foundation surfaces that ignore it — the interaction was
+    # only reported from the Kiva side, so a thermal no-op looked effective
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+    from mcp_server.skills.weather.ground_temperatures import set_ground_temperatures
+
+    _build_quadrants()
+    assert set_kiva_foundation(archetype="slab_on_grade_uninsulated",
+                               include_below_grade_walls=False, epw_path=BOSTON_EPW)["ok"]
+
+    result = set_ground_temperatures(epw_path=BOSTON_EPW, building_surface_method="constant",
+                                     building_surface_constant_c=18.0)
+
+    assert result["ok"] is True, result
+    assert "Site:GroundTemperature:BuildingSurface" in result["applied"]
+    assert result["kiva_interaction"] == {"foundation_surface_count": 4, "ground_surface_count": 0}
+    kiva = [w for w in result["warnings"] if "use Kiva" in w]
+    assert len(kiva) == 1, result["warnings"]
+    assert "applies to no surface in this model" in kiva[0]
+
+
 def test_ground_temperature_report_goes_quiet_once_every_surface_uses_kiva():
     # Validates: a user who did the higher-fidelity thing should not be nagged forever about
     # Site:GroundTemperature:BuildingSurface, which Kiva ignores

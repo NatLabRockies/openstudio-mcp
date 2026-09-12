@@ -214,7 +214,9 @@ def _model_weather_epw(model) -> Path | None:
         return None
 
     candidate = Path(str(url_path.get()))
-    if candidate.is_absolute() and candidate.is_file() and is_path_allowed(candidate):
+    # Allowlist before existence: the url is caller-controlled, and is_file() on a path outside
+    # the allowed roots would be an existence probe even though the result is never returned.
+    if candidate.is_absolute() and is_path_allowed(candidate) and candidate.is_file():
         return candidate
 
     found = find_epw_by_name(candidate.name)
@@ -256,6 +258,20 @@ def _resolve_epw(model, generation: int, epw_path: str | None) -> tuple[Path | N
         "file (absent or unresolvable). Pass epw_path, or set the model's weather with "
         "change_building_location."
     )
+
+
+def _kiva_interaction(model) -> dict[str, int]:
+    """How many surfaces Kiva governs versus how many BuildingSurface still reaches.
+
+    The mirror of set_kiva_foundation's ground_temperature_interaction: a Foundation surface
+    ignores Site:GroundTemperature:BuildingSurface, so writing it after Kiva can be a no-op
+    that looks effective unless this says so.
+    """
+    conditions = [s.outsideBoundaryCondition() for s in model.getSurfaces()]
+    return {
+        "foundation_surface_count": sum(1 for c in conditions if c == "Foundation"),
+        "ground_surface_count": sum(1 for c in conditions if c.startswith("Ground")),
+    }
 
 
 def _write_monthly(obj, values: list[float], label: str) -> str | None:
@@ -423,6 +439,18 @@ def set_ground_temperatures(
             applied[label] = entry
 
         after = read_ground_temperature_state(model)
+        interaction = _kiva_interaction(model)
+        if interaction["foundation_surface_count"] > 0 and "Site:GroundTemperature:BuildingSurface" in applied:
+            warnings.append(
+                f"{interaction['foundation_surface_count']} surface(s) use Kiva (Foundation boundary "
+                f"condition) and ignore Site:GroundTemperature:BuildingSurface entirely. It "
+                + (
+                    f"still applies to the {interaction['ground_surface_count']} remaining Ground "
+                    f"surface(s)."
+                    if interaction["ground_surface_count"] else
+                    "applies to no surface in this model — writing it changed nothing thermally."
+                ),
+            )
         ensure_generation_unchanged(generation)
         return {
             "ok": True,
@@ -434,6 +462,7 @@ def set_ground_temperatures(
             "skipped": skipped,
             "warnings": warnings,
             "ground_temperatures": after,
+            "kiva_interaction": interaction,
             "note": "Changes the in-memory model; call save_osm_model to persist.",
         }
     except Exception as e:

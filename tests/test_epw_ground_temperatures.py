@@ -16,6 +16,7 @@ import pytest
 
 from mcp_server.skills.weather.epw_ground_temperatures import (
     EPW_HEADER_MAX_BYTES,
+    MAX_DEPTH_SETS,
     EpwGroundTemperatureError,
     find_ground_temperature_line,
     nearest_depth_set,
@@ -238,6 +239,17 @@ def test_declared_count_mismatch_warns_and_uses_the_actual_sets():
 
     assert [s.depth_m for s in sets] == [0.5, 4.0]
     assert any("declares 3" in w and "carries 2" in w for w in warnings), warnings
+
+
+def test_oversized_record_is_rejected_even_when_the_declared_count_is_small():
+    # Regression: the depth-set cap was checked only against the declared count, and a declared
+    # count that disagreed with the payload was merely warned about — so a record declaring 1
+    # set while carrying 25 was parsed in full
+    one_set = ",".join(["0.5", "", "", ""] + ["10"] * 12)
+    line = "GROUND TEMPERATURES,1," + ",".join([one_set] * (MAX_DEPTH_SETS + 1))
+
+    with pytest.raises(EpwGroundTemperatureError, match=f"carries {MAX_DEPTH_SETS + 1} depth sets"):
+        parse_ground_temperature_header(line)
 
 
 def test_duplicate_depth_keeps_the_first_and_warns():

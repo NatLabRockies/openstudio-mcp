@@ -179,6 +179,13 @@ def parse_ground_temperature_header(line: str) -> tuple[list[GroundTemperatureSe
         raise EpwGroundTemperatureError(
             "GROUND TEMPERATURES record carries no depth-set data",
         )
+    if actual > MAX_DEPTH_SETS:
+        # The declared count is advisory (a mismatch is only warned about below), so the cap has
+        # to bind on what the record actually carries or it binds on nothing.
+        raise EpwGroundTemperatureError(
+            f"GROUND TEMPERATURES carries {actual} depth sets, above the {MAX_DEPTH_SETS} this "
+            f"reader accepts",
+        )
     if actual != declared:
         warnings.append(
             f"EPW header declares {declared} ground temperature sets but carries {actual}; "
