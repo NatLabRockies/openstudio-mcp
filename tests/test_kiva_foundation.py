@@ -212,6 +212,136 @@ def test_exposed_perimeter_matches_the_joined_footprint():
     assert sum(perimeters.values()) == pytest.approx(80.0, abs=0.01)
 
 
+def _build_grid(cells, dz: float = 0.0, size: float = 10.0) -> dict[tuple[int, int], str]:
+    """One 10x10 space per (i, j) cell, floors given a Kiva-acceptable construction; returns floor names."""
+    import openstudio
+
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.constructions.operations import assign_construction_to_surface
+    from mcp_server.skills.geometry.operations import create_space_from_floor_print
+
+    _load_empty_model()
+    construction = _slab_construction()
+    model = get_model()
+    floors = {}
+    for (i, j) in cells:
+        x, y = size * i, size * j
+        name = f"Cell {i}{j}"
+        created = create_space_from_floor_print(
+            name=name, floor_vertices=[[x, y], [x + size, y], [x + size, y + size], [x, y + size]],
+            floor_to_ceiling_height=3.0,
+        )
+        assert created["ok"] is True, created
+        space = next(s for s in model.getSpaces() if s.nameString() == name)
+        zone = openstudio.model.ThermalZone(model)
+        zone.setName(f"{name} Zone")
+        space.setThermalZone(zone)
+        for surface in space.surfaces():
+            if dz:
+                moved = openstudio.Point3dVector([
+                    openstudio.Point3d(v.x(), v.y(), v.z() + dz) for v in surface.vertices()
+                ])
+                assert surface.setVertices(moved)
+            assert assign_construction_to_surface(
+                surface_name=surface.nameString(), construction_name=construction,
+            )["ok"]
+            if surface.surfaceType() == "Floor":
+                floors[(i, j)] = surface.nameString()
+    return floors
+
+
+COURTYARD = [(i, j) for i in range(3) for j in range(3) if (i, j) != (1, 1)]
+
+
+@pytest.mark.parametrize("dz", [0.0, -2.5])
+def test_courtyard_edges_stay_exposed(dz):
+    # Regression: joinAllPolygons fills holes, so a 3x3 ring of 10 m slabs around an open
+    # courtyard scored 120 m (the outside only) instead of 160 m — the four edge slabs got 10 m
+    # instead of 20 m and no warning said anything was missing. At grade and below grade.
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_eligibility import compute_exposed_perimeters
+
+    floors = _build_grid(COURTYARD, dz=dz)
+    perimeters, warnings = compute_exposed_perimeters(get_model(), list(floors.values()))
+
+    assert warnings == []
+    assert perimeters == {name: pytest.approx(20.0, abs=1e-3) for name in floors.values()}, perimeters
+    assert sum(perimeters.values()) == pytest.approx(160.0, abs=1e-3)
+
+
+def test_single_courtyard_facing_slab_scores_against_every_neighbour():
+    # Validates: selecting one floor still uses all candidate floors as neighbours — the edge
+    # slab's two covered edges come from floors that were not selected
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+    from mcp_server.skills.geometry.kiva_eligibility import compute_exposed_perimeters
+
+    floors = _build_grid(COURTYARD)
+    edge_slab = floors[(1, 0)]
+    perimeters, _ = compute_exposed_perimeters(get_model(), [edge_slab])
+    assert perimeters == {edge_slab: pytest.approx(20.0, abs=1e-3)}
+
+    result = set_kiva_foundation(archetype="slab_on_grade_uninsulated", floor_surface_names=[edge_slab],
+                                 include_below_grade_walls=False, epw_path=BOSTON_EPW)
+    assert result["ok"] is True, result
+    written = _surface(edge_slab).surfacePropertyExposedFoundationPerimeter().get()
+    assert written.totalExposedPerimeter().get() == pytest.approx(20.0, abs=1e-3)
+
+
+def test_unequal_subdivision_and_disjoint_wings_score_by_interval():
+    # Validates: a neighbour whose shared edge is shorter than this floor's (T-junction) covers
+    # only its own stretch, and two separate wings do not cover each other at all
+    import openstudio
+
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_eligibility import compute_exposed_perimeters
+
+    floors = _build_grid([(0, 0), (1, 0)])              # A 0..10, B 10..20 (10 m tall)
+    model = get_model()
+    b = _surface(floors[(1, 0)])
+    # Shrink B to 10..20 x 0..5: it now covers only half of A's east edge.
+    assert b.setVertices(openstudio.Point3dVector([
+        openstudio.Point3d(v.x(), min(v.y(), 5.0), v.z()) for v in b.vertices()
+    ]))
+    # A detached wing far away, 10x10.
+    from mcp_server.skills.constructions.operations import assign_construction_to_surface
+    from mcp_server.skills.geometry.operations import create_space_from_floor_print
+    created = create_space_from_floor_print(name="Wing", floor_vertices=[[50, 50], [60, 50], [60, 60], [50, 60]],
+                                            floor_to_ceiling_height=3.0)
+    assert created["ok"] is True, created
+    wing = next(s.nameString() for s in model.getSurfaces()
+                if s.surfaceType() == "Floor" and s.space().get().nameString() == "Wing")
+    assert assign_construction_to_surface(surface_name=wing, construction_name="Kiva Test Slab")["ok"]
+
+    perimeters, warnings = compute_exposed_perimeters(model, [floors[(0, 0)], floors[(1, 0)], wing])
+
+    assert warnings == []
+    assert perimeters[floors[(0, 0)]] == pytest.approx(35.0, abs=1e-3)   # 40 - 5 covered by B
+    assert perimeters[floors[(1, 0)]] == pytest.approx(25.0, abs=1e-3)   # 30 - 5 covered by A
+    assert perimeters[wing] == pytest.approx(40.0, abs=1e-3)
+
+
+def test_duplicated_footprint_is_reported_and_not_treated_as_a_neighbour():
+    # Validates: two floors with the same footprint (a duplicated surface) would otherwise cover
+    # each other completely and both score zero; instead both keep their perimeter and the
+    # duplication is named
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_eligibility import compute_exposed_perimeters
+    from mcp_server.skills.geometry.operations import create_space_from_floor_print
+
+    floors = _build_grid([(0, 0)])
+    created = create_space_from_floor_print(name="Twin", floor_vertices=[[0, 0], [10, 0], [10, 10], [0, 10]],
+                                            floor_to_ceiling_height=3.0)
+    assert created["ok"] is True, created
+    twin = next(s.nameString() for s in get_model().getSurfaces()
+                if s.surfaceType() == "Floor" and s.space().get().nameString() == "Twin")
+
+    perimeters, warnings = compute_exposed_perimeters(get_model(), [floors[(0, 0)], twin])
+
+    assert perimeters == {floors[(0, 0)]: pytest.approx(40.0), twin: pytest.approx(40.0)}
+    assert len(warnings) == 1 and "same footprint" in warnings[0], warnings
+
+
 def test_interior_bay_has_no_exposed_edge_and_is_clamped():
     # Validates: a slab surrounded on all sides scores zero, and Kiva rejects a zero perimeter, so
     # it is clamped and warned about rather than written as 0.

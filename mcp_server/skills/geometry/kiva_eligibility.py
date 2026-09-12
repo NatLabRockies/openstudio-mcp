@@ -14,21 +14,16 @@ touching that method. `_has_space()` is the guard and it is not optional.
 
 ## Computing exposed perimeter
 
-    polys = openstudio.Point3dVectorVector()
-    for f in every_candidate_floor:                  # ALL of them, not just the selected ones
-        polys.append(project_to_z0(f.space().get().transformation() * f.vertices()))
-    joined = openstudio.joinAllPolygons(polys, 0.01)
-    exposed = sum(overlap length of each floor edge (at z=0) against each joined polygon)
+For every candidate floor (ALL at-or-below-grade floors, not just the selected ones), project its
+edges to z = 0; a floor's exposed perimeter is the length of its edges minus the intervals that lie
+under a collinear edge of another floor. Partial overlaps and T-junctions are handled by interval
+subtraction, and a courtyard keeps its edges because no floor lies on their other side.
 
-On `exampleModel()` this gives each of the four quadrant floors 20.0 and a total of 80.0 — exactly
-the footprint, and identical to `Surface.exposedPerimeter(joined)`. That SDK method is NOT used:
-both it and `joinAllPolygons` assert |z| <= tolerance on every point, so a floor below grade — a
-basement, the whole point of Kiva walls — scores 0.0 through it. The z = 0 projection plus
-`Polygon3d.overlap` per edge is what the SDK does internally, minus the assertion. A hand-built
-`Polygon3d` returns 0.0 because the winding does not match, so the join is mandatory.
-Neighbouring floors must be in the join or an interior slab bay will not correctly score zero. A
-disjoint-wing model produces several polygons and each floor scores against exactly one, so summing
-across them is both required and safe.
+Neither `Surface.exposedPerimeter()` nor `joinAllPolygons()` is used, for two separate reasons:
+both assert |z| <= tolerance on every point, so a basement floor scores 0.0 through them; and the
+join fills holes, so a building around an open courtyard lost the courtyard's 40 m entirely
+(3x3 ring of 10 m slabs: 120 m instead of 160 m). On `exampleModel()` the interval method gives
+each quadrant floor 20.0 and 80.0 in total, matching the SDK where the SDK is right.
 
 ## The EnergyPlus rules, from the 25.2 binary's own error strings
 
@@ -49,8 +44,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import openstudio
-
 from mcp_server.skills.geometry.edge_graph import point_key
 from mcp_server.skills.geometry.ground_contact import (
     GRADE_TOLERANCE_M,
@@ -64,8 +57,9 @@ MAX_KIVA_WALL_VERTICES = 4
 # candidate regardless of depth, and never part of the ground-contact footprint.
 _MATCHED_INTERIOR = "Surface"
 
-# joinAllPolygons tolerance. Matches the value both vendored implementations use and the scale of
-# the sibling geometry guards (PLANE_TOLERANCE, GRADE_TOLERANCE_M).
+# Collinearity and overlap tolerance for the exposed-perimeter edge scoring. Matches the value
+# both vendored implementations pass to joinAllPolygons and the scale of the sibling geometry
+# guards (PLANE_TOLERANCE, GRADE_TOLERANCE_M).
 POLYGON_JOIN_TOLERANCE_M = 0.01
 
 # Above this many eligible floors, EnergyPlus builds that many separate 2D finite-difference
@@ -362,10 +356,21 @@ def pair_walls_to_floors(model, floor_names: list[str], wall_names: list[str]) -
 
 
 def compute_exposed_perimeters(model, floor_names: list[str]) -> tuple[dict[str, float], list[str]]:
-    """Exposed perimeter per floor, from the joined footprint of every candidate floor.
+    """Exposed perimeter per floor: the length of its edges no other ground-contact floor covers.
 
-    The join deliberately spans every at-or-below-grade floor in the model, not just the requested
-    ones: an interior slab bay only scores zero if its neighbours are present in the footprint.
+    Every at-or-below-grade floor in the model takes part as a neighbour, not just the requested
+    ones: an interior slab bay only scores zero if its neighbours are present, and a courtyard
+    edge only scores exposed if the absence of a neighbour is real.
+
+    Each floor edge is projected to z = 0 and the intervals of it that lie under a collinear edge
+    of another floor are subtracted, so partial overlaps and T-junctions (a neighbour subdivided
+    differently) are handled, and a courtyard keeps its edges. The earlier recipe joined the
+    floor polygons with joinAllPolygons and scored edges against the outline; that join fills
+    holes, so a building around an open courtyard lost the courtyard's edges entirely (a 3x3
+    ring of 10 m slabs reported 120 m, not 160 m).
+
+    Two floors with the same footprint (a duplicated polygon) are reported and do not cover each
+    other: neither has a neighbour on the other side of those edges.
     """
     warnings: list[str] = []
     candidates = [
@@ -376,17 +381,14 @@ def compute_exposed_perimeters(model, floor_names: list[str]) -> tuple[dict[str,
     if not candidates:
         return {}, ["No at-or-below-grade floors found to build a footprint from."]
 
-    polys = openstudio.Point3dVectorVector()
-    for surface in candidates:
-        polys.append(_at_grade(_world_vertices(surface)))
-
-    try:
-        joined = openstudio.joinAllPolygons(polys, POLYGON_JOIN_TOLERANCE_M)
-    except Exception as e:
-        return {}, [f"Could not join floor polygons into a footprint: {e}"]
-
-    if not joined:
-        return {}, ["Joining the floor polygons produced no footprint."]
+    edges_by_floor = {s.nameString(): _flat_edges(_world_vertices(s)) for s in candidates}
+    duplicates = _duplicate_footprints(edges_by_floor)
+    for a, b in duplicates:
+        warnings.append(
+            f"Floors '{a}' and '{b}' have the same footprint; neither counts as the other's "
+            f"neighbour, so both keep their full exposed perimeter. Check for a duplicated "
+            f"floor surface.",
+        )
 
     perimeters: dict[str, float] = {}
     for name in floor_names:
@@ -395,39 +397,95 @@ def compute_exposed_perimeters(model, floor_names: list[str]) -> tuple[dict[str,
             continue
         surface = optional.get()
         if not _has_space(surface):
-            # The segfault guard. Reported, never touched.
+            # The segfault guard, kept although exposedPerimeter() is no longer called: a
+            # parentless floor has no world coordinates to score.
             warnings.append(f"Floor '{name}' has no parent space; its perimeter cannot be computed.")
             continue
-        perimeters[name] = round(_exposed_length(_world_vertices(surface), joined), 4)
+        own = edges_by_floor.get(name) or _flat_edges(_world_vertices(surface))
+        twins = {b for a, b in duplicates if a == name} | {a for a, b in duplicates if b == name}
+        neighbours = [
+            edge for other, edges in edges_by_floor.items()
+            if other != name and other not in twins for edge in edges
+        ]
+        perimeters[name] = round(_exposed_length(own, neighbours), 4)
 
     return perimeters, warnings
 
 
-def _at_grade(vertices):
-    """The same polygon projected onto z = 0.
+def _flat_edges(vertices) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """A polygon's edges as 2D endpoint pairs (z dropped), skipping degenerate ones."""
+    points = [(v.x(), v.y()) for v in vertices]
+    edges = []
+    for i in range(len(points)):
+        p, q = points[i], points[(i + 1) % len(points)]
+        if _distance(p, q) > POLYGON_JOIN_TOLERANCE_M:
+            edges.append((p, q))
+    return edges
 
-    joinAllPolygons and Surface.exposedPerimeter both assert |z| <= tolerance on every point
-    (utilities/geometry/Intersection.cpp), so a basement floor at -2.5 m scores 0.0 through the
-    SDK method — which the clamp would then report as an interior bay. Projecting first is what
-    makes below-grade floors work at all.
+
+def _distance(p, q) -> float:
+    return ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2) ** 0.5
+
+
+def _duplicate_footprints(edges_by_floor) -> list[tuple[str, str]]:
+    """Pairs of floors whose edge sets coincide within tolerance, in either direction."""
+    def key(edges):
+        def rounded(point):
+            return (round(point[0], 3), round(point[1], 3))
+        return sorted(tuple(sorted((rounded(p), rounded(q)))) for p, q in edges)
+
+    keyed = {name: key(edges) for name, edges in edges_by_floor.items()}
+    names = sorted(keyed)
+    return [
+        (a, b) for i, a in enumerate(names) for b in names[i + 1:]
+        if keyed[a] == keyed[b]
+    ]
+
+
+def _covered_interval(edge, other, tolerance: float) -> tuple[float, float] | None:
+    """The [t0, t1] stretch of `edge` (metres from its start) lying under `other`, or None.
+
+    `other` covers part of `edge` when both its endpoints are within `tolerance` of the line
+    through `edge` and its projection overlaps the edge by more than `tolerance`. Direction is
+    irrelevant: a neighbour traverses a shared edge the opposite way, but a floor with flipped
+    winding is still a neighbour.
     """
-    return openstudio.Point3dVector([openstudio.Point3d(p.x(), p.y(), 0.0) for p in vertices])
+    (px, py), (qx, qy) = edge
+    length = _distance(edge[0], edge[1])
+    ux, uy = (qx - px) / length, (qy - py) / length
+    ts = []
+    for (x, y) in other:
+        dx, dy = x - px, y - py
+        # Perpendicular distance from the edge's line.
+        if abs(dx * uy - dy * ux) > tolerance:
+            return None
+        ts.append(dx * ux + dy * uy)
+    t0, t1 = max(min(ts), 0.0), min(max(ts), length)
+    if t1 - t0 <= tolerance:
+        return None
+    return t0, t1
 
 
-def _exposed_length(world_vertices, joined) -> float:
-    """Length of the floor's edges that lie on the joined footprint's outline.
-
-    This is what Surface.exposedPerimeter does internally — each edge against
-    Polygon3d.overlap — reproduced here on the z = 0 projection so it works below grade. Verified
-    to match the SDK method to 1e-3 on at-grade geometry, including unequal subdivision (a
-    neighbour whose shared edge is shorter than this floor's).
-    """
-    flat = _at_grade(world_vertices)
-    count = len(flat)
+def _exposed_length(own_edges, neighbour_edges, tolerance: float = POLYGON_JOIN_TOLERANCE_M) -> float:
+    """Total length of `own_edges` not covered by any collinear stretch of `neighbour_edges`."""
     total = 0.0
-    for i in range(count):
-        edge = openstudio.Point3dVector([flat[i], flat[(i + 1) % count]])
-        for polygon in joined:
-            for segment in polygon.overlap(edge):
-                total += (segment[0] - segment[1]).length()
+    for edge in own_edges:
+        length = _distance(edge[0], edge[1])
+        intervals = sorted(
+            interval for interval in (
+                _covered_interval(edge, other, tolerance) for other in neighbour_edges
+            ) if interval is not None
+        )
+        covered = 0.0
+        current: tuple[float, float] | None = None
+        for t0, t1 in intervals:
+            if current is None or t0 > current[1]:
+                if current is not None:
+                    covered += current[1] - current[0]
+                current = (t0, t1)
+            else:
+                current = (current[0], max(current[1], t1))
+        if current is not None:
+            covered += current[1] - current[0]
+        total += max(length - covered, 0.0)
     return total

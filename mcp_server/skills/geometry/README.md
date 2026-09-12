@@ -62,20 +62,18 @@ objects in `weather/ground_temperatures.py`, and the read paths use the Optional
 
 ## Exposed perimeter
 
-The only recipe that works:
+Each candidate floor's edges are projected to z = 0, and its exposed perimeter is the length of
+those edges minus every interval that lies under a collinear edge of another at-or-below-grade
+floor (`kiva_eligibility.compute_exposed_perimeters`). Interval subtraction handles partial
+overlaps and T-junctions; a courtyard's edges stay exposed because no floor lies on their other
+side; duplicated footprints are reported and do not cover each other. All candidate floors take
+part as neighbours, not only the selected ones, or an interior bay will not correctly score zero.
 
-```python
-polys = openstudio.Point3dVectorVector()
-for f in every_at_or_below_grade_floor:      # ALL of them, not just the selected ones
-    polys.append(f.space().get().transformation() * f.vertices())
-joined = openstudio.joinAllPolygons(polys, 0.01)
-exposed = sum(f.exposedPerimeter(j) for j in joined)
-```
-
-A hand-built `Polygon3d` returns 0.0 — the winding does not match. Neighbouring floors must be in the
-join or an interior bay will not correctly score zero. Disjoint wings produce several polygons and
-each floor scores against exactly one, so summing across them is required. A computed zero is clamped
-to `MIN_EXPOSED_PERIMETER_M` (Kiva rejects a zero perimeter), matching the vendored `tbd` gem.
+The SDK route is deliberately not used. `Surface.exposedPerimeter()` and `joinAllPolygons()` both
+assert |z| <= tolerance, so a basement floor scores 0.0 through them, and the join fills holes, so a
+3x3 ring of 10 m slabs around an open courtyard reported 120 m instead of 160 m. A computed zero
+(a fully enclosed interior bay) is clamped to `MIN_EXPOSED_PERIMETER_M` (Kiva rejects a zero
+perimeter), matching the vendored `tbd` gem.
 
 ## Two Foundation:Kiva fields are measured from the wall top, not from grade
 
