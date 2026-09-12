@@ -33,6 +33,7 @@ image serves both the integration suite and the MCP server the LLM tests talk to
 pytest -m "not integration" tests/
 
 # Integration (inside the Docker image; one file shown, use tests/test_*.py for all)
+# Build locally, or `docker pull nrel/openstudio-mcp:dev` and use that name in place of openstudio-mcp:dev
 docker build -f docker/Dockerfile -t openstudio-mcp:dev .
 docker run --rm -v "C:/projects/openstudio-mcp:/repo" -v "C:/projects/openstudio-mcp/runs:/runs" \
   -e RUN_OPENSTUDIO_INTEGRATION=1 -e MCP_SERVER_CMD=openstudio-mcp \

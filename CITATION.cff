@@ -1,0 +1,56 @@
+cff-version: 1.2.0
+message: "If you use OpenStudio-MCP, please cite the SoftwareX article below (preferred-citation). Use the Zenodo DOI to cite a specific software release."
+type: software
+title: "OpenStudio-MCP"
+abstract: "Model Context Protocol (MCP) server giving AI agents control of building energy modeling with the OpenStudio SDK and EnergyPlus."
+authors:
+  - family-names: Ball
+    given-names: Brian L.
+    orcid: "https://orcid.org/0000-0002-2045-3125"
+    affiliation: "National Laboratory of the Rockies"
+  - family-names: Long
+    given-names: Nicholas
+    orcid: "https://orcid.org/0000-0001-9244-6736"
+    affiliation: "National Laboratory of the Rockies"
+  - family-names: Fleming
+    given-names: Katherine
+    orcid: "https://orcid.org/0000-0002-4862-0650"
+    affiliation: "National Laboratory of the Rockies"
+  - family-names: Goldwasser
+    given-names: David
+    orcid: "https://orcid.org/0000-0002-3370-7155"
+    affiliation: "National Laboratory of the Rockies"
+repository-code: "https://github.com/NatLabRockies/openstudio-mcp"
+license-url: "https://github.com/NatLabRockies/openstudio-mcp/blob/develop/LICENSE.txt"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21905081
+    description: "Zenodo concept DOI for the software (resolves to the latest release)"
+keywords:
+  - building energy modeling
+  - OpenStudio
+  - EnergyPlus
+  - Model Context Protocol
+  - AI agents
+preferred-citation:
+  type: article
+  title: "OpenStudio-MCP: a model context protocol (MCP) server for AI agent-driven building energy modeling with the OpenStudio SDK"
+  authors:
+    - family-names: Ball
+      given-names: Brian L.
+      orcid: "https://orcid.org/0000-0002-2045-3125"
+    - family-names: Long
+      given-names: Nicholas
+      orcid: "https://orcid.org/0000-0001-9244-6736"
+    - family-names: Fleming
+      given-names: Katherine
+      orcid: "https://orcid.org/0000-0002-4862-0650"
+    - family-names: Goldwasser
+      given-names: David
+      orcid: "https://orcid.org/0000-0002-3370-7155"
+  journal: "SoftwareX"
+  volume: 36
+  start: 103020
+  year: 2026
+  issn: "2352-7110"
+  doi: 10.1016/j.softx.2026.103020

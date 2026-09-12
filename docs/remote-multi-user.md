@@ -23,7 +23,10 @@ another user's runs or files. Simulations are queued so the box isn't thrashed.
 
 The server stays single-box (model state is heavy and in-memory). Put it on a
 machine your users can reach — see [Network & security](#4-network--security).
-Build the image once: `docker build -f docker/Dockerfile -t openstudio-mcp:dev .`
+Get the image once: pull a release (`docker pull nrel/openstudio-mcp:v1.2.1`; `dev`
+tracks the develop branch) or build locally (`docker build -f docker/Dockerfile -t
+openstudio-mcp:dev .`). The commands below use the local name `openstudio-mcp:dev`;
+if you pulled, substitute the tag you pulled (e.g. `nrel/openstudio-mcp:v1.2.1`).
 
 **macOS / Linux — per-user tokens (the default for HTTP):**
 ```bash
@@ -159,7 +162,8 @@ only, no code change).
 ## 2. Connect a client
 
 `url` points at the server's `/mcp` path; add the bearer header only if you ran
-with `MCP_AUTH=token`. **Claude Code, Cursor, and VS Code** all support this.
+with `MCP_AUTH=token`. Any host that supports streamable-HTTP MCP servers works;
+**Claude Code** and **VS Code** are shown below.
 Copy [`.mcp.json.example`](../.mcp.json.example) and fill in your host + token.
 
 **Claude Code** — add to `.mcp.json` (or `claude mcp add`):
@@ -173,14 +177,6 @@ Copy [`.mcp.json.example`](../.mcp.json.example) and fill in your host + token.
     }
   }
 }
-```
-
-**Cursor** — `~/.cursor/mcp.json` (or project `.cursor/mcp.json`), same shape:
-```json
-{ "mcpServers": { "openstudio-mcp": {
-  "url": "http://10.0.0.5:8000/mcp",
-  "headers": { "Authorization": "Bearer s3cret-alice" }
-}}}
 ```
 
 **VS Code (Copilot)** — `.vscode/mcp.json`:

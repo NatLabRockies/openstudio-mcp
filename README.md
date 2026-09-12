@@ -1,10 +1,39 @@
 # OpenStudio®-MCP SWR 26-035
 
 [![DOI](https://zenodo.org/badge/1160362004.svg)](https://doi.org/10.5281/zenodo.21905081)
+[![SoftwareX paper](https://img.shields.io/badge/SoftwareX-10.1016%2Fj.softx.2026.103020-orange)](https://doi.org/10.1016/j.softx.2026.103020)
 
-**Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Cursor, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
+**Model Context Protocol server for [OpenStudio](https://openstudio.net/) building energy simulation.** It lets MCP hosts — Claude Desktop, Claude Code, Codex, VS Code — create, query, and modify OpenStudio models, run EnergyPlus, and read results, all in plain language. The server handles the OpenStudio/EnergyPlus complexity behind MCP tool calls.
 
-**150+ tools · bundled workflow skills · 480+ integration tests**
+**150+ tools · bundled workflow skills · 500+ integration tests**
+
+Published in *SoftwareX* — see [Cite this work](#cite-this-work).
+
+## Contents
+
+- [What you can ask for](#what-you-can-ask-for)
+- [Quick start (local)](#quick-start-local)
+  - [1. Get the image](#1-get-the-image)
+  - [2. Configure your host](#2-configure-your-host)
+  - [3. Verify and chat](#3-verify-and-chat)
+  - [Working with your own files](#working-with-your-own-files)
+  - [Client compatibility](#client-compatibility)
+- [Remote & multi-user (HTTP)](#remote--multi-user-http)
+- [Security and simulation sandbox](#security-and-simulation-sandbox)
+  - [Sandbox options](#sandbox-options)
+  - [Secure deployment guidance](#secure-deployment-guidance)
+- [Skills & Tools](#skills--tools-150-total)
+- [Tool reference](#tool-reference)
+- [Reference](#reference)
+  - [ASHRAE baseline systems](#ashrae-baseline-systems)
+  - [HVAC component types](#hvac-component-types)
+- [Examples](#examples)
+- [Testing](#testing)
+- [Linting and formatting](#linting-and-formatting-uv--pre-commit)
+- [Architecture](#architecture)
+  - [Contributing](#contributing)
+- [Cite this work](#cite-this-work)
+- [License](#license)
 
 ---
 
@@ -29,7 +58,24 @@ Runs the server locally over stdio — one container per user, launched by your 
 
 **Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) running, and an MCP host ([Claude Desktop](https://claude.ai/download) is the easiest start).
 
-### 1. Build the image
+### 1. Get the image
+
+**Option A: Pull from Docker Hub** (no checkout needed)
+
+```bash
+docker pull nrel/openstudio-mcp:v1.2.1
+```
+
+Tags on [`nrel/openstudio-mcp`](https://hub.docker.com/r/nrel/openstudio-mcp/tags):
+
+| Tag | What it is |
+|-----|------------|
+| `vX.Y.Z` (e.g. `v1.2.1`) | A tagged release. Pin one of these for reproducible work |
+| `dev` | Latest `develop` branch build; moves on every merge |
+
+Every tag is a multi-arch manifest (amd64 + arm64), so the same `docker pull` works on Intel/AMD and Apple Silicon.
+
+**Option B: Build locally** (for development, or to run unreleased changes)
 
 ```bash
 git clone https://github.com/NatLabRockies/openstudio-mcp.git
@@ -41,15 +87,17 @@ cd openstudio-mcp
 | Intel/AMD (Linux, Windows, Intel Mac) | `docker build -t openstudio-mcp:dev -f docker/Dockerfile .` |
 | Apple Silicon (M-series) | `docker build --platform linux/arm64 -t openstudio-mcp:dev -f docker/Dockerfile.arm64 .` |
 
-Both produce the same `openstudio-mcp:dev` image. The arm64 Dockerfile builds natively from NREL's arm64 `.deb` (the upstream `nrel/openstudio` base is amd64-only, so plain `Dockerfile` runs under slow emulation on Apple Silicon).
+Both produce a local image tagged `openstudio-mcp:dev`. The arm64 Dockerfile builds natively from NREL's arm64 `.deb` (the upstream `nrel/openstudio` base is amd64-only, so plain `Dockerfile` runs under slow emulation on Apple Silicon).
+
+**Remember your image name.** Step 2 uses `openstudio-mcp:dev` (the local build). If you pulled instead, substitute `nrel/openstudio-mcp:v1.2.1` (or whichever tag you pulled) wherever `openstudio-mcp:dev` appears.
 
 ### 2. Configure your host
+
+Pick three host folders first: one with your models (mounted read-only at `/inputs`), one for simulation output (`/runs`), and one for measures you author or download (`/measures`). Create them if they don't exist. In the snippets below they are `/path/to/models`, `/path/to/runs`, and `/path/to/measures`; replace them with absolute paths.
 
 **Option A: Claude Desktop (JSON)**
 
 Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), then restart Claude Desktop.
-
-Replace `/path/to/openstudio-mcp` with your absolute path to the repository (e.g., `/Users/you/openstudio-mcp` on macOS or `C:/Users/you/openstudio-mcp` on Windows):
 
 ```json
 {
@@ -58,10 +106,9 @@ Replace `/path/to/openstudio-mcp` with your absolute path to the repository (e.g
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-v", "/path/to/openstudio-mcp/tests/assets:/inputs:ro",
-        "-v", "/path/to/openstudio-mcp/runs:/runs",
-        "-v", "/path/to/openstudio-mcp/measures:/measures",
-        "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
+        "-v", "/path/to/models:/inputs:ro",
+        "-v", "/path/to/runs:/runs",
+        "-v", "/path/to/measures:/measures",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
         "openstudio-mcp:dev", "openstudio-mcp"
       ]
@@ -72,9 +119,7 @@ Replace `/path/to/openstudio-mcp` with your absolute path to the repository (e.g
 
 **Option B: Codex & other clients (TOML)**
 
-Add to your client config (e.g., `~/.codex/config.toml` on macOS/Linux, `%APPDATA%\.codex\config.toml` on Windows).
-
-Replace `/path/to/openstudio-mcp` with your absolute path to your openstudio-mcp checkout:
+Add to your client config (e.g., `~/.codex/config.toml` on macOS/Linux, `%USERPROFILE%\.codex\config.toml` on Windows).
 
 ```toml
 [mcp_servers.openstudio-mcp]
@@ -82,42 +127,36 @@ command = "docker"
 startup_timeout_sec = 120
 args = [
   "run", "--rm", "-i",
-  "-v", "/path/to/openstudio-mcp/tests/assets:/inputs:ro",
-  "-v", "/path/to/openstudio-mcp/runs:/runs",
-  "-v", "/path/to/openstudio-mcp/measures:/measures",
-  "-v", "/path/to/openstudio-mcp/.claude/skills:/skills:ro",
+  "-v", "/path/to/models:/inputs:ro",
+  "-v", "/path/to/runs:/runs",
+  "-v", "/path/to/measures:/measures",
   "-e", "OPENSTUDIO_MCP_MODE=prod",
   "openstudio-mcp:dev", "openstudio-mcp"
 ]
 ```
 
-**Configuration notes:**
+**Image name:** the second-to-last argument (`openstudio-mcp:dev`) must match the image from step 1. If you pulled from Docker Hub, change it to `nrel/openstudio-mcp:v1.2.1` (or the tag you pulled). Otherwise Docker fails with `Unable to find image 'openstudio-mcp:dev'`.
 
-The `-v host:container` mounts expose your folders inside the container. **Use absolute paths** to ensure mounts resolve correctly regardless of where your client launches Docker:
+**Mounts:** each `-v host:container` line shares a host folder with the container. The container is discarded on exit (`--rm`), so anything you want to keep must live on a mount:
 
-On **Windows** (using forward slashes in Docker args):
+| Container path | Host folder | Why |
+|----------------|-------------|-----|
+| `/inputs` (read-only) | your models, weather files, gbXML, error files | The AI can only open files it can see. Put a file here and refer to it as `/inputs/<name>` in your prompt |
+| `/runs` | simulation output | Every run writes to `/runs/<run_id>/` (OSM, SQL, HTML reports). Without the mount, results vanish when the container exits |
+| `/measures` | authored + BCL measures | `create_measure` and BCL downloads land under `/measures/<user>/{custom,bcl}`. Mount it so measures survive restarts; `list_local_measures` discovers them |
+
+**Use absolute paths.** On Windows, use forward slashes in Docker args:
 ```json
-"-v", "C:/Users/you/openstudio-mcp/tests/assets:/inputs:ro",
-"-v", "C:/Users/you/openstudio-mcp/runs:/runs",
+"-v", "C:/Users/you/models:/inputs:ro",
+"-v", "C:/Users/you/openstudio-runs:/runs",
+"-v", "C:/Users/you/openstudio-measures:/measures",
 ```
 
-**Mount purposes:**
-- `/inputs` — test models + your own models (replace `tests/assets` with your model folder)
-- `/runs` — simulation outputs written here
-- `/measures` — per-user measures root; each user's authored + downloaded measures live under `/measures/<user>/{custom,bcl}` (isolated in multi-user mode; mount writable like `/runs`)
-- `/skills` — workflow guides available via `list_skills()` / `get_skill()` tools (read-only)
-- To keep downloaded or hand-managed measures persistent, mount a host folder under `/measures` and use `list_local_measures` to discover them.
-- **Restart your client** after saving the config file
+**Restart your client** after saving the config file.
 
 ### 3. Verify and chat
 
-Look for the **hammer icon** in Claude Desktop's input — click it to see the openstudio-mcp tools. Then try, in order:
-
-> "Create an example model and tell me about it" → "Create a baseline office with ASHRAE System 3 and show me the HVAC components" → "Load /inputs/MyBuilding.osm, apply the 90.1-2019 typical template, and run a simulation"
-
-**Use the `/inputs` mount for your own files** rather than uploading through chat — Claude Desktop's upload sandbox can't reach MCP tools, so the AI may fall back to writing scripts. Drop a file in the host folder mapped to `/inputs` and reference it by that path. Simulation outputs in `/runs` are already reachable.
-
-Try these prompts in order of complexity:
+Open your host's tools menu (in Claude Desktop, the tools/connectors button under the prompt box) and confirm the `openstudio-mcp` server is listed with its tools. Then try these prompts in order of complexity:
 
 > **Simple:** "Create an example model and tell me about it"
 
@@ -125,30 +164,26 @@ Try these prompts in order of complexity:
 
 > **Advanced:** "Load my model at /inputs/MyBuilding.osm, apply the 90.1-2019 typical building template, and run a simulation"
 
-The AI reads your prompt, picks the right tools from the 150+ available, calls them in sequence, and summarizes the results — no scripting required.
+The AI reads your prompt, picks the right tools from the 150+ available, calls them in sequence, and summarizes the results, no scripting required.
 
 ### Working with Your Own Files
 
-**Place files in the `/inputs` mount** (the host folder mapped to `/inputs` in the config above) rather than uploading them through the chat interface. This ensures the MCP tools can access them directly.
+**Place files in the host folder mapped to `/inputs`** (see [step 2](#2-configure-your-host)) rather than uploading them (drag-and-drop or attach) through the web or desktop chat interface. Uploads never reach the MCP tools; mounted files do.
 
 ```bash
-# Example: analyzing an EnergyPlus error file
-# 1. Copy to your inputs folder
-cp eplusout.err ./tests/assets/
+# Example: analyzing an EnergyPlus error file in an AI-chat session
+# 1. Copy to the host folder mounted at /inputs
+cp eplusout.err /path/to/models/
 
 # 2. Reference by MCP path in your prompt
 "Analyze the warnings in /inputs/eplusout.err and create a measure to fix them"
 ```
 
-**Why not upload?** File uploads in Claude Desktop activate an Analysis sandbox that can't communicate with MCP tools. The AI may write scripts to handle the task instead of using the 150+ specialized MCP tools available. Placing files in `/inputs` keeps everything in the MCP workflow.
-
-For simulation outputs (results, SQL, HTML reports), these are already in `/runs` and accessible to all MCP tools automatically.
-
-### Other MCP Hosts
-
-[VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://developers.openai.com/codex), [Windsurf](https://windsurf.com/), and [Gemini CLI](https://github.com/google-gemini/gemini-cli) also support MCP. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific setup.
+**Why not upload?** Attaching a file to the chat (drag-and-drop, the paperclip button, or paste) only gives the AI the file's contents in the conversation. It never lands on disk inside the Docker container, so MCP tools like `load_osm_model` can't open it, and the AI may fall back to writing scripts instead of using the 150+ MCP tools. A file in the `/inputs` mount is on disk where the tools can read it. Simulation outputs (results, SQL, HTML reports) are already under `/runs` and need no copying.
 
 ### Client Compatibility
+
+Any MCP host can launch the same `docker run` command. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific config locations ([VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://developers.openai.com/codex), [Windsurf](https://windsurf.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli)).
 
 | Client | Status | Notes |
 |--------|--------|-------|
@@ -158,14 +193,13 @@ For simulation outputs (results, SQL, HTML reports), these are already in `/runs
 | VS Code Copilot | Compatible | MCP support via config |
 | Windsurf | Compatible | Host tool cap is ~100; use includeTools/excludeTools to limit the exposed tool set |
 | Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
-| Cursor | Not compatible | 40-tool hard cap — use Windsurf or Claude Code instead |
 | OpenAI API | Compatible | Use defer_loading for best results |
 
 ---
 
 ## Remote & multi-user (HTTP)
 
-The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, Cursor, and VS Code.
+The quick start runs one container per user over stdio. To host it on one machine and let teammates connect from their own laptops — each with an isolated session, run directory, and optional bearer-token or JWT auth — run it over streamable HTTP (`-e MCP_TRANSPORT=http`). Works with Claude Code, VS Code, and any host that supports streamable-HTTP MCP servers.
 
 Since a remote server can't see files on your laptop, the `file_transfer` tools (`request_upload` / `get_upload` / `request_download`) move models, weather files, and measure `.zip`s in and out over a signed, out-of-band channel — see **[docs/remote-multi-user.md §6](docs/remote-multi-user.md)**.
 
@@ -226,8 +260,6 @@ untrusted measures.
 - Mount `/inputs` read-only: `-v /host/inputs:/inputs:ro`.
 - Mount only the output directory at `/runs`; any process allowed to write
   `/runs` can modify that host directory by design.
-- Mount workflow guides read-only at `/skills`, or use the copy already baked
-  into the image: `-v /host/.claude/skills:/skills:ro`.
 - Do not mount the repository, home directory, Docker socket, credentials, or
   broad host paths into production containers. The `/repo` source mount in the
   testing commands is for development only.
@@ -261,13 +293,13 @@ In Claude Code, the bundled skills add workflow automation and domain knowledge:
 | `ashrae-baseline-guide` | Knowledge | ASHRAE 90.1 system selection |
 | `openstudio-patterns` | Knowledge | tool dependencies and model relationships |
 | `tool-workflows` | Knowledge | multi-tool recipes for common operations |
-| `attribute-space-types` | Task | attribute standards space types to conditioned spaces (post-gbXML) |
+| `/attribute-space-types` | Task | attribute standards space types to conditioned spaces (post-gbXML) |
 | `/gbxml-import` | Task | Revit gbXML import + geometry-defect repair workflow |
 | `/osaf-analysis` | Task | OpenStudio Analysis Framework workflow: algorithm selection, validation, submission |
 | `/python-ems` | Task | custom EnergyPlus Python Plugin control/reporting logic (EMS) |
-| `file-transfer` | Task | move files to/from a remote server (signed upload/download URLs) |
+| `/file-transfer` | Task | move files to/from a remote server (signed upload/download URLs) |
 
-Workflow/task skills are invoked with `/name`; knowledge skills load automatically. Any MCP host can also discover these guides via the `list_skills()` and `get_skill(name)` tools (mount `-v ./.claude/skills:/skills:ro`).
+Workflow/task skills are invoked with `/name`; knowledge skills load automatically. Any MCP host can also discover these guides via the `list_skills()` and `get_skill(name)` tools (baked into the image at `/skills`).
 
 ---
 
@@ -324,7 +356,7 @@ Read/write any OpenStudio object by introspection — covers types without a ded
 </details>
 
 <details>
-<summary><b>Geometry</b> — 12 tools</summary>
+<summary><b>Geometry</b> — 17 tools</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -338,11 +370,30 @@ Read/write any OpenStudio object by introspection — covers types without a ded
 | `set_window_to_wall_ratio` | Add a centered window by glazing ratio |
 | `import_floorspacejs` | Import geometry from a FloorSpaceJS JSON file |
 | `repair_missing_roof_ceiling` | Synthesize a RoofCeiling for spaces with a floor but no ceiling |
+| `set_surface_boundary_conditions` | Set the outside boundary condition on a batch of named surfaces |
+| `weld_coincident_vertices` | Snap near-coincident vertices to a shared point, closing corner gaps |
+| `merge_coplanar_sliver_surfaces` | Merge same-space coplanar fragments into fewer, larger surfaces |
+| `trim_overlapping_surfaces` | Trim same-space surfaces with a genuine 2D overlap to their remainder |
+| `patch_missing_surfaces` | Reconstruct a space's missing surfaces from unpaired polyhedron edges |
+| `get_foundation_options` | Kiva-eligible floors/walls, blockers, exposed perimeter, foundation archetype menu |
+| `set_kiva_foundation` | Model foundation heat transfer with EnergyPlus Kiva (2D soil domain per floor) |
 
 </details>
 
 <details>
-<summary><b>Constructions & materials</b> — 5 tools</summary>
+<summary><b>gbXML import</b> — 2 tools</summary>
+
+Revit gbXML → OSM translation and geometry-defect repair. See examples [21](docs/examples/21_gbxml_import.md), [22](docs/examples/22_repair_and_validate_gbxml_geometry.md).
+
+| Tool | Description |
+|------|-------------|
+| `import_gbxml` | Translate a Revit-exported gbXML file into an OpenStudio model |
+| `repair_and_validate_gbxml_geometry` | Check for surface overlaps and non-enclosed space volumes, optionally repair |
+
+</details>
+
+<details>
+<summary><b>Constructions & materials</b> — 6 tools</summary>
 
 List constructions/sets via `list_model_objects("Construction")` / `("DefaultConstructionSet")`.
 
@@ -353,6 +404,7 @@ List constructions/sets via `list_model_objects("Construction")` / `("DefaultCon
 | `create_standard_opaque_material` | Material with conductivity/density |
 | `create_construction` | Layered construction from materials |
 | `assign_construction_to_surface` | Assign a construction to a surface |
+| `add_layer_to_construction` | Add a material layer to an existing construction (copies it) |
 
 </details>
 
@@ -493,20 +545,6 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Measures</b> — 6 tools</summary>
-
-| Tool | Description |
-|------|-------------|
-| `list_local_measures` | Discover mounted, downloaded, bundled, and custom OpenStudio measures |
-| `find_measure` | Find a measure locally first, then BCL; download a strong BCL match |
-| `search_bcl_measures` | Search BCL measure candidates without downloading |
-| `list_measure_arguments` | List measure arguments with defaults and choices |
-| `download_measure_from_bcl` | Download and extract a measure ZIP into your per-user BCL cache (`/measures/<user>/bcl`) |
-| `apply_measure` | Apply OpenStudio measure to in-memory model |
-
-</details>
-
-<details>
 <summary><b>Simulation & outputs</b> — 10 tools</summary>
 
 | Tool | Description |
@@ -539,7 +577,22 @@ Reclaim disk from old run directories. See [docs/run-retention.md](docs/run-rete
 </details>
 
 <details>
-<summary><b>OpenStudio Server analysis</b> — 17 tools</summary>
+<summary><b>File transfer (remote HTTP mode)</b> — 5 tools</summary>
+
+Move files between your machine and a remote server over signed, one-time URLs. See [Remote & multi-user](#remote--multi-user-http).
+
+| Tool | Description |
+|------|-------------|
+| `request_upload` | Get a one-time URL to upload a local file to the server |
+| `get_upload` | Check an upload's status and get its server-side path |
+| `list_uploads` | List your uploaded files |
+| `delete_upload` | Delete an uploaded file and free its quota |
+| `request_download` | Get a one-time URL to download a server file to your machine |
+
+</details>
+
+<details>
+<summary><b>OpenStudio Server analysis</b> — 20 tools</summary>
 
 OSA JSON validation blocks DOE analyses with fewer than two measure variables
 and, by default, requires the foundational `view_model`, `openstudio_results`,
@@ -568,6 +621,9 @@ one-variable payload but later fails during analysis startup.
 | `openstudio_analysis_download_data` | Download exported analysis data |
 | `openstudio_analysis_results_json` | Fetch analysis result data as JSON |
 | `openstudio_analysis_submit_wait_download` | Submit analysis, wait for completion, and download results |
+| `openstudio_analysis_algorithms` | List OSAF analysis algorithms and when to use them |
+| `openstudio_analysis_validate_package` | Validate an OSAF analysis support ZIP before upload |
+| `openstudio_analysis_start_sampled_run` | Start a sampled analysis in the required OSAF order |
 
 </details>
 
@@ -592,19 +648,38 @@ one-variable payload but later fails during analysis startup.
 </details>
 
 <details>
-<summary><b>Measures & authoring</b> — 7 tools</summary>
+<summary><b>Measures</b> — 11 tools</summary>
 
-Apply bundled measures, or write/test/apply custom ones. See examples [1](docs/examples/01_custom_measure_lighting.md), [2](docs/examples/02_custom_measure_hvac.md), [19](docs/examples/19_systemd_fourpipebeam_retrofit.md).
+Find, download, and apply bundled/BCL measures, or write/test/apply custom ones. See examples [1](docs/examples/01_custom_measure_lighting.md), [2](docs/examples/02_custom_measure_hvac.md), [19](docs/examples/19_systemd_fourpipebeam_retrofit.md).
 
 | Tool | Description |
 |------|-------------|
-| `apply_measure` | Apply an OpenStudio measure to the in-memory model |
+| `list_local_measures` | Discover mounted, downloaded, bundled, and custom OpenStudio measures |
+| `find_measure` | Find a measure locally first, then BCL; download a strong BCL match |
+| `search_bcl_measures` | Search BCL measure candidates without downloading |
+| `download_measure_from_bcl` | Download and extract a measure ZIP into your per-user BCL cache (`/measures/<user>/bcl`) |
+| `list_comstock_measures` | List ~61 bundled [ComStock](https://github.com/NREL/ComStock) measures |
 | `list_measure_arguments` | List a measure's arguments, defaults, choices |
+| `apply_measure` | Apply an OpenStudio measure to the in-memory model |
 | `create_measure` | Create a custom Ruby/Python ModelMeasure |
 | `edit_measure` | Edit a custom measure's code or arguments |
 | `test_measure` | Run a custom measure's tests (auto-detects language) |
 | `list_custom_measures` | List custom measures you've created |
-| `list_comstock_measures` | List ~61 bundled [ComStock](https://github.com/NREL/ComStock) measures |
+
+</details>
+
+<details>
+<summary><b>Python EMS plugins</b> — 5 tools</summary>
+
+Custom EnergyPlus Python Plugin control/reporting logic. See example [20](docs/examples/20_python_ems_demand_response.md).
+
+| Tool | Description |
+|------|-------------|
+| `list_ems_actuators` | Discover valid EMS actuators (component, control type, key) for the loaded model |
+| `create_python_plugin` | Add a Python EMS plugin (control or reporting) to the model |
+| `get_python_plugin` | List the model's Python plugins or inspect one by name |
+| `edit_python_plugin` | Replace an existing plugin's script source |
+| `install_plugin_packages` | Install Python packages (e.g. numpy) for use inside plugins |
 
 </details>
 
@@ -639,12 +714,13 @@ Typed wrappers over ~79 bundled [common measures](https://github.com/NREL/openst
 </details>
 
 <details>
-<summary><b>Discovery, info & routing</b> — 7 tools</summary>
+<summary><b>Discovery, info & routing</b> — 8 tools</summary>
 
 | Tool | Description |
 |------|-------------|
 | `list_skills` | List available workflow guides |
 | `get_skill` | Step-by-step instructions for a workflow |
+| `get_skill_file` | Fetch a supporting file advertised by `get_skill` |
 | `recommend_tools` | Recommend the relevant tool group for a task |
 | `search_api` | Look up OpenStudio SDK classes + methods (verify before calling) |
 | `search_wiring_patterns` | Ruby wiring recipes for HVAC, plus SDK crash hazards for remove/addToNode queries |
@@ -726,17 +802,15 @@ docker run --rm -v "$PWD:/repo" -v "$PWD/runs:/runs" \
 
 ## Linting and formatting (uv + pre-commit)
 
-We use uv and pre-commit pattern in CI.
+CI runs the same pre-commit hooks (`.github/workflows/format_and_lint.yml`).
 
 ```bash
 # Install dev dependencies with uv
 uv pip install -e ".[dev]"
 
-# Run only YAML/JSON checks locally
+# Run the pre-commit hooks locally
 uv run pre-commit run --all-files
 ```
-
-CI runs the same pre-commit check in `.github/workflows/format_and_lint.yml`.
 
 ---
 
@@ -749,8 +823,10 @@ CI runs the same pre-commit check in `.github/workflows/format_and_lint.yml`.
 
 Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full system diagram, security analysis, and hardening notes: **[docs/architecture.md](docs/architecture.md)**.
 
+### Contributing
+
 <details>
-<summary><b>Contributing</b> — adding skills, tools, and component types</summary>
+<summary>Adding skills, tools, and component types</summary>
 
 **New MCP skill**
 1. Create `mcp_server/skills/<name>/__init__.py`, `operations.py`, `tools.py`
@@ -771,6 +847,27 @@ Set `OPENSTUDIO_MCP_MODE=prod` for MCP hosts (quiet logs, no banner). Full syste
 3. No dynamic dispatch — every OpenStudio API call must be explicit and grepable
 
 </details>
+
+---
+
+## Cite this work
+
+If you use OpenStudio-MCP in research, please cite the *SoftwareX* article:
+
+> Ball, B.L., Long, N., Fleming, K., Goldwasser, D., 2026. OpenStudio-MCP: a model context protocol (MCP) server for AI agent-driven building energy modeling with the OpenStudio SDK. *SoftwareX* 36, 103020. https://doi.org/10.1016/j.softx.2026.103020
+
+```bibtex
+@article{ball2026openstudiomcp,
+  title   = {{OpenStudio-MCP}: a model context protocol ({MCP}) server for {AI} agent-driven building energy modeling with the {OpenStudio} {SDK}},
+  author  = {Ball, Brian L. and Long, Nicholas and Fleming, Katherine and Goldwasser, David},
+  journal = {SoftwareX},
+  volume  = {36},
+  pages   = {103020},
+  year    = {2026},
+  issn    = {2352-7110},
+  doi     = {10.1016/j.softx.2026.103020}
+}
+```
 
 ---
 
