@@ -99,7 +99,9 @@ def register_kiva_tools(mcp) -> None:
                 "total" uses exposed_perimeter_m, "fraction" uses exposed_perimeter_fraction.
             exposed_perimeter_m: Measured exposed perimeter in metres; single floor only.
             exposed_perimeter_fraction: Fraction of the slab edge exposed, 0 to 1.
-            wall_height_above_grade_m: Override the archetype's foundation wall height above grade.
+            wall_height_above_grade_m: Distance from grade to the wall top. Derived from the paired
+                below-grade walls' top when they exist (provenance computed_geometry); the
+                archetype value applies only to floors with no paired wall. Pass it to override.
             wall_depth_below_slab_m: Override the footing stem depth below the slab. Note this is
                 not the basement depth, which comes from the below-grade wall geometry.
             footing_depth_m: Override the footing depth.

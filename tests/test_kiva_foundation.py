@@ -953,6 +953,104 @@ def test_basement_insulation_depth_comes_from_the_wall_geometry():
     kiva = get_model().getFoundationKivas()[0]
     assert kiva.exteriorVerticalInsulationDepth().get() == pytest.approx(2.5, abs=0.01)
     assert kiva.exteriorVerticalInsulationMaterial().is_initialized()
+    # Wall tops sit exactly at grade, so the derived wall height above grade is 0, not the 0.2
+    # archetype default.
+    assert kiva.wallHeightAboveGrade() == pytest.approx(0.0, abs=1e-6)
+
+
+def _raise_space(space_name: str, dz: float, via_origin: bool = False) -> None:
+    """Move a space up by dz: by rewriting vertices, or via the space origin (world transform)."""
+    import openstudio
+
+    from mcp_server.model_manager import get_model
+
+    space = next(s for s in get_model().getSpaces() if s.nameString() == space_name)
+    if via_origin:
+        assert space.setZOrigin(space.zOrigin() + dz)
+        return
+    for surface in space.surfaces():
+        moved = openstudio.Point3dVector([
+            openstudio.Point3d(v.x(), v.y(), v.z() + dz) for v in surface.vertices()
+        ])
+        assert surface.setVertices(moved)
+
+
+@pytest.mark.parametrize("via_origin", [False, True])
+def test_full_depth_insulation_runs_from_the_wall_top_to_the_slab(via_origin):
+    # Regression: MATCH_WALL_DEPTH resolved to the depth below grade (-z_min), but the EnergyPlus
+    # field is measured from the WALL TOP, so a wall from +0.5 to -2.0 got 2.0 m of insulation
+    # and the last 0.5 m above the slab stayed bare. Also pins world coordinates: the same
+    # geometry expressed through the space origin must give the same answer.
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    _build_basement()                             # floor -2.5, wall tops at 0
+    _raise_space("Basement", 0.5, via_origin)     # floor -2.0, wall tops at +0.5
+    result = set_kiva_foundation(archetype="heated_basement_insulated", epw_path=BOSTON_EPW)
+
+    assert result["ok"] is True, result
+    kiva = get_model().getFoundationKivas()[0]
+    assert kiva.exteriorVerticalInsulationDepth().get() == pytest.approx(2.5, abs=1e-6)
+    assert kiva.wallHeightAboveGrade() == pytest.approx(0.5, abs=1e-6)
+    foundation = result["applied"]["foundations"][0]
+    assert foundation["wall_geometry"] == {
+        "top_m": 0.5, "bottom_m": -2.0, "span_m": 2.5, "mixed_heights": False,
+        "span_range_m": [2.5, 2.5]}
+    assert foundation["wall_height_above_grade_m"] == {"value": 0.5, "provenance": "computed_geometry"}
+    assert foundation["insulation"]["exterior_vertical_insulation"]["depth_m"] == pytest.approx(2.5)
+    assert foundation["insulation"]["exterior_vertical_insulation"]["provenance"]["depth_m"] == "computed_geometry"
+
+
+def test_explicit_insulation_depth_and_wall_height_are_written_verbatim():
+    # Validates: a caller value is never replaced by the geometry-derived one, for either field
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    _build_basement()
+    _raise_space("Basement", 0.5)
+    result = set_kiva_foundation(archetype="heated_basement_insulated", epw_path=BOSTON_EPW,
+                                 exterior_vertical_insulation_depth_m=1.2,
+                                 wall_height_above_grade_m=0.3)
+
+    assert result["ok"] is True, result
+    kiva = get_model().getFoundationKivas()[0]
+    assert kiva.exteriorVerticalInsulationDepth().get() == pytest.approx(1.2)
+    assert kiva.wallHeightAboveGrade() == pytest.approx(0.3)
+    foundation = result["applied"]["foundations"][0]
+    assert foundation["wall_height_above_grade_m"] == {"value": 0.3, "provenance": "user"}
+    assert foundation["insulation"]["exterior_vertical_insulation"]["provenance"]["depth_m"] == "user"
+
+
+def test_mixed_wall_heights_use_the_largest_span_and_say_so():
+    # Validates: one Foundation:Kiva carries one insulation depth, so walls of differing height
+    # cannot all be matched exactly — the largest span is used and the response discloses it
+    import openstudio
+
+    from mcp_server.model_manager import get_model
+    from mcp_server.skills.geometry.kiva_apply import set_kiva_foundation
+
+    floor, walls = _build_basement()
+    tall = _surface(walls[0])
+    raised = openstudio.Point3dVector([
+        openstudio.Point3d(v.x(), v.y(), v.z() + (1.0 if v.z() > -2.4 else 0.0))
+        for v in tall.vertices()
+    ])
+    assert tall.setVertices(raised)              # this wall now runs -2.5 to +1.0
+
+    dry = set_kiva_foundation(archetype="heated_basement_insulated", epw_path=BOSTON_EPW,
+                              dry_run=True)
+    result = set_kiva_foundation(archetype="heated_basement_insulated", epw_path=BOSTON_EPW)
+
+    assert result["ok"] is True, result
+    geometry = result["plan"]["wall_geometry_by_floor"][floor]
+    assert geometry["walls"]["mixed_heights"] is True
+    assert geometry["walls"]["span_range_m"] == [2.5, 3.5]
+    assert geometry["full_depth_insulation_m"] == 3.5
+    assert dry["plan"]["wall_geometry_by_floor"] == result["plan"]["wall_geometry_by_floor"]
+    assert any("largest span (3.5 m)" in w for w in result["warnings"]), result["warnings"]
+    kiva = get_model().getFoundationKivas()[0]
+    assert kiva.exteriorVerticalInsulationDepth().get() == pytest.approx(3.5)
+    assert kiva.wallHeightAboveGrade() == pytest.approx(1.0)
 
 
 def test_user_stem_wall_depth_on_a_slab_model_is_honoured():
@@ -1127,7 +1225,14 @@ def test_real_revit_basement_export_pairs_every_buried_wall():
     kivas = get_model().getFoundationKivas()
     assert len(kivas) == 1
     assert len(kivas[0].surfaces()) == 16
-    assert kivas[0].exteriorVerticalInsulationDepth().get() == pytest.approx(3.048, abs=0.01)
+    # Walls run +0.91 to -3.05: the depth field is measured from the wall top, so 3.96 m, and
+    # the wall height above grade is the 0.91 m the geometry shows, not the archetype's 0.2.
+    assert kivas[0].exteriorVerticalInsulationDepth().get() == pytest.approx(3.96, abs=0.01)
+    assert kivas[0].wallHeightAboveGrade() == pytest.approx(0.91, abs=0.01)
+    foundation = result["applied"]["foundations"][0]
+    assert foundation["wall_height_above_grade_m"] == {
+        "value": pytest.approx(0.91, abs=0.01), "provenance": "computed_geometry"}
+    assert foundation["insulation"]["exterior_vertical_insulation"]["depth_m"] == pytest.approx(3.96, abs=0.01)
     zones = {s.space().get().thermalZone().get().nameString() for s in kivas[0].surfaces()}
     assert zones == {"0 Basement (Unconditioned)"}
     perimeter = result["applied"]["foundations"][0]["exposed_perimeter"]

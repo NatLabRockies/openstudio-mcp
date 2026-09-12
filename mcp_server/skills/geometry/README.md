@@ -77,6 +77,18 @@ join or an interior bay will not correctly score zero. Disjoint wings produce se
 each floor scores against exactly one, so summing across them is required. A computed zero is clamped
 to `MIN_EXPOSED_PERIMETER_M` (Kiva rejects a zero perimeter), matching the vendored `tbd` gem.
 
+## Two Foundation:Kiva fields are measured from the wall top, not from grade
+
+From `Energy+.idd`: *Exterior Vertical Insulation Depth* is "the extent of insulation as measured
+from the wall top to the bottom edge", and *Wall Height Above Grade* is "the distance from the
+exterior grade to the wall top". So a full-depth basement run (`MATCH_WALL_DEPTH`) is the paired
+walls' top-to-bottom span, and the wall height is their `z_max` — both derived per foundation in
+`kiva_apply._wall_geometry_by_floor()` from world coordinates, reported under
+`wall_geometry_by_floor` in the plan and on each `applied.foundations[i]`. A user-supplied
+`exterior_vertical_insulation_depth_m` or `wall_height_above_grade_m` is written verbatim. Walls of
+differing height on one floor share one Foundation object; the largest span is used and
+`mixed_heights` says so.
+
 ## The archetype numbers, and what they are not
 
 `kiva_archetypes.py` carries five foundation types. **There is no vendored basis for Kiva insulation

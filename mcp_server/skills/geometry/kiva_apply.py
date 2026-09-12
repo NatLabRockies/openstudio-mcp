@@ -26,7 +26,11 @@ from mcp_server.model_manager import ensure_generation_unchanged, get_model_with
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.geometry.kiva_archetypes import (
     ARCHETYPES,
+    MATCH_WALL_DEPTH,
+    PROVENANCE_COMPUTED,
+    PROVENANCE_USER,
     IncompleteInsulationError,
+    ResolvedValue,
     UnknownArchetypeError,
     get_archetype,
     resolve_insulation,
@@ -45,10 +49,10 @@ from mcp_server.skills.geometry.kiva_foundation import (
     _apply_insulation,
     _model_climate_zone,
     _resolve_perimeter,
-    _wall_depth_for,
     _write_exposed_perimeter,
     code_ground_targets,
     existing_soil_properties,
+    paired_wall_geometry,
 )
 
 # Slack for the wall-length check, in metres. The EnergyPlus comparison is exact; this only
@@ -180,9 +184,51 @@ def _retire_foundation(kiva) -> str | None:
     return None
 
 
+def _wall_geometry_by_floor(model, walls_by_floor, geometry, insulation, warnings) -> dict[str, Any]:
+    """Per-floor values that depend on the paired walls, resolved once for plan and apply alike.
+
+    Wall Height Above Grade is derived from the walls' top unless the caller set it: the
+    EnergyPlus field is the distance from grade to the wall top, and the archetype default of
+    0.2 m is only right for a stem wall that happens to show 0.2 m. The full-depth insulation
+    run (MATCH_WALL_DEPTH) is the walls' top-to-bottom span, since that field is measured from
+    the wall top.
+    """
+    height = geometry["wall_height_above_grade_m"]
+    wants_full_depth = any(spec.depth_m == MATCH_WALL_DEPTH for spec in insulation)
+    result: dict[str, Any] = {}
+    for floor_name, wall_names in walls_by_floor.items():
+        walls = paired_wall_geometry(model, wall_names) if wall_names else None
+        if walls is None:
+            result[floor_name] = {
+                "walls": None,
+                "wall_height_above_grade_m": {"value": height.value, "provenance": height.provenance},
+                "full_depth_insulation_m": None,
+            }
+            continue
+        if height.provenance == PROVENANCE_USER:
+            wall_height = ResolvedValue(height.value, PROVENANCE_USER)
+        else:
+            wall_height = ResolvedValue(max(walls["top_m"], 0.0), PROVENANCE_COMPUTED)
+        if walls["mixed_heights"]:
+            warnings.append(
+                f"Walls paired to '{floor_name}' span {walls['span_range_m'][0]} to "
+                f"{walls['span_range_m'][1]} m top-to-bottom; one Foundation:Kiva carries one "
+                f"insulation depth, so the largest span ({walls['span_m']} m) is used.",
+            )
+        result[floor_name] = {
+            "walls": walls,
+            "wall_height_above_grade_m": {"value": wall_height.value,
+                                          "provenance": wall_height.provenance},
+            "full_depth_insulation_m": walls["span_m"] if wants_full_depth else None,
+        }
+    return result
+
+
 def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perimeters,
-           archetype, warnings) -> tuple[dict[str, Any], str | None]:
+           archetype, warnings, wall_geometry) -> tuple[dict[str, Any], str | None]:
     """Write the Kiva objects. Returns (applied, error)."""
+    # "insulation" holds the LAST foundation's layers, kept for callers that read it; the
+    # per-foundation record is applied["foundations"][i]["insulation"].
     applied: dict[str, Any] = {"floors": [], "walls": [], "insulation": {}, "foundations": []}
 
     settings_written = {k: v for k, v in soil.items() if v.write}
@@ -210,19 +256,25 @@ def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perim
         kiva = openstudio.model.FoundationKiva(model)
         kiva.setName(f"Kiva {archetype} {floor_name}")
 
-        for field, setter in (
-            ("wall_height_above_grade_m", kiva.setWallHeightAboveGrade),
-            ("wall_depth_below_slab_m", kiva.setWallDepthBelowSlab),
-            ("footing_depth_m", kiva.setFootingDepth),
+        per_floor = wall_geometry[floor_name]
+        wall_height = per_floor["wall_height_above_grade_m"]
+        for field, setter, resolved in (
+            ("wall_height_above_grade_m", kiva.setWallHeightAboveGrade,
+             geometry["wall_height_above_grade_m"]
+             if wall_height["provenance"] != PROVENANCE_COMPUTED
+             else ResolvedValue(wall_height["value"], PROVENANCE_COMPUTED)),
+            ("wall_depth_below_slab_m", kiva.setWallDepthBelowSlab, geometry["wall_depth_below_slab_m"]),
+            ("footing_depth_m", kiva.setFootingDepth, geometry["footing_depth_m"]),
         ):
-            resolved = geometry[field]
             if resolved.write and not setter(resolved.value):
                 return applied, f"OpenStudio refused {field}={resolved.value} on '{floor_name}'"
 
-        error = _apply_insulation(model, kiva, insulation, _wall_depth_for(model, wall_names),
-                                  applied["insulation"], warnings)
+        span = per_floor["walls"]["span_m"] if per_floor["walls"] else None
+        floor_insulation: dict[str, Any] = {}
+        error = _apply_insulation(model, kiva, insulation, span, floor_insulation, warnings)
         if error is not None:
             return applied, error
+        applied["insulation"] = floor_insulation
 
         # Boundary condition FIRST: setAdjacentFoundation leaves sun/wind exposure alone, and a
         # buried slab left SunExposed takes fictitious solar gain.
@@ -247,6 +299,9 @@ def _apply(model, floor_names, walls_by_floor, geometry, insulation, soil, perim
             "name": kiva.nameString(),
             "floor": floor_name,
             "walls": wall_names,
+            "wall_geometry": per_floor["walls"],
+            "wall_height_above_grade_m": wall_height,
+            "insulation": floor_insulation,
             "exposed_perimeter": {"method": method, "value": value, "provenance": provenance},
         })
         if previous.is_initialized():
@@ -436,11 +491,15 @@ def set_kiva_foundation(
                 "stranded_walls": stranded,
             }
 
+        wall_geometry = _wall_geometry_by_floor(
+            model, wall_pairing["pairs"], geometry, insulation, warnings,
+        )
         plan = {
             "archetype": archetype,
             "basis": get_archetype(archetype).basis,
             "floors": floor_names,
             "walls_by_floor": wall_pairing["pairs"],
+            "wall_geometry_by_floor": wall_geometry,
             "geometry": {k: {"value": v.value, "provenance": v.provenance, "written": v.write}
                          for k, v in geometry.items()},
             "soil": {k: {"value": v.value, "provenance": v.provenance, "written": v.write}
@@ -455,7 +514,7 @@ def set_kiva_foundation(
                     "note": "Nothing was changed. Re-run without dry_run to apply."}
 
         applied, error = _apply(model, floor_names, wall_pairing["pairs"], geometry,
-                                insulation, soil, perimeters, archetype, warnings)
+                                insulation, soil, perimeters, archetype, warnings, wall_geometry)
         if error is not None:
             return {"ok": False, "error": error, "partial_state": applied}
 

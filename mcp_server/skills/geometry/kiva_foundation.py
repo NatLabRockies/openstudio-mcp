@@ -208,31 +208,55 @@ def _insulation_material(model, r_si: float):
     return material, "created"
 
 
-def _wall_depth_for(model, wall_names: list[str]) -> float | None:
-    """How far below grade the paired walls reach — the depth a full-height insulation run needs."""
+def paired_wall_geometry(model, wall_names: list[str]) -> dict[str, Any] | None:
+    """World-coordinate extents of the walls paired to one floor, or None when there are none.
+
+    Two Foundation:Kiva fields are defined against these, and both were previously derived from
+    the wrong datum:
+      - Exterior Vertical Insulation Depth is "measured from the wall top to the bottom edge"
+        (Energy+.idd), so a full-height run is the wall's span top-to-bottom, not its depth
+        below grade. A basement wall from +0.9 to -3.0 needs 3.9, not 3.0.
+      - Wall Height Above Grade is "distance from the exterior grade to the wall top", so it is
+        the wall's z_max, not the archetype's 0.2 default.
+    Walls of differing height share one Foundation object; the largest span is used and
+    `mixed_heights` says so, since one field cannot match every wall exactly.
+    """
     from mcp_server.skills.geometry.ground_contact import world_z_range
 
-    depths = []
+    tops, bottoms, spans = [], [], []
     for name in wall_names:
         optional = model.getSurfaceByName(name)
         if not optional.is_initialized():
             continue
         z_range = world_z_range(optional.get())
-        if z_range is not None:
-            depths.append(-z_range[0])
-    return round(max(depths), 3) if depths and max(depths) > 0 else None
+        if z_range is None:
+            continue
+        bottoms.append(z_range[0])
+        tops.append(z_range[1])
+        spans.append(z_range[1] - z_range[0])
+    if not spans:
+        return None
+    return {
+        "top_m": round(max(tops), 3),
+        "bottom_m": round(min(bottoms), 3),
+        "span_m": round(max(spans), 3),
+        "mixed_heights": (max(spans) - min(spans)) > 0.01,
+        "span_range_m": [round(min(spans), 3), round(max(spans), 3)],
+    }
 
 
-def _apply_insulation(model, kiva, specs, wall_depth_m, provenance, warnings) -> str | None:
+def _apply_insulation(model, kiva, specs, wall_span_m, provenance, warnings) -> str | None:
     """Attach the insulation layers to one FoundationKiva. Returns an error string, or None.
 
-    A setter refusal is an error, not a warning: recording the requested extent while the object
-    kept its default would report insulation that is not in the model.
+    `wall_span_m` is the paired walls' top-to-bottom span, which is what MATCH_WALL_DEPTH
+    resolves to: the EnergyPlus depth field is measured from the wall top. A setter refusal is
+    an error, not a warning: recording the requested extent while the object kept its default
+    would report insulation that is not in the model.
     """
     for spec in specs:
         depth = spec.depth_m
         if depth == MATCH_WALL_DEPTH:
-            depth = wall_depth_m
+            depth = wall_span_m
             if depth is None:
                 warnings.append(
                     f"{spec.position} insulation asked to match the below-grade wall depth, but no "
