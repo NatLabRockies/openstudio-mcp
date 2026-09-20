@@ -1,4 +1,4 @@
-"""Session-scoped memory of the gbXML file a model was imported from.
+"""Session-scoped memory of the gbXML file (and EPW) a model was imported from.
 
 Stored in model_manager's generic per-session `extra` dict (see
 mcp_server.model_manager.get_session_extra), the same mechanism the space-type
@@ -43,21 +43,30 @@ _write_lock = threading.Lock()
 class GbxmlSourceState:
     gbxml_path: str
     model_generation: int
+    epw_path: str | None = None
 
 
-def set_source(gbxml_path: str, model_generation: int) -> None:
-    """Record the gbXML file that produced the model with generation `model_generation`.
+def set_source(gbxml_path: str, model_generation: int, epw_path: str | None = None) -> None:
+    """Record the gbXML file (and its EPW) that produced the model with `model_generation`.
 
     `model_generation` must be the value returned by the load_model_with_generation()
     call that loaded that model. A concurrent later import on this session may already
     have stashed a newer generation — never overwrite it with an older one.
+
+    `epw_path` is stashed in the same write rather than through a separate setter: a second
+    setter would have to re-read the entry outside this lock, reintroducing exactly the
+    compare-and-set race the lock and the generation guard exist to prevent.
     """
     extra = model_manager.get_session_extra()
     with _write_lock:
         existing = extra.get(_KEY)
         if existing is not None and existing.model_generation > model_generation:
             return
-        extra[_KEY] = GbxmlSourceState(gbxml_path=gbxml_path, model_generation=model_generation)
+        extra[_KEY] = GbxmlSourceState(
+            gbxml_path=gbxml_path,
+            model_generation=model_generation,
+            epw_path=epw_path,
+        )
 
 
 def get_source_for_model(model_generation: int) -> str | None:
@@ -75,3 +84,20 @@ def get_source_for_model(model_generation: int) -> str | None:
     if state is None or state.model_generation != model_generation:
         return None
     return state.gbxml_path
+
+
+def get_epw_for_model(model_generation: int) -> str | None:
+    """Return the EPW the model with generation `model_generation` was imported against.
+
+    Same generation contract as get_source_for_model: a stash bound to a different model is
+    no answer at all. None when the model did not come from import_gbxml_op, or when the
+    import predates EPW stashing.
+
+    The path is the staged copy under the import's run_dir/weather/ — the bytes
+    ChangeBuildingLocation actually consumed. Run retention may have deleted it since, so
+    callers must treat a missing file as "not found" and fall back, never as an error.
+    """
+    state = model_manager.get_session_extra().get(_KEY)
+    if state is None or state.model_generation != model_generation:
+        return None
+    return state.epw_path

@@ -5,6 +5,8 @@
 | "Convert the available gbXML file to OSM using the project weather file" | import_gbxml | gbxml_path present, epw_path present |
 | "Repair and validate the loaded gbXML geometry" | repair_and_validate_gbxml_geometry | — |
 | "Check this imported gbXML model for overlaps and non-enclosed spaces" | repair_and_validate_gbxml_geometry | — |
+| "Set the ground temperatures on this model from the project weather file" | set_ground_temperatures | — |
+| "This imported model has no ground temperatures — apply the EPW's" | set_ground_temperatures | — |
 
 ## Should NOT trigger
 | Query | Forbidden tools | Expected alternatives |

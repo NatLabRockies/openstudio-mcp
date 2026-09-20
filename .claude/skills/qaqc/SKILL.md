@@ -26,6 +26,9 @@ Inspect the current model for common issues before running a simulation.
    - **Spaces without zones:** `list_spaces()` — look for spaces not assigned to a thermal zone
    - **Missing constructions:** `list_surfaces()` — look for surfaces without constructions
    - **No weather file:** `get_weather_info()` — check if EPW is attached
+   - **No ground temperatures:** `get_weather_info()` — `ground_temperatures` reports the four
+     `Site:GroundTemperature:*` objects. A gbXML-derived model has none, and EnergyPlus then
+     assumes 18 °C every month under the slab. Fix with `set_ground_temperatures()`.
    - **No design days:** needed for HVAC sizing
    - **No run period:** `get_run_period()` — check if simulation dates are set
 

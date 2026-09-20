@@ -207,6 +207,19 @@ def test_repair_and_validate_gbxml_geometry_on_real_import():
                 assert flagged["aim2860"]["has_floor"] is True, flagged
                 assert flagged["aim2860"]["has_roofceiling"] is True, flagged
 
+                # A translated model sets none of the Site:GroundTemperature:* objects, so
+                # EnergyPlus silently falls back to its own defaults. Reported here on the
+                # same terms as ground contact: report-only, and `ok` is already False above
+                # for the geometry reasons — this key must not be what decides that.
+                assert result["ground_temperatures_missing"] is True, result
+                assert result["ground_temperatures_missing_count"] == 4, result
+                assert result["ground_temperatures_state"] == {
+                    "building_surface": "absent",
+                    "fcfactor_method": "absent",
+                    "shallow": "absent",
+                    "deep": "absent",
+                }, result
+
     asyncio.run(_run())
 
 

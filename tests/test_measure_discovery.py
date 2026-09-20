@@ -17,11 +17,19 @@ BCL_CONTENT_URL = "https://bcl.nlr.gov/content/c567a0bf-a7d9-4a06-afe9-bf7df79e6
 
 
 def _import_measure_ops(monkeypatch, request, run_root: Path):
-    monkeypatch.setenv("OPENSTUDIO_MCP_RUN_ROOT", str(run_root))
     try:
         import openstudio  # noqa: F401 — real SDK present (Docker/dev): no fake needed.
+        # Bind mcp_server.config from the REAL environment before touching the env var. config
+        # reads OPENSTUDIO_MCP_RUN_ROOT once at import, so if this test file is the first thing
+        # in the process to import it, the pytest tmp dir would become the process-wide RUN_ROOT
+        # for every later in-process test in the shard — and a sandboxed OpenStudio CLI (other
+        # uid) cannot read a root-owned /tmp/pytest-of-root tree. The tests below patch
+        # ops.user_run_root explicitly, so the env var is only needed by the no-SDK branch.
+        importlib.import_module("mcp_server.config")
+        monkeypatch.setenv("OPENSTUDIO_MCP_RUN_ROOT", str(run_root))
         return importlib.import_module("mcp_server.skills.measures.operations")
     except ImportError:
+        monkeypatch.setenv("OPENSTUDIO_MCP_RUN_ROOT", str(run_root))
         # No SDK (pure no-Docker unit run): fake openstudio just long enough to import
         # measures.operations, then restore the affected modules at teardown so the fake
         # can't leak into later test files in the same process (e.g. test_validate_model).

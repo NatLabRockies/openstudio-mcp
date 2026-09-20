@@ -292,9 +292,20 @@ def get_weather_info() -> dict[str, Any]:
     try:
         model = get_model()
         ashrae_climate_zone = _model_ashrae_climate_zone(model)
+        # Computed before the no-weather-file return below: ground temperatures are
+        # independent of OS:WeatherFile, and a gbXML import that lost its weather reference is
+        # exactly the model whose ground temperatures someone needs to see.
+        # Local import avoids a cycle — ground_temperatures imports find_epw_by_name from here.
+        from mcp_server.skills.weather.ground_temperatures import read_ground_temperature_state
+        ground_temperatures = read_ground_temperature_state(model)
         wf = model.getOptionalWeatherFile()
         if not wf.is_initialized():
-            return {"ok": True, "weather_file": None, "ashrae_climate_zone": ashrae_climate_zone}
+            return {
+                "ok": True,
+                "weather_file": None,
+                "ashrae_climate_zone": ashrae_climate_zone,
+                "ground_temperatures": ground_temperatures,
+            }
 
         weather = wf.get()
         info: dict[str, Any] = {}
@@ -319,7 +330,12 @@ def get_weather_info() -> dict[str, Any]:
         if url and url.is_initialized():
             info["url"] = str(url.get())
 
-        return {"ok": True, "weather_file": info, "ashrae_climate_zone": ashrae_climate_zone}
+        return {
+            "ok": True,
+            "weather_file": info,
+            "ashrae_climate_zone": ashrae_climate_zone,
+            "ground_temperatures": ground_temperatures,
+        }
 
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
