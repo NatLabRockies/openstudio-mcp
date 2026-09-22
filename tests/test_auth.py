@@ -270,3 +270,186 @@ def test_invalid_mcp_tokens_fails_fast_with_clear_error(bad_tokens):
         with http_server({"MCP_AUTH": "token", "MCP_TOKENS": bad_tokens}):
             pass
     assert "MCP_TOKENS must be" in str(exc.value), str(exc.value)
+
+
+# --- Portal-backed revocation (MCP_JWT_VERIFY_URL) ------------------------------
+# The server keeps its local JWKS check and additionally asks the auth portal's
+# verify-token endpoint. A tiny in-process HTTP server plays the portal; the MCP
+# server is a subprocess on the same host, so 127.0.0.1 is reachable from it.
+import json  # noqa: E402
+import threading  # noqa: E402
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
+
+import httpx  # noqa: E402
+from conftest import _free_port  # noqa: E402
+
+
+class _FakePortal:
+    """Stand-in for openstudio-mcp-auth's POST /.well-known/verify-token."""
+
+    def __init__(self):
+        self.calls: list[str] = []
+        self.revoked: set[str] = set()
+        portal = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args):  # keep pytest output clean
+                pass
+
+            def do_POST(self):
+                token = self.headers.get("Authorization", "")[len("Bearer "):]
+                portal.calls.append(token)
+                if token in portal.revoked:
+                    status, body = 401, {"valid": False, "reason": "Token has been revoked"}
+                else:
+                    status, body = 200, {"valid": True, "claims": {}}
+                data = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_port}/.well-known/verify-token"
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self._server.shutdown()
+        self._server.server_close()
+
+
+async def _tool_call_rejected(url: str, token: str) -> bool:
+    try:
+        async with http_session(url, token=token) as s:
+            await s.call_tool("create_example_osm", {"name": _uniq("rv_probe")})
+    except Exception:
+        return True
+    return False
+
+
+def _raw_status(url: str, token: str) -> int:
+    """HTTP status of a bare MCP initialize POST with this bearer token (401 = rejected)."""
+    body = {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                   "clientInfo": {"name": "auth-probe", "version": "0"}},
+    }
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json, text/event-stream"}
+    return httpx.post(url, json=body, headers=headers, timeout=15).status_code
+
+
+@pytest.mark.integration
+def test_jwt_portal_revocation_end_to_end():
+    # Validates: with MCP_JWT_VERIFY_URL set (cache off) a locally valid token is accepted only
+    # while the portal says so — revoking it rejects the very next request, including on the
+    # already-open connection; identity (run-dir scope) still comes from the token's sub; and
+    # a token that fails the local signature check never reaches the portal.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    private_pem, public_pem = mint_token.generate_keypair()
+    portal = _FakePortal()
+    env = {**_jwt_env(public_pem), "MCP_JWT_VERIFY_URL": portal.url, "MCP_JWT_VERIFY_CACHE_TTL": "0"}
+    try:
+        with http_server(env) as (url, _proc):
+            async def _run():
+                tok = _mint(private_pem, "alice_rv")
+                assert _raw_status(url, tok) != 401, "valid token must be accepted before revocation"
+                before: dict = {}
+                completed_after_revoke = False
+                try:
+                    async with http_session(url, token=tok) as s:
+                        before["res"] = unwrap(await s.call_tool("create_example_osm", {"name": _uniq("rvA")}))
+                        before["portal_calls"] = portal.calls.count(tok)
+
+                        # Revoke mid-session: the next request on the SAME connection gets a
+                        # 401, which the streamable-HTTP client raises out of the session
+                        # context as an ExceptionGroup (after cancelling the in-flight call).
+                        portal.revoked.add(tok)
+                        await s.call_tool("create_example_osm", {"name": _uniq("rvB")})
+                        completed_after_revoke = True
+                except Exception:
+                    pass
+                assert "res" in before, "first tool call must succeed before revocation"
+                assert before["res"]["ok"] is True, before["res"]
+                assert "/alice_rv/" in before["res"]["out_dir"], \
+                    f"identity must come from the token's sub, not the portal: {before['res']['out_dir']}"
+                assert before["portal_calls"] >= 1, "portal must be consulted for a valid token"
+                assert completed_after_revoke is False, \
+                    "a revoked token must be rejected on its next request, even on an open session"
+                assert _raw_status(url, tok) == 401, "server must answer 401 for a revoked token"
+
+                # A fresh connection with the revoked token is rejected too.
+                assert await _tool_call_rejected(url, tok), "revoked token must not open a new session"
+
+                # Signed with the wrong key: rejected locally, never forwarded to the portal.
+                other_private, _ = mint_token.generate_keypair()
+                bad = _mint(other_private, "mallory_rv")
+                assert await _tool_call_rejected(url, bad), "wrong-key token must be rejected"
+                assert _raw_status(url, bad) == 401, "server must answer 401 for a wrong-key token"
+                assert bad not in portal.calls, "locally invalid tokens must not reach the portal"
+
+            asyncio.run(_run())
+    finally:
+        portal.close()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("fail_open", ["false", "true"])
+def test_jwt_portal_unreachable_applies_fail_policy(fail_open):
+    # Validates: when the verify-token URL is unreachable the default (fail-closed) rejects a
+    # locally valid token and MCP_JWT_VERIFY_FAIL_OPEN=true accepts it (JWKS-only fallback).
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    private_pem, public_pem = mint_token.generate_keypair()
+    dead_url = f"http://127.0.0.1:{_free_port()}/.well-known/verify-token"
+    env = {
+        **_jwt_env(public_pem),
+        "MCP_JWT_VERIFY_URL": dead_url,
+        "MCP_JWT_VERIFY_FAIL_OPEN": fail_open,
+        "MCP_JWT_VERIFY_CACHE_TTL": "0",
+    }
+    with http_server(env) as (url, _proc):
+        tok = _mint(private_pem, "dana_rv")
+        rejected = asyncio.run(_tool_call_rejected(url, tok))
+
+    if fail_open == "true":
+        assert rejected is False, "fail-open must accept a locally valid token during a portal outage"
+    else:
+        assert rejected is True, "fail-closed (default) must reject when the portal is unreachable"
+
+
+@pytest.mark.integration
+def test_build_auth_wires_portal_verifier_from_env(monkeypatch):
+    # Validates: MCP_AUTH=jwt builds a RevocationAwareJWTVerifier carrying every MCP_JWT_VERIFY_*
+    # setting plus the JWT issuer/audience, and a bad value fails startup naming the variable.
+    # (Integration tier only because importing mcp_server.server loads openstudio.)
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    from mcp_server.auth_verify import RevocationAwareJWTVerifier
+    from mcp_server.server import _build_auth
+
+    _, public_pem = mint_token.generate_keypair()
+    for name, value in _jwt_env(public_pem).items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("MCP_JWT_VERIFY_URL", "https://portal.test/.well-known/verify-token")
+    monkeypatch.setenv("MCP_JWT_VERIFY_FAIL_OPEN", "true")
+    monkeypatch.setenv("MCP_JWT_VERIFY_TIMEOUT", "1.5")
+    monkeypatch.setenv("MCP_JWT_VERIFY_CACHE_TTL", "5")
+
+    verifier = _build_auth()
+
+    assert isinstance(verifier, RevocationAwareJWTVerifier)
+    assert verifier.verify_url == "https://portal.test/.well-known/verify-token"
+    assert verifier.fail_open is True
+    assert verifier.timeout == pytest.approx(1.5)
+    assert verifier.cache_ttl == pytest.approx(5.0)
+    assert verifier.issuer == JWT_ISSUER
+    assert verifier.audience == JWT_AUDIENCE
+
+    monkeypatch.setenv("MCP_JWT_VERIFY_TIMEOUT", "fast")
+    with pytest.raises(ValueError, match="MCP_JWT_VERIFY_TIMEOUT"):
+        _build_auth()
