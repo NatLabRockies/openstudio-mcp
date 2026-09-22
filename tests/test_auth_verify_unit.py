@@ -23,6 +23,8 @@ pytestmark = pytest.mark.unit
 ISSUER = "https://issuer.test"
 AUDIENCE = "openstudio-mcp"
 VERIFY_URL = "https://portal.test/.well-known/verify-token"
+# A syntactically valid 200 body that is far larger than any real verify-token reply.
+OVERSIZED_VALID_BODY = b'{"valid": true, "pad": "' + b"x" * (70 * 1024) + b'"}'
 
 
 class FakePortal:
@@ -40,6 +42,12 @@ class FakePortal:
         self.reply: httpx.Response | type[Exception] | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        # The real portal only answers POST at exactly this path; anything else would
+        # be a wiring regression that must not pass as "valid".
+        if str(request.url) != VERIFY_URL:
+            return httpx.Response(404, text="not found")
+        if request.method != "POST":
+            return httpx.Response(405, text="method not allowed")
         token = request.headers.get("authorization", "")[len("Bearer "):]
         self.calls.append(token)
         if isinstance(self.reply, type) and issubclass(self.reply, Exception):
@@ -57,7 +65,7 @@ class FakePortal:
 def _verifier(kp: RSAKeyPair, portal: FakePortal, **kwargs) -> RevocationAwareJWTVerifier:
     return RevocationAwareJWTVerifier(
         public_key=kp.public_key, issuer=ISSUER, audience=AUDIENCE,
-        verify_url=VERIFY_URL, http_client=portal.client(), **kwargs,
+        verify_url=VERIFY_URL, verify_http_client=portal.client(), **kwargs,
     )
 
 
@@ -151,7 +159,7 @@ def test_verify_url_unset_is_plain_jwks_verification():
     kp, portal = RSAKeyPair.generate(), FakePortal()
     verifier = RevocationAwareJWTVerifier(
         public_key=kp.public_key, issuer=ISSUER, audience=AUDIENCE,
-        verify_url=None, http_client=portal.client(),
+        verify_url=None, verify_http_client=portal.client(),
     )
 
     result = asyncio.run(verifier.verify_token(_token(kp)))
@@ -194,10 +202,13 @@ def test_unreachable_portal_applies_fail_policy(failure, fail_open):
     pytest.param(httpx.Response(200, json={"valid": "true"}), id="valid_not_bool"),
     pytest.param(httpx.Response(404, text="not found"), id="wrong_url_404"),
     pytest.param(httpx.Response(400, json={"valid": False, "reason": "Missing header"}), id="portal_400"),
+    pytest.param(httpx.Response(200, content=OVERSIZED_VALID_BODY), id="oversized_body"),
 ])
 def test_non_valid_portal_answer_rejects_without_raising(reply):
-    # Validates: anything short of 200 {"valid": true} is a definitive reject: None, never an
-    # exception out of verify_token, and never a fail-open fallback (2xx/4xx are answers, not outages).
+    # Validates: anything short of a small 200 {"valid": true} object is a definitive reject: None,
+    # never an exception out of verify_token, and never a fail-open fallback (2xx/4xx are answers,
+    # not outages). The oversized case (Codex review of PR #163) caps what a broken or hostile
+    # portal can make the server buffer per request.
     kp, portal = RSAKeyPair.generate(), FakePortal()
     portal.reply = reply
 
@@ -335,6 +346,41 @@ def test_cache_purges_expired_entries_before_evicting(monkeypatch):
 
 # --- http client lifecycle -------------------------------------------------------
 
+def test_jwks_fetch_does_not_go_through_the_portal_client():
+    # Regression: Codex review of PR #163 — the portal client was stored on `_http_client`,
+    # the attribute the base JWTVerifier uses for JWKS fetches, so with MCP_JWT_JWKS_URI +
+    # MCP_JWT_VERIFY_URL the JWKS download went through the portal client (portal timeout,
+    # portal transport). The two must stay independent: JWKS via the base client, the
+    # verify-token call via the portal client.
+    from authlib.jose import JsonWebKey
+
+    kp = RSAKeyPair.generate()
+    jwks_uri = "https://issuer.test/.well-known/jwks.json"
+    jwk = JsonWebKey.import_key(kp.public_key, {"kty": "RSA"}).as_dict()
+    jwk["kid"] = "k1"
+    token = kp.create_token(subject="alice", issuer=ISSUER, audience=AUDIENCE, kid="k1")
+    jwks_calls: list[str] = []
+    portal = FakePortal()
+
+    def jwks_handler(request: httpx.Request) -> httpx.Response:
+        jwks_calls.append(str(request.url))
+        if str(request.url) != jwks_uri:
+            return httpx.Response(404)
+        return httpx.Response(200, json={"keys": [jwk]})
+
+    verifier = RevocationAwareJWTVerifier(
+        jwks_uri=jwks_uri, issuer=ISSUER, audience=AUDIENCE,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(jwks_handler)),
+        verify_url=VERIFY_URL, verify_http_client=portal.client(),
+    )
+
+    result = asyncio.run(verifier.verify_token(token))
+
+    assert result is not None and result.client_id == "alice"
+    assert jwks_calls == [jwks_uri], "JWKS must be fetched through the base verifier's client"
+    assert portal.calls == [token], "portal client must only ever see verify-token calls"
+
+
 def test_production_path_creates_one_shared_client(monkeypatch):
     # Validates: with no injected client (the server.py path) the verifier builds ONE
     # httpx.AsyncClient with the configured timeout and reuses it for every request
@@ -363,16 +409,16 @@ def test_production_path_creates_one_shared_client(monkeypatch):
     asyncio.run(_run())
     assert timeouts == [7.5], f"expected one client built with timeout=7.5, got {timeouts}"
     assert portal.calls == [token, token, token]
-    assert verifier._http_client is None, "aclose() must release the owned client"
+    assert verifier._verify_http_client is None, "aclose() must release the owned client"
 
 
 def test_aclose_leaves_injected_client_open():
-    # Validates: an injected http_client belongs to the caller; aclose() must not close it.
+    # Validates: an injected verify_http_client belongs to the caller; aclose() must not close it.
     kp, portal = RSAKeyPair.generate(), FakePortal()
     client = portal.client()
     verifier = RevocationAwareJWTVerifier(
         public_key=kp.public_key, issuer=ISSUER, audience=AUDIENCE,
-        verify_url=VERIFY_URL, http_client=client,
+        verify_url=VERIFY_URL, verify_http_client=client,
     )
 
     asyncio.run(verifier.aclose())

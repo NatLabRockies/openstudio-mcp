@@ -33,6 +33,7 @@ cached; only revocation is delayed by up to the TTL. The cache is bounded by
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import time
@@ -49,6 +50,9 @@ logger = get_logger(__name__)
 DEFAULT_TIMEOUT = 3.0
 DEFAULT_CACHE_TTL = 30.0
 DEFAULT_CACHE_MAX_SIZE = 1024
+# A verify-token reply is a small JSON object; anything bigger is a broken or
+# hostile portal and is rejected without being buffered.
+MAX_PORTAL_RESPONSE_BYTES = 64 * 1024
 
 # Monotonic clock, indirected so tests can advance it without touching the
 # global ``time`` module (asyncio's event loop uses time.monotonic too).
@@ -59,10 +63,10 @@ def _cache_key(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _json_object(response: httpx.Response) -> dict[str, Any]:
-    """The response body as a dict, or {} if it is not a JSON object."""
+def _json_object(raw: bytes) -> dict[str, Any]:
+    """The body as a dict, or {} if it is not a JSON object."""
     try:
-        body = response.json()
+        body = json.loads(raw)
     except ValueError:
         return {}
     return body if isinstance(body, dict) else {}
@@ -73,6 +77,10 @@ class RevocationAwareJWTVerifier(JWTVerifier):
 
     With ``verify_url`` unset this is exactly the base verifier. See the module
     docstring for the ordering, fail-open/fail-closed, and caching contracts.
+
+    ``verify_http_client`` is the client for the portal call only. The base
+    class's ``http_client`` (JWKS fetches) is a separate object with its own
+    timeout; the two are never shared.
     """
 
     def __init__(
@@ -83,7 +91,7 @@ class RevocationAwareJWTVerifier(JWTVerifier):
         timeout: float = DEFAULT_TIMEOUT,
         cache_ttl: float = DEFAULT_CACHE_TTL,
         cache_max_size: int = DEFAULT_CACHE_MAX_SIZE,
-        http_client: httpx.AsyncClient | None = None,
+        verify_http_client: httpx.AsyncClient | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -98,8 +106,9 @@ class RevocationAwareJWTVerifier(JWTVerifier):
         if not math.isfinite(self.cache_ttl) or self.cache_ttl < 0:
             raise ValueError(f"cache_ttl must be a finite number >= 0, got {cache_ttl!r}")
         self.cache_max_size = max(int(cache_max_size), 1)
-        self._http_client = http_client
-        self._owns_client = http_client is None
+        # Deliberately NOT ``_http_client``: that is the base verifier's JWKS client.
+        self._verify_http_client = verify_http_client
+        self._owns_verify_client = verify_http_client is None
         # sha256(token) -> monotonic time at which the cached "valid" answer expires.
         self._cache: dict[str, float] = {}
 
@@ -144,16 +153,27 @@ class RevocationAwareJWTVerifier(JWTVerifier):
 
         Raises ``httpx.HTTPError`` (transport error, timeout, or a 5xx wrapped
         as ``HTTPStatusError``) so the caller can apply the fail-open policy.
+        The body is read incrementally and capped at MAX_PORTAL_RESPONSE_BYTES;
+        an oversized reply is a broken portal and counts as a reject.
         """
-        response = await self._client().post(
-            self.verify_url, headers={"Authorization": f"Bearer {token}"},
-        )
-        if response.status_code >= 500:
-            raise httpx.HTTPStatusError(
-                f"verify-token returned HTTP {response.status_code}",
-                request=response.request, response=response,
-            )
-        body = _json_object(response)
+        async with self._client().stream(
+            "POST", self.verify_url, headers={"Authorization": f"Bearer {token}"},
+        ) as response:
+            if response.status_code >= 500:
+                raise httpx.HTTPStatusError(
+                    f"verify-token returned HTTP {response.status_code}",
+                    request=response.request, response=response,
+                )
+            raw = b""
+            async for chunk in response.aiter_bytes():
+                raw += chunk
+                if len(raw) > MAX_PORTAL_RESPONSE_BYTES:
+                    logger.warning(
+                        "verify-token reply exceeded %d bytes; rejecting token for client %s",
+                        MAX_PORTAL_RESPONSE_BYTES, client_id,
+                    )
+                    return False
+        body = _json_object(raw)
         if response.status_code == 200 and body.get("valid") is True:
             return True
         reason = body.get("reason") or f"HTTP {response.status_code}"
@@ -165,16 +185,16 @@ class RevocationAwareJWTVerifier(JWTVerifier):
     # --- http client -------------------------------------------------------
 
     def _client(self) -> httpx.AsyncClient:
-        """One shared client (keep-alive) created lazily inside the event loop."""
-        if self._http_client is None:
-            self._http_client = httpx.AsyncClient(timeout=self.timeout)
-        return self._http_client
+        """One shared portal client (keep-alive) created lazily inside the event loop."""
+        if self._verify_http_client is None:
+            self._verify_http_client = httpx.AsyncClient(timeout=self.timeout)
+        return self._verify_http_client
 
     async def aclose(self) -> None:
-        """Close the client this verifier created; an injected client is the caller's."""
-        if self._owns_client and self._http_client is not None:
-            await self._http_client.aclose()
-            self._http_client = None
+        """Close the portal client this verifier created; an injected one is the caller's."""
+        if self._owns_verify_client and self._verify_http_client is not None:
+            await self._verify_http_client.aclose()
+            self._verify_http_client = None
 
     # --- cache -------------------------------------------------------------
 

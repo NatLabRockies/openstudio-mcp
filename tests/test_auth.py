@@ -297,6 +297,9 @@ class _FakePortal:
                 pass
 
             def do_POST(self):
+                if self.path != "/.well-known/verify-token":
+                    self.send_error(404)
+                    return
                 token = self.headers.get("Authorization", "")[len("Bearer "):]
                 portal.calls.append(token)
                 if token in portal.revoked:
