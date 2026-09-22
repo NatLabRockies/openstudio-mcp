@@ -1,14 +1,14 @@
 """Unit tests for RevocationAwareJWTVerifier (mcp_server/auth_verify.py).
 
 No server, no openstudio, no network — the auth portal's verify-token
-endpoint is simulated with an httpx2 MockTransport.
+endpoint is simulated with an httpx MockTransport.
 """
 from __future__ import annotations
 
 import asyncio
 import time
 
-import httpx2 as httpx
+import httpx
 import pytest
 from fastmcp.server.auth.providers.jwt import RSAKeyPair
 

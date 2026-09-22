@@ -39,7 +39,7 @@ import os
 import time
 from typing import Any
 
-import httpx2 as httpx
+import httpx
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.logging import get_logger
@@ -69,6 +69,22 @@ def _access_token_from_claims(token: str, claims: dict[str, Any]) -> AccessToken
         subject=claims.get("sub"),
         claims=claims,
     )
+
+
+def _with_subject_from_claims(access_token: AccessToken | None) -> AccessToken | None:
+    """Backfill ``subject`` from the ``sub`` claim when the base verifier left it unset.
+
+    The base ``JWTVerifier`` (JWKS-only path) populates ``client_id`` but not
+    ``subject``. Callers of this verifier (portal path included) expect
+    ``subject`` to reflect the token's ``sub`` claim, so normalize it here for
+    any JWKS-only result (backward-compat / fail-open fallback paths).
+    """
+    if access_token is None or access_token.subject is not None:
+        return access_token
+    subject = access_token.claims.get("sub")
+    if subject is None:
+        return access_token
+    return access_token.model_copy(update={"subject": str(subject)})
 
 
 class RevocationAwareJWTVerifier(JWTVerifier):
@@ -161,7 +177,7 @@ class RevocationAwareJWTVerifier(JWTVerifier):
 
     async def verify_token(self, token: str) -> AccessToken | None:
         if not self.verify_url:
-            return await super().verify_token(token)
+            return _with_subject_from_claims(await super().verify_token(token))
 
         # Cheap local peek at the jti for cache lookup only; the claims are
         # NOT trusted for authorization until the portal (or JWKS fallback)
@@ -180,7 +196,7 @@ class RevocationAwareJWTVerifier(JWTVerifier):
                     "JWKS-only validation because MCP_JWT_VERIFY_FAIL_OPEN=true",
                     e,
                 )
-                return await super().verify_token(token)
+                return _with_subject_from_claims(await super().verify_token(token))
             logger.warning(
                 "verify-token endpoint unreachable (%s); rejecting request "
                 "(fail-closed default; set MCP_JWT_VERIFY_FAIL_OPEN=true to "
