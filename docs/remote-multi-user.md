@@ -144,7 +144,8 @@ let it expire, so keep TTLs short enough that "wait it out" is acceptable, or (b
 rotate the key pair (`keygen` again → update `MCP_JWT_PUBLIC_KEY` → restart once →
 re-issue everyone), which invalidates **all** tokens at once. If you need instant
 per-user revoke or SSO, graduate to a managed IdP via `MCP_JWT_JWKS_URI` (config
-only, no code change).
+only, no code change) — and pair it with `MCP_JWT_VERIFY_URL` (below) for
+immediate per-token revocation instead of "rotate everything."
 
 > **Guard the private key like a root password.** Anyone holding it can mint a
 > token for any user. It lives only on your admin machine — never in the repo, a
@@ -156,6 +157,58 @@ only, no code change).
 > the *application* id) would collapse every user onto one identity and one run
 > dir. `mint_token.py` sets only `sub`; if you move to a managed IdP, map the
 > per-user claim accordingly.
+
+### Revocation + usage telemetry via an auth portal (`MCP_JWT_VERIFY_URL`)
+
+JWKS validation (above) is stateless — the server has no way to reject a
+revoked token before it naturally expires, and no way to report which tokens
+are actually being used. If you run (or point at) an auth portal exposing
+`POST {portal}/.well-known/verify-token` (forwarding the caller's `Authorization:
+Bearer <token>` header), set `MCP_JWT_VERIFY_URL` to that endpoint and the
+server will call it on every authenticated request, in addition to the
+existing JWKS check:
+
+```bash
+-e MCP_AUTH=jwt \
+-e MCP_JWT_JWKS_URI=https://portal.example.com/.well-known/jwks.json \
+-e MCP_JWT_ISSUER=https://portal.example.com \
+-e MCP_JWT_AUDIENCE=openstudio-mcp \
+-e MCP_JWT_VERIFY_URL=https://portal.example.com/.well-known/verify-token
+```
+
+This is **additional and opt-in** — leave `MCP_JWT_VERIFY_URL` unset and
+behavior is unchanged (JWKS-only). When set:
+
+- The portal's response (`{"valid": true, "claims": {...}}` on success)
+  becomes the source of truth for the request's identity/claims — the portal
+  performed full signature verification plus revocation checking.
+- A `401` (e.g. `{"valid": false, "reason": "Token has been revoked"}`) rejects
+  the request outright — no fallback.
+- The `usage_count` / `last_usage_at` audit record for the token's `jti` is
+  updated as a side effect of the call, so the portal's `/admin` and
+  `/admin/tokens` dashboards show real usage instead of "Usage unavailable."
+
+**Fail-open vs. fail-closed.** If the verify-token endpoint itself is
+unreachable (network error, timeout, or 5xx — a genuinely down/broken portal,
+not a definitive revoke/invalid answer), the default is **fail-closed**:
+reject the request. This is the safer default for a security control — a
+temporarily-down admin service should never accidentally let a revoked token
+through. Set `MCP_JWT_VERIFY_FAIL_OPEN=true` to instead fall back to
+JWKS-only validation (logging a warning) if you'd rather trade "revocation
+enforcement during an outage" for availability.
+
+**Caching trade-off.** Results are cached in memory per `jti` for
+`MCP_JWT_VERIFY_CACHE_TTL` seconds (default 30) to avoid a hard network
+round trip on every tool call. A revoked token can therefore remain usable
+for up to the TTL after being revoked — set `MCP_JWT_VERIFY_CACHE_TTL=0` to
+disable caching and always hit the portal if you need revocation to take
+effect immediately, at the cost of one extra HTTP call per request.
+
+**Recommended production configuration:** JWKS via a managed IdP/portal
+(`MCP_JWT_JWKS_URI`), `MCP_JWT_VERIFY_URL` set to that same portal's
+verify-token endpoint, `MCP_JWT_VERIFY_FAIL_OPEN` left at its default
+(`false`), and a short `MCP_JWT_VERIFY_CACHE_TTL` (10-30s) to bound both
+added latency and revocation delay.
 
 ---
 
@@ -312,6 +365,10 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_TOKENS` | `{}` | JSON map `{"<bearer-token>":"<username>"}` (token mode) |
 | `MCP_JWT_PUBLIC_KEY` / `MCP_JWT_JWKS_URI` | — | verifying key (PEM) or JWKS endpoint (jwt mode) |
 | `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE` | — | optional JWT issuer/audience checks |
+| `MCP_JWT_VERIFY_URL` | — | auth portal's `/.well-known/verify-token` URL — adds revocation enforcement + usage telemetry on top of JWKS (jwt mode, opt-in) |
+| `MCP_JWT_VERIFY_FAIL_OPEN` | `false` | if the verify-token call is unreachable: `false` rejects the request (fail-closed), `true` falls back to JWKS-only |
+| `MCP_JWT_VERIFY_TIMEOUT` | `3.0` | seconds to wait for the verify-token call before treating the portal as unreachable |
+| `MCP_JWT_VERIFY_CACHE_TTL` | `30` | seconds a verify-token result is cached per `jti` (`0` disables caching; shorter = faster revocation) |
 | `OSMCP_MAX_CONCURRENCY` | `1` | max simultaneous EnergyPlus simulations |
 | `OSMCP_MAX_CONCURRENCY_PER_USER` | `0` | per-user sim cap for fairness (`0` = no limit) |
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
