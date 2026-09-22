@@ -63,10 +63,19 @@ def test_env_fail_open_spellings(monkeypatch, raw, expected):
     ("MCP_JWT_VERIFY_CACHE_TTL", "soon"),
     ("MCP_JWT_VERIFY_URL", "portal.example.com/verify"),
     ("MCP_JWT_VERIFY_FAIL_OPEN", "maybe"),
+    ("MCP_JWT_VERIFY_CACHE_TTL", "nan"),
+    ("MCP_JWT_VERIFY_CACHE_TTL", "inf"),
+    ("MCP_JWT_VERIFY_TIMEOUT", "nan"),
+    ("MCP_JWT_VERIFY_TIMEOUT", "inf"),
+    ("MCP_JWT_VERIFY_URL", "http://"),
+    ("MCP_JWT_VERIFY_URL", "https:///.well-known/verify-token"),
+    ("MCP_JWT_VERIFY_URL", "ftp://portal.test/.well-known/verify-token"),
 ])
 def test_env_invalid_values_fail_fast_naming_the_variable(monkeypatch, name, raw):
     # Validates: a bad value raises ValueError naming the variable so startup fails with a
     # clear message (same contract as MCP_TOKENS) instead of a traceback on the first request.
+    # nan/inf and host-less URLs are included because they pass naive `< 0` / prefix checks
+    # (Copilot review of PR #163): a nan/inf TTL would cache a "valid" answer forever.
     _clear_env(monkeypatch)
     monkeypatch.setenv(name, raw)
 

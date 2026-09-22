@@ -33,9 +33,11 @@ cached; only revocation is delayed by up to the TTL. The cache is bounded by
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastmcp.server.auth import AccessToken
@@ -89,6 +91,12 @@ class RevocationAwareJWTVerifier(JWTVerifier):
         self.fail_open = bool(fail_open)
         self.timeout = float(timeout)
         self.cache_ttl = float(cache_ttl)
+        # nan/inf would make a cached "valid" answer never expire (nan never
+        # compares elapsed, inf never arrives), silently disabling revocation.
+        if not math.isfinite(self.timeout) or self.timeout <= 0:
+            raise ValueError(f"timeout must be a finite number > 0, got {timeout!r}")
+        if not math.isfinite(self.cache_ttl) or self.cache_ttl < 0:
+            raise ValueError(f"cache_ttl must be a finite number >= 0, got {cache_ttl!r}")
         self.cache_max_size = max(int(cache_max_size), 1)
         self._http_client = http_client
         self._owns_client = http_client is None
@@ -217,10 +225,20 @@ def _env_number(name: str, default: float, *, allow_zero: bool) -> float:
         value = float(raw)
     except ValueError:
         raise ValueError(f"{name} must be a number of seconds, got {raw!r}") from None
-    if value < 0 or (value == 0 and not allow_zero):
+    if not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
         bound = ">= 0" if allow_zero else "> 0"
-        raise ValueError(f"{name} must be {bound}, got {raw!r}")
+        raise ValueError(f"{name} must be a finite number {bound}, got {raw!r}")
     return value
+
+
+def _env_url(name: str) -> str | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    parts = urlsplit(raw)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise ValueError(f"{name} must be an absolute http(s) URL with a host, got {raw!r}")
+    return raw
 
 
 def build_verifier_kwargs_from_env() -> dict[str, Any]:
@@ -229,11 +247,8 @@ def build_verifier_kwargs_from_env() -> dict[str, Any]:
     Raises ``ValueError`` with the offending variable's name so a bad value
     fails server startup with a clear message instead of a traceback later.
     """
-    verify_url = os.environ.get("MCP_JWT_VERIFY_URL", "").strip() or None
-    if verify_url is not None and not verify_url.startswith(("http://", "https://")):
-        raise ValueError(f"MCP_JWT_VERIFY_URL must be an http(s) URL, got {verify_url!r}")
     return {
-        "verify_url": verify_url,
+        "verify_url": _env_url("MCP_JWT_VERIFY_URL"),
         "fail_open": _env_flag("MCP_JWT_VERIFY_FAIL_OPEN"),
         "timeout": _env_number("MCP_JWT_VERIFY_TIMEOUT", DEFAULT_TIMEOUT, allow_zero=False),
         "cache_ttl": _env_number("MCP_JWT_VERIFY_CACHE_TTL", DEFAULT_CACHE_TTL, allow_zero=True),

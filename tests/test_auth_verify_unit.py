@@ -73,6 +73,24 @@ def _unsigned(payload: dict) -> str:
     return f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64(payload)}.notasignature"
 
 
+# --- construction ---------------------------------------------------------------
+
+@pytest.mark.parametrize(("kwarg", "value"), [
+    ("cache_ttl", float("nan")), ("cache_ttl", float("inf")), ("cache_ttl", -1),
+    ("timeout", float("nan")), ("timeout", float("inf")), ("timeout", 0),
+])
+def test_constructor_rejects_non_finite_or_out_of_range_numbers(kwarg, value):
+    # Regression: Copilot review of PR #163 — a nan or inf cache_ttl produces an expiry that
+    # never elapses, so a cached "valid" answer would outlive any revocation; an inf timeout
+    # would let a hung portal block requests forever. Reject at construction, not on first use.
+    kp = RSAKeyPair.generate()
+    with pytest.raises(ValueError, match=kwarg):
+        RevocationAwareJWTVerifier(
+            public_key=kp.public_key, issuer=ISSUER, audience=AUDIENCE,
+            verify_url=VERIFY_URL, **{kwarg: value},
+        )
+
+
 # --- gate ordering ------------------------------------------------------------
 
 def test_valid_token_passes_local_check_then_portal():
