@@ -9,6 +9,7 @@ dependencies = [
   "psutil>=5.9",
   "jsonschema>=4.21",
   "openstudio==3.11.0",
+  "httpx>=0.27",
 ]
 
 [project.optional-dependencies]

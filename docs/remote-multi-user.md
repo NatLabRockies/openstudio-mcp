@@ -144,7 +144,8 @@ let it expire, so keep TTLs short enough that "wait it out" is acceptable, or (b
 rotate the key pair (`keygen` again → update `MCP_JWT_PUBLIC_KEY` → restart once →
 re-issue everyone), which invalidates **all** tokens at once. If you need instant
 per-user revoke or SSO, graduate to a managed IdP via `MCP_JWT_JWKS_URI` (config
-only, no code change).
+only, no code change), or point `MCP_JWT_VERIFY_URL` at the auth portal (next
+section) for per-token revocation.
 
 > **Guard the private key like a root password.** Anyone holding it can mint a
 > token for any user. It lives only on your admin machine — never in the repo, a
@@ -156,6 +157,65 @@ only, no code change).
 > the *application* id) would collapse every user onto one identity and one run
 > dir. `mint_token.py` sets only `sub`; if you move to a managed IdP, map the
 > per-user claim accordingly.
+
+### Per-token revocation via the auth portal (`MCP_JWT_VERIFY_URL`)
+
+If your tokens come from an auth portal that exposes
+`POST /.well-known/verify-token` (such as `openstudio-mcp-auth`), the server can
+ask it on each request whether the token is still allowed. That gives you
+per-token revocation without key rotation, and the portal's admin pages show
+which tokens are actually in use. Opt in by adding one variable to the JWT
+setup above:
+
+```bash
+-e MCP_AUTH=jwt \
+-e MCP_JWT_JWKS_URI=https://portal.example.com/.well-known/jwks.json \
+-e MCP_JWT_ISSUER=https://portal.example.com \
+-e MCP_JWT_AUDIENCE=openstudio-mcp \
+-e MCP_JWT_VERIFY_URL=https://portal.example.com/.well-known/verify-token
+```
+
+Leave `MCP_JWT_VERIFY_URL` unset and nothing changes (JWKS-only). When set, each
+request goes through two gates, in this order:
+
+1. **Local check, as before.** Signature against your key/JWKS, expiry, and the
+   configured issuer/audience. A token that fails here is rejected immediately
+   and is never sent to the portal, so the server's own policy always applies and
+   anonymous callers cannot generate portal traffic.
+2. **Portal check.** The server forwards the bearer token to the verify-token
+   endpoint. `200 {"valid": true}` lets the request through; anything else
+   (`401 {"valid": false, "reason": "Token has been revoked"}`, a 4xx, a
+   non-JSON body) rejects it. The portal records `usage_count` /
+   `last_usage_at` for the token's `jti` as a side effect.
+
+Identity (`client_id`, hence `/runs/<user>/`) always comes from the locally
+verified token, never from the portal's reply.
+
+**Use `https://` for `MCP_JWT_VERIFY_URL`.** The server sends each user's full
+bearer token to this URL. `http://` is accepted so a portal on the same host or
+private Docker network (e.g. `http://auth:8080/.well-known/verify-token`) works,
+but the token then crosses the network in cleartext. The portal call honors the
+standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` variables: over `https://` a
+proxy sees only the portal's host name; over `http://` it sees the token.
+
+**Portal down: fail-closed or fail-open.** A connection error, timeout
+(`MCP_JWT_VERIFY_TIMEOUT`, default 3 s), or 5xx means "portal unreachable", not
+"token invalid". The default is **fail-closed**: reject the request, because a
+revoked token must never slip through just because the admin service is down.
+Set `MCP_JWT_VERIFY_FAIL_OPEN=true` to accept locally valid tokens during an
+outage instead (logged as a warning) if availability matters more than instant
+revocation for your deployment.
+
+**Caching.** A "valid" answer is cached in memory for `MCP_JWT_VERIFY_CACHE_TTL`
+seconds (default 30) so a busy session does not pay a portal round trip on every
+tool call. The cache is keyed by the exact token bytes and bounded in size. The
+local check still runs on every request, so expiry is always enforced; only
+revocation can lag by up to the TTL, and the portal's usage counter sees at most
+one hit per token per TTL. Set the TTL to `0` to check the portal on every
+request.
+
+**Recommended:** `MCP_JWT_VERIFY_FAIL_OPEN` left at its default (`false`) and a
+short TTL (10-30 s).
 
 ---
 
@@ -312,6 +372,10 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_TOKENS` | `{}` | JSON map `{"<bearer-token>":"<username>"}` (token mode) |
 | `MCP_JWT_PUBLIC_KEY` / `MCP_JWT_JWKS_URI` | — | verifying key (PEM) or JWKS endpoint (jwt mode) |
 | `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE` | — | optional JWT issuer/audience checks |
+| `MCP_JWT_VERIFY_URL` | — | auth portal's `/.well-known/verify-token` URL; adds per-token revocation + usage telemetry after the local JWKS check (jwt mode, opt-in). Use `https://`: user tokens are sent to it |
+| `MCP_JWT_VERIFY_FAIL_OPEN` | `false` | portal unreachable (error/timeout/5xx): `false` rejects the request, `true` accepts locally valid tokens |
+| `MCP_JWT_VERIFY_TIMEOUT` | `3.0` | seconds to wait for a complete verify-token answer (caps the whole call, not each read) before treating the portal as unreachable |
+| `MCP_JWT_VERIFY_CACHE_TTL` | `30` | seconds a `valid` answer is cached per token (`0` = ask the portal on every request) |
 | `OSMCP_MAX_CONCURRENCY` | `1` | max simultaneous EnergyPlus simulations |
 | `OSMCP_MAX_CONCURRENCY_PER_USER` | `0` | per-user sim cap for fairness (`0` = no limit) |
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
