@@ -191,6 +191,13 @@ request goes through two gates, in this order:
 Identity (`client_id`, hence `/runs/<user>/`) always comes from the locally
 verified token, never from the portal's reply.
 
+**Use `https://` for `MCP_JWT_VERIFY_URL`.** The server sends each user's full
+bearer token to this URL. `http://` is accepted so a portal on the same host or
+private Docker network (e.g. `http://auth:8080/.well-known/verify-token`) works,
+but the token then crosses the network in cleartext. The portal call honors the
+standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` variables: over `https://` a
+proxy sees only the portal's host name; over `http://` it sees the token.
+
 **Portal down: fail-closed or fail-open.** A connection error, timeout
 (`MCP_JWT_VERIFY_TIMEOUT`, default 3 s), or 5xx means "portal unreachable", not
 "token invalid". The default is **fail-closed**: reject the request, because a
@@ -365,7 +372,7 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_TOKENS` | `{}` | JSON map `{"<bearer-token>":"<username>"}` (token mode) |
 | `MCP_JWT_PUBLIC_KEY` / `MCP_JWT_JWKS_URI` | — | verifying key (PEM) or JWKS endpoint (jwt mode) |
 | `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE` | — | optional JWT issuer/audience checks |
-| `MCP_JWT_VERIFY_URL` | — | auth portal's `/.well-known/verify-token` URL; adds per-token revocation + usage telemetry after the local JWKS check (jwt mode, opt-in) |
+| `MCP_JWT_VERIFY_URL` | — | auth portal's `/.well-known/verify-token` URL; adds per-token revocation + usage telemetry after the local JWKS check (jwt mode, opt-in). Use `https://`: user tokens are sent to it |
 | `MCP_JWT_VERIFY_FAIL_OPEN` | `false` | portal unreachable (error/timeout/5xx): `false` rejects the request, `true` accepts locally valid tokens |
 | `MCP_JWT_VERIFY_TIMEOUT` | `3.0` | seconds to wait for a complete verify-token answer (caps the whole call, not each read) before treating the portal as unreachable |
 | `MCP_JWT_VERIFY_CACHE_TTL` | `30` | seconds a `valid` answer is cached per token (`0` = ask the portal on every request) |
