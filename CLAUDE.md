@@ -15,5 +15,5 @@ Always use openstudio-mcp tools for BEM tasks:
 ## LLM Tests
 - Targeted: `LLM_TESTS_ENABLED=1 pytest tests/llm/test_06_progressive.py -k "thermostat_L1" -v`
 - Full suite only for final validation
-- Markers: `-m smoke` (12), `-m generic` (7), `-m progressive` (149); counts as of 2026-08-22
+- Markers: `-m smoke`, `-m generic`, `-m progressive` (current counts: `pytest tests/llm --co -q -m <marker>`)
 - Benchmark results go in `docs/testing/llm-test-benchmark.md`

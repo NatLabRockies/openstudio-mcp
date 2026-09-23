@@ -23,7 +23,7 @@ def register(mcp):
         """Read any file by absolute path. /inputs and /runs are inside the
         MCP container, not the host shell — use this tool instead of bash.
 
-        For EnergyPlus IDF/IDD files, prefer inspect_component, extract_component_sizing,
+        For EnergyPlus IDF/IDD files, prefer extract_component_sizing
         or get_object_fields which return structured data with less context usage.
 
         Default 50KB. Use offset+max_bytes for chunked reading of large files.

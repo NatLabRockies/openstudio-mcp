@@ -115,6 +115,11 @@ project convention:
 
 ## Common run_body Patterns (Ruby)
 
+Ruby gotchas:
+- `runner.registerError("msg")` must be followed by `return false` (it does not halt). Use `runner.registerAsNotApplicable("msg")` + `return true` when the measure doesn't apply.
+- `obj.name` returns an OptionalString: compare with `obj.name.to_s == "Foo"`; bare `obj.name == "Foo"` fails.
+- Arguments: parameterize anything model-specific (names, setpoints, thresholds) with a description and a sensible default; hard-code only the measure's logic.
+
 ### Envelope
 ```ruby
     model.getLightsDefinitions.each { |ld| ld.setWattsperSpaceFloorArea(8.0) }
@@ -243,7 +248,7 @@ Replace a supply-branch coil or fan in place (add first, THEN remove):
 ReportingMeasures run **after simulation** and access SQL results. Use when the user wants to
 generate custom reports, extract specific metrics, or post-process simulation output — but only
 when the existing `extract_*` / `query_timeseries` tools don't already cover the metric
-(CLAUDE.md's "never write scripts to parse SQL" rule; this is the sanctioned exception).
+(the sanctioned exception to not writing scripts that parse eplusout.sql).
 
 ### Create a ReportingMeasure
 ```

@@ -16,7 +16,7 @@
 | Widen thermostat deadband | `adjust_thermostat_setpoints` | 5-15% HVAC |
 | Schedule optimization | `shift_schedule_time` | 3-10% total |
 | Replace thermostat schedules | `replace_thermostat_schedules` | 5-15% HVAC |
-| HVAC system upgrade | `add_baseline_system` / `add_vrf_system` / `add_doas_system` | 10-30% HVAC |
+| HVAC system upgrade | `create_typical_building(system_type=..., hvac_only=True)` (standards-tuned; generic `add_*_system` templates are wiring-only, not decision-grade) | 10-30% HVAC |
 
 ## Renewables
 

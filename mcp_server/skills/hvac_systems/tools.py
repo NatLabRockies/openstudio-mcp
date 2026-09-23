@@ -24,11 +24,15 @@ def register(mcp: FastMCP) -> None:
         system_name: str | None = None,
     ) -> str:
         """Add HVAC / heating and cooling system to the building.
-        ALWAYS use this for ASHRAE systems — do not write HVAC setup scripts.
+        Use this to wire ASHRAE baseline systems (don't write HVAC setup scripts).
+        These are generic wiring templates without standards tuning; to swap a
+        building's system and get standards-tuned values (e.g. for comparative
+        studies), use create_typical_building(system_type=..., hvac_only=True).
 
         ASHRAE 90.1 Appendix G baseline systems 1-10: PTAC, PTHP, PSZ-AC,
-        PSZ-HP, packaged VAV reheat, PFP boxes, VAV reheat/PFP, unit heater,
-        DOAS, VRF, radiant. Call list_baseline_systems() for all options.
+        PSZ-HP, packaged VAV reheat, PFP boxes, VAV reheat/PFP, heating and
+        ventilation. Call list_baseline_systems() for all options. For DOAS,
+        VRF or radiant use add_doas_system, add_vrf_system or add_radiant_system.
         Systems 3-4 are one air loop per zone — pass the full zone list and
         the tool fans out automatically.
 

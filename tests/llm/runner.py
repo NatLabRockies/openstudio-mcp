@@ -440,8 +440,8 @@ def _run_claude(
     """Claude Code CLI backend.
 
     Uses stream-json --verbose to capture tool_use blocks.
-    ToolSearch calls (deferred tool loading) consume turns, so max_turns
-    should be set generously (default 5 for simple queries).
+    ToolSearch calls (deferred tool loading) consume turns, so set
+    max_turns generously (None = unlimited).
     """
     global _last_result
     model = model or os.environ.get("LLM_TESTS_MODEL", "sonnet")

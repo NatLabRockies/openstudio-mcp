@@ -117,7 +117,7 @@ compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-ho
 - DOAS zone equipment types: FanCoil (CHW+HW), Radiant (CHW+HW),
   ChilledBeams (CHW only), FourPipeBeam (CHW+HW)
 
-## Why These Defaults (comfort tuning, issue #97)
+## Why These Defaults
 
 The generic templates apply these automatically so systems are viable out of
 the box — don't undo them without a reason:
