@@ -64,9 +64,9 @@ Paths are SERVER-side. If no floorplan path was given, check
 `list_files(directory="/inputs")` for staged floorplan JSONs before asking
 or uploading — do not pass paths from the client machine.
 
-Step 2 — Weather + design days (same as Workflow B steps 2-3)
+Step 2 — Weather + design days (same as Workflow B step 2)
 
-Step 3 — Typical building (same as Workflow B step 4)
+Step 3 — Typical building (same as Workflow B step 3)
 
 ## Manual Workflow (Advanced)
 

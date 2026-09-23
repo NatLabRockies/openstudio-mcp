@@ -130,4 +130,4 @@ search_wiring_patterns("four pipe beam")     # get working connection code
 - `save_osm_model` — persists model to disk (`.osm` file)
 - `run_simulation` — takes an OSM path + optional EPW, runs EnergyPlus in a background process
 - The in-memory model and the on-disk file are separate — save before simulating if you've made changes
-- Simulation results go to `/runs/<run_id>/`
+- Simulation results go to the run directory the tool returns (`/runs/<run_id>/` locally, `/runs/<user>/<run_id>/` over HTTP); use returned paths, don't construct them
