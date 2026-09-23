@@ -1,5 +1,4 @@
 # CLAUDE.md — Instructions for Claude Code
-always be brutally honest
 ## Project: openstudio-mcp
 MCP server giving AI agents full control of building energy modeling —
 create buildings, author measures, configure HVAC, run EnergyPlus sims, extract
@@ -23,13 +22,13 @@ Always use openstudio-mcp tools for BEM tasks:
 7. All OpenStudio attribute access must handle `is_initialized()` checks
 8. `_extract_*` functions return dicts with `snake_case` keys matching OpenStudio attribute names
 9. Tool functions keep `_tool` suffix internally; MCP-visible names strip it via `@mcp.tool(name="...")`
-10. Never commit generated/temp files — `.gitignore` covers `__pycache__/`, `*.pyc`, `runs/`, `.claude/`, `.pytest_cache/`. Test artifacts go to `runs/`. Only permanent reference models go in `tests/assets/`
+10. Never commit generated/temp files — `.gitignore` covers `__pycache__/`, `*.pyc`, `runs/`, `.claude/*` (except tracked `.claude/skills/` and `.claude/rules/`), `.pytest_cache/`. Test artifacts go to `runs/`. Only permanent reference models go in `tests/assets/`
 11. Bundled measures get wrapper tools with typed args — don't expose raw `apply_measure` as primary interface
 12. No `getattr()` or string-based dispatch — every OpenStudio API method called directly (grepable, lintable, visible in stack traces)
 13. MCP clients may send `list[str]` as JSON strings — use `list[str] | str` type annotation + `parse_str_list()` from `osm_helpers.py`
 14. Multi-user isolation: new persistent user data MUST live under an identity-scoped root (`user_run_root()`/`user_measures_root()`), never a process-global path constant; never add a per-user dir to `_SHARED_READ_ROOTS`; validate path args via `is_path_allowed(..., write=…)`. The sandbox covers execution only — see `docs/security-isolation.md`
-14. Tool roster has ONE source of truth: `EXPECTED_TOOLS` in `tests/test_skill_registration.py`. Add/remove a tool → edit that set (one line per tool; merges cleanly across branches). `test_tool_count`/`test_tags_coverage` derive from it — never hardcode a tool-count literal in tests. Docs/instructions say "150+ tools", not an exact count
-15. List tools (`list_*`): filters are primary, `max_results` (default 10, 0=unlimited) is the safety net, brief fields by default, explicit typed filter params (no generic filter dict). Use `list_paginated()` + `build_list_response()` from `osm_helpers.py` so truncated responses carry `count`/`total_available`/`truncated`; put common-filter examples in the docstring
+15. Tool roster has ONE source of truth: `EXPECTED_TOOLS` in `tests/test_skill_registration.py`. Add/remove a tool → edit that set (one line per tool; merges cleanly across branches). `test_tool_count`/`test_tags_coverage` derive from it — never hardcode a tool-count literal in tests. Docs/instructions say "150+ tools", not an exact count
+16. List tools (`list_*`): filters are primary, `max_results` (default 10, 0=unlimited) is the safety net, brief fields by default, explicit typed filter params (no generic filter dict). Use `list_paginated()` + `build_list_response()` from `osm_helpers.py` so truncated responses carry `count`/`total_available`/`truncated`; put common-filter examples in the docstring
 
 ## Architecture
 - Each skill lives in `mcp_server/skills/<name>/`
