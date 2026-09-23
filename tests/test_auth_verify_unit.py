@@ -217,6 +217,81 @@ def test_non_valid_portal_answer_rejects_without_raising(reply):
     assert result is None
 
 
+@pytest.mark.parametrize("body", [
+    pytest.param(b"[" * 50_000, id="nested_arrays"),
+    pytest.param(
+        b'{"valid": true, "claims": ' + b"[" * 30_000 + b"]" * 30_000 + b"}",
+        id="valid_true_with_nested_claims",
+    ),
+])
+def test_deeply_nested_portal_reply_rejects_without_raising(body):
+    # Regression: PR #163 review — a reply under the 64 KiB cap but nested past the recursion
+    # limit made json.loads raise RecursionError (not ValueError), which escaped verify_token
+    # and the bearer-auth backend and turned into an HTTP 500 instead of a clean reject.
+    kp, portal = RSAKeyPair.generate(), FakePortal()
+    portal.reply = httpx.Response(200, content=body)
+    assert len(body) < auth_verify.MAX_PORTAL_RESPONSE_BYTES, "must exercise the parser, not the size cap"
+
+    result = asyncio.run(_verifier(kp, portal, fail_open=True).verify_token(_token(kp)))
+
+    assert result is None
+    assert len(portal.calls) == 1
+
+
+class _SlowPortal(FakePortal):
+    """Portal that answers 200 {"valid": true} but takes ``total`` seconds to do it,
+    either by stalling before the headers or by dripping the body a byte at a time
+    (each gap shorter than the timeout, so a per-read timeout never fires)."""
+
+    def __init__(self, mode: str, total: float) -> None:
+        super().__init__()
+        self.mode, self.total = mode, total
+
+    async def handler(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append(request.headers.get("authorization", "")[len("Bearer "):])
+        body = b'{"valid": true}'
+        if self.mode == "stall":
+            await asyncio.sleep(self.total)
+            return httpx.Response(200, content=body)
+        gap = self.total / len(body)
+
+        async def drip():
+            for i in range(len(body)):
+                await asyncio.sleep(gap)
+                yield body[i:i + 1]
+        return httpx.Response(200, content=drip())
+
+
+@pytest.mark.parametrize("fail_open", [False, True])
+@pytest.mark.parametrize("mode", ["stall", "drip"])
+def test_timeout_bounds_the_whole_portal_call(mode, fail_open):
+    # Regression: PR #163 review — MCP_JWT_VERIFY_TIMEOUT was passed to httpx as a per-phase
+    # timeout (connect / each read), so a portal dripping its reply slower than the timeout
+    # overall but faster per chunk held every request open far past the documented limit
+    # (probe: timeout=0.5 s, reply took 2.2 s and was accepted). The timeout must cap the whole
+    # call, and running out of time is "portal unreachable", so the fail policy applies.
+    kp = RSAKeyPair.generate()
+    portal = _SlowPortal(mode, total=1.5)
+    verifier = _verifier(kp, portal, fail_open=fail_open, timeout=0.3, cache_ttl=0)
+    loop_time: list[float] = []
+
+    async def _run():
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        result = await verifier.verify_token(_token(kp))
+        loop_time.append(loop.time() - start)
+        return result
+
+    result = asyncio.run(_run())
+
+    assert loop_time[0] < 1.0, f"timeout=0.3 s must cap the portal call, took {loop_time[0]:.2f} s"
+    if fail_open:
+        assert result is not None and result.client_id == "alice", "fail-open must accept on timeout"
+    else:
+        assert result is None, "fail-closed must reject on timeout"
+    assert len(portal.calls) == 1
+
+
 # --- cache ----------------------------------------------------------------------
 
 def test_cache_skips_portal_within_ttl():

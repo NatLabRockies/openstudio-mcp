@@ -19,7 +19,8 @@ reaches the portal, so unauthenticated callers cannot drive portal traffic or
 pollute its usage counters. And the server's own issuer/audience policy stays
 enforced even if the portal is misconfigured or compromised.
 
-When the portal is unreachable (connection error, timeout, or 5xx) the
+When the portal is unreachable (connection error, 5xx, or no complete answer
+within ``timeout`` seconds, which bounds the whole call, not each read) the
 ``fail_open`` policy decides: fail-closed (default) rejects the request;
 fail-open accepts the locally valid token and logs a warning. A definitive
 portal answer (200/401/4xx) is never treated as unreachable.
@@ -32,6 +33,7 @@ cached; only revocation is delayed by up to the TTL. The cache is bounded by
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -67,7 +69,8 @@ def _json_object(raw: bytes) -> dict[str, Any]:
     """The body as a dict, or {} if it is not a JSON object."""
     try:
         body = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # RecursionError: nesting deeper than the parser's limit fits well under the size cap.
         return {}
     return body if isinstance(body, dict) else {}
 
@@ -126,20 +129,24 @@ class RevocationAwareJWTVerifier(JWTVerifier):
             return access_token
 
         try:
-            allowed = await self._portal_allows(token, access_token.client_id)
-        except httpx.HTTPError as exc:
+            # httpx's timeout is per phase (connect, each read), so a portal that drips its
+            # reply could outlast it indefinitely; this caps the whole call.
+            async with asyncio.timeout(self.timeout):
+                allowed = await self._portal_allows(token, access_token.client_id)
+        except (httpx.HTTPError, TimeoutError) as exc:
+            detail = str(exc) or f"no answer within {self.timeout:g} s"
             if self.fail_open:
                 logger.warning(
                     "verify-token endpoint unreachable (%s); accepting locally "
                     "valid token for client %s because MCP_JWT_VERIFY_FAIL_OPEN=true",
-                    exc, access_token.client_id,
+                    detail, access_token.client_id,
                 )
                 return access_token
             logger.warning(
                 "verify-token endpoint unreachable (%s); rejecting request for "
                 "client %s (fail-closed; set MCP_JWT_VERIFY_FAIL_OPEN=true to "
                 "accept locally valid tokens during a portal outage)",
-                exc, access_token.client_id,
+                detail, access_token.client_id,
             )
             return None
 

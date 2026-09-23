@@ -367,7 +367,7 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE` | — | optional JWT issuer/audience checks |
 | `MCP_JWT_VERIFY_URL` | — | auth portal's `/.well-known/verify-token` URL; adds per-token revocation + usage telemetry after the local JWKS check (jwt mode, opt-in) |
 | `MCP_JWT_VERIFY_FAIL_OPEN` | `false` | portal unreachable (error/timeout/5xx): `false` rejects the request, `true` accepts locally valid tokens |
-| `MCP_JWT_VERIFY_TIMEOUT` | `3.0` | seconds to wait for the verify-token call before treating the portal as unreachable |
+| `MCP_JWT_VERIFY_TIMEOUT` | `3.0` | seconds to wait for a complete verify-token answer (caps the whole call, not each read) before treating the portal as unreachable |
 | `MCP_JWT_VERIFY_CACHE_TTL` | `30` | seconds a `valid` answer is cached per token (`0` = ask the portal on every request) |
 | `OSMCP_MAX_CONCURRENCY` | `1` | max simultaneous EnergyPlus simulations |
 | `OSMCP_MAX_CONCURRENCY_PER_USER` | `0` | per-user sim cap for fairness (`0` = no limit) |
