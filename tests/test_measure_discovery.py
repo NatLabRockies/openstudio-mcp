@@ -407,3 +407,40 @@ def test_custom_measures_isolated_across_http_sessions():
                 assert "not allowed" in denied["error"].lower(), denied
 
         asyncio.run(_run())
+
+
+def test_read_url_enforces_byte_cap(monkeypatch, request, tmp_path):
+    import io
+
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    monkeypatch.setattr(ops, "MAX_DOWNLOAD_BYTES", 10)
+
+    class Resp(io.BytesIO):
+        headers = {}
+
+        def geturl(self):
+            return "https://bcl.nlr.gov/x"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    monkeypatch.setattr(ops, "urlopen", lambda *_a, **_k: Resp(b"x" * 50))
+    with pytest.raises(ValueError, match="exceeds"):
+        ops._read_url("https://bcl.nlr.gov/x", 5)
+    monkeypatch.setattr(ops, "urlopen", lambda *_a, **_k: Resp(b"x" * 5))
+    assert ops._read_url("https://bcl.nlr.gov/x", 5)[0] == b"x" * 5
+
+
+def test_safe_extract_zip_enforces_streamed_size_cap(monkeypatch, request, tmp_path):
+    import zipfile
+
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100)
+    z = tmp_path / "big.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("a.txt", "0" * 1000)
+    with pytest.raises(ValueError, match="expands beyond limit"):
+        ops._safe_extract_zip(z, tmp_path / "out")
