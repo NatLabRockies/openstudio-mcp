@@ -10,7 +10,12 @@ simply produce no descriptors).
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+from mcp_server.tool_policy import tool_enabled
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,6 +80,9 @@ class CollectingMCP:
 
         def decorator(fn):
             tool_name = name or fn.__name__
+            if not tool_enabled(tool_name):
+                logger.info("Tool hidden by policy: %s", tool_name)
+                return fn
             if tool_name in _DESCRIPTORS:
                 raise ValueError(
                     f"duplicate MCP tool name '{tool_name}' "
