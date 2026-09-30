@@ -444,3 +444,26 @@ def test_safe_extract_zip_enforces_streamed_size_cap(monkeypatch, request, tmp_p
         zf.writestr("a.txt", "0" * 1000)
     with pytest.raises(ValueError, match="expands beyond limit"):
         ops._safe_extract_zip(z, tmp_path / "out")
+
+
+def test_download_cleans_partial_extraction_on_cap(monkeypatch, request, tmp_path):
+    import io
+    import zipfile
+
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    root = tmp_path / "measures"
+    root.mkdir()
+    monkeypatch.setattr(ops, "user_measures_root", lambda: root.resolve())
+    monkeypatch.setattr(ops, "is_path_allowed", lambda *_a, **_k: True)
+    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("m/measure.rb", "x")
+        zf.writestr("m/big.bin", "0" * 1000)
+    monkeypatch.setattr(ops, "_read_url", lambda *_a, **_k: (buf.getvalue(), "application/zip"))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res["ok"] is False
+    assert not (root / "m").exists()
+    assert not list(root.glob("*.zip"))

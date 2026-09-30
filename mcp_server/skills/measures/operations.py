@@ -572,8 +572,16 @@ def download_measure_archive(
             if not str(_p.resolve()).startswith(dest_resolved + os.sep):
                 return {"ok": False, "error": f"measure_name/archive escapes destination: {_p}"}
         archive_path.write_bytes(payload)
+        pre_existing = extract_root.exists()
         extract_root.mkdir(parents=True, exist_ok=True)
-        _safe_extract_zip(archive_path, extract_root)
+        try:
+            _safe_extract_zip(archive_path, extract_root)
+        except ValueError:
+            # Don't leave a half-extracted tree that a later download could merge with.
+            if not pre_existing:
+                shutil.rmtree(extract_root, ignore_errors=True)
+            archive_path.unlink(missing_ok=True)
+            raise
 
         measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
         if not measures.get("ok"):
