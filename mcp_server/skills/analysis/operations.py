@@ -16,7 +16,17 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import (
+    HTTPDefaultErrorHandler,
+    HTTPErrorProcessor,
+    HTTPHandler,
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    OpenerDirector,
+    Request,
+    UnknownHandler,
+)
 
 from jsonschema import Draft4Validator, SchemaError
 
@@ -337,20 +347,89 @@ OSAF_ALGORITHMS: tuple[dict[str, Any], ...] = (
 )
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    """Refuse redirects: a hostile server could bounce a request (and its auth header) elsewhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(req.full_url, code, f"redirect to {newurl} refused", headers, fp)
+
+
+def urlopen(req, timeout):
+    """http(s)-only, redirect-free urlopen (no file://, ftp://, data:)."""
+    opener = OpenerDirector()
+    handlers = (
+        HTTPHandler(),
+        HTTPSHandler(),
+        HTTPDefaultErrorHandler(),
+        HTTPErrorProcessor(),
+        UnknownHandler(),
+        _NoRedirect(),
+    )
+    for handler in handlers:
+        opener.add_handler(handler)
+    return opener.open(req, timeout=timeout)
+
+
+def _configured_server_url() -> str | None:
+    url = os.environ.get("OPENSTUDIO_SERVER_URL") or os.environ.get("OS_SERVER_URL")
+    return url.rstrip("/") if url else None
+
+
+def _netloc(url: str) -> str:
+    return urlsplit(url).netloc.lower()
+
+
+def _origin(url: str) -> tuple[str, str, int | None]:
+    parts = urlsplit(url)
+    port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    return parts.scheme, (parts.hostname or "").lower(), port
+
+
+def _allowed_server_netlocs() -> set[str]:
+    """Hosts a caller-supplied server_url may target in multi-user (HTTP) mode."""
+    allowed = {_netloc(u) for u in (_configured_server_url(),) if u}
+    extra = os.environ.get("OSMCP_ANALYSIS_ALLOWED_HOSTS", "")
+    allowed.update(h.strip().lower() for h in extra.split(",") if h.strip())
+    return allowed
+
+
 def _server_url(server_url: str | None = None) -> str:
-    url = server_url or os.environ.get("OPENSTUDIO_SERVER_URL") or os.environ.get("OS_SERVER_URL")
+    from mcp_server.identity import _is_http_transport
+
+    url = (server_url or _configured_server_url() or "").strip()
     if not url:
         raise ValueError("Missing server_url. Pass server_url or set OPENSTUDIO_SERVER_URL / OS_SERVER_URL.")
-    return url.rstrip("/")
+    url = url.rstrip("/")
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise ValueError(f"server_url must be an absolute http(s) URL, got {url!r}")
+    # On the shared HTTP server a tenant must not aim the server's network access at
+    # arbitrary hosts (SSRF); only the operator-configured server or allowlisted hosts.
+    if _is_http_transport() and parts.netloc.lower() not in _allowed_server_netlocs():
+        raise ValueError(
+            "server_url is not permitted on this server; use the operator-configured "
+            "OPENSTUDIO_SERVER_URL (or a host in OSMCP_ANALYSIS_ALLOWED_HOSTS).",
+        )
+    return url
 
 
-def _auth_headers() -> dict[str, str]:
+def _auth_headers(server_url: str) -> dict[str, str]:
+    """Bearer header, sent only to the operator-configured server (never to a caller-chosen host)."""
     token = os.environ.get("OPENSTUDIO_API_TOKEN") or os.environ.get("OS_SERVER_API_TOKEN")
-    return {"Authorization": f"Bearer {token}"} if token else {}
+    configured = _configured_server_url()
+    if not token or not configured or _origin(server_url) != _origin(configured):
+        return {}
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _url(server_url: str, path: str) -> str:
     return f"{server_url}/{path.lstrip('/')}"
+
+
+def _is_http_mode() -> bool:
+    from mcp_server.identity import _is_http_transport
+
+    return _is_http_transport()
 
 
 def _is_analysis_path_allowed(path: Path, *, write: bool = False) -> bool:
@@ -358,6 +437,10 @@ def _is_analysis_path_allowed(path: Path, *, write: bool = False) -> bool:
 
     if is_path_allowed(path, write=write):
         return True
+    from mcp_server.identity import _is_http_transport
+
+    if _is_http_transport():
+        return False  # /tmp is shared between tenants
     temp_root = Path(tempfile.gettempdir()).resolve()
     return path == temp_root or str(path).startswith(str(temp_root) + os.sep)
 
@@ -849,6 +932,8 @@ def _coerce_value(value_type: str, value: Any) -> Any:
 
 def _read_measure_metadata(measure_dir: str | Path) -> dict[str, Any]:
     measure_path = Path(measure_dir).expanduser().resolve()
+    if not _is_analysis_path_allowed(measure_path):
+        raise ValueError(f"Measure directory is not allowed: {measure_path}")
     if not measure_path.is_dir():
         raise ValueError(f"Measure directory not found: {measure_path}")
     xml_path = measure_path / "measure.xml"
@@ -1014,7 +1099,7 @@ def _request_json(
     body: dict[str, Any] | None = None,
     timeout: int = 600,
 ) -> dict[str, Any]:
-    headers = {"Accept": "application/json", **_auth_headers()}
+    headers = {"Accept": "application/json", **_auth_headers(server_url)}
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
@@ -1046,7 +1131,7 @@ def _request_form(
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
-        **_auth_headers(),
+        **_auth_headers(server_url),
     }
     data = urlencode({key: str(value) for key, value in form.items() if value is not None}).encode("utf-8")
     req = Request(_url(server_url, path), data=data, headers=headers, method=method)
@@ -1070,7 +1155,7 @@ def _download(
     *,
     timeout: int = 3600,
 ) -> dict[str, Any]:
-    req = Request(_url(server_url, path), headers={"Accept": "*/*", **_auth_headers()}, method="GET")
+    req = Request(_url(server_url, path), headers={"Accept": "*/*", **_auth_headers(server_url)}, method="GET")
     try:
         with urlopen(req, timeout=timeout) as resp:
             body = resp.read()
@@ -1099,6 +1184,8 @@ def _download(
 
 def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, timeout: int = 1800) -> dict[str, Any]:
     p = Path(file_path).expanduser().resolve()
+    if not _is_analysis_path_allowed(p):
+        return {"ok": False, "error": f"Upload file path is not allowed: {p}"}
     if not p.exists():
         return {"ok": False, "error": f"Upload file not found: {p}"}
     boundary = f"----openstudio-mcp-{uuid.uuid4().hex}"
@@ -1117,7 +1204,7 @@ def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, time
         "Content-Type": f"multipart/form-data; boundary={boundary}",
         "Content-Length": str(len(body)),
         "Accept": "application/json",
-        **_auth_headers(),
+        **_auth_headers(server_url),
     }
     req = Request(_url(server_url, path), data=body, headers=headers, method="POST")
     try:
@@ -1309,6 +1396,8 @@ def preflight_seed_for_analysis_package(
     seed_hash = _sha256_file(seed)
     epw_hash = _sha256_file(epw) if epw else None
     manifest = Path(manifest_path).expanduser().resolve() if manifest_path else None
+    if manifest and not _is_analysis_path_allowed(manifest, write=True):
+        return {"ok": False, "ready": False, "error": f"Manifest path is not writable/allowed: {manifest}"}
     if manifest and manifest.exists() and not force_rerun:
         existing_manifest = _read_manifest(manifest)
         if existing_manifest and _manifest_is_valid(
@@ -1637,6 +1726,8 @@ def validate_analysis_package(
     successfully and passed basic QA/QC.
     """
     path = Path(zip_path).expanduser().resolve()
+    if not _is_analysis_path_allowed(path):
+        return {"ok": False, "error": f"Analysis package path is not allowed: {path}", "issues": ["Path not allowed."]}
     issues: list[str] = []
     seed_qaqc_manifest: dict[str, Any] | None = None
     try:
@@ -2169,9 +2260,14 @@ def test_server_config_single_run(
 
     if output_dir:
         out_dir = Path(output_dir).expanduser().resolve()
+        if not _is_analysis_path_allowed(out_dir, write=True):
+            return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
         out_dir.mkdir(parents=True, exist_ok=True)
     else:
-        out_dir = Path(tempfile.mkdtemp(prefix="openstudio_server_config_", dir="/tmp")).resolve()
+        from mcp_server.config import user_run_root
+
+        base_dir = user_run_root() if _is_http_mode() else Path(tempfile.gettempdir())
+        out_dir = Path(tempfile.mkdtemp(prefix="openstudio_server_config_", dir=base_dir)).resolve()
 
     osa_path = out_dir / "single_run_server_config_test.json"
     created = create_osa_json(
