@@ -44,6 +44,9 @@ from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_ru
 
 # github.com archive/release URLs redirect to codeload / objects.githubusercontent.com,
 # so those must be allowed too or the post-redirect host check rejects GitHub downloads.
+MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
+MAX_EXTRACT_BYTES = 500 * 1024 * 1024
+MAX_EXTRACT_ENTRIES = 10_000
 MEASURE_DOWNLOAD_HOSTS = {
     "bcl.nrel.gov", "bcl.nlr.gov",
     "github.com", "raw.githubusercontent.com",
@@ -115,36 +118,16 @@ def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
 
 
 def _safe_extract_zip(zip_path: Path, output_dir: Path) -> list[Path]:
-    extracted: list[Path] = []
-    output_root = output_dir.resolve()
-    max_members = 10_000
-    max_uncompressed_bytes = 500 * 1024 * 1024  # 500 MiB
+    """Extract with the shared guarded extractor (entry cap + streamed size cap + no symlinks)."""
+    from mcp_server.skills.file_transfer.archive import guarded_extract
 
-    with zipfile.ZipFile(zip_path) as archive:
-        members = archive.infolist()
-        if len(members) > max_members:
-            raise ValueError(f"ZIP contains too many files ({len(members)} > {max_members})")
-
-        total = 0
-        for member in members:
-            # Reject symlink members. CPython's extractall writes them as regular files
-            # (it doesn't restore links), but reject explicitly so a link can never be
-            # materialized — on any platform/extractor — and later point outside output_root.
-            if stat.S_ISLNK(member.external_attr >> 16):
-                raise ValueError(f"ZIP member is a symlink (not allowed): {member.filename}")
-
-            total += int(getattr(member, "file_size", 0) or 0)
-            if total > max_uncompressed_bytes:
-                raise ValueError("ZIP uncompressed size is too large")
-
-            target = (output_root / member.filename).resolve()
-            if not (str(target).startswith(str(output_root) + os.sep) or target == output_root):
-                raise ValueError(f"ZIP member would extract outside destination: {member.filename}")
-
-        archive.extractall(output_root)
-        extracted = [(output_root / member.filename).resolve() for member in members]
-
-    return extracted
+    err = guarded_extract(
+        zip_path, output_dir, max_uncompressed_bytes=MAX_EXTRACT_BYTES, max_entries=MAX_EXTRACT_ENTRIES,
+    )
+    if err:
+        raise ValueError(err)
+    root = output_dir.resolve()
+    return [p for p in root.rglob("*")]
 
 
 def _guess_download_name(url: str, fallback: str = "downloaded_measure.zip") -> str:
@@ -161,7 +144,13 @@ def _read_url(url: str, timeout_seconds: int) -> tuple[bytes, str]:
             raise ValueError(f"Redirected download host not allowed: {parsed.hostname}")
         headers = getattr(resp, "headers", {})
         content_type = headers.get("Content-Type", "") if headers else ""
-        return resp.read(), content_type
+        declared = headers.get("Content-Length") if headers else None
+        if declared and declared.isdigit() and int(declared) > MAX_DOWNLOAD_BYTES:
+            raise ValueError(f"Download exceeds {MAX_DOWNLOAD_BYTES} bytes")
+        payload = resp.read(MAX_DOWNLOAD_BYTES + 1)
+        if len(payload) > MAX_DOWNLOAD_BYTES:
+            raise ValueError(f"Download exceeds {MAX_DOWNLOAD_BYTES} bytes")
+        return payload, content_type
 
 
 def _looks_like_html(payload: bytes, content_type: str) -> bool:
@@ -583,8 +572,16 @@ def download_measure_archive(
             if not str(_p.resolve()).startswith(dest_resolved + os.sep):
                 return {"ok": False, "error": f"measure_name/archive escapes destination: {_p}"}
         archive_path.write_bytes(payload)
+        pre_existing = extract_root.exists()
         extract_root.mkdir(parents=True, exist_ok=True)
-        _safe_extract_zip(archive_path, extract_root)
+        try:
+            _safe_extract_zip(archive_path, extract_root)
+        except ValueError:
+            # Don't leave a half-extracted tree that a later download could merge with.
+            if not pre_existing:
+                shutil.rmtree(extract_root, ignore_errors=True)
+            archive_path.unlink(missing_ok=True)
+            raise
 
         measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
         if not measures.get("ok"):
