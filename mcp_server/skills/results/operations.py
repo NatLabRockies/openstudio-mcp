@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.config import user_run_root
-from mcp_server.util import resolve_run_dir, safe_read_text  # resolve_run_dir still used by extract_* ops
+from mcp_server.util import read_file_bounded, resolve_run_dir, safe_read_text
 
 
 def _run_status_from_record(run_dir: Path) -> str | None:
@@ -405,12 +405,16 @@ def extract_simulation_errors_op(run_id: str) -> dict[str, Any]:
         return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
 
     err_path = run_dir / "run" / "eplusout.err"
-    if not err_path.exists():
+    if not err_path.exists() and not err_path.is_symlink():
         err_path = run_dir / "energyplus.err"
-    if not err_path.exists():
+    if not err_path.exists() and not err_path.is_symlink():
         return {"ok": False, "error": "no_err_file", "message": "No eplusout.err found"}
 
-    parsed = parse_err_file(err_path.read_text(errors="replace"))
+    try:
+        text = read_file_bounded(err_path, 16 * 1024 * 1024).decode("utf-8", errors="replace")
+    except ValueError as e:
+        return {"ok": False, "error": "unreadable_err_file", "message": str(e)}
+    parsed = parse_err_file(text)
     return {"ok": True, "run_id": run_id, "path": str(err_path), **parsed}
 
 

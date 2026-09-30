@@ -33,10 +33,15 @@ from mcp_server.config import (
 from mcp_server.identity import user_key
 from mcp_server.util import (
     create_run_dir,
+    read_file_bounded,
+    read_tail_bounded,
     reject_escaping_symlinks,
     resolve_run_dir,
     safe_name,
 )
+
+MAX_LOG_READ_BYTES = 4 * 1024 * 1024
+MAX_ERR_READ_BYTES = 16 * 1024 * 1024
 
 # Where the MCP server stores runs inside the container
 DEFAULT_LOG_TAIL = LOG_TAIL_DEFAULT
@@ -155,11 +160,13 @@ def _now() -> float:
 
 def _tail_text(path: Path, tail_lines: int) -> str:
     """Read the last N lines from a text file."""
-    if not path.exists():
+    if not path.exists() and not path.is_symlink():
         return ""
-    # Efficient-enough tail for our log sizes
+    # Logs are written by confined-but-untrusted code: refuse symlinks/non-regular
+    # files and never load more than the tail window into memory.
     try:
-        data = path.read_text(errors="replace").splitlines()
+        raw = read_tail_bounded(path, MAX_LOG_READ_BYTES)
+        data = raw.decode("utf-8", errors="replace").splitlines()
         return "\n".join(data[-tail_lines:])
     except Exception:
         return ""
@@ -759,7 +766,9 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         if err_path.exists():
             try:
                 from mcp_server.skills.results.err_parser import parse_err_file
-                parsed = parse_err_file(err_path.read_text(errors="replace"))
+                parsed = parse_err_file(
+                    read_file_bounded(err_path, MAX_ERR_READ_BYTES).decode("utf-8", errors="replace"),
+                )
                 run_dict["error_summary"] = {
                     "fatal_count": len(parsed["fatal"]),
                     "severe_count": len(parsed["severe"]),
