@@ -267,6 +267,8 @@ def run_root_for(key: str) -> Path:
     """
     from mcp_server.identity import LOCAL
     root = (RUN_ROOT if key == LOCAL else RUN_ROOT / key).resolve()
+    if key != LOCAL and (not key or root.parent != RUN_ROOT):
+        raise ValueError(f"invalid user key: {key!r}")
     root.mkdir(parents=True, exist_ok=True)
     return root
 

@@ -98,3 +98,18 @@ Mount the per-user trees (`/runs`, `/measures`) as writable volumes the server o
 (or can chown within). Read-only or foreign-owned mounts break create + in-place
 test. One shared volume ≠ shared access — per-user subdirs + per-tenant sandbox uids
 keep tenants apart at both the app and OS levels.
+
+## Principal keys (issue #170)
+
+`identity._sanitize` maps an authenticated principal (JWT `client_id`) to its
+directory name under `RUN_ROOT`. Safe names pass through unchanged; anything
+else (reserved names such as `local`/`python_packages`/`uploads`, dot-only or
+empty values, characters needing substitution) becomes
+`<prefix>~<sha256>`. The mapping is injective — `a@x.com` and `a_x.com`
+never share a run root — and never yields `local`, which owns the whole
+`RUN_ROOT` in stdio mode only. `run_root_for` rejects keys that are not a
+direct child of `RUN_ROOT`. Plain keys are lowercase-only (case-insensitive
+filesystems) and must not look like a local run id (`*_<12 hex>`). Note: principals
+whose ids previously needed substitution (e.g. emails) now get a new hashed
+directory; their old `<sanitized>` dir is not migrated automatically. Remaining #170 items (signing-key placement,
+replay, DoS limits, permissions) are tracked separately.
