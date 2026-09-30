@@ -98,14 +98,18 @@ def test_require_issuer_audience_rejects_unscoped_jwt(monkeypatch):
     require_issuer_audience(None, None)
 
 
-def test_plain_http_verify_url_warns_off_loopback(monkeypatch, caplog):
+@pytest.mark.parametrize("host,warns", [
+    ("portal.internal", True), ("10.0.0.5", True),
+    ("localhost:8080", False), ("127.0.0.2", False), ("[::1]", False), ("[0:0:0:0:0:0:0:1]", False),
+])
+def test_plain_http_verify_url_warns_off_loopback(monkeypatch, host, warns):
     # Validates: the verify URL carries the bearer token, so plain http off loopback warns.
     _clear_env(monkeypatch)
-    monkeypatch.setenv("MCP_JWT_VERIFY_URL", "http://portal.internal/.well-known/verify-token")
-    with caplog.at_level("WARNING"):
-        build_verifier_kwargs_from_env()
-    monkeypatch.setenv("MCP_JWT_VERIFY_URL", "http://localhost:8080/.well-known/verify-token")
-    caplog.clear()
-    with caplog.at_level("WARNING"):
-        build_verifier_kwargs_from_env()
-    assert "plain http" not in caplog.text
+    monkeypatch.setenv("MCP_JWT_VERIFY_URL", f"http://{host}/.well-known/verify-token")
+    from mcp_server import auth_verify
+
+    seen = []
+    # fastmcp's logger does not propagate to caplog; record calls directly.
+    monkeypatch.setattr(auth_verify.logger, "warning", lambda msg, *a, **k: seen.append(msg % a))
+    build_verifier_kwargs_from_env()
+    assert any("plain http" in m for m in seen) is warns

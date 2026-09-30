@@ -371,7 +371,8 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_AUTH` | `token` on HTTP, else `none` | `none` (open), `token`, or `jwt` |
 | `MCP_TOKENS` | `{}` | JSON map `{"<bearer-token>":"<username>"}` (token mode) |
 | `MCP_JWT_PUBLIC_KEY` / `MCP_JWT_JWKS_URI` | — | verifying key (PEM) or JWKS endpoint (jwt mode) |
-| `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE` | — | optional JWT issuer/audience checks |
+| `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE` | — | required in jwt mode (startup fails without both); enforced on every token |
+| `MCP_JWT_ALLOW_UNSCOPED` | `false` | `true` skips the issuer/audience requirement (not recommended) |
 | `MCP_JWT_VERIFY_URL` | — | auth portal's `/.well-known/verify-token` URL; adds per-token revocation + usage telemetry after the local JWKS check (jwt mode, opt-in). Use `https://`: user tokens are sent to it |
 | `MCP_JWT_VERIFY_FAIL_OPEN` | `false` | portal unreachable (error/timeout/5xx): `false` rejects the request, `true` accepts locally valid tokens |
 | `MCP_JWT_VERIFY_TIMEOUT` | `3.0` | seconds to wait for a complete verify-token answer (caps the whole call, not each read) before treating the portal as unreachable |

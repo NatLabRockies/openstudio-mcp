@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -258,6 +259,15 @@ def _env_number(name: str, default: float, *, allow_zero: bool) -> float:
     return value
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host or "").is_loopback
+    except ValueError:
+        return False
+
+
 def _env_url(name: str) -> str | None:
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -265,7 +275,7 @@ def _env_url(name: str) -> str | None:
     parts = urlsplit(raw)
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise ValueError(f"{name} must be an absolute http(s) URL with a host, got {raw!r}")
-    if parts.scheme == "http" and parts.hostname not in ("localhost", "127.0.0.1", "::1"):
+    if parts.scheme == "http" and not _is_loopback_host(parts.hostname):
         logger.warning(
             "%s uses plain http to %s: the bearer token is sent in the Authorization "
             "header, so only use this on a trusted private network (prefer https).",
