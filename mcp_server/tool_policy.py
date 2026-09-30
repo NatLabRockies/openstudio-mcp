@@ -58,7 +58,6 @@ def enforce_http_sandbox() -> None:
     if not _http():
         return
     from mcp_server import sandbox
-
     from mcp_server.config import SANDBOX_NET
 
     tier = sandbox.active_tier()
