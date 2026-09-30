@@ -105,8 +105,11 @@ keep tenants apart at both the app and OS levels.
 directory name under `RUN_ROOT`. Safe names pass through unchanged; anything
 else (reserved names such as `local`/`python_packages`/`uploads`, dot-only or
 empty values, characters needing substitution) becomes
-`<prefix>~<sha256[:16]>`. The mapping is injective — `a@x.com` and `a_x.com`
+`<prefix>~<sha256>`. The mapping is injective — `a@x.com` and `a_x.com`
 never share a run root — and never yields `local`, which owns the whole
 `RUN_ROOT` in stdio mode only. `run_root_for` rejects keys that are not a
-direct child of `RUN_ROOT`. Remaining #170 items (signing-key placement,
+direct child of `RUN_ROOT`. Plain keys are lowercase-only (case-insensitive
+filesystems) and must not look like a local run id (`*_<12 hex>`). Note: principals
+whose ids previously needed substitution (e.g. emails) now get a new hashed
+directory; their old `<sanitized>` dir is not migrated automatically. Remaining #170 items (signing-key placement,
 replay, DoS limits, permissions) are tracked separately.
