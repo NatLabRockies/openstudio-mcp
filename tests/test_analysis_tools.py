@@ -1148,3 +1148,25 @@ def test_tmp_fallback_disabled_in_http_mode(monkeypatch, tmp_path):
     monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
     assert operations._is_analysis_path_allowed((tmp_path / "f").resolve()) is False
+
+
+def test_api_token_not_sent_on_scheme_downgrade(monkeypatch):
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "https://osa.example")
+    monkeypatch.setenv("OPENSTUDIO_API_TOKEN", "secret")
+    assert operations._auth_headers("http://osa.example") == {}
+    assert operations._auth_headers("https://osa.example:443") == {"Authorization": "Bearer secret"}
+
+
+def test_measure_metadata_and_manifest_paths_gated(monkeypatch, tmp_path):
+    import pytest
+
+    monkeypatch.setattr(operations, "_is_analysis_path_allowed", lambda *_a, **_k: False)
+    with pytest.raises(ValueError, match="not allowed"):
+        operations._read_measure_metadata(tmp_path)
+    seed = tmp_path / "s.osm"
+    seed.write_text("x")
+    monkeypatch.setattr(operations, "_is_analysis_path_allowed", lambda _p, **k: k.get("write") is not True)
+    monkeypatch.setattr("mcp_server.config.is_path_allowed", lambda *_a, **_k: True)
+    res = operations.preflight_seed_for_analysis_package(str(seed), manifest_path=str(tmp_path / "m" / "m.json"))
+    assert res["ok"] is False and "not writable/allowed" in res["error"]
+    assert not (tmp_path / "m").exists()

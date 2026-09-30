@@ -379,6 +379,12 @@ def _netloc(url: str) -> str:
     return urlsplit(url).netloc.lower()
 
 
+def _origin(url: str) -> tuple[str, str, int | None]:
+    parts = urlsplit(url)
+    port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    return parts.scheme, (parts.hostname or "").lower(), port
+
+
 def _allowed_server_netlocs() -> set[str]:
     """Hosts a caller-supplied server_url may target in multi-user (HTTP) mode."""
     allowed = {_netloc(u) for u in (_configured_server_url(),) if u}
@@ -411,13 +417,19 @@ def _auth_headers(server_url: str) -> dict[str, str]:
     """Bearer header, sent only to the operator-configured server (never to a caller-chosen host)."""
     token = os.environ.get("OPENSTUDIO_API_TOKEN") or os.environ.get("OS_SERVER_API_TOKEN")
     configured = _configured_server_url()
-    if not token or not configured or _netloc(server_url) != _netloc(configured):
+    if not token or not configured or _origin(server_url) != _origin(configured):
         return {}
     return {"Authorization": f"Bearer {token}"}
 
 
 def _url(server_url: str, path: str) -> str:
     return f"{server_url}/{path.lstrip('/')}"
+
+
+def _is_http_mode() -> bool:
+    from mcp_server.identity import _is_http_transport
+
+    return _is_http_transport()
 
 
 def _is_analysis_path_allowed(path: Path, *, write: bool = False) -> bool:
@@ -920,6 +932,8 @@ def _coerce_value(value_type: str, value: Any) -> Any:
 
 def _read_measure_metadata(measure_dir: str | Path) -> dict[str, Any]:
     measure_path = Path(measure_dir).expanduser().resolve()
+    if not _is_analysis_path_allowed(measure_path):
+        raise ValueError(f"Measure directory is not allowed: {measure_path}")
     if not measure_path.is_dir():
         raise ValueError(f"Measure directory not found: {measure_path}")
     xml_path = measure_path / "measure.xml"
@@ -1382,6 +1396,8 @@ def preflight_seed_for_analysis_package(
     seed_hash = _sha256_file(seed)
     epw_hash = _sha256_file(epw) if epw else None
     manifest = Path(manifest_path).expanduser().resolve() if manifest_path else None
+    if manifest and not _is_analysis_path_allowed(manifest, write=True):
+        return {"ok": False, "ready": False, "error": f"Manifest path is not writable/allowed: {manifest}"}
     if manifest and manifest.exists() and not force_rerun:
         existing_manifest = _read_manifest(manifest)
         if existing_manifest and _manifest_is_valid(
@@ -2244,9 +2260,14 @@ def test_server_config_single_run(
 
     if output_dir:
         out_dir = Path(output_dir).expanduser().resolve()
+        if not _is_analysis_path_allowed(out_dir, write=True):
+            return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
         out_dir.mkdir(parents=True, exist_ok=True)
     else:
-        out_dir = Path(tempfile.mkdtemp(prefix="openstudio_server_config_", dir="/tmp")).resolve()
+        from mcp_server.config import user_run_root
+
+        base_dir = user_run_root() if _is_http_mode() else Path(tempfile.gettempdir())
+        out_dir = Path(tempfile.mkdtemp(prefix="openstudio_server_config_", dir=base_dir)).resolve()
 
     osa_path = out_dir / "single_run_server_config_test.json"
     created = create_osa_json(
