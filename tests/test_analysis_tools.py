@@ -1064,3 +1064,87 @@ def test_download_analysis_data_uses_content_disposition(monkeypatch, tmp_path):
     assert result["ok"] is True
     assert result["bytes"] == 8
     assert (tmp_path / "results.csv").read_text() == "a,b\n1,2\n"
+
+
+# --- SSRF / token / path hardening (#173) ---------------------------------
+
+
+def test_server_url_rejects_non_http_schemes(monkeypatch):
+    import pytest
+
+    monkeypatch.delenv("OPENSTUDIO_SERVER_URL", raising=False)
+    for bad in ("file:///etc/passwd", "ftp://host/x", "gopher://h", "localhost:8080", "http://"):
+        with pytest.raises(ValueError):
+            operations._server_url(bad)
+    assert operations._server_url("https://osa.example.com:8080/") == "https://osa.example.com:8080"
+
+
+def test_server_url_restricted_in_http_mode(monkeypatch):
+    import pytest
+
+    monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
+    monkeypatch.delenv("OSMCP_ANALYSIS_ALLOWED_HOSTS", raising=False)
+    assert operations._server_url(None) == "http://osa:8080"
+    assert operations._server_url("http://osa:8080/") == "http://osa:8080"
+    with pytest.raises(ValueError, match="not permitted"):
+        operations._server_url("http://169.254.169.254/latest")
+    monkeypatch.setenv("OSMCP_ANALYSIS_ALLOWED_HOSTS", "other:9000")
+    assert operations._server_url("http://other:9000") == "http://other:9000"
+
+
+def test_api_token_only_sent_to_configured_server(monkeypatch):
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
+    monkeypatch.setenv("OPENSTUDIO_API_TOKEN", "secret")
+    assert operations._auth_headers("http://osa:8080") == {"Authorization": "Bearer secret"}
+    assert operations._auth_headers("http://evil:8080") == {}
+
+
+def test_urlopen_refuses_file_scheme(tmp_path):
+    from urllib.error import URLError
+    from urllib.request import Request
+
+    import pytest
+
+    target = tmp_path / "x.txt"
+    target.write_text("hi")
+    with pytest.raises(URLError):
+        operations.urlopen(Request(target.as_uri()), timeout=1)  # noqa: S310
+
+
+def test_urlopen_refuses_redirects():
+    import http.server
+    import threading
+    from urllib.error import HTTPError
+    from urllib.request import Request
+
+    import pytest
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", "http://127.0.0.1:1/")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(HTTPError):
+            operations.urlopen(Request(f"http://127.0.0.1:{srv.server_port}/"), timeout=2)
+    finally:
+        srv.shutdown()
+
+
+def test_multipart_upload_rejects_disallowed_path(monkeypatch):
+    monkeypatch.setattr(operations, "_is_analysis_path_allowed", lambda *_a, **_k: False)
+    res = operations._multipart_upload("http://osa:8080", "/x", "/etc/passwd")
+    assert res["ok"] is False and "not allowed" in res["error"]
+
+
+def test_tmp_fallback_disabled_in_http_mode(monkeypatch, tmp_path):
+    monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+    assert operations._is_analysis_path_allowed((tmp_path / "f").resolve()) is False
