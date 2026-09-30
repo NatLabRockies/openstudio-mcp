@@ -87,7 +87,7 @@ by an IdP — or by your own key (see below) — and the server only verifies th
 > **Token storage is plaintext** (`StaticTokenVerifier`). Fine for a trusted team
 > behind a VPN. For SSO/public deployments use `MCP_AUTH=jwt` and point it at your
 > IdP's verifying key (`MCP_JWT_PUBLIC_KEY`, a PEM) or JWKS endpoint
-> (`MCP_JWT_JWKS_URI`), optionally constraining `MCP_JWT_ISSUER` / `MCP_JWT_AUDIENCE`.
+> (`MCP_JWT_JWKS_URI`). `MCP_JWT_ISSUER` and `MCP_JWT_AUDIENCE` are **required** (startup fails without both; `MCP_JWT_ALLOW_UNSCOPED=true` opts out, not recommended).
 
 ### Adding users without a restart (self-signed JWT)
 

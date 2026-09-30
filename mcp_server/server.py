@@ -50,13 +50,17 @@ def _build_auth():
         from mcp_server.auth_verify import (
             RevocationAwareJWTVerifier,
             build_verifier_kwargs_from_env,
+            require_issuer_audience,
         )
 
+        issuer = os.environ.get("MCP_JWT_ISSUER") or None
+        audience = os.environ.get("MCP_JWT_AUDIENCE") or None
+        require_issuer_audience(issuer, audience)
         return RevocationAwareJWTVerifier(
             public_key=os.environ.get("MCP_JWT_PUBLIC_KEY") or None,
             jwks_uri=os.environ.get("MCP_JWT_JWKS_URI") or None,
-            issuer=os.environ.get("MCP_JWT_ISSUER") or None,
-            audience=os.environ.get("MCP_JWT_AUDIENCE") or None,
+            issuer=issuer,
+            audience=audience,
             **build_verifier_kwargs_from_env(),
         )
     raise ValueError(f"Unknown MCP_AUTH mode: {mode!r}")

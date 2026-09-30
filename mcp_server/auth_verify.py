@@ -265,7 +265,34 @@ def _env_url(name: str) -> str | None:
     parts = urlsplit(raw)
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise ValueError(f"{name} must be an absolute http(s) URL with a host, got {raw!r}")
+    if parts.scheme == "http" and parts.hostname not in ("localhost", "127.0.0.1", "::1"):
+        logger.warning(
+            "%s uses plain http to %s: the bearer token is sent in the Authorization "
+            "header, so only use this on a trusted private network (prefer https).",
+            name, parts.hostname,
+        )
     return raw
+
+
+def require_issuer_audience(issuer: str | None, audience: str | None) -> None:
+    """Fail startup if JWT mode would skip issuer/audience checks.
+
+    Without both, any token signed by the same key or IdP for a different service
+    is accepted. ``MCP_JWT_ALLOW_UNSCOPED=true`` is the explicit opt-out.
+    """
+    if issuer and audience:
+        return
+    if _env_flag("MCP_JWT_ALLOW_UNSCOPED"):
+        logger.warning(
+            "MCP_JWT_ALLOW_UNSCOPED=true: JWT issuer and/or audience are NOT enforced "
+            "(issuer=%r, audience=%r)", issuer, audience,
+        )
+        return
+    missing = [n for n, v in (("MCP_JWT_ISSUER", issuer), ("MCP_JWT_AUDIENCE", audience)) if not v]
+    raise ValueError(
+        f"MCP_AUTH=jwt requires {' and '.join(missing)} so tokens minted for other "
+        "services are rejected (set MCP_JWT_ALLOW_UNSCOPED=true to opt out).",
+    )
 
 
 def build_verifier_kwargs_from_env() -> dict[str, Any]:
