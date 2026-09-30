@@ -12,6 +12,7 @@ collapse to "local", preserving today's single-user behavior unchanged.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 
 LOCAL = "local"
@@ -75,7 +76,24 @@ def user_key() -> str:
     return _sanitize(sid) if sid else LOCAL
 
 
+_PLAIN_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+# Names that would alias LOCAL or a server-owned entry directly under RUN_ROOT.
+_RESERVED_KEYS = frozenset({LOCAL, "python_packages", "uploads", "lost+found"})
+
+
 def _sanitize(key: str) -> str:
-    """Reduce an identity to a safe directory-name component."""
-    s = re.sub(r"[^A-Za-z0-9_.-]", "_", str(key)).strip("._")
-    return s or LOCAL
+    """Map an identity to an injective, filesystem-safe directory name.
+
+    Names that are already safe pass through unchanged (existing run dirs keep
+    working). Anything else — reserved names, empty/dot-only values, or
+    characters needing substitution — becomes ``<readable-prefix>~<sha256[:16]>``.
+    ``~`` is outside the plain alphabet, so hashed and plain keys can never
+    collide, and distinct raw identities never share a key. The result is never
+    LOCAL, which owns the whole RUN_ROOT.
+    """
+    raw = str(key)
+    if _PLAIN_KEY.fullmatch(raw) and raw.lower() not in _RESERVED_KEYS and not raw.endswith("."):
+        return raw
+    digest = hashlib.sha256(raw.encode("utf-8", errors="surrogatepass")).hexdigest()[:16]
+    prefix = re.sub(r"[^A-Za-z0-9_.-]", "_", raw).strip("._")[:32]
+    return f"{prefix}~{digest}" if prefix else f"~{digest}"
