@@ -98,7 +98,7 @@ def test_require_issuer_audience_rejects_unscoped_jwt(monkeypatch):
     require_issuer_audience(None, None)
 
 
-@pytest.mark.parametrize("host,warns", [
+@pytest.mark.parametrize(("host", "warns"), [
     ("portal.internal", True), ("10.0.0.5", True),
     ("localhost:8080", False), ("127.0.0.2", False), ("[::1]", False), ("[0:0:0:0:0:0:0:1]", False),
 ])
@@ -110,6 +110,6 @@ def test_plain_http_verify_url_warns_off_loopback(monkeypatch, host, warns):
 
     seen = []
     # fastmcp's logger does not propagate to caplog; record calls directly.
-    monkeypatch.setattr(auth_verify.logger, "warning", lambda msg, *a, **k: seen.append(msg % a))
+    monkeypatch.setattr(auth_verify.logger, "warning", lambda msg, *a, **_: seen.append(msg % a))
     build_verifier_kwargs_from_env()
     assert any("plain http" in m for m in seen) is warns
