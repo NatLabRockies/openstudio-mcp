@@ -500,7 +500,7 @@ HTTP server limits what an agent can be steered into:
 | `OSMCP_ENABLE_CODE_TOOLS` | In HTTP mode `create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin` and `install_plugin_packages` are hidden unless this is `true`. |
 | `OSMCP_TOOLS_ALLOW` | Comma list; when set, only these tools are registered (any transport). |
 | `OSMCP_TOOLS_DENY` | Comma list of tools to hide (any transport). |
-| `OSMCP_ALLOW_UNSANDBOXED` | The HTTP server refuses to start unless the full Landlock+seccomp tier is active; `true` overrides (logged). |
+| `OSMCP_ALLOW_UNSANDBOXED` | The HTTP server refuses to start unless the full Landlock+seccomp tier is configured (`OSMCP_SANDBOX=auto`, `OSMCP_SANDBOX_NET=deny`, Linux); the exec shim still fails closed per subprocess if the kernel backend is unavailable; `true` overrides (logged). |
 
 Tool output (object names, logs, skill text) is declared untrusted data in the
 server instructions. Tool policy is applied at registration, so hidden tools

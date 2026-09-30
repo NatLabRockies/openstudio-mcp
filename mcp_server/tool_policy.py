@@ -59,11 +59,16 @@ def enforce_http_sandbox() -> None:
         return
     from mcp_server import sandbox
 
+    from mcp_server.config import SANDBOX_NET
+
     tier = sandbox.active_tier()
-    if tier == "landlock":
+    if tier == "landlock" and SANDBOX_NET != "allow":
         return
+    if tier == "landlock":
+        tier = "landlock with OSMCP_SANDBOX_NET=allow (no network deny)"
+    # Backend availability is checked per subprocess by the exec shim, which fails closed.
     msg = (
-        f"HTTP transport requires full sandbox confinement but the active tier is '{tier}'. "
+        f"HTTP transport requires full sandbox confinement but the configured tier is '{tier}'. "
         "Use the Docker image on Linux with OSMCP_SANDBOX=auto, or set "
         "OSMCP_ALLOW_UNSANDBOXED=true to accept the risk."
     )

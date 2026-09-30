@@ -48,3 +48,13 @@ def test_http_fails_closed_without_full_sandbox(monkeypatch):
 def test_stdio_never_blocked(monkeypatch):
     monkeypatch.setattr(sandbox, "active_tier", lambda: "off")
     tool_policy.enforce_http_sandbox()
+
+
+def test_http_rejects_net_allow(monkeypatch):
+    import mcp_server.config as cfg
+
+    monkeypatch.setenv("MCP_TRANSPORT", "http")
+    monkeypatch.setattr(sandbox, "active_tier", lambda: "landlock")
+    monkeypatch.setattr(cfg, "SANDBOX_NET", "allow")
+    with pytest.raises(RuntimeError, match="no network deny"):
+        tool_policy.enforce_http_sandbox()
