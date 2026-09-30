@@ -21,7 +21,8 @@ def _build_auth():
     MCP_AUTH=none   — no app auth; identity falls back to session id (use on a VPN).
     MCP_AUTH=token  — StaticTokenVerifier; MCP_TOKENS={"<token>":"<user>"}.
     MCP_AUTH=jwt    — JWTVerifier; MCP_JWT_PUBLIC_KEY or MCP_JWT_JWKS_URI
-                      (+ optional MCP_JWT_ISSUER / MCP_JWT_AUDIENCE) for IdP/SSO.
+                      + MCP_JWT_ISSUER and MCP_JWT_AUDIENCE (both required unless
+                      MCP_JWT_ALLOW_UNSCOPED=true) for IdP/SSO.
                       Set MCP_JWT_VERIFY_URL to the auth portal's verify-token
                       endpoint to also enforce revocation and record usage
                       (mcp_server/auth_verify.py; MCP_JWT_VERIFY_* env vars).
@@ -50,13 +51,17 @@ def _build_auth():
         from mcp_server.auth_verify import (
             RevocationAwareJWTVerifier,
             build_verifier_kwargs_from_env,
+            require_issuer_audience,
         )
 
+        issuer = os.environ.get("MCP_JWT_ISSUER") or None
+        audience = os.environ.get("MCP_JWT_AUDIENCE") or None
+        require_issuer_audience(issuer, audience)
         return RevocationAwareJWTVerifier(
             public_key=os.environ.get("MCP_JWT_PUBLIC_KEY") or None,
             jwks_uri=os.environ.get("MCP_JWT_JWKS_URI") or None,
-            issuer=os.environ.get("MCP_JWT_ISSUER") or None,
-            audience=os.environ.get("MCP_JWT_AUDIENCE") or None,
+            issuer=issuer,
+            audience=audience,
             **build_verifier_kwargs_from_env(),
         )
     raise ValueError(f"Unknown MCP_AUTH mode: {mode!r}")
