@@ -319,7 +319,11 @@ def verify_download(token: str) -> dict:
     if not key or not path:
         return {"ok": False, "status": 403, "error": "bad token"}
     target = Path(path).resolve()
-    if not is_path_allowed_for(key, target):
+    try:
+        allowed = is_path_allowed_for(key, target)
+    except ValueError as e:  # tenant root refused (InvalidUserKeyError) after the URL was minted
+        return {"ok": False, "status": 403, "error": str(e)}
+    if not allowed:
         return {"ok": False, "status": 403, "error": "not allowed"}
     if not target.exists():
         return {"ok": False, "status": 404, "error": "not found"}

@@ -74,7 +74,9 @@ GBXML_SEED_OSM = Path(os.environ.get("GBXML_SEED_OSM", "/opt/gbxml-to-openstudio
 # Mount root for per-user measures. Each principal is scoped to MEASURES_DIR/<key>
 # (see user_measures_root); custom + bcl live under that, never at the bare root.
 # No per-subdir env overrides: a flat override would silently break tenant scoping.
-USER_MEASURES_DIR = Path(os.environ.get("OPENSTUDIO_MCP_MEASURES_DIR", "/measures"))
+# Resolved once (like RUN_ROOT) so every _under() comparison sees the same canonical
+# path as the resolved candidates it is compared against.
+USER_MEASURES_DIR = Path(os.environ.get("OPENSTUDIO_MCP_MEASURES_DIR", "/measures")).resolve()
 MEASURES_DIR = USER_MEASURES_DIR
 SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/skills"))
 
@@ -277,7 +279,10 @@ def _tenant_dir(base: Path, key: str) -> Path:
     if not key or key in (".", "..") or "/" in key or "\\" in key:
         raise InvalidUserKeyError(f"invalid user key: {key!r}")
     expected = base / key
-    root = expected.resolve()
+    try:
+        root = expected.resolve()
+    except (OSError, RuntimeError) as e:  # symlink loop (RuntimeError < 3.13, ELOOP after)
+        raise InvalidUserKeyError(f"invalid user key: {key!r}") from e
     if root != expected:
         raise InvalidUserKeyError(f"invalid user key: {key!r}")
     root.mkdir(parents=True, exist_ok=True)
@@ -308,9 +313,7 @@ def pkgs_root_for(key: str) -> Path:
     child — plugins import third-party packages from here via
     PythonPlugin:SearchPaths.
     """
-    from mcp_server.identity import LOCAL
-    root = RUN_ROOT if key == LOCAL else RUN_ROOT / key
-    pkgs = root / "python_packages"
+    pkgs = run_root_for(key) / "python_packages"
     # Belt: resolve() would launder a symlink planted here into a path later
     # treated as trusted (pip --target write, sandbox read-only grant).
     if pkgs.is_symlink():
@@ -335,7 +338,7 @@ def user_measures_root() -> Path:
     See docs/security-isolation.md.
     """
     from mcp_server.identity import user_key
-    return _tenant_dir(MEASURES_DIR.resolve(), user_key())
+    return _tenant_dir(MEASURES_DIR, user_key())
 
 
 def user_custom_measures_dir() -> Path:

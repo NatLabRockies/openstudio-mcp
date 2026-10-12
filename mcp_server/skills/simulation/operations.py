@@ -26,6 +26,7 @@ from mcp_server.config import (
     OSCLI_GEM_PATH,
     OSCLI_GEMFILE,
     SIM_TIMEOUT_SECONDS,
+    InvalidUserKeyError,
     is_path_allowed,
     pkgs_root_for,
     user_run_root,
@@ -386,7 +387,7 @@ def _launch(rec: RunRecord) -> None:
     try:
         pkgs_dir = pkgs_root_for(rec.user_key)
         extra_ro = (str(pkgs_dir),) if pkgs_dir.is_dir() else ()
-    except RuntimeError:  # symlinked pkgs dir — launch without the grant
+    except (RuntimeError, InvalidUserKeyError):  # symlinked pkgs dir or tenant root — no grant
         extra_ro = ()
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
         sandbox.wrap_cmd(

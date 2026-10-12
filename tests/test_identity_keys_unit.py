@@ -97,11 +97,29 @@ def test_user_measures_root_plain_keys(tmp_path, monkeypatch):
     assert config.user_measures_root() == tmp_path.resolve() / "local"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink test")
-@pytest.mark.parametrize(("setting", "root_fn"), [
+TENANT_ROOT_FNS = [
     ("RUN_ROOT", config.user_run_root),
+    ("RUN_ROOT", config.user_pkgs_root),
     ("MEASURES_DIR", config.user_measures_root),
-])
+]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink test")
+@pytest.mark.parametrize(("setting", "root_fn"), TENANT_ROOT_FNS)
+def test_tenant_root_rejects_symlink_loop(tmp_path, monkeypatch, setting, root_fn):
+    # Regression: a self-referencing tenant symlink escaped as RuntimeError from resolve(),
+    # which IdentityGuard does not translate into an ok:false response.
+    root = tmp_path / "base"
+    root.mkdir()
+    (root / "alice").symlink_to(root / "alice")
+    monkeypatch.setattr(config, setting, root.resolve())
+    monkeypatch.setattr(identity, "user_key", lambda: "alice")
+    with pytest.raises(config.InvalidUserKeyError, match="invalid user key: 'alice'"):
+        root_fn()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink test")
+@pytest.mark.parametrize(("setting", "root_fn"), TENANT_ROOT_FNS)
 @pytest.mark.parametrize("target", ["outside", "peer"])
 def test_tenant_root_rejects_symlink_escape(tmp_path, monkeypatch, setting, root_fn, target):
     # Regression: tenant roots followed a symlink to another tenant or outside the base dir.

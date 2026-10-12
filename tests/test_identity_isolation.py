@@ -7,6 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
+import httpx
 import psutil
 import pytest
 from conftest import http_server, http_session, integration_enabled, unwrap
@@ -118,6 +119,36 @@ def test_symlinked_tenant_root_returns_error(target):
                     assert unwrap(response) == {"ok": False, "error": "invalid user key: 'alice'"}
                     assert list(destination.iterdir()) == []
             asyncio.run(run())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink test")
+def test_signed_download_refuses_retargeted_tenant_root():
+    # Regression: the signed GET route runs outside IdentityGuard, so a tenant root
+    # refused after the URL was minted surfaced as HTTP 500 instead of a 403.
+    from mcp_server.config import RUN_ROOT
+
+    with tempfile.TemporaryDirectory(prefix="root_guard_", dir=RUN_ROOT) as temp:
+        root = Path(temp) / "tenants"
+        root.mkdir()
+        token = uuid.uuid4().hex
+        env = {
+            "MCP_AUTH": "token", "MCP_TOKENS": json.dumps({token: "alice"}),
+            "OPENSTUDIO_MCP_RUN_ROOT": str(root),
+        }
+        with http_server(env) as (url, _proc):
+            async def run():
+                async with http_session(url, token=token) as session:
+                    created = unwrap(await session.call_tool("create_example_osm", {"name": "dl"}))
+                    assert created["ok"] is True, created
+                    return unwrap(await session.call_tool(
+                        "request_download", {"path": created["osm_path"]}))
+            dl = asyncio.run(run())
+            assert dl["ok"] is True, dl
+            (root / "alice").rename(root / "bob")
+            (root / "alice").symlink_to(root / "bob", target_is_directory=True)
+            response = httpx.get(dl["download_url"], timeout=30)
+            assert response.status_code == 403, response.text
+            assert response.json() == {"ok": False, "error": "invalid user key: 'alice'"}
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Linux sandbox ownership")
