@@ -865,7 +865,7 @@ def apply_measure(
             if osm_src.is_file() and not osm_src.is_symlink():
                 shutil.copy2(str(osm_src), str(ep_run / "in.osm"))
             idf_src = sim_dir / "run" / "in.idf"
-            if idf_src.is_file():
+            if idf_src.is_file() and not idf_src.is_symlink():
                 shutil.copy2(str(idf_src), str(ep_run / "in.idf"))
             postprocess = True
 
@@ -916,6 +916,8 @@ def apply_measure(
         if not output_osm.is_file():
             # Try the original location
             output_osm = temp_osm
+        if output_osm.is_symlink():  # written by the sandboxed run: never load through a link
+            return {"ok": False, "error": "Output OSM is a symlink (not allowed)"}
         if not output_osm.is_file():
             return {"ok": False, "error": "Output OSM not found after measure run"}
 

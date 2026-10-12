@@ -282,6 +282,8 @@ def import_gbxml_op(
             return result
 
         output_osm = run_dir / "run" / "in.osm"
+        if output_osm.is_symlink():  # written by the sandboxed translator: never load through a link
+            return {"ok": False, "error": "Output OSM is a symlink (not allowed)", "run_dir": str(run_dir)}
         if not output_osm.is_file():
             return {"ok": False, "error": "Output OSM not found after gbXML import", "run_dir": str(run_dir)}
 

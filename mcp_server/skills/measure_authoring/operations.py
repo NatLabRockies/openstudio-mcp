@@ -987,7 +987,7 @@ def _test_reporting_measure_with_run(
     # Copy seed model for OSW
     osm_src = sim_dir / "run" / "in.osm"
     temp_osm = run_dir / "in.osm"
-    if osm_src.is_file():
+    if osm_src.is_file() and not osm_src.is_symlink():
         shutil.copy2(str(osm_src), str(temp_osm))
     else:
         # Fallback: create empty model

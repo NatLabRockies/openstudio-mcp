@@ -35,10 +35,10 @@ from mcp_server.skills.simulation.operations import (
     _RUNS,
     MAX_RECORD_BYTES,
     _pid_alive,
-    _pid_belongs_to_run,
+    _pid_is_runs_child,
     _sim_lock,
 )
-from mcp_server.util import read_file_bounded, resolve_run_dir
+from mcp_server.util import open_nofollow_for_write, read_file_bounded, resolve_run_dir
 
 PIN_MARKER = ".pinned"
 _NOT_A_RUN = {"examples", "exports"}  # user working dirs, never GC'd
@@ -146,8 +146,10 @@ def _is_active(d: Path) -> bool:
         return True
     if status == "running":
         pid = data.get("pid")
-        try:  # a forged pid (someone else's live process) must not pin the dir forever
-            return bool(pid and _pid_alive(int(pid)) and _pid_belongs_to_run(int(pid), d))
+        try:
+            # A forged pid (someone else's live process) must not pin the dir forever, but
+            # a live pid we cannot inspect (None) is kept: never GC a possibly-running run.
+            return bool(pid and _pid_alive(int(pid)) and _pid_is_runs_child(int(pid), d) is not False)
         except (ValueError, TypeError):
             return True
     return False  # success / failed / cancelled -> terminal
@@ -157,7 +159,7 @@ def _dir_size_bytes(d: Path) -> int:
     total = 0
     for p in d.rglob("*"):
         try:
-            if p.is_file():
+            if p.is_file() and not p.is_symlink():  # a link's target is not reclaimed space
                 total += p.stat().st_size
         except OSError:
             continue
@@ -315,7 +317,11 @@ def pin_run(run_id: str) -> dict[str, Any]:
         run_dir = resolve_run_dir(user_run_root(), run_id)
     except FileNotFoundError:
         return {"ok": False, "error": f"Unknown run_id: {run_id}"}
-    (run_dir / PIN_MARKER).write_text("pinned\n", encoding="utf-8")
+    try:  # the run dir is tenant-writable: never write through a planted .pinned symlink
+        with open_nofollow_for_write(run_dir / PIN_MARKER) as fh:
+            fh.write("pinned\n")
+    except OSError as e:
+        return {"ok": False, "run_id": run_id, "error": f"could not write pin marker: {e}"}
     audit("run_pinned", run_id=run_id, user=user_key())
     return {"ok": True, "run_id": run_id, "pinned": True}
 

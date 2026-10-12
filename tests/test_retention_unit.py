@@ -50,11 +50,9 @@ def test_sweep_deletes_old_terminal_runs_only(tmp_path):
     _mk(tmp_path, "queued_old", {"status": "queued", "created_at": OLD})        # active
     # "alive" means the run's own child (launched with cwd=run_dir); a live pid that runs
     # elsewhere is a forged record and must not pin the dir (run-record trust).
-    alive_dir = tmp_path / "running_alive"
-    alive_dir.mkdir()
-    alive = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=str(alive_dir))  # noqa: S603 - fixed argv
-    alive_dir.rmdir()
-    stranger = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=str(tmp_path))  # noqa: S603 - fixed argv
+    sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+    alive = subprocess.Popen([*sleeper, str(tmp_path / "running_alive" / "workflow.osw")])  # noqa: S603 - fixed argv
+    stranger = subprocess.Popen([*sleeper, str(tmp_path / "elsewhere" / "workflow.osw")])  # noqa: S603 - fixed argv
     _mk(tmp_path, "running_alive", {"status": "running", "pid": alive.pid, "created_at": OLD})
     _mk(tmp_path, "running_forged", {"status": "running", "pid": stranger.pid, "created_at": OLD})
     _mk(tmp_path, "pinned_old", {"status": "success", "ended_at": OLD}, pinned=True)
@@ -67,8 +65,9 @@ def test_sweep_deletes_old_terminal_runs_only(tmp_path):
         recs, freed = _sweep_user_root(
             tmp_path, "u", WEEK, NOW, dry_run=False, reason="gc")
     finally:
-        alive.kill()
-        stranger.kill()
+        for proc in (alive, stranger):
+            proc.kill()
+            proc.wait(timeout=10)
 
     deleted = {r["run_id"] for r in recs}
     assert deleted == {"succ_old", "cxl_old", "fail_old", "running_dead", "running_forged", "outosw_old"}, deleted

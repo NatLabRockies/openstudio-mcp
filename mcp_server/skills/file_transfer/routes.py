@@ -94,13 +94,17 @@ async def download_route(request: Request):
 
 def _zip_bundle(run_dir: Path) -> FileResponse:
     """Zip a run's reports (or the whole run dir if no reports/) to a temp file."""
-    src = run_dir / "reports" if (run_dir / "reports").is_dir() else run_dir
+    reports = run_dir / "reports"
+    src = reports if (reports.is_dir() and not reports.is_symlink()) else run_dir
+    root = str(run_dir.resolve())
     fd, tmp_name = tempfile.mkstemp(prefix="bundle_", suffix=".zip")
     os.close(fd)
     tmp_path = Path(tmp_name)
     with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in src.rglob("*"):
-            if p.is_file() and not p.is_symlink():
+            # The run dir is tenant-written: a planted link (file or parent dir) would bundle
+            # another tenant's files, so only regular files resolving inside the run qualify.
+            if p.is_file() and not p.is_symlink() and str(p.resolve()).startswith(root + os.sep):
                 zf.write(p, p.relative_to(src))
     return FileResponse(tmp_path, filename=f"{run_dir.name}.zip",
                         background=BackgroundTask(tmp_path.unlink, missing_ok=True))

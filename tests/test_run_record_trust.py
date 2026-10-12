@@ -44,7 +44,7 @@ def test_forged_run_record_cannot_reach_sibling_tenant_or_kill_stranger():
     (bob_run / "openstudio.log").write_text("BOBLOG\n", encoding="utf-8")
     forged = RUN_ROOT / "alice" / f"run_forged_{tag}"
     linked = RUN_ROOT / "alice" / f"run_linked_{tag}"
-    stranger = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"], cwd="/")  # noqa: S603 - fixed argv
+    stranger = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])  # noqa: S603 - fixed argv
     try:
         time.sleep(0.2)
         _record(forged, run_dir=str(bob_run), status="running", pid=stranger.pid)
@@ -71,3 +71,4 @@ def test_forged_run_record_cannot_reach_sibling_tenant_or_kill_stranger():
         assert (bob_run / "openstudio.log").read_text(encoding="utf-8") == "BOBLOG\n"
     finally:
         stranger.kill()
+        stranger.wait(timeout=10)

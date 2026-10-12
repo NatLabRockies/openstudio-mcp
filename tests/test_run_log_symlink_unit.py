@@ -35,16 +35,26 @@ def _write_record(path: Path, **override) -> dict:
 def run_root(tmp_path, monkeypatch):
     root = tmp_path / "runs"
     root.mkdir()
-    monkeypatch.setattr(sim_ops, "user_run_root", lambda: root)
+    for mod in (sim_ops, results_ops, retention):
+        monkeypatch.setattr(mod, "user_run_root", lambda: root)
     monkeypatch.setattr(sim_ops, "user_key", lambda: "local")
-    monkeypatch.setattr(results_ops, "user_run_root", lambda: root)
+    monkeypatch.setattr(retention, "user_key", lambda: "local")
     sim_ops._RUNS.clear()
     yield root
     sim_ops._RUNS.clear()
 
 
-def _sleeper(cwd: Path) -> subprocess.Popen:
-    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=str(cwd))  # noqa: S603 - fixed argv
+def _sleeper(argv_path: Path) -> subprocess.Popen:
+    """A child whose argv names `argv_path`, the way a real launch names its staged OSW."""
+    return subprocess.Popen(  # noqa: S603 - fixed argv
+        [sys.executable, "-c", "import sys, time; time.sleep(60)", str(argv_path / "workflow.osw")],
+    )
+
+
+def _stop(*procs: subprocess.Popen) -> None:
+    for proc in procs:
+        proc.kill()
+        proc.wait(timeout=10)
 
 
 # --- #179: bounded, symlink-refusing readers -------------------------------------------
@@ -188,15 +198,18 @@ def test_loaded_record_ignores_persisted_paths(run_root, osw_outside):
 
 
 @posix_only
-def test_loaded_record_drops_pid_not_running_in_run_dir(run_root):
+def test_loaded_record_drops_pid_that_is_not_this_runs_child(run_root):
     # Regression: a forged pid in the record was handed to _kill_process_group (as root) by
-    # cancel_run; only a process whose cwd is the run dir can be the run's own
+    # cancel_run; only a process whose argv names this run dir can be the run's own
     run_dir = run_root / "run_a"
     run_dir.mkdir()
-    stranger = _sleeper(run_root.parent)
+    stranger = _sleeper(run_root / "run_other")
     own = _sleeper(run_dir)
     try:
         time.sleep(0.2)
+        assert sim_ops._pid_is_runs_child(own.pid, run_dir) is True
+        assert sim_ops._pid_is_runs_child(stranger.pid, run_dir) is False
+        assert sim_ops._pid_is_runs_child(2**22 - 1, run_dir) is None
         _write_record(run_dir, status="running", pid=stranger.pid)
         assert sim_ops._load_run_record_from_disk("run_a").pid is None
         _write_record(run_dir, status="running", pid=own.pid)
@@ -206,22 +219,164 @@ def test_loaded_record_drops_pid_not_running_in_run_dir(run_root):
         assert res == {"ok": True, "run_id": "run_a", "cancelled": True}
         assert stranger.poll() is None, "cancel_run must not kill a process outside the run"
     finally:
-        stranger.kill()
-        own.kill()
+        _stop(stranger, own)
+
+
+@posix_only
+def test_cancel_run_refuses_foreign_pid_on_cached_record(run_root):
+    # Regression: an in-memory record whose pid had been reused by another process was
+    # signalled as root; the identity check now runs right before the kill
+    run_dir = run_root / "run_a"
+    run_dir.mkdir()
+    stranger = _sleeper(run_root / "run_other")
+    try:
+        time.sleep(0.2)
+        rec = sim_ops.RunRecord(
+            run_id="run_a", user_key="local", name="x", status="running", created_at=1.0,
+            started_at=1.0, ended_at=None, pid=stranger.pid, run_dir=run_dir,
+            osw_path=run_dir / "workflow.osw", epw_path=None, exit_code=None, error=None,
+        )
+        sim_ops._RUNS["run_a"] = rec
+        res = sim_ops.cancel_run("run_a")
+        assert res["ok"] is False
+        assert "not this run's process" in res["error"], res
+        assert stranger.poll() is None
+    finally:
+        _stop(stranger)
 
 
 @posix_only
 def test_retention_ignores_forged_running_pid(run_root):
     # Regression: a record claiming status=running with someone else's live pid kept the run
-    # dir out of retention GC forever
+    # dir out of retention GC forever; a pid that cannot be inspected is still kept
     run_dir = run_root / "run_a"
-    stranger = _sleeper(run_root.parent)
+    stranger = _sleeper(run_root / "run_other")
     try:
         time.sleep(0.2)
         _write_record(run_dir, status="running", pid=stranger.pid)
         assert retention._is_active(run_dir) is False
+        _write_record(run_dir, status="running", pid=2**22 - 1)
+        assert retention._is_active(run_dir) is False  # not alive at all
     finally:
-        stranger.kill()
+        _stop(stranger)
+
+
+def test_reloaded_running_record_without_pid_classifies_from_out_osw(run_root):
+    # Regression: a run that finished while the server was down reloads with no trusted pid
+    # and stayed "running" forever (and held a concurrency slot)
+    run_dir = run_root / "run_a"
+    _write_record(run_dir, status="running", pid=None)
+    (run_dir / "out.osw").write_text(json.dumps({"completed_status": "Success", "pad": "x" * 70_000}))
+    res = sim_ops.get_run_status("run_a")
+    assert res["run"]["status"] == "success"
+
+
+def test_unreadable_out_osw_is_reported_not_silently_failed(run_root):
+    # Regression: an out.osw over the record cap became {} and the run was marked failed
+    # with no explanation
+    run_dir = run_root / "run_a"
+    _write_record(run_dir, status="running", pid=None)
+    (run_dir / "out.osw").write_text("{not json")
+    res = sim_ops.get_run_status("run_a")
+    assert res["run"]["status"] == "failed"
+    assert "Failed to parse out.osw" in res["run"]["error"]
+
+
+def test_malformed_record_fields_never_raise(run_root):
+    # Regression: a record with status={"bad": 1} reached `status in _TERMINAL` and raised
+    # TypeError through MCP; other fields were not coerced either
+    run_dir = run_root / "run_a"
+    _write_record(run_dir, status={"bad": 1}, created_at="soon", pid="abc", exit_code=[1], run_id="../x")
+    res = sim_ops.get_run_status("run_a")
+    assert res["ok"] is True
+    assert res["run"]["run_id"] == "run_a"
+    assert res["run"]["status"] == "unknown"
+    assert res["run"]["pid"] is None and res["run"]["exit_code"] is None
+
+
+@posix_only
+def test_get_run_logs_refuses_symlinked_parent_dir(run_root):
+    # Regression: O_NOFOLLOW only covers the leaf; run/ planted as a symlink to another dir
+    # made the energyplus stream read that dir's eplusout.err
+    run_dir = run_root / "run_a"
+    _write_record(run_dir)
+    outside = run_root.parent / "outside" / "run"
+    outside.mkdir(parents=True)
+    (outside / "eplusout.err").write_text("** Fatal  ** TOPSECRET\n")
+    (run_dir / "run").symlink_to(outside, target_is_directory=True)
+    res = sim_ops.get_run_logs("run_a", stream="energyplus")
+    assert res["ok"] is False
+    assert "TOPSECRET" not in str(res)
+
+
+@posix_only
+def test_pin_run_never_writes_through_symlink(run_root):
+    # Regression: pin_run used write_text on run_dir/.pinned, which followed a planted link
+    run_dir = run_root / "run_a"
+    run_dir.mkdir()
+    victim = run_root.parent / "victim.txt"
+    victim.write_text("keep")
+    (run_dir / ".pinned").symlink_to(victim)
+    res = retention.pin_run("run_a")
+    assert res["ok"] is False
+    assert victim.read_text() == "keep"
+
+
+@posix_only
+def test_get_run_artifacts_skips_symlinks(run_root):
+    # Regression: get_run_artifacts listed through a symlinked run/ dir (names and sizes of
+    # files outside the run)
+    run_dir = run_root / "run_a"
+    _write_record(run_dir)
+    (run_dir / "openstudio.log").write_text("ok")
+    outside = run_root.parent / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("x")
+    (run_dir / "run").symlink_to(outside, target_is_directory=True)
+    res = sim_ops.get_run_artifacts("run_a")
+    assert [a["name"] for a in res["artifacts"]] == ["openstudio.log"]
+
+
+@posix_only
+def test_bundle_zip_refuses_symlinked_reports_dir(tmp_path):
+    # Regression: the signed bundle download zipped a symlinked reports/ dir, i.e. files
+    # outside the run
+    import zipfile
+
+    from mcp_server.skills.file_transfer import routes
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.html").write_text("x")
+    run_dir = tmp_path / "run_a"
+    run_dir.mkdir()
+    (run_dir / "ok.txt").write_text("ok")
+    (run_dir / "reports").symlink_to(outside, target_is_directory=True)
+    response = routes._zip_bundle(run_dir)
+    with zipfile.ZipFile(response.path) as zf:
+        assert zf.namelist() == ["ok.txt"]
+
+
+@posix_only
+def test_copy_file_refuses_symlinks(run_root, monkeypatch):
+    # Regression: copy_file's copytree followed a planted link inside a run dir and copy2
+    # wrote through an existing destination symlink
+    monkeypatch.setattr("mcp_server.config.is_path_allowed", lambda *_a, **_k: True)
+    src = run_root / "run_a"
+    src.mkdir()
+    outside = run_root.parent / "secret.txt"
+    outside.write_text("secret")
+    (src / "stolen.txt").symlink_to(outside)
+    res = results_ops.copy_file(str(src), str(run_root / "exports"))
+    assert res["ok"] is False and res["error"] == "symlink_in_source"
+    victim = run_root.parent / "victim.txt"
+    victim.write_text("keep")
+    (run_root / "exports").mkdir(exist_ok=True)
+    (run_root / "exports" / "plain.txt").symlink_to(victim)
+    (src / "plain.txt").write_text("new")
+    res = results_ops.copy_file(str(src / "plain.txt"), str(run_root / "exports"))
+    assert res["ok"] is False and res["error"] == "symlink_refused"
+    assert victim.read_text() == "keep"
 
 
 @posix_only
@@ -255,3 +410,16 @@ def test_symlinked_record_is_not_loaded(run_root):
     assert sim_ops._load_run_record_from_disk("run_a") is None
     assert results_ops._run_status_from_record(run_dir) is None
     assert retention._record(run_dir) == {}
+
+
+@posix_only
+def test_launch_log_is_not_opened_through_symlink(tmp_path):
+    # Regression: _launch opened openstudio.log with a truncating, symlink-following mode
+    from mcp_server.util import open_nofollow_for_write
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep")
+    (tmp_path / "openstudio.log").symlink_to(victim)
+    with pytest.raises(OSError, match="symbolic link"):
+        open_nofollow_for_write(tmp_path / "openstudio.log")
+    assert victim.read_text() == "keep"

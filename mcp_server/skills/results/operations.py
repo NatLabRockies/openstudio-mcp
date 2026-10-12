@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.config import user_run_root
-from mcp_server.util import read_file_bounded, read_text_capped, resolve_run_dir, safe_read_text
+from mcp_server.util import (
+    read_file_bounded,
+    read_text_capped,
+    reject_escaping_symlinks,
+    resolve_run_dir,
+    safe_read_text,
+)
 
 MAX_ERR_READ_BYTES = 16 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
@@ -425,6 +431,8 @@ def extract_simulation_errors_op(run_id: str) -> dict[str, Any]:
     if not err_path.exists() and not err_path.is_symlink():
         return {"ok": False, "error": "no_err_file", "message": "No eplusout.err found"}
 
+    if not str(err_path.resolve()).startswith(str(run_dir.resolve()) + os.sep):
+        return {"ok": False, "error": "unreadable_err_file", "message": f"{err_path.name} resolves outside the run"}
     try:
         # Oversize (warning-flood) err files are parsed from the head and flagged instead of
         # being dropped; a symlink is refused.
@@ -591,7 +599,13 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     if full.is_dir():
+        # Run dirs are tenant-written: a planted link would make copytree copy its target
+        link_err = reject_escaping_symlinks(full)
+        if link_err:
+            return {"ok": False, "error": "symlink_in_source", "message": link_err}
         dest_path = dest_dir / full.name
+        if dest_path.is_symlink():
+            return {"ok": False, "error": "invalid_destination", "message": f"Destination is a symlink: {dest_path}"}
         if dest_path.exists():
             shutil.rmtree(str(dest_path))
         shutil.copytree(str(full), str(dest_path))
@@ -605,6 +619,8 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
         }
 
     dest_file = dest_dir / full.name
+    if full.is_symlink() or dest_file.is_symlink():
+        return {"ok": False, "error": "symlink_refused", "message": "Source or destination is a symlink"}
     shutil.copy2(str(full), str(dest_file))
     return {
         "ok": True,
