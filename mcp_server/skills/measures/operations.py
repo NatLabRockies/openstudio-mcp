@@ -570,19 +570,31 @@ def download_measure_archive(
             if not str(_p.resolve()).startswith(dest_resolved + os.sep):
                 return {"ok": False, "error": f"measure_name/archive escapes destination: {_p}"}
         archive_path.write_bytes(payload)
-        # Extract into a private temp dir and promote only on success: a capped or
-        # corrupt archive must never merge partial files into an existing measure dir,
-        # and nothing half-extracted may remain for a later download to pick up.
-        tmp_root = Path(tempfile.mkdtemp(prefix=".extract_", dir=destination_root))
+        # Extract into a private staging dir and promote by rename, never by writing
+        # into an existing tree: a failed archive leaves nothing behind, a re-download
+        # replaces the measure wholesale, and a rename cannot follow a symlink that a
+        # sandboxed measure planted inside its own dir (copytree would, as root).
+        staging = Path(tempfile.mkdtemp(prefix=".extract_", dir=destination_root))
+        staging.chmod(0o755)  # mkdtemp is 0700; the sandboxed CLI must read the measure
+        replaced = None
         try:
-            _safe_extract_zip(archive_path, tmp_root)
-            extract_root.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(tmp_root, extract_root, dirs_exist_ok=True)
+            _safe_extract_zip(archive_path, staging)
+            if extract_root.is_symlink() or extract_root.exists():
+                replaced = Path(tempfile.mkdtemp(prefix=".replaced_", dir=destination_root)) / extract_root.name
+                extract_root.rename(replaced)
+            try:
+                staging.rename(extract_root)
+            except OSError:
+                if replaced is not None:
+                    replaced.rename(extract_root)  # put the previous measure back
+                raise
         except Exception:
             archive_path.unlink(missing_ok=True)
             raise
         finally:
-            shutil.rmtree(tmp_root, ignore_errors=True)
+            shutil.rmtree(staging, ignore_errors=True)  # no-op after a successful rename
+            if replaced is not None:
+                shutil.rmtree(replaced.parent, ignore_errors=True)
 
         measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
         if not measures.get("ok"):
