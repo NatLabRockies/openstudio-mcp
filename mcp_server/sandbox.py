@@ -172,7 +172,8 @@ def build_env(work_dir: Path | str, *, redirect_tmp: bool = True) -> dict[str, s
 
 def wrap_cmd(cmd: list[str], work_dir: Path | str,
              extra_rw: tuple[str, ...] = (),
-             extra_ro: tuple[str, ...] = ()) -> list[str]:
+             extra_ro: tuple[str, ...] = (), *,
+             key: str | None = None) -> list[str]:
     """Wrap a subprocess argv to run under the privilege-dropping exec shim.
 
     Disabled → returns the command unchanged (today's behaviour). Enabled → runs
@@ -183,6 +184,7 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str,
     system roots, writable only `work_dir` + `extra_rw`) and — unless
     OSMCP_SANDBOX_NET=allow — denies outbound IP networking (seccomp).
 
+    key: explicit run owner for queued work; omitted for in-request execution.
     extra_rw: additional writable Landlock roots (e.g. a private TMPDIR off the
     bind mount for tools that need unlinked tempfiles).
     extra_ro: additional read-only Landlock roots (e.g. the caller's own
@@ -203,8 +205,8 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str,
         return list(cmd)
     # Per-tenant uid/gid: each remote caller drops to its own uid (private NPROC
     # budget + DAC isolation); the local single user keeps the base uid. Resolved
-    # here so it matches the chown prepare_workdir does for the same request.
-    uid, gid = sandbox_ids()
+    # here from the same explicit owner (or current caller) as prepare_workdir.
+    uid, gid = sandbox_ids(key)
     wrapped = [
         sys.executable, "-m", "mcp_server._sandbox_exec",
         "--uid", str(uid), "--gid", str(gid),
@@ -233,9 +235,10 @@ def wrap_cmd(cmd: list[str], work_dir: Path | str,
     return [*wrapped, "--", *cmd]
 
 
-def prepare_workdir(work_dir: Path | str) -> None:
+def prepare_workdir(work_dir: Path | str, *, key: str | None = None) -> None:
     """Hand the work dir to the sandbox account so the dropped process can write.
 
+    key selects the run owner for queued work; omitted means the current caller.
     No-op when confinement is off. The server is root, so it chowns the run dir
     (recursively) to the sandbox uid before exec; the root server still reads the
     outputs afterwards. Bind mounts that ignore ownership (e.g. Docker Desktop)
@@ -246,9 +249,9 @@ def prepare_workdir(work_dir: Path | str) -> None:
     if not enabled() or not (hasattr(os, "geteuid") and os.geteuid() == 0):
         return
     work = Path(work_dir)
-    # Per-tenant uid/gid (matches the shim's setuid for this same request) so the
+    # Per-tenant uid/gid (matches the shim's setuid for this owner) so the
     # dropped process owns its run dir and tenants are DAC-isolated from each other.
-    uid, gid = sandbox_ids()
+    uid, gid = sandbox_ids(key)
     # follow_symlinks=False (lchown): never let a symlink inside the dir redirect
     # the chown to a target outside it (symlink-traversal privilege issue).
     with contextlib.suppress(OSError):

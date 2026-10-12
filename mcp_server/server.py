@@ -6,6 +6,7 @@ from fastmcp import FastMCP
 
 from mcp_server.audit import AuditMiddleware
 from mcp_server.config import ENABLE_CODE_MODE
+from mcp_server.identity_guard import IdentityGuard
 from mcp_server.response_guard import ResponseSizeGuard
 from mcp_server.skills import register_all_skills
 from mcp_server.stdout_suppression import (
@@ -107,6 +108,8 @@ mcp = FastMCP(
 )
 
 register_all_skills(mcp)
+# Reject unusable principals before either tools or audit resolves their storage.
+mcp.add_middleware(IdentityGuard())
 mcp.add_middleware(AuditMiddleware())
 # Inner of the two (added later = closer to the tool): audit logs the small
 # replacement response, never the oversized original
