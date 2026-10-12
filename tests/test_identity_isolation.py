@@ -122,9 +122,11 @@ def test_symlinked_tenant_root_returns_error(target):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX symlink test")
-def test_signed_download_refuses_retargeted_tenant_root():
+@pytest.mark.parametrize("target", ["peer", "self"])
+def test_signed_download_refuses_retargeted_tenant_root(target):
     # Regression: the signed GET route runs outside IdentityGuard, so a tenant root
-    # refused after the URL was minted surfaced as HTTP 500 instead of a 403.
+    # refused after the URL was minted (peer symlink, or a loop that makes resolve()
+    # raise) surfaced as HTTP 500 instead of a 403.
     from mcp_server.config import RUN_ROOT
 
     with tempfile.TemporaryDirectory(prefix="root_guard_", dir=RUN_ROOT) as temp:
@@ -145,7 +147,8 @@ def test_signed_download_refuses_retargeted_tenant_root():
             dl = asyncio.run(run())
             assert dl["ok"] is True, dl
             (root / "alice").rename(root / "bob")
-            (root / "alice").symlink_to(root / "bob", target_is_directory=True)
+            (root / "alice").symlink_to(root / ("bob" if target == "peer" else "alice"),
+                                        target_is_directory=True)
             response = httpx.get(dl["download_url"], timeout=30)
             assert response.status_code == 403, response.text
             assert response.json() == {"ok": False, "error": "invalid user key: 'alice'"}

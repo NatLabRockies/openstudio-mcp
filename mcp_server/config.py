@@ -279,14 +279,12 @@ def _tenant_dir(base: Path, key: str) -> Path:
     if not key or key in (".", "..") or "/" in key or "\\" in key:
         raise InvalidUserKeyError(f"invalid user key: {key!r}")
     expected = base / key
-    try:
-        root = expected.resolve()
-    except (OSError, RuntimeError) as e:  # symlink loop (RuntimeError < 3.13, ELOOP after)
-        raise InvalidUserKeyError(f"invalid user key: {key!r}") from e
-    if root != expected:
+    # lstat first: a symlink loop makes resolve() raise on Python <3.13 and
+    # return the unresolved path on 3.13+, so neither outcome can be relied on.
+    if expected.is_symlink() or expected.resolve() != expected:
         raise InvalidUserKeyError(f"invalid user key: {key!r}")
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    expected.mkdir(parents=True, exist_ok=True)
+    return expected
 
 
 def run_root_for(key: str) -> Path:
