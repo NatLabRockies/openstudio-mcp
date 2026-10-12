@@ -1,11 +1,14 @@
 """Caller identity for multi-user isolation.
 
-Two keys, both safe to call from any tool body or off-request:
+Two keys, callable from any tool body or off-request:
 
   session_key() — per-connection. Keys ephemeral *model* state, so two AI
                   windows (even same user) never stomp each other's model.
   user_key()    — per-authenticated-user. Keys durable run dirs + path scope,
-                  so a user sees their own runs across sessions.
+                  so a user sees their own runs across sessions. Raises
+                  InvalidPrincipalError for an authenticated token with no
+                  usable principal; IdentityGuard turns that into an ok:false
+                  tool response before any tool body runs.
 
 stdio (single local user) and off-request callers (unit tests, atexit)
 collapse to "local", preserving today's single-user behavior unchanged.

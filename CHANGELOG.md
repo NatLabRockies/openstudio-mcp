@@ -5,8 +5,9 @@
 ### Security
 - Principal directory keys now preserve distinct identities, including case and punctuation,
   and reserve local storage names. Authenticated tokens with missing principals or FastMCP's
-  `unknown` sentinel are refused. Tenant run roots reject paths resolving outside their
-  direct directory, and queued simulations use their recorded owner's sandbox uid/gid.
+  `unknown` sentinel are refused and audited as `principal_rejected`. Tenant run and
+  measures roots reject paths resolving outside their direct directory, and queued
+  simulations use their recorded owner's sandbox uid/gid.
 - **Operator migration required:** changed principal keys move run and measure storage and
   change sandbox ownership; existing data is not migrated automatically. See
   [principal-key migration](docs/security-isolation.md#principal-key-migration) before upgrading.

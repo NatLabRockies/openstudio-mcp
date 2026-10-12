@@ -266,6 +266,24 @@ class InvalidUserKeyError(ValueError):
     """A user key aliases storage outside its own canonical directory."""
 
 
+def _tenant_dir(base: Path, key: str) -> Path:
+    """base/<key>, created if missing. `base` must already be resolved.
+
+    Refuses keys that are not a single path component, and refuses an existing
+    base/<key> that resolves anywhere else (a symlink planted there would let
+    is_path_allowed treat another tenant's directory, or any directory outside
+    `base`, as this tenant's own).
+    """
+    if not key or key in (".", "..") or "/" in key or "\\" in key:
+        raise InvalidUserKeyError(f"invalid user key: {key!r}")
+    expected = base / key
+    root = expected.resolve()
+    if root != expected:
+        raise InvalidUserKeyError(f"invalid user key: {key!r}")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def run_root_for(key: str) -> Path:
     """Run root for an EXPLICIT user key (no identity context needed).
 
@@ -275,14 +293,10 @@ def run_root_for(key: str) -> Path:
     RUN_ROOT, matching user_run_root().
     """
     from mcp_server.identity import LOCAL
-    if key != LOCAL and (not key or key in (".", "..") or "/" in key or "\\" in key):
-        raise InvalidUserKeyError(f"invalid user key: {key!r}")
-    expected = RUN_ROOT if key == LOCAL else RUN_ROOT / key
-    root = expected.resolve()
-    if key != LOCAL and (root.parent != RUN_ROOT or root != expected):
-        raise InvalidUserKeyError(f"invalid user key: {key!r}")
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    if key == LOCAL:
+        RUN_ROOT.mkdir(parents=True, exist_ok=True)
+        return RUN_ROOT
+    return _tenant_dir(RUN_ROOT, key)
 
 
 def pkgs_root_for(key: str) -> Path:
@@ -321,9 +335,7 @@ def user_measures_root() -> Path:
     See docs/security-isolation.md.
     """
     from mcp_server.identity import user_key
-    root = (MEASURES_DIR / user_key()).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    return _tenant_dir(MEASURES_DIR.resolve(), user_key())
 
 
 def user_custom_measures_dir() -> Path:

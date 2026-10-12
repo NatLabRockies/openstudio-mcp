@@ -107,8 +107,9 @@ else (reserved names such as `local`/`python_packages`/`uploads`, dot-only or
 empty values, characters needing substitution) becomes
 `<prefix>~<sha256>`. The mapping is injective — `a@x.com` and `a_x.com`
 never share a run root — and never yields `local`, which owns the whole
-`RUN_ROOT` in stdio mode only. `run_root_for` rejects keys that are not a
-direct child of `RUN_ROOT`, including paths or symlinks aliasing another tenant. Plain keys are lowercase-only (case-insensitive
+`RUN_ROOT` in stdio mode only. `run_root_for` and `user_measures_root` reject keys
+that are not a direct child of `RUN_ROOT` / `MEASURES_DIR`, including paths or
+symlinks aliasing another tenant. Plain keys are lowercase-only (case-insensitive
 filesystems) and must not look like a local run id (`*_<12 hex>`). Note: principals
 whose ids previously needed substitution (e.g. emails) now get a new hashed
 directory; their old `<sanitized>` dir is not migrated automatically. Remaining #170 items (signing-key placement,
@@ -124,8 +125,9 @@ local-run-shaped names now use `<prefix>~<full sha256>`. The fixed directory
 inventory is `config.LOCAL_RUN_DIR_NAMES`; `local` is additionally reserved.
 For example, `Alice` becomes
 `Alice~3bc51062973c458d5a6f2d8d64a023246354ad7e064b1e4e009ec8a0699a3043`.
-Tokens without a usable principal, including the literal `unknown`, are refused;
-issue replacement tokens with distinct principals before restoring access.
+Tokens without a usable principal, including the literal `unknown`, are refused
+(audited as `principal_rejected`); issue replacement tokens with distinct
+principals before restoring access.
 
 There is **no automatic migration**. A changed key leaves the old directory
 unreachable through the new identity, and quota accounting starts at the new

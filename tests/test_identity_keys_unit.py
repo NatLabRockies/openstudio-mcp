@@ -88,16 +88,30 @@ def test_fixed_local_directories_are_reserved():
     assert config.LOCAL_RUN_DIR_NAMES == RESERVED - {"local"}
 
 
+def test_user_measures_root_plain_keys(tmp_path, monkeypatch):
+    # Validates: every principal, local included, keeps its MEASURES_DIR/<key> layout.
+    monkeypatch.setattr(config, "MEASURES_DIR", tmp_path.resolve())
+    monkeypatch.setattr(identity, "user_key", lambda: "alice")
+    assert config.user_measures_root() == tmp_path.resolve() / "alice"
+    monkeypatch.setattr(identity, "user_key", lambda: "local")
+    assert config.user_measures_root() == tmp_path.resolve() / "local"
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink test")
+@pytest.mark.parametrize(("setting", "root_fn"), [
+    ("RUN_ROOT", config.user_run_root),
+    ("MEASURES_DIR", config.user_measures_root),
+])
 @pytest.mark.parametrize("target", ["outside", "peer"])
-def test_user_run_root_rejects_symlink_escape(tmp_path, monkeypatch, target):
-    # Regression: user_run_root followed tenant-root symlinks outside RUN_ROOT.
-    root = tmp_path / "runs"
+def test_tenant_root_rejects_symlink_escape(tmp_path, monkeypatch, setting, root_fn, target):
+    # Regression: tenant roots followed a symlink to another tenant or outside the base dir.
+    root = tmp_path / "base"
     root.mkdir()
     outside = tmp_path / "outside" if target == "outside" else root / "bob"
     outside.mkdir()
     (root / "alice").symlink_to(outside, target_is_directory=True)
-    monkeypatch.setattr(config, "RUN_ROOT", root.resolve())
+    monkeypatch.setattr(config, setting, root.resolve())
     monkeypatch.setattr(identity, "user_key", lambda: "alice")
     with pytest.raises(ValueError, match="invalid user key"):
-        config.user_run_root()
+        root_fn()
+    assert list(outside.iterdir()) == []

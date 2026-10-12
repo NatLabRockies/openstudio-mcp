@@ -19,10 +19,14 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(
 @pytest.mark.parametrize("audit", ["on", "off"])
 @pytest.mark.parametrize("auth", ["jwt", "token"])
 def test_unusable_principal_returns_error(auth, audit):
-    # Regression: JWTs without identity claims shared unknown's storage and privileges.
+    # Regression: JWTs without identity claims shared unknown's storage and privileges,
+    # and refusing them before AuditMiddleware ran left no audit trail of the attempt.
     from fastmcp.server.auth.providers.jwt import RSAKeyPair
 
-    env = {"MCP_AUTH": auth, "MCP_AUDIT": audit}
+    from mcp_server.config import RUN_ROOT
+
+    audit_path = RUN_ROOT / f"audit_{uuid.uuid4().hex[:8]}.jsonl"
+    env = {"MCP_AUTH": auth, "MCP_AUDIT": audit, "MCP_AUDIT_FILE": str(audit_path)}
     if auth == "jwt":
         import jwt
 
@@ -51,6 +55,14 @@ def test_unusable_principal_returns_error(auth, audit):
                     "error": "Authenticated token has no usable principal",
                 }
         asyncio.run(run())
+
+    if audit == "off":
+        assert not audit_path.exists()
+        return
+    lines = [json.loads(ln) for ln in audit_path.read_text().splitlines() if ln.strip()]
+    assert [(e["event"], e.get("tool"), e.get("error")) for e in lines] == [
+        ("principal_rejected", "create_example_osm", "Authenticated token has no usable principal"),
+    ], lines
 
 
 @pytest.mark.parametrize(("principal", "key"), [
