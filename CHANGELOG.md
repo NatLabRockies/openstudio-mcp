@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Security
+- Analysis tools (`openstudio_analysis_*`): a tenant-supplied OSA schema can no longer make the
+  server fetch remote `$ref`s (jsonschema's own urllib bypassed every URL gate); `schema_path`
+  must lie inside the caller's roots; `analysis_id`/`project_id` are fully URL-quoted so they
+  cannot traverse the server's path space with the operator token; `file_format` is limited to
+  `csv`/`rdata`; downloads check the output directory before fetching. Behaviour changes: a
+  bad `server_url` now returns `{"ok": false}` instead of raising through MCP;
+  `openstudio_analysis_test_server_config` no longer defaults to `http://localhost:8080` and
+  works again in HTTP mode; with `OPENSTUDIO_API_TOKEN` set but no `OPENSTUDIO_SERVER_URL`,
+  calls fail with an explicit message instead of silently sending no token; allowlist entries
+  are compared as origins (`osa` matches `osa:80`).
+
 ### Added
 - **`set_ground_temperatures`** (weather skill): applies an EPW header's `GROUND TEMPERATURES`
   record to the model's four `Site:GroundTemperature:*` objects. A gbXML translation sets none of

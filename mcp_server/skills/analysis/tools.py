@@ -387,7 +387,7 @@ def register(mcp):
     @mcp.tool(tags={"analysis"}, name="openstudio_analysis_test_server_config")
     def test_server_config_single_run_tool(
         upload_zip_path: str,
-        server_url: str | None = "http://localhost:8080",
+        server_url: str | None = None,
         output_dir: str | None = None,
         project_name: str = "OpenStudio Server Config Smoke Test",
         wait_timeout_seconds: int = 600,

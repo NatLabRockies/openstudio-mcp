@@ -3,6 +3,8 @@ import json
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from mcp_server.skills.analysis import operations
 
 FIXTURE_ANALYSIS_ZIP = Path(__file__).parent / "assets" / "analysis.zip"
@@ -1068,43 +1070,258 @@ def test_download_analysis_data_uses_content_disposition(monkeypatch, tmp_path):
 
 # --- SSRF / token / path hardening (#173) ---------------------------------
 
+_ANALYSIS_ENV = (
+    "MCP_TRANSPORT", "OPENSTUDIO_SERVER_URL", "OS_SERVER_URL", "OPENSTUDIO_API_TOKEN",
+    "OS_SERVER_API_TOKEN", "OSMCP_ANALYSIS_ALLOWED_HOSTS",
+)
 
-def test_server_url_rejects_non_http_schemes(monkeypatch):
-    import pytest
 
-    monkeypatch.delenv("OPENSTUDIO_SERVER_URL", raising=False)
-    for bad in ("file:///etc/passwd", "ftp://host/x", "gopher://h", "localhost:8080", "http://"):
-        with pytest.raises(ValueError):
-            operations._server_url(bad)
+def _stdio_env(monkeypatch):
+    """Single-user stdio mode with no server, token or allowlist configured."""
+    for var in _ANALYSIS_ENV:
+        monkeypatch.delenv(var, raising=False)
+
+
+def _http_tenant(monkeypatch, tmp_path) -> Path:
+    """Shared HTTP mode with the caller's run root at tmp_path/runs (no /tmp fallback)."""
+    from mcp_server import config
+
+    _stdio_env(monkeypatch)
+    root = (tmp_path / "runs").resolve()
+    root.mkdir()
+    monkeypatch.setattr(config, "RUN_ROOT", root)
+    monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+    return root
+
+
+def _never_called(req, timeout):
+    pytest.fail(f"urlopen must not be reached, got {req.full_url}")
+
+
+class _FakeResponse:
+    status = 200
+
+    def __init__(self, body: bytes = b"{}", headers: dict | None = None):
+        self._body = body
+        self.headers = headers or {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return None
+
+    def read(self):
+        return self._body
+
+
+def _local_http_server(record: list):
+    """A loopback HTTP server that records every request path; returns (server, port)."""
+    import http.server
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            record.append(self.path)
+            body = b'{"type": "object"}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, srv.server_port
+
+
+@pytest.mark.parametrize("bad", [
+    "file:///etc/passwd", "ftp://host/x", "gopher://h", "localhost:8080", "http://",
+    "http://osa:8080\t/x", "http://osa:80 80",
+])
+def test_server_url_rejects_non_http_or_malformed(monkeypatch, bad):
+    # Validates: only an absolute http(s) URL with no embedded whitespace ever reaches the socket
+    # layer (file:/ftp: would read or fetch; whitespace reaches http.client as InvalidURL)
+    _stdio_env(monkeypatch)
+    with pytest.raises(ValueError, match=r"absolute http|whitespace"):
+        operations._server_url(bad)
+
+
+def test_server_url_normalizes_trailing_slash(monkeypatch):
+    # Validates: a trailing slash never produces '//' in built endpoint URLs
+    _stdio_env(monkeypatch)
     assert operations._server_url("https://osa.example.com:8080/") == "https://osa.example.com:8080"
 
 
 def test_server_url_restricted_in_http_mode(monkeypatch):
-    import pytest
-
+    # Validates: on the shared server a caller-chosen server_url may only target the configured
+    # origin (scheme, host and port) or an allowlisted host (SSRF)
+    _stdio_env(monkeypatch)
     monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
     monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
-    monkeypatch.delenv("OSMCP_ANALYSIS_ALLOWED_HOSTS", raising=False)
     assert operations._server_url(None) == "http://osa:8080"
     assert operations._server_url("http://osa:8080/") == "http://osa:8080"
-    with pytest.raises(ValueError, match="not permitted"):
-        operations._server_url("http://169.254.169.254/latest")
-    monkeypatch.setenv("OSMCP_ANALYSIS_ALLOWED_HOSTS", "other:9000")
-    assert operations._server_url("http://other:9000") == "http://other:9000"
+    for other in ("http://169.254.169.254/latest", "http://osa:8081", "https://osa:8080"):
+        with pytest.raises(ValueError, match="not permitted"):
+            operations._server_url(other)
 
 
-def test_api_token_only_sent_to_configured_server(monkeypatch):
+@pytest.mark.parametrize(("allowed", "url", "ok"), [
+    ("other:9000", "http://other:9000", True),
+    ("other:9000", "http://other:9001", False),
+    ("other", "http://other:9000", True),
+    ("other", "https://other", True),
+    ("https://other:9000", "https://other:9000", True),
+    ("https://other:9000", "http://other:9000", False),
+    (" Other:9000 ,x", "http://other:9000", True),
+])
+def test_allowed_hosts_match_by_origin(monkeypatch, allowed, url, ok):
+    # Regression: the allowlist compared raw netloc strings, so equivalent origins were rejected
+    # and an entry written with a scheme never matched anything
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+    monkeypatch.setenv("OSMCP_ANALYSIS_ALLOWED_HOSTS", allowed)
+    if ok:
+        assert operations._server_url(url) == url
+    else:
+        with pytest.raises(ValueError, match="not permitted"):
+            operations._server_url(url)
+
+
+def test_configured_origin_matches_equivalent_forms(monkeypatch):
+    # Regression: 'osa' vs 'osa:80' never matched, and a trailing space in OPENSTUDIO_SERVER_URL
+    # rejected every call on the shared server
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:80 ")
+    assert operations._server_url(None) == "http://osa:80"
+    assert operations._server_url("http://osa") == "http://osa"
+
+
+def test_api_token_only_sent_to_configured_origin(monkeypatch):
+    # Validates: the operator bearer token never leaves the configured origin (host, port, scheme)
+    _stdio_env(monkeypatch)
     monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
     monkeypatch.setenv("OPENSTUDIO_API_TOKEN", "secret")
     assert operations._auth_headers("http://osa:8080") == {"Authorization": "Bearer secret"}
+    assert operations._auth_headers("http://osa:8080/") == {"Authorization": "Bearer secret"}
     assert operations._auth_headers("http://evil:8080") == {}
+    assert operations._auth_headers("http://osa:8081") == {}
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "https://osa.example")
+    assert operations._auth_headers("http://osa.example") == {}
+    assert operations._auth_headers("https://osa.example:443") == {"Authorization": "Bearer secret"}
+
+
+def test_stdio_token_without_configured_server_is_refused(monkeypatch):
+    # Regression: with OPENSTUDIO_API_TOKEN set but no OPENSTUDIO_SERVER_URL the token was silently
+    # withheld from the caller-supplied URL and every request came back 401 with no hint
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv("OPENSTUDIO_API_TOKEN", "secret")
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    res = operations.get_analysis_status("x", server_url="http://osa:8080")
+    assert res["ok"] is False
+    assert "set OPENSTUDIO_SERVER_URL" in res["error"], res
+
+
+def _submit_with_bad_url(tmp_path):
+    osa_path = tmp_path / "osa.json"
+    operations.create_osa_json(str(osa_path), "Rule Five", seed="./seed.osm", weather_file="./w.epw")
+    return operations.submit_analysis(project_id="p", osa_json_path=str(osa_path), server_url="file:///x#")
+
+
+@pytest.mark.parametrize("call", [
+    lambda _t: operations.check_server_health("file:///x#"),
+    lambda _t: operations.get_analysis_status("a", server_url="file:///x#"),
+    lambda _t: operations.start_analysis("a", server_url="file:///x#"),
+    lambda t: operations.download_analysis_data("a", output_dir=str(t), server_url="file:///x#"),
+    lambda _t: operations.get_analysis_results_json("a", server_url="file:///x#"),
+    lambda _t: operations.wait_for_analysis(
+        "a", server_url="file:///x#", poll_interval_seconds=1, timeout_seconds=1,
+    ),
+    lambda t: operations.test_server_config_single_run(str(t / "pkg.zip"), server_url="file:///x#"),
+    _submit_with_bad_url,
+])
+def test_bad_server_url_returns_error_not_exception(monkeypatch, tmp_path, call):
+    # Regression: _server_url raised ValueError outside any handler in six entry points, so a bad
+    # server_url escaped through MCP as a raw error instead of {"ok": false}
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    res = call(tmp_path)
+    assert res["ok"] is False
+    assert "absolute http(s)" in res["error"], res
+
+
+def test_request_turns_invalid_url_into_error(monkeypatch):
+    # Regression: http.client.InvalidURL is not a URLError, so a URL the stdlib refuses at the
+    # socket layer escaped _request_json as a raw exception
+    from http.client import InvalidURL
+
+    _stdio_env(monkeypatch)
+
+    def raise_invalid(req, timeout):
+        raise InvalidURL("nonnumeric port: 'x'")
+
+    monkeypatch.setattr(operations, "urlopen", raise_invalid)
+    res = operations.get_analysis_status("a", server_url="http://osa:8080")
+    assert res["ok"] is False
+    assert "nonnumeric port" in res["error"], res
+
+
+_EVIL_ID = "../../admin/secret?"
+_QUOTED_ID = "..%2F..%2Fadmin%2Fsecret%3F"
+
+
+@pytest.mark.parametrize(("call", "expected_path"), [
+    (lambda: operations.get_analysis_status(_EVIL_ID), f"/analyses/{_QUOTED_ID}/status.json"),
+    (lambda: operations.get_analysis_results_json(_EVIL_ID), f"/analyses/{_QUOTED_ID}/analysis_data.json"),
+    (lambda: operations.start_analysis(_EVIL_ID), f"/analyses/{_QUOTED_ID}/action.json"),
+])
+def test_path_segments_are_fully_quoted(monkeypatch, call, expected_path):
+    # Regression: quote() keeps '/', so analysis_id='../../admin/secret?' sent
+    # GET /analyses/../../admin/secret%3F/status.json with the operator token attached
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
+    seen = []
+
+    def fake(req, timeout):
+        seen.append(req.full_url)
+        return _FakeResponse(b'{"analysis": {"status": "completed"}}')
+
+    monkeypatch.setattr(operations, "urlopen", fake)
+    res = call()
+    assert res["ok"] is True, res
+    assert seen == ["http://osa:8080" + expected_path]
+
+
+@pytest.mark.parametrize("fmt", ["../../../../admin/users", "csv?x=1", "json", "CSV", ""])
+def test_download_rejects_unknown_file_format(monkeypatch, tmp_path, fmt):
+    # Regression: file_format was interpolated into the URL path, so '../../admin/users' fetched an
+    # arbitrary server path with the operator token and saved the body under the tenant's dir
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    res = operations.download_analysis_data(
+        "1", output_dir=str(tmp_path), server_url="http://osa:8080", file_format=fmt,
+    )
+    assert res == {"ok": False, "error": f"file_format must be one of csv, rdata; got {fmt!r}"}
+
+
+def test_download_gates_output_dir_before_request(monkeypatch, tmp_path):
+    # Regression: _download fetched and buffered the whole body before checking output_dir, so a
+    # disallowed directory still cost a full authenticated download
+    _http_tenant(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    res = operations.download_analysis_data("1", output_dir=str(tmp_path / "outside"))
+    assert res["ok"] is False
+    assert "not writable/allowed" in res["error"], res
 
 
 def test_urlopen_refuses_file_scheme(tmp_path):
+    # Validates: the module opener has no file:// handler, so a file URL can never read local files
     from urllib.error import URLError
     from urllib.request import Request
-
-    import pytest
 
     target = tmp_path / "x.txt"
     target.write_text("hi")
@@ -1113,15 +1330,18 @@ def test_urlopen_refuses_file_scheme(tmp_path):
 
 
 def test_urlopen_refuses_redirects():
-    import http.server
-    import threading
+    # Validates: a redirect is refused outright (a hostile server could bounce the bearer header
+    # to another host), with a message that names the refusal rather than a generic HTTPError
     from urllib.error import HTTPError
     from urllib.request import Request
 
-    import pytest
+    seen: list[str] = []
+    import http.server
+    import threading
 
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            seen.append(self.path)
             self.send_response(302)
             self.send_header("Location", "http://127.0.0.1:1/")
             self.end_headers()
@@ -1132,41 +1352,121 @@ def test_urlopen_refuses_redirects():
     srv = http.server.HTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        with pytest.raises(HTTPError):
+        with pytest.raises(HTTPError, match=r"redirect to http://127\.0\.0\.1:1/ refused"):
             operations.urlopen(Request(f"http://127.0.0.1:{srv.server_port}/"), timeout=2)
     finally:
         srv.shutdown()
+    assert seen == ["/"]
 
 
-def test_multipart_upload_rejects_disallowed_path(monkeypatch):
-    monkeypatch.setattr(operations, "_is_analysis_path_allowed", lambda *_a, **_k: False)
-    res = operations._multipart_upload("http://osa:8080", "/x", "/etc/passwd")
-    assert res["ok"] is False and "not allowed" in res["error"]
+@pytest.mark.parametrize("ref", ["http://127.0.0.1:{port}/meta-data/iam", "file:///etc/hostname"])
+def test_schema_remote_ref_is_never_fetched(monkeypatch, tmp_path, ref):
+    # Regression: jsonschema resolved a remote $ref in a tenant-supplied schema with its own urllib,
+    # an SSRF/file read that bypassed every URL and path gate in this module
+    root = _http_tenant(monkeypatch, tmp_path)
+    hits: list[str] = []
+    srv, port = _local_http_server(hits)
+    try:
+        schema = root / "evil_schema.json"
+        schema.write_text(json.dumps({"$ref": ref.format(port=port)}), encoding="utf-8")
+        osa = root / "x.json"
+        osa.write_text(
+            json.dumps({"analysis": {"name": "x", "problem": {"analysis_type": "single_run"}}}), encoding="utf-8",
+        )
+        res = operations.validate_osa_json(str(osa), schema_path=str(schema))
+    finally:
+        srv.shutdown()
+    assert res["ok"] is False
+    assert "remote or unresolvable $ref" in res["error"], res
+    assert hits == []
+    assert "hostname" not in json.dumps(res).replace("/etc/hostname", "")
+
+
+def test_schema_internal_refs_still_resolve(monkeypatch, tmp_path):
+    # Validates: refusing remote retrieval must not break '#/definitions/...' refs, which the
+    # shipped OSA schema relies on
+    _stdio_env(monkeypatch)
+    schema = tmp_path / "schema.json"
+    schema.write_text(json.dumps({
+        "definitions": {"a": {"type": "string"}},
+        "properties": {"analysis": {"$ref": "#/definitions/a"}},
+    }), encoding="utf-8")
+    osa = tmp_path / "x.json"
+    osa.write_text(json.dumps({"analysis": 1}), encoding="utf-8")
+    res = operations.validate_osa_json(str(osa), schema_path=str(schema))
+    assert res["schema_issues"] == ["$.analysis: 1 is not of type 'string'"]
+
+
+def test_schema_path_outside_tenant_root_refused(monkeypatch, tmp_path):
+    # Regression: a caller-supplied schema_path read any file on the server, and its content came
+    # back through the SchemaError message
+    root = _http_tenant(monkeypatch, tmp_path)
+    outside = tmp_path / "outside.json"
+    outside.write_text(json.dumps({"secret": "TOPSECRET", "type": "nope"}), encoding="utf-8")
+    osa = root / "x.json"
+    osa.write_text("{}", encoding="utf-8")
+    res = operations.validate_osa_json(str(osa), schema_path=str(outside))
+    assert res["ok"] is False
+    assert "Schema path is not allowed" in res["error"], res
+    assert "TOPSECRET" not in json.dumps(res)
+
+
+def test_static_workflow_extracts_under_tenant_root_in_http_mode(monkeypatch, tmp_path):
+    # Regression: the smoke test extracted packaged measures to the global tempdir, which the
+    # HTTP-mode path gate rejects, so openstudio_analysis_test_server_config was dead on the
+    # shared server ("Measure directory is not allowed: /tmp/openstudio_smoke_measures_...")
+    root = _http_tenant(monkeypatch, tmp_path)
+    pkg = root / "pkg.zip"
+    with zipfile.ZipFile(pkg, "w") as archive:
+        archive.writestr("measures/m1/measure.xml", _measure_xml("m1"))
+        archive.writestr("measures/m1/measure.rb", "class M1; end")
+    workflow = operations._build_static_workflow_from_package(
+        str(pkg), {"measure_files": ["measures/m1/measure.xml", "measures/m1/measure.rb"]},
+    )
+    assert [step["measure_definition_name"] for step in workflow] == ["m1"]
+    assert [p.name for p in root.iterdir()] == ["pkg.zip"], "extraction temp dir must be cleaned up"
+
+
+def test_smoke_test_requires_configured_server_url(monkeypatch, tmp_path):
+    # Regression: server_url defaulted to http://localhost:8080, which HTTP mode rejects and which
+    # stdio mode used even when OPENSTUDIO_SERVER_URL pointed somewhere else
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    res = operations.test_server_config_single_run(str(tmp_path / "pkg.zip"))
+    assert res["ok"] is False
+    assert "Missing server_url" in res["error"], res
+
+
+def test_multipart_upload_rejects_path_outside_tenant_root(monkeypatch, tmp_path):
+    # Regression: the upload file path was sent to the server without the tenant path gate, so any
+    # readable server file could be exfiltrated to the OpenStudio Server
+    _http_tenant(monkeypatch, tmp_path)
+    outside = tmp_path / "outside.zip"
+    outside.write_bytes(b"PK")
+    res = operations._multipart_upload("http://osa:8080", "/x", str(outside))
+    assert res["ok"] is False
+    assert "not allowed" in res["error"], res
 
 
 def test_tmp_fallback_disabled_in_http_mode(monkeypatch, tmp_path):
+    # Validates: /tmp is shared between tenants, so the stdio-only tempdir allowance is off on the
+    # shared server
+    _stdio_env(monkeypatch)
     monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
     assert operations._is_analysis_path_allowed((tmp_path / "f").resolve()) is False
 
 
-def test_api_token_not_sent_on_scheme_downgrade(monkeypatch):
-    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "https://osa.example")
-    monkeypatch.setenv("OPENSTUDIO_API_TOKEN", "secret")
-    assert operations._auth_headers("http://osa.example") == {}
-    assert operations._auth_headers("https://osa.example:443") == {"Authorization": "Bearer secret"}
-
-
-def test_measure_metadata_and_manifest_paths_gated(monkeypatch, tmp_path):
-    import pytest
-
-    monkeypatch.setattr(operations, "_is_analysis_path_allowed", lambda *_a, **_k: False)
+def test_measure_metadata_and_manifest_gated_by_tenant_root(monkeypatch, tmp_path):
+    # Regression: measure.xml reads and manifest writes accepted paths outside the tenant root
+    root = _http_tenant(monkeypatch, tmp_path)
     with pytest.raises(ValueError, match="not allowed"):
-        operations._read_measure_metadata(tmp_path)
-    seed = tmp_path / "s.osm"
-    seed.write_text("x")
-    monkeypatch.setattr(operations, "_is_analysis_path_allowed", lambda _p, **k: k.get("write") is not True)
-    monkeypatch.setattr("mcp_server.config.is_path_allowed", lambda *_a, **_k: True)
-    res = operations.preflight_seed_for_analysis_package(str(seed), manifest_path=str(tmp_path / "m" / "m.json"))
-    assert res["ok"] is False and "not writable/allowed" in res["error"]
+        operations._read_measure_metadata(tmp_path / "m")
+    seed = root / "s.osm"
+    seed.write_text("x", encoding="utf-8")
+    res = operations.preflight_seed_for_analysis_package(
+        str(seed), manifest_path=str(tmp_path / "m" / "m.json"),
+    )
+    assert res["ok"] is False
+    assert "not writable/allowed" in res["error"], res
     assert not (tmp_path / "m").exists()
