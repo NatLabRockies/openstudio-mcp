@@ -273,4 +273,3 @@ def test_queued_run_fails_after_server_restart():
         proc.wait(timeout=10)
     with http_server(env) as (url, _proc):
         asyncio.run(_after_restart(url, run_ids))
-

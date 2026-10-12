@@ -558,4 +558,3 @@ def test_retention_keeps_queued_run_only_while_this_process_queues_it(run_root):
         assert retention._is_active(run_dir) is False
     finally:
         sim_ops._RUNS.pop("run_a", None)
-
