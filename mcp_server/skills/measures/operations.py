@@ -9,9 +9,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import stat
 import subprocess
-import zipfile
+import tempfile
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urljoin, urlparse
@@ -36,12 +35,18 @@ from mcp_server.config import (
 )
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
 from mcp_server.model_manager import get_model, load_model
+from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
 from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
 from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_run_dir
 
 
+MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
+MAX_EXTRACT_BYTES = 500 * 1024 * 1024
+MAX_EXTRACT_ENTRIES = 10_000
+# HTTPError bodies from allowlisted hosts are only quoted in error messages; never slurp them.
+MAX_ERROR_BODY_BYTES = 64 * 1024
 # github.com archive/release URLs redirect to codeload / objects.githubusercontent.com,
 # so those must be allowed too or the post-redirect host check rejects GitHub downloads.
 MEASURE_DOWNLOAD_HOSTS = {
@@ -50,6 +55,9 @@ MEASURE_DOWNLOAD_HOSTS = {
     "codeload.github.com", "objects.githubusercontent.com",
 }
 BCL_SEARCH_HOST = "https://bcl.nlr.gov"
+# download_measure_archive stages under the destination root; discovery skips these only.
+_STAGING_PREFIX = ".extract_"
+_REPLACED_PREFIX = ".replaced_"
 MATCH_STOPWORDS = {"measure", "details"}
 
 
@@ -105,6 +113,9 @@ def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
         if depth > max_depth:
             dirnames[:] = []
             continue
+        # Download staging lives beside real measures; it must not be discoverable
+        # mid-promotion. Other hidden dirs stay searchable.
+        dirnames[:] = [d for d in dirnames if not d.startswith((_STAGING_PREFIX, _REPLACED_PREFIX))]
 
         p = Path(dirpath)
         if _is_measure_dir(p):
@@ -114,37 +125,13 @@ def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
     return found
 
 
-def _safe_extract_zip(zip_path: Path, output_dir: Path) -> list[Path]:
-    extracted: list[Path] = []
-    output_root = output_dir.resolve()
-    max_members = 10_000
-    max_uncompressed_bytes = 500 * 1024 * 1024  # 500 MiB
-
-    with zipfile.ZipFile(zip_path) as archive:
-        members = archive.infolist()
-        if len(members) > max_members:
-            raise ValueError(f"ZIP contains too many files ({len(members)} > {max_members})")
-
-        total = 0
-        for member in members:
-            # Reject symlink members. CPython's extractall writes them as regular files
-            # (it doesn't restore links), but reject explicitly so a link can never be
-            # materialized — on any platform/extractor — and later point outside output_root.
-            if stat.S_ISLNK(member.external_attr >> 16):
-                raise ValueError(f"ZIP member is a symlink (not allowed): {member.filename}")
-
-            total += int(getattr(member, "file_size", 0) or 0)
-            if total > max_uncompressed_bytes:
-                raise ValueError("ZIP uncompressed size is too large")
-
-            target = (output_root / member.filename).resolve()
-            if not (str(target).startswith(str(output_root) + os.sep) or target == output_root):
-                raise ValueError(f"ZIP member would extract outside destination: {member.filename}")
-
-        archive.extractall(output_root)
-        extracted = [(output_root / member.filename).resolve() for member in members]
-
-    return extracted
+def _safe_extract_zip(zip_path: Path, output_dir: Path) -> None:
+    """Extract with the shared guarded extractor (entry cap + streamed size cap + no symlinks)."""
+    err = guarded_extract(
+        zip_path, output_dir, max_uncompressed_bytes=MAX_EXTRACT_BYTES, max_entries=MAX_EXTRACT_ENTRIES,
+    )
+    if err:
+        raise ValueError(err)
 
 
 def _guess_download_name(url: str, fallback: str = "downloaded_measure.zip") -> str:
@@ -161,7 +148,13 @@ def _read_url(url: str, timeout_seconds: int) -> tuple[bytes, str]:
             raise ValueError(f"Redirected download host not allowed: {parsed.hostname}")
         headers = getattr(resp, "headers", {})
         content_type = headers.get("Content-Type", "") if headers else ""
-        return resp.read(), content_type
+        declared = headers.get("Content-Length") if headers else None
+        if declared and declared.isdigit() and int(declared) > MAX_DOWNLOAD_BYTES:
+            raise ValueError(f"Download exceeds {MAX_DOWNLOAD_BYTES} bytes")
+        payload = resp.read(MAX_DOWNLOAD_BYTES + 1)
+        if len(payload) > MAX_DOWNLOAD_BYTES:
+            raise ValueError(f"Download exceeds {MAX_DOWNLOAD_BYTES} bytes")
+        return payload, content_type
 
 
 def _looks_like_html(payload: bytes, content_type: str) -> bool:
@@ -373,7 +366,7 @@ def search_bcl_measures(
             "measures": ranked,
         }
     except HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
+        detail = e.read(MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
         return {"ok": False, "error": f"BCL search failed with HTTP {e.code}: {detail[:500]}"}
     except URLError as e:
         return {"ok": False, "error": f"Could not search BCL: {e.reason}"}
@@ -583,19 +576,43 @@ def download_measure_archive(
             if not str(_p.resolve()).startswith(dest_resolved + os.sep):
                 return {"ok": False, "error": f"measure_name/archive escapes destination: {_p}"}
         archive_path.write_bytes(payload)
-        extract_root.mkdir(parents=True, exist_ok=True)
-        _safe_extract_zip(archive_path, extract_root)
+        # Extract into a private staging dir and promote by rename, never by writing
+        # into an existing tree: a failed archive leaves nothing behind, a re-download
+        # replaces the measure wholesale, and a rename cannot follow a symlink that a
+        # sandboxed measure planted inside its own dir (copytree would, as root).
+        staging = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=destination_root))
+        staging.chmod(0o755)  # mkdtemp is 0700; the sandboxed CLI must read the measure
+        replaced = None
+        try:
+            _safe_extract_zip(archive_path, staging)
+            # Validate in staging: a well-formed zip with no measure in it must not
+            # replace (and so delete) the measure already at extract_root.
+            if not _iter_measure_dirs(staging, max_depth=4):
+                archive_path.unlink(missing_ok=True)
+                return {
+                    "ok": False,
+                    "error": "Downloaded archive did not contain a measure directory with measure.rb or measure.py.",
+                }
+            if extract_root.is_symlink() or extract_root.exists():
+                replaced = Path(tempfile.mkdtemp(prefix=_REPLACED_PREFIX, dir=destination_root)) / extract_root.name
+                extract_root.rename(replaced)
+            try:
+                staging.rename(extract_root)
+            except OSError:
+                if replaced is not None:
+                    replaced.rename(extract_root)  # put the previous measure back
+                raise
+        except Exception:
+            archive_path.unlink(missing_ok=True)
+            raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)  # no-op after a successful rename
+            if replaced is not None:
+                shutil.rmtree(replaced.parent, ignore_errors=True)
 
         measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
         if not measures.get("ok"):
             return measures
-        if measures.get("count", 0) == 0:
-            return {
-                "ok": False,
-                "error": "Downloaded archive did not contain a measure directory with measure.rb or measure.py.",
-                "archive_path": str(archive_path),
-                "extract_dir": str(extract_root),
-            }
         selected_measure = measures["measures"][0] if measures["measures"] else {}
         selected_measure_dir = selected_measure.get("measure_dir")
         return {
@@ -610,10 +627,8 @@ def download_measure_archive(
             "next": _measure_next_steps(selected_measure_dir),
             "measures": measures["measures"],
         }
-    except zipfile.BadZipFile:
-        return {"ok": False, "error": "Downloaded file is not a valid ZIP archive."}
     except HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
+        detail = e.read(MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
         return {"ok": False, "error": f"Download failed with HTTP {e.code}: {detail[:500]}"}
     except URLError as e:
         return {"ok": False, "error": f"Could not download measure archive: {e.reason}"}
