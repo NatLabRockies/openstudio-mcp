@@ -538,6 +538,39 @@ def test_download_replaces_existing_measure_wholesale(monkeypatch, request, tmp_
 
 
 
+def test_download_without_measure_keeps_existing_measure(monkeypatch, request, tmp_path):
+    # Regression: the previous measure was replaced before the new archive was checked for a
+    # measure, so a valid zip holding only a README deleted the tenant's measure
+    root = tmp_path / "measures"
+    (root / "m").mkdir(parents=True)
+    (root / "m" / "measure.rb").write_text("# keep\n", encoding="utf-8")
+    ops, root = _download_ops(monkeypatch, request, tmp_path, _zip(("README.md", "hi\n")))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res == {
+        "ok": False,
+        "error": "Downloaded archive did not contain a measure directory with measure.rb or measure.py.",
+    }
+    assert sorted(p.name for p in root.iterdir()) == ["m"], "no archive or staging dir may remain"
+    assert (root / "m" / "measure.rb").read_text(encoding="utf-8") == "# keep\n"
+
+
+def test_list_local_measures_skips_staging_dirs_only(monkeypatch, request, tmp_path):
+    # Regression: download staging dirs (.extract_*, .replaced_*) sit beside real measures and
+    # were returned by list_local_measures/find_measure while a promotion was in flight; other
+    # hidden dirs (a .cache checkout, a .private measure) must stay discoverable
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    monkeypatch.setattr(ops, "is_path_allowed", lambda *_a, **_k: True)
+    root = tmp_path / "measures"
+    for d in (".extract_ab12/m", ".replaced_cd34/m", "m2", ".private", ".cache/m4"):
+        (root / d).mkdir(parents=True)
+        (root / d / "measure.rb").write_text("# m\n", encoding="utf-8")
+    res = ops.list_local_measures(root_dir=str(root), max_depth=4)
+    assert res["ok"] is True, res
+    assert sorted(Path(m["measure_dir"]).name for m in res["measures"]) == [".private", "m2", "m4"]
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
 def test_download_promoted_dir_is_readable_by_sandbox(monkeypatch, request, tmp_path):
     # Regression: the staging dir comes from mkdtemp (0700, root-owned); promoting it as-is

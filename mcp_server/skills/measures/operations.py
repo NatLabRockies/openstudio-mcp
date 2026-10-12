@@ -55,6 +55,9 @@ MEASURE_DOWNLOAD_HOSTS = {
     "codeload.github.com", "objects.githubusercontent.com",
 }
 BCL_SEARCH_HOST = "https://bcl.nlr.gov"
+# download_measure_archive stages under the destination root; discovery skips these only.
+_STAGING_PREFIX = ".extract_"
+_REPLACED_PREFIX = ".replaced_"
 MATCH_STOPWORDS = {"measure", "details"}
 
 
@@ -110,6 +113,9 @@ def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
         if depth > max_depth:
             dirnames[:] = []
             continue
+        # Download staging lives beside real measures; it must not be discoverable
+        # mid-promotion. Other hidden dirs stay searchable.
+        dirnames[:] = [d for d in dirnames if not d.startswith((_STAGING_PREFIX, _REPLACED_PREFIX))]
 
         p = Path(dirpath)
         if _is_measure_dir(p):
@@ -574,13 +580,21 @@ def download_measure_archive(
         # into an existing tree: a failed archive leaves nothing behind, a re-download
         # replaces the measure wholesale, and a rename cannot follow a symlink that a
         # sandboxed measure planted inside its own dir (copytree would, as root).
-        staging = Path(tempfile.mkdtemp(prefix=".extract_", dir=destination_root))
+        staging = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=destination_root))
         staging.chmod(0o755)  # mkdtemp is 0700; the sandboxed CLI must read the measure
         replaced = None
         try:
             _safe_extract_zip(archive_path, staging)
+            # Validate in staging: a well-formed zip with no measure in it must not
+            # replace (and so delete) the measure already at extract_root.
+            if not _iter_measure_dirs(staging, max_depth=4):
+                archive_path.unlink(missing_ok=True)
+                return {
+                    "ok": False,
+                    "error": "Downloaded archive did not contain a measure directory with measure.rb or measure.py.",
+                }
             if extract_root.is_symlink() or extract_root.exists():
-                replaced = Path(tempfile.mkdtemp(prefix=".replaced_", dir=destination_root)) / extract_root.name
+                replaced = Path(tempfile.mkdtemp(prefix=_REPLACED_PREFIX, dir=destination_root)) / extract_root.name
                 extract_root.rename(replaced)
             try:
                 staging.rename(extract_root)
@@ -599,13 +613,6 @@ def download_measure_archive(
         measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
         if not measures.get("ok"):
             return measures
-        if measures.get("count", 0) == 0:
-            return {
-                "ok": False,
-                "error": "Downloaded archive did not contain a measure directory with measure.rb or measure.py.",
-                "archive_path": str(archive_path),
-                "extract_dir": str(extract_root),
-            }
         selected_measure = measures["measures"][0] if measures["measures"] else {}
         selected_measure_dir = selected_measure.get("measure_dir")
         return {
