@@ -37,8 +37,8 @@ async def upload_route(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "file_id mismatch"}, status_code=403)
     try:
         entry = operations._entry_dir(key, file_id)
-    except ValueError:
-        return JSONResponse({"ok": False, "error": "bad file_id"}, status_code=403)
+    except ValueError as e:  # bad file_id, or the tenant root was refused
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=403)
     if not (entry / "meta.json").exists():
         return JSONResponse({"ok": False, "error": "unknown or expired upload"}, status_code=404)
 

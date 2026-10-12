@@ -10,6 +10,14 @@
   before anything is written. A measure re-download now replaces the measure directory
   wholesale (promoted by rename from a staging dir, so a failed or measure-less archive leaves
   the existing measure untouched and nothing partial behind).
+- Principal directory keys now preserve distinct identities, including case and punctuation,
+  and reserve local storage names. Authenticated tokens with missing principals or FastMCP's
+  `unknown` sentinel are refused and audited as `principal_rejected`. Tenant run and
+  measures roots reject paths resolving outside their direct directory, and queued
+  simulations use their recorded owner's sandbox uid/gid.
+- **Operator migration required:** changed principal keys move run and measure storage and
+  change sandbox ownership; existing data is not migrated automatically. See
+  [principal-key migration](docs/security-isolation.md#principal-key-migration) before upgrading.
 
 ### Added
 - **`set_ground_temperatures`** (weather skill): applies an EPW header's `GROUND TEMPERATURES`
