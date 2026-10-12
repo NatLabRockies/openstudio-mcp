@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mcp_server.config import SKILLS_DIR
+from mcp_server.tool_policy import CODE_AUTHORING_TOOLS, tool_enabled
 
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -60,7 +61,18 @@ def list_skills_op() -> dict:
         description = fm.get("description", "")
         skills.append({"name": name, "description": description})
 
-    return {"ok": True, "skills": skills, "count": len(skills)}
+    out = {"ok": True, "skills": skills, "count": len(skills)}
+    # Skill guides name create_measure & co.; when the tool policy hides them (HTTP
+    # mode without OSMCP_ENABLE_CODE_TOOLS, issue #180) say so instead of letting the
+    # agent follow steps it cannot execute.
+    hidden = sorted(t for t in CODE_AUTHORING_TOOLS if not tool_enabled(t))
+    if hidden:
+        out["policy_note"] = (
+            "Measure authoring and plugin tools are disabled on this server by policy "
+            f"({', '.join(hidden)}); skill steps that call them cannot be followed here. "
+            "Use bundled or BCL measures with apply_measure instead."
+        )
+    return out
 
 
 def get_skill_op(name: str) -> dict:

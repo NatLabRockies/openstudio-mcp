@@ -27,6 +27,9 @@ class ToolDescriptor:
 
 
 _DESCRIPTORS: dict[str, ToolDescriptor] = {}
+# Every tool name that passed through CollectingMCP.tool, hidden ones included:
+# the roster the exposure policy is validated against (tool_policy.validate_policy).
+_SEEN: set[str] = set()
 
 
 def descriptors() -> dict[str, ToolDescriptor]:
@@ -34,9 +37,15 @@ def descriptors() -> dict[str, ToolDescriptor]:
     return dict(_DESCRIPTORS)
 
 
+def seen_names() -> set[str]:
+    """All tool names offered for registration in the last full registration, hidden or not."""
+    return set(_SEEN)
+
+
 def reset_descriptors() -> None:
     """Clear the registry — called at the start of each full registration."""
     _DESCRIPTORS.clear()
+    _SEEN.clear()
 
 
 def ensure_collected() -> None:
@@ -80,6 +89,7 @@ class CollectingMCP:
 
         def decorator(fn):
             tool_name = name or fn.__name__
+            _SEEN.add(tool_name)
             if not tool_enabled(tool_name):
                 logger.info("Tool hidden by policy: %s", tool_name)
                 return fn

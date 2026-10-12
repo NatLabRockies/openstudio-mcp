@@ -498,11 +498,32 @@ HTTP server limits what an agent can be steered into:
 
 | Variable | Effect |
 |---|---|
-| `OSMCP_ENABLE_CODE_TOOLS` | In HTTP mode `create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin` and `install_plugin_packages` are hidden unless this is `true`. |
-| `OSMCP_TOOLS_ALLOW` | Comma list; when set, only these tools are registered (any transport). |
-| `OSMCP_TOOLS_DENY` | Comma list of tools to hide (any transport). |
-| `OSMCP_ALLOW_UNSANDBOXED` | The HTTP server refuses to start unless the full Landlock+seccomp tier is configured (`OSMCP_SANDBOX=auto`, `OSMCP_SANDBOX_NET=deny`, Linux); the exec shim still fails closed per subprocess if the kernel backend is unavailable; `true` overrides (logged). |
+| `OSMCP_ENABLE_CODE_TOOLS` | In HTTP mode `create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin` and `install_plugin_packages` are hidden unless this is `true`. The server instructions and `list_skills` then say that measure authoring is disabled instead of telling the agent to call them. |
+| `OSMCP_TOOLS_ALLOW` | Comma list; when set, only these tools are registered (any transport). Listing a code-authoring tool here does not imply `OSMCP_ENABLE_CODE_TOOLS`. |
+| `OSMCP_TOOLS_DENY` | Comma list of tools to hide (any transport). A tool in both lists is hidden (deny wins). |
+| `OSMCP_ALLOW_UNSANDBOXED` | The HTTP server refuses to start (exit status 3) unless the full tier is configured: `OSMCP_SANDBOX=auto` (or `full`/`landlock`), `OSMCP_SANDBOX_NET=deny`, on Linux. `true` overrides, with a logged warning. |
+
+Policy entries are matched case-insensitively against the registered roster.
+An entry that names no tool, or an `OSMCP_TOOLS_ALLOW` that is set but empty,
+refuses startup with exit status 3 and a message naming the entry, so a typo
+cannot silently expose a tool. With `OSMCP_CODE_MODE=1` the synthetic
+`search`, `get_schema` and `execute` tools are part of the roster and follow
+the same policy; hiding `execute` is refused because every tool is called
+through it.
+
+What the gate checks and what it does not: `OSMCP_ALLOW_UNSANDBOXED` gates on
+the *configured* tier. At run time the exec shim (`mcp_server/_sandbox_exec.py`)
+refuses to start a subprocess on Linux when Landlock or seccomp is requested but
+the kernel lacks it. On macOS and Windows there is no shim: subprocesses run
+unwrapped with only environment stripping, which is why the gate requires Linux
+and why the override is a real acceptance of risk there.
+
+Hiding the authoring tools is a steering control, not an execution boundary.
+`request_upload` still extracts measure zips, and `apply_measure`, `run_osw`
+and `test_measure` still run tenant-supplied code; the sandbox is what confines
+it. Do not add the execution tools to the hidden set expecting isolation.
 
 Tool output (object names, logs, skill text) is declared untrusted data in the
 server instructions. Tool policy is applied at registration, so hidden tools
-are absent from the roster.
+are absent from the roster, from `list_tools` and from the `recommend_tools`
+index.
