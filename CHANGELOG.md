@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Security
+- `guarded_extract` (measure downloads and file-transfer uploads) now accepts only stored or
+  deflated zip members. bzip2/lzma members are decompressed without an output bound by
+  Python's `zipfile`, so a 1.7 KB archive could drive the server past 4 GB of RAM before the
+  uncompressed-size cap applied. Oversize archives are also refused from their declared sizes
+  before anything is written, and a failed measure download no longer leaves partial files in
+  an existing measure directory.
+
 ### Added
 - **`set_ground_temperatures`** (weather skill): applies an EPW header's `GROUND TEMPERATURES`
   record to the model's four `Site:GroundTemperature:*` objects. A gbXML translation sets none of

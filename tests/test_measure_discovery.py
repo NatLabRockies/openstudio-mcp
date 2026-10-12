@@ -9,6 +9,7 @@ import types
 import zipfile
 from io import BytesIO
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -409,36 +410,56 @@ def test_custom_measures_isolated_across_http_sessions():
         asyncio.run(_run())
 
 
-def test_read_url_enforces_byte_cap(monkeypatch, request, tmp_path):
-    import io
+class _FakeResp(BytesIO):
+    """urlopen() stand-in: a byte body plus the headers/geturl surface _read_url touches."""
+    headers: ClassVar[dict] = {}
 
+    def geturl(self):
+        return "https://bcl.nlr.gov/x"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+class _DeclaredOversize(_FakeResp):
+    headers: ClassVar[dict] = {"Content-Length": "50"}
+
+    def read(self, *_a):
+        pytest.fail("a response declaring Content-Length over the cap must not be read at all")
+
+
+class _UnboundedReadTrap(_FakeResp):
+    def read(self, amt=None):
+        assert amt is not None, "_read_url must bound its read()"
+        return super().read(amt)
+
+
+@pytest.mark.parametrize(("resp", "ok"), [
+    (_UnboundedReadTrap(b"x" * 50), False),
+    (_DeclaredOversize(b"x" * 50), False),
+    (_UnboundedReadTrap(b"x" * 5), True),
+])
+def test_read_url_enforces_byte_cap(monkeypatch, request, tmp_path, resp, ok):
+    # Regression: BCL/GitHub bodies were read with an unbounded read(); the cap must refuse
+    # both a lying/absent Content-Length (streamed) and a declared oversize (never read).
     ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
-    monkeypatch.setattr(ops, "MAX_DOWNLOAD_BYTES", 10)
-
-    class Resp(io.BytesIO):
-        headers = {}
-
-        def geturl(self):
-            return "https://bcl.nlr.gov/x"
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_a):
-            return False
-
-    monkeypatch.setattr(ops, "urlopen", lambda *_a, **_k: Resp(b"x" * 50))
-    with pytest.raises(ValueError, match="exceeds"):
-        ops._read_url("https://bcl.nlr.gov/x", 5)
-    monkeypatch.setattr(ops, "urlopen", lambda *_a, **_k: Resp(b"x" * 5))
-    assert ops._read_url("https://bcl.nlr.gov/x", 5)[0] == b"x" * 5
+    monkeypatch.setattr(ops, "MAX_DOWNLOAD_BYTES", 10, raising=False)
+    monkeypatch.setattr(ops, "urlopen", lambda *_a, **_k: resp)
+    if ok:
+        assert ops._read_url("https://bcl.nlr.gov/x", 5)[0] == b"x" * 5
+    else:
+        with pytest.raises(ValueError, match="exceeds 10 bytes"):
+            ops._read_url("https://bcl.nlr.gov/x", 5)
 
 
-def test_safe_extract_zip_enforces_streamed_size_cap(monkeypatch, request, tmp_path):
-    import zipfile
-
+def test_safe_extract_zip_routes_through_guarded_cap(monkeypatch, request, tmp_path):
+    # Validates: measure extraction is wired to the shared guarded_extract with the module's
+    # MAX_EXTRACT_BYTES (the header here is honest; the streamed-vs-header case is archive.py's)
     ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
-    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100)
+    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100, raising=False)
     z = tmp_path / "big.zip"
     with zipfile.ZipFile(z, "w") as zf:
         zf.writestr("a.txt", "0" * 1000)
@@ -446,24 +467,72 @@ def test_safe_extract_zip_enforces_streamed_size_cap(monkeypatch, request, tmp_p
         ops._safe_extract_zip(z, tmp_path / "out")
 
 
-def test_download_cleans_partial_extraction_on_cap(monkeypatch, request, tmp_path):
-    import io
-    import zipfile
+def _bomb_zip(*members: tuple[str, str]) -> bytes:
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, content in members:
+            zf.writestr(name, content)
+    return buf.getvalue()
 
+
+def _download_ops(monkeypatch, request, tmp_path, payload: bytes):
     ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
     root = tmp_path / "measures"
-    root.mkdir()
-    monkeypatch.setattr(ops, "user_measures_root", lambda: root.resolve())
+    root.mkdir(exist_ok=True)
+    monkeypatch.setattr(ops, "user_measures_root", root.resolve)
     monkeypatch.setattr(ops, "is_path_allowed", lambda *_a, **_k: True)
-    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100)
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("m/measure.rb", "x")
-        zf.writestr("m/big.bin", "0" * 1000)
-    monkeypatch.setattr(ops, "_read_url", lambda *_a, **_k: (buf.getvalue(), "application/zip"))
+    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100, raising=False)
+    monkeypatch.setattr(ops, "_read_url", lambda *_a, **_k: (payload, "application/zip"))
+    return ops, root
+
+
+def test_download_cleans_partial_extraction_on_cap(monkeypatch, request, tmp_path):
+    # Regression: a zip that trips the size cap left a half-extracted measure dir and the
+    # archive behind, which a later download could silently merge with
+    ops, root = _download_ops(monkeypatch, request, tmp_path,
+                              _bomb_zip(("m/measure.rb", "x"), ("m/big.bin", "0" * 1000)))
     res = ops.download_measure_archive(
         "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
     )
     assert res["ok"] is False
-    assert not (root / "m").exists()
-    assert not list(root.glob("*.zip"))
+    assert "expands beyond limit" in res["error"], res
+    assert sorted(p.name for p in root.iterdir()) == [], "no partial tree, archive or temp dir may remain"
+
+
+def test_download_failure_leaves_existing_measure_untouched(monkeypatch, request, tmp_path):
+    # Regression: re-downloading into an existing measure dir extracted straight into it, so a
+    # failed (capped) archive merged attacker files into the tenant's own measure
+    root = tmp_path / "measures"
+    (root / "m").mkdir(parents=True)
+    (root / "m" / "measure.rb").write_text("# keep\n", encoding="utf-8")
+    ops, root = _download_ops(monkeypatch, request, tmp_path,
+                              _bomb_zip(("m/attacker_partial.rb", "x"), ("m/big.bin", "0" * 1000)))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res["ok"] is False
+    assert "expands beyond limit" in res["error"], res
+    assert sorted(p.name for p in root.iterdir()) == ["m"], "no archive or temp dir may remain"
+    assert sorted(p.name for p in (root / "m").iterdir()) == ["measure.rb"]
+    assert (root / "m" / "measure.rb").read_text(encoding="utf-8") == "# keep\n"
+
+
+def test_download_http_error_body_read_is_bounded(monkeypatch, request, tmp_path):
+    # Regression: HTTPError bodies from allowlisted hosts were read with an unbounded read()
+    from urllib.error import HTTPError
+
+    class _Body:
+        def read(self, amt=None):
+            assert amt is not None and amt <= 65536, "HTTPError body read must be bounded"
+            return b"nope"
+
+    ops, root = _download_ops(monkeypatch, request, tmp_path, b"")
+
+    def _raise(*_a, **_k):
+        raise HTTPError("https://github.com/o/r/archive/x.zip", 500, "boom", {}, _Body())
+
+    monkeypatch.setattr(ops, "_read_url", _raise)
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res == {"ok": False, "error": "Download failed with HTTP 500: nope"}

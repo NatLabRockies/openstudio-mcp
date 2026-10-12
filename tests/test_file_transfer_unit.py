@@ -147,6 +147,47 @@ def test_archive_rejects_zip_bomb(tmp_path):
     assert err is not None and "bomb" in err.lower()
 
 
+@pytest.mark.parametrize(("method", "label"), [
+    (zipfile.ZIP_BZIP2, "bzip2"),
+    (zipfile.ZIP_LZMA, "lzma"),
+])
+def test_archive_rejects_unsupported_compression(tmp_path, method, label):
+    # Regression: ZipExtFile decompresses bzip2/lzma members with no output bound, so a
+    # 1.7 KB bzip2 archive drove RSS past 4 GB before the streamed cap could trip.
+    z = tmp_path / "codec.zip"
+    with zipfile.ZipFile(z, "w", method) as zf:
+        zf.writestr("m/measure.rb", "class M; end\n")
+    out = tmp_path / "out"
+    err = guarded_extract(z, out, max_uncompressed_bytes=_MB, max_entries=100)
+    assert err == (f"archive entry 'm/measure.rb' uses unsupported compression ({label}); "
+                   "only stored or deflated members are accepted")
+    assert not (out / "m").exists()
+
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED])
+def test_archive_accepts_stored_and_deflated(tmp_path, method):
+    # Validates: the compression allowlist still admits the two methods real BCL/GitHub zips use
+    z = tmp_path / "ok.zip"
+    with zipfile.ZipFile(z, "w", method) as zf:
+        zf.writestr("m/measure.rb", "class M; end\n")
+    out = tmp_path / "out"
+    err = guarded_extract(z, out, max_uncompressed_bytes=_MB, max_entries=100)
+    assert err is None
+    assert (out / "m" / "measure.rb").read_text() == "class M; end\n"
+
+
+def test_archive_rejects_declared_bomb_before_writing(tmp_path):
+    # Validates: the header-size precheck refuses an honest oversize archive before the
+    # extract dir is created, so nothing partial lands on disk
+    z = tmp_path / "declared.zip"
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("big.bin", b"\0" * (3 * _MB))
+    out = tmp_path / "out"
+    err = guarded_extract(z, out, max_uncompressed_bytes=_MB, max_entries=100)
+    assert err == f"archive expands beyond limit ({_MB} bytes) — possible zip bomb"
+    assert not out.exists()
+
+
 def test_archive_rejects_too_many_entries(tmp_path):
     # Validates: entry-count cap bounds inode/CPU blowups
     z = tmp_path / "many.zip"

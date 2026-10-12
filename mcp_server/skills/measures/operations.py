@@ -9,9 +9,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import stat
 import subprocess
-import zipfile
+import tempfile
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urljoin, urlparse
@@ -36,17 +35,20 @@ from mcp_server.config import (
 )
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
 from mcp_server.model_manager import get_model, load_model
+from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
 from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
 from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_run_dir
 
 
-# github.com archive/release URLs redirect to codeload / objects.githubusercontent.com,
-# so those must be allowed too or the post-redirect host check rejects GitHub downloads.
 MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 MAX_EXTRACT_BYTES = 500 * 1024 * 1024
 MAX_EXTRACT_ENTRIES = 10_000
+# HTTPError bodies from allowlisted hosts are only quoted in error messages; never slurp them.
+MAX_ERROR_BODY_BYTES = 64 * 1024
+# github.com archive/release URLs redirect to codeload / objects.githubusercontent.com,
+# so those must be allowed too or the post-redirect host check rejects GitHub downloads.
 MEASURE_DOWNLOAD_HOSTS = {
     "bcl.nrel.gov", "bcl.nlr.gov",
     "github.com", "raw.githubusercontent.com",
@@ -117,17 +119,13 @@ def _iter_measure_dirs(root: Path, max_depth: int) -> list[Path]:
     return found
 
 
-def _safe_extract_zip(zip_path: Path, output_dir: Path) -> list[Path]:
+def _safe_extract_zip(zip_path: Path, output_dir: Path) -> None:
     """Extract with the shared guarded extractor (entry cap + streamed size cap + no symlinks)."""
-    from mcp_server.skills.file_transfer.archive import guarded_extract
-
     err = guarded_extract(
         zip_path, output_dir, max_uncompressed_bytes=MAX_EXTRACT_BYTES, max_entries=MAX_EXTRACT_ENTRIES,
     )
     if err:
         raise ValueError(err)
-    root = output_dir.resolve()
-    return [p for p in root.rglob("*")]
 
 
 def _guess_download_name(url: str, fallback: str = "downloaded_measure.zip") -> str:
@@ -362,7 +360,7 @@ def search_bcl_measures(
             "measures": ranked,
         }
     except HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
+        detail = e.read(MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
         return {"ok": False, "error": f"BCL search failed with HTTP {e.code}: {detail[:500]}"}
     except URLError as e:
         return {"ok": False, "error": f"Could not search BCL: {e.reason}"}
@@ -572,16 +570,19 @@ def download_measure_archive(
             if not str(_p.resolve()).startswith(dest_resolved + os.sep):
                 return {"ok": False, "error": f"measure_name/archive escapes destination: {_p}"}
         archive_path.write_bytes(payload)
-        pre_existing = extract_root.exists()
-        extract_root.mkdir(parents=True, exist_ok=True)
+        # Extract into a private temp dir and promote only on success: a capped or
+        # corrupt archive must never merge partial files into an existing measure dir,
+        # and nothing half-extracted may remain for a later download to pick up.
+        tmp_root = Path(tempfile.mkdtemp(prefix=".extract_", dir=destination_root))
         try:
-            _safe_extract_zip(archive_path, extract_root)
-        except ValueError:
-            # Don't leave a half-extracted tree that a later download could merge with.
-            if not pre_existing:
-                shutil.rmtree(extract_root, ignore_errors=True)
+            _safe_extract_zip(archive_path, tmp_root)
+            extract_root.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(tmp_root, extract_root, dirs_exist_ok=True)
+        except Exception:
             archive_path.unlink(missing_ok=True)
             raise
+        finally:
+            shutil.rmtree(tmp_root, ignore_errors=True)
 
         measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
         if not measures.get("ok"):
@@ -607,10 +608,8 @@ def download_measure_archive(
             "next": _measure_next_steps(selected_measure_dir),
             "measures": measures["measures"],
         }
-    except zipfile.BadZipFile:
-        return {"ok": False, "error": "Downloaded file is not a valid ZIP archive."}
     except HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
+        detail = e.read(MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
         return {"ok": False, "error": f"Download failed with HTTP {e.code}: {detail[:500]}"}
     except URLError as e:
         return {"ok": False, "error": f"Could not download measure archive: {e.reason}"}
