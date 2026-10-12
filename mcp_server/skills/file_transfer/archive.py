@@ -15,6 +15,10 @@ from pathlib import Path
 from mcp_server.util import reject_escaping_symlinks
 
 _CHUNK = 1 << 20  # 1 MiB
+# ZipExtFile only bounds output for deflate (decompress(data, max_length)); bzip2 and lzma
+# members are decompressed whole per compressed chunk, so a ~2 KB member can expand to
+# gigabytes in RAM before the streamed cap below ever sees a byte. Refuse them outright.
+_ALLOWED_METHODS = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 
 
 def guarded_extract(
@@ -22,13 +26,14 @@ def guarded_extract(
 ) -> str | None:
     """Extract `zip_path` into `dest_dir`. Return an error string, or None on success.
 
-    Guards: entry-count cap, no absolute / `..`-escaping member paths, no symlink
-    members, and a REAL (streamed) uncompressed-size cap — the ZipInfo.file_size
-    header is attacker-controlled, so we also count bytes as we read.
+    Guards: entry-count cap, stored/deflated members only, no absolute /
+    `..`-escaping member paths, no symlink members, and a REAL (streamed)
+    uncompressed-size cap — the ZipInfo.file_size header is attacker-controlled,
+    so we also count bytes as we read (the header sum is only an early reject).
     """
     if not zipfile.is_zipfile(zip_path):
         return "not a valid zip archive"
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    over_limit = f"archive expands beyond limit ({max_uncompressed_bytes} bytes) — possible zip bomb"
     dest_root = dest_dir.resolve()
     total = 0
     try:
@@ -36,6 +41,9 @@ def guarded_extract(
             infos = zf.infolist()
             if len(infos) > max_entries:
                 return f"archive has too many entries ({len(infos)} > {max_entries})"
+            if sum(i.file_size for i in infos) > max_uncompressed_bytes:
+                return over_limit  # honest headers: refuse before creating anything
+            dest_dir.mkdir(parents=True, exist_ok=True)
             for info in infos:
                 name = info.filename
                 if name.startswith("/") or Path(name).is_absolute() or ".." in Path(name).parts:
@@ -44,6 +52,10 @@ def guarded_extract(
                 mode = (info.external_attr >> 16) & 0xFFFF
                 if stat.S_ISLNK(mode):
                     return f"archive contains a symlink (not allowed): {name!r}"
+                if info.compress_type not in _ALLOWED_METHODS:
+                    method = zipfile.compressor_names.get(info.compress_type, str(info.compress_type))
+                    return (f"archive entry {name!r} uses unsupported compression ({method}); "
+                            "only stored or deflated members are accepted")
                 target = (dest_root / name).resolve()
                 if target != dest_root and not str(target).startswith(str(dest_root) + os.sep):
                     return f"archive entry escapes extract dir: {name!r}"
@@ -58,8 +70,7 @@ def guarded_extract(
                             break
                         total += len(chunk)
                         if total > max_uncompressed_bytes:
-                            return (f"archive expands beyond limit "
-                                    f"({max_uncompressed_bytes} bytes) — possible zip bomb")
+                            return over_limit
                         dst.write(chunk)
     except (zipfile.BadZipFile, OSError) as e:
         return f"failed to extract archive: {e}"
