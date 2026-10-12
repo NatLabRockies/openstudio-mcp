@@ -1591,30 +1591,60 @@ def _resolve_package_weather(package_dir: Path, weather_file: str | None) -> Pat
     return candidates[0].resolve() if candidates else None
 
 
-def _write_support_zip(package_dir: Path, output_zip_path: Path) -> None:
+def _inside(path: Path, root: Path) -> bool:
+    resolved = path.resolve()
+    return resolved == root or str(resolved).startswith(str(root) + os.sep)
+
+
+def _write_support_zip(package_dir: Path, output_zip_path: Path) -> str | None:
+    """Zip the package roots. Returns an error string instead of following a symlink.
+
+    archive.write() follows symlinks, so a member planted as a link into another tenant's
+    root would be copied into the zip as a regular file (and pass every later zip check).
+    """
+    package_root = package_dir.resolve()
     output_zip_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for root in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
             root_dir = package_dir / root
             if not root_dir.exists():
                 continue
+            if root_dir.is_symlink():
+                return f"package member is a symlink (not allowed): {root}"
             for path in sorted(root_dir.rglob("*")):
                 arcname = path.relative_to(package_dir).as_posix()
+                if path.is_symlink() or not _inside(path, package_root):
+                    return f"package member is a symlink (not allowed): {arcname}"
                 if path.is_dir():
                     continue
                 archive.write(path, arcname)
+    return None
 
 
 def _ensure_foundational_measures_in_package(package_dir: Path) -> dict[str, Any]:
     copied: list[str] = []
     present: list[str] = []
     missing: list[str] = []
+    package_root = package_dir.resolve()
     target_root = package_dir / "measures"
+
+    def _refused(what: Path) -> dict[str, Any]:
+        # rmtree/copytree below would follow the link and delete/write another tenant's tree.
+        return {
+            "ok": False, "copied": copied, "present": present, "missing": missing,
+            "common_measures_dir": str(_common_measures_dir()),
+            "error": f"package measures path is a symlink or resolves outside the package (not allowed): {what}",
+        }
+
+    if target_root.is_symlink():
+        return _refused(target_root)
     target_root.mkdir(parents=True, exist_ok=True)
 
     for spec in FOUNDATIONAL_ANALYSIS_MEASURES:
         measure_name = str(spec["measure_name"])
         target = target_root / measure_name
+        if target.is_symlink() or not _inside(target, package_root):
+            return _refused(target)
         if target.is_dir() and (target / "measure.rb").is_file() and (target / "measure.xml").is_file():
             present.append(measure_name)
             continue
@@ -1689,7 +1719,15 @@ def prepare_analysis_package(
             "foundational_measures": foundational_measures,
         }
 
-    _write_support_zip(pkg, out)
+    zip_error = _write_support_zip(pkg, out)
+    if zip_error:
+        out.unlink(missing_ok=True)
+        return {
+            "ok": False,
+            "error": zip_error,
+            "preflight": preflight,
+            "foundational_measures": foundational_measures,
+        }
     validation = validate_analysis_package(str(out), require_seed_qaqc=True, require_foundational_measures=True)
     return {
         "ok": validation.get("ok", False),
@@ -2060,7 +2098,16 @@ def submit_analysis(
 
     upload = None
     if upload_zip_path:
-        upload = _multipart_upload(base, f"/analyses/{_seg(analysis_id)}/upload.json", upload_zip_path)
+        try:
+            upload_path = f"/analyses/{_seg(analysis_id)}/upload.json"
+        except ValueError as e:  # the server handed back an id that cannot form a path segment
+            return {
+                "ok": False,
+                "error": f"Analysis created but its id is unusable for upload: {e}",
+                "analysis_id": analysis_id,
+                "response": response,
+            }
+        upload = _multipart_upload(base, upload_path, upload_zip_path)
         if not upload.get("ok"):
             return {
                 "ok": False,

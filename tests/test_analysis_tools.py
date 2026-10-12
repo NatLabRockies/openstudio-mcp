@@ -1566,6 +1566,93 @@ def test_measure_xml_symlink_outside_tenant_refused(monkeypatch, tmp_path):
         operations._read_measure_metadata(root / "m")
 
 
+def _package_layout(pkg: Path) -> None:
+    for sub in ("seeds", "weather", "scripts/data_point", "lib", "measures/SetWWR"):
+        (pkg / sub).mkdir(parents=True)
+    (pkg / "seeds" / "example.osm").write_bytes(b"OSM seed contents")
+    (pkg / "weather" / "example.epw").write_text("weather", encoding="utf-8")
+    (pkg / "scripts" / "data_point" / "initialization.sh").write_text("exit 0\n", encoding="utf-8")
+    (pkg / "measures" / "SetWWR" / "measure.rb").write_text("class SetWWR; end", encoding="utf-8")
+    (pkg / "measures" / "SetWWR" / "measure.xml").write_text(
+        _measure_xml("set_wwr", class_name="SetWWR"), encoding="utf-8",
+    )
+
+
+def _fake_ready_preflight(monkeypatch) -> None:
+    def preflight(**kwargs):
+        manifest = {
+            "ok": True, "ready": True, "run_id": "run_seed_preflight_123",
+            "seed_sha256": hashlib.sha256(b"OSM seed contents").hexdigest(),
+            "basic_qaqc": {"passed": True, "issues": []},
+        }
+        Path(kwargs["manifest_path"]).write_text(json.dumps(manifest), encoding="utf-8")
+        return manifest
+
+    monkeypatch.setattr(operations, "preflight_seed_for_analysis_package", preflight)
+
+
+def test_package_zip_never_follows_symlink_into_sibling_tenant(monkeypatch, tmp_path):
+    # Regression: archive.write() followed lib/stolen.txt -> bob's file, so another tenant's
+    # content landed in alice's package zip as a regular member (invisible to later zip checks)
+    root = _http_tenant(monkeypatch, tmp_path)
+    _fake_ready_preflight(monkeypatch)
+    common = tmp_path / "common_measures"
+    for name in ("view_model", "openstudio_results", "generic_qaqc"):
+        (common / name).mkdir(parents=True)
+        (common / name / "measure.rb").write_text(f"class {name}; end", encoding="utf-8")
+        (common / name / "measure.xml").write_text(_measure_xml(name), encoding="utf-8")
+    monkeypatch.setenv("COMMON_MEASURES_DIR", str(common))
+    secret = root.parent / "bob" / "secret.txt"
+    secret.write_text("BOBSECRET", encoding="utf-8")
+    pkg = root / "package"
+    _package_layout(pkg)
+    (pkg / "lib" / "stolen.txt").symlink_to(secret)
+    out = root / "analysis.zip"
+    res = operations.prepare_analysis_package(package_dir=str(pkg), output_zip_path=str(out))
+    assert res["ok"] is False
+    assert res["error"] == "package member is a symlink (not allowed): lib/stolen.txt"
+    assert not out.exists()
+
+
+def test_foundational_copy_refuses_symlinked_measures_dir(monkeypatch, tmp_path):
+    # Regression: package/measures planted as a symlink into bob's root made the foundational
+    # measure copy rmtree() and copytree() inside bob's directory
+    root = _http_tenant(monkeypatch, tmp_path)
+    _fake_ready_preflight(monkeypatch)
+    bob_measures = root.parent / "bob" / "measures"
+    (bob_measures / "view_model").mkdir(parents=True)
+    (bob_measures / "view_model" / "keep.rb").write_text("keep", encoding="utf-8")
+    pkg = root / "package"
+    _package_layout(pkg)
+    import shutil
+
+    shutil.rmtree(pkg / "measures")
+    (pkg / "measures").symlink_to(bob_measures, target_is_directory=True)
+    res = operations.prepare_analysis_package(package_dir=str(pkg), output_zip_path=str(root / "analysis.zip"))
+    assert res["ok"] is False
+    assert "symlink" in res["foundational_measures"]["error"], res
+    assert sorted(p.name for p in bob_measures.rglob("*")) == ["keep.rb", "view_model"]
+
+
+def test_submit_returns_error_for_unusable_server_analysis_id(monkeypatch, tmp_path):
+    # Regression: an analysis id of '..' returned by the server reached _seg() outside any
+    # handler when building the upload URL, so submit_analysis raised through MCP
+    _stdio_env(monkeypatch)
+    osa_path = tmp_path / "osa.json"
+    operations.create_osa_json(str(osa_path), "Upload Me", seed="./seed.osm", weather_file="./w.epw")
+    pkg_zip = tmp_path / "pkg.zip"
+    with zipfile.ZipFile(pkg_zip, "w") as archive:
+        archive.writestr("seeds/example.osm", "seed")
+    monkeypatch.setattr(operations, "validate_analysis_package", lambda *_a, **_k: {"ok": True})
+    monkeypatch.setattr(operations, "urlopen", lambda *_a, **_k: _FakeResponse(b'{"_id": ".."}'))
+    res = operations.submit_analysis(
+        project_id="p", osa_json_path=str(osa_path), server_url="http://osa:8080", upload_zip_path=str(pkg_zip),
+    )
+    assert res["ok"] is False
+    assert "invalid identifier '..'" in res["error"], res
+    assert res["analysis_id"] == ".."
+
+
 def test_measure_metadata_and_manifest_gated_by_tenant_root(monkeypatch, tmp_path):
     # Regression: measure.xml reads and manifest writes accepted paths outside the tenant root
     root = _http_tenant(monkeypatch, tmp_path)

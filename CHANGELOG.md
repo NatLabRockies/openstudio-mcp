@@ -7,7 +7,9 @@
   server fetch remote `$ref`s (jsonschema's own urllib bypassed every URL gate); `schema_path`
   must lie inside the caller's roots; `analysis_id`/`project_id` are fully URL-quoted so they
   cannot traverse the server's path space with the operator token; `file_format` is limited to
-  `csv`/`rdata`; downloads check the output directory before fetching. Behaviour changes: a
+  `csv`/`rdata`; downloads check the output directory before fetching and never write through
+  a symlink; `measure.xml`, package zip members and the package `measures/` dir are refused
+  when they are symlinks. Behaviour changes: a
   bad `server_url` now returns `{"ok": false}` instead of raising through MCP;
   `openstudio_analysis_test_server_config` no longer defaults to `http://localhost:8080` and
   works again in HTTP mode; with `OPENSTUDIO_API_TOKEN` set but no `OPENSTUDIO_SERVER_URL`,
