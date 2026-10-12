@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Security
+- **Breaking (`MCP_AUTH=jwt`):** `MCP_JWT_ISSUER` and `MCP_JWT_AUDIENCE` are now required; the
+  server refuses to start without both, naming the missing variable. Without them any token
+  signed by the same IdP for another service was accepted. `MCP_JWT_ALLOW_UNSCOPED=true` is
+  the explicit opt-out (logged, not recommended). A plain-`http` `MCP_JWT_VERIFY_URL` to a
+  non-loopback host logs a warning at startup, since the bearer token is sent to it. (#172)
 - Analysis tools (`openstudio_analysis_*`): a tenant-supplied OSA schema can no longer make the
   server fetch remote `$ref`s (jsonschema's own urllib bypassed every URL gate); `schema_path`
   must lie inside the caller's roots; `analysis_id`/`project_id` are fully URL-quoted so they
