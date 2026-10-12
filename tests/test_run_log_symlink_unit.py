@@ -549,6 +549,11 @@ def test_retention_keeps_queued_run_only_while_this_process_queues_it(run_root):
     sim_ops._RUNS["run_a"] = rec
     try:
         assert retention._is_active(run_dir) is True
+        # Regression (Codex review): the dispatcher sets memory to "running" before it
+        # persists, so disk still says "queued" for a run that has just launched; that
+        # window must not make the dir reclaimable.
+        rec.status = "running"
+        assert retention._is_active(run_dir) is True
         rec.status = "failed"
         assert retention._is_active(run_dir) is False
     finally:
