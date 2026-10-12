@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import os
 import re
 import shutil
 import sqlite3
@@ -10,7 +11,16 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.config import user_run_root
-from mcp_server.util import resolve_run_dir, safe_read_text  # resolve_run_dir still used by extract_* ops
+from mcp_server.util import (
+    read_file_bounded,
+    read_text_capped,
+    reject_escaping_symlinks,
+    resolve_run_dir,
+    safe_read_text,
+)
+
+MAX_ERR_READ_BYTES = 16 * 1024 * 1024
+MAX_RECORD_BYTES = 64 * 1024
 
 
 def _run_status_from_record(run_dir: Path) -> str | None:
@@ -19,23 +29,34 @@ def _run_status_from_record(run_dir: Path) -> str | None:
     None for dirs without a readable record (legacy or externally seeded runs)
     — callers then extract whatever result files exist, as before.
     """
-    try:
-        return json.loads((run_dir / "run_record.json").read_text()).get("status")
-    except (OSError, json.JSONDecodeError, AttributeError):
+    try:  # never through a symlink: the record sits in the tenant-writable run dir
+        raw = read_file_bounded(run_dir / "run_record.json", MAX_RECORD_BYTES)
+        return json.loads(raw.decode("utf-8", errors="replace")).get("status")
+    except (OSError, ValueError, AttributeError):
         return None
 
 
 def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Path | None:
-    """Find the first existing file from a list of relative path candidates."""
+    """First result file from the candidates: a regular file inside run_dir, never a symlink.
+
+    Result files are written by the tenant's sandboxed run, so a planted symlink (or a
+    symlinked directory the rglob fallback would descend) must not lead sqlite3.connect or
+    the HTML reader outside the run.
+    """
+    root = run_dir.resolve()
+
+    def _regular_inside(p: Path) -> bool:
+        return not p.is_symlink() and p.is_file() and str(p.resolve()).startswith(str(root) + os.sep)
+
     for rel in rel_candidates:
         p = run_dir / rel
-        if p.exists():
+        if _regular_inside(p):
             return p
     # fallback: search a little
     for pat in ["eplusout.sql", "eplustbl.htm", "eplustbl.html"]:
-        hits = list(run_dir.rglob(pat))
-        if hits:
-            return hits[0]
+        for hit in run_dir.rglob(pat):
+            if _regular_inside(hit):
+                return hit
     return None
 
 
@@ -405,13 +426,21 @@ def extract_simulation_errors_op(run_id: str) -> dict[str, Any]:
         return {"ok": False, "error": "run_not_found", "message": f"Unknown run_id: {run_id}"}
 
     err_path = run_dir / "run" / "eplusout.err"
-    if not err_path.exists():
+    if not err_path.exists() and not err_path.is_symlink():
         err_path = run_dir / "energyplus.err"
-    if not err_path.exists():
+    if not err_path.exists() and not err_path.is_symlink():
         return {"ok": False, "error": "no_err_file", "message": "No eplusout.err found"}
 
-    parsed = parse_err_file(err_path.read_text(errors="replace"))
-    return {"ok": True, "run_id": run_id, "path": str(err_path), **parsed}
+    if not str(err_path.resolve()).startswith(str(run_dir.resolve()) + os.sep):
+        return {"ok": False, "error": "unreadable_err_file", "message": f"{err_path.name} resolves outside the run"}
+    try:
+        # Oversize (warning-flood) err files are parsed from the head and flagged instead of
+        # being dropped; a symlink is refused.
+        text, truncated = read_text_capped(err_path, MAX_ERR_READ_BYTES)
+    except (ValueError, OSError) as e:
+        return {"ok": False, "error": "unreadable_err_file", "message": str(e)}
+    parsed = parse_err_file(text)
+    return {"ok": True, "run_id": run_id, "path": str(err_path), "truncated": truncated, **parsed}
 
 
 def list_output_variables_op(run_id: str) -> dict[str, Any]:
@@ -570,7 +599,13 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     if full.is_dir():
+        # Run dirs are tenant-written: a planted link would make copytree copy its target
+        link_err = reject_escaping_symlinks(full)
+        if link_err:
+            return {"ok": False, "error": "symlink_in_source", "message": link_err}
         dest_path = dest_dir / full.name
+        if dest_path.is_symlink():
+            return {"ok": False, "error": "invalid_destination", "message": f"Destination is a symlink: {dest_path}"}
         if dest_path.exists():
             shutil.rmtree(str(dest_path))
         shutil.copytree(str(full), str(dest_path))
@@ -584,6 +619,8 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
         }
 
     dest_file = dest_dir / full.name
+    if full.is_symlink() or dest_file.is_symlink():
+        return {"ok": False, "error": "symlink_refused", "message": "Source or destination is a symlink"}
     shutil.copy2(str(full), str(dest_file))
     return {
         "ok": True,

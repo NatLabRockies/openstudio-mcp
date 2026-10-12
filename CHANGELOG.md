@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Security
+- Run directories and `run_record.json` are written by the tenant's sandboxed process and are
+  now treated as untrusted: run logs, `eplusout.err`, `out.osw`, result files (`eplusout.sql`,
+  `eplustbl.htm*`) and the record itself are read without following symlinks (`get_run_logs`
+  returns `ok: false` on a refused log instead of empty text); the persisted `run_dir`,
+  `osw_path` and `pid` are no longer trusted (a run's pid is only kept when that process runs
+  in the run dir, so `cancel_run` cannot be aimed at another process); the record is written
+  atomically so a planted symlink is replaced, not followed. Oversize err files are parsed
+  from the head and flagged `truncated` instead of silently dropping the error summary.
 - Analysis tools (`openstudio_analysis_*`): a tenant-supplied OSA schema can no longer make the
   server fetch remote `$ref`s (jsonschema's own urllib bypassed every URL gate); `schema_path`
   must lie inside the caller's roots; `analysis_id`/`project_id` are fully URL-quoted so they

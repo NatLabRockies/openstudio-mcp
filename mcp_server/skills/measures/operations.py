@@ -39,7 +39,12 @@ from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
 from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
-from mcp_server.util import create_run_dir, reject_escaping_symlinks, resolve_run_dir
+from mcp_server.util import (
+    create_run_dir,
+    is_regular_file_inside,
+    reject_escaping_symlinks,
+    resolve_run_dir,
+)
 
 
 MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
@@ -854,16 +859,22 @@ def apply_measure(
             sql_src = sim_dir / "run" / "eplusout.sql"
             if not sql_src.is_file():
                 return {"ok": False, "error": f"No eplusout.sql in run {run_id} — simulation may not have completed"}
+            # Written by the sandboxed run: never copy through a link, including a linked run/ parent
+            if not is_regular_file_inside(sql_src, sim_dir):
+                return {
+                    "ok": False,
+                    "error": f"eplusout.sql in run {run_id} is a symlink or outside the run (not allowed)",
+                }
             # Stage simulation artifacts so the reporting measure can find them.
             # The OSW runner expects run/eplusout.sql, run/in.osm, run/in.idf
             ep_run = run_dir / "run"
             ep_run.mkdir(exist_ok=True)
             shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
             osm_src = sim_dir / "run" / "in.osm"
-            if osm_src.is_file():
+            if is_regular_file_inside(osm_src, sim_dir):
                 shutil.copy2(str(osm_src), str(ep_run / "in.osm"))
             idf_src = sim_dir / "run" / "in.idf"
-            if idf_src.is_file():
+            if is_regular_file_inside(idf_src, sim_dir):
                 shutil.copy2(str(idf_src), str(ep_run / "in.idf"))
             postprocess = True
 
@@ -916,6 +927,8 @@ def apply_measure(
             output_osm = temp_osm
         if not output_osm.is_file():
             return {"ok": False, "error": "Output OSM not found after measure run"}
+        if not is_regular_file_inside(output_osm, run_dir):  # sandboxed output: never load through a link
+            return {"ok": False, "error": "Output OSM is a symlink or outside the run (not allowed)"}
 
         # Reload model
         load_model(output_osm)
