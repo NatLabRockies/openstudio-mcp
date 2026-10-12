@@ -12,14 +12,28 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Iterable
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import (
+    HTTPDefaultErrorHandler,
+    HTTPErrorProcessor,
+    HTTPHandler,
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    OpenerDirector,
+    Request,
+    UnknownHandler,
+)
 
 from jsonschema import Draft4Validator, SchemaError
+from referencing import Registry
+from referencing.exceptions import NoSuchResource, Unresolvable
 
+DOWNLOAD_FORMATS = ("csv", "rdata")  # the only formats OpenStudio Server's download_data serves
 DONE_STATUSES = {"completed", "complete", "succeeded", "success", "finished"}
 FAILED_STATUSES = {"failed", "error", "cancelled", "canceled"}
 SUPPORTED_DISTRIBUTIONS = {"discrete", "uniform", "triangle", "normal", "lognormal", "integer_sequence"}
@@ -337,20 +351,154 @@ OSAF_ALGORITHMS: tuple[dict[str, Any], ...] = (
 )
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    """Refuse redirects: a hostile server could bounce a request (and its auth header) elsewhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(req.full_url, code, f"redirect to {newurl} refused", headers, fp)
+
+
+def urlopen(req, timeout):
+    """http(s)-only, redirect-free urlopen (no file://, ftp://, data:)."""
+    opener = OpenerDirector()
+    handlers = (
+        HTTPHandler(),
+        HTTPSHandler(),
+        HTTPDefaultErrorHandler(),
+        HTTPErrorProcessor(),
+        UnknownHandler(),
+        _NoRedirect(),
+    )
+    for handler in handlers:
+        opener.add_handler(handler)
+    return opener.open(req, timeout=timeout)
+
+
+def _configured_server_url() -> str | None:
+    url = (os.environ.get("OPENSTUDIO_SERVER_URL") or os.environ.get("OS_SERVER_URL") or "").strip()
+    return url.rstrip("/") or None
+
+
+def _api_token() -> str | None:
+    return os.environ.get("OPENSTUDIO_API_TOKEN") or os.environ.get("OS_SERVER_API_TOKEN") or None
+
+
+def _origin(url: str) -> tuple[str, str, int | None]:
+    parts = urlsplit(url)
+    port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    return parts.scheme, (parts.hostname or "").lower(), port
+
+
+def _allowed_entry_matches(entry: str, origin: tuple[str, str, int | None]) -> bool:
+    """One OSMCP_ANALYSIS_ALLOWED_HOSTS entry: `host`, `host:port` or `scheme://host[:port]`.
+
+    A missing scheme or port matches any; a present one is pinned. Compared as origins,
+    so `osa` == `osa:80` == `http://osa`.
+    """
+    raw = entry.strip().lower()
+    if not raw:
+        return False
+    try:
+        parts = urlsplit(raw if "://" in raw else "//" + raw)
+        entry_port = parts.port
+    except ValueError:
+        return False
+    scheme, host, port = origin
+    if not parts.hostname or parts.hostname != host:
+        return False
+    if parts.scheme and parts.scheme != scheme:
+        return False
+    return entry_port is None or entry_port == port
+
+
+def _same_server(a: str, b: str) -> bool:
+    """Same origin AND same path prefix: `http://osa/admin` is not the configured `http://osa/prefix`."""
+    return _origin(a) == _origin(b) and urlsplit(a).path.rstrip("/") == urlsplit(b).path.rstrip("/")
+
+
+def _server_url_allowed(url: str) -> bool:
+    """May a caller-supplied server_url be used on the shared HTTP server?"""
+    origin = _origin(url)
+    configured = _configured_server_url()
+    if configured and _origin(configured) == origin:
+        # The operator's server: only its exact base, so a caller cannot aim the
+        # bearer token at another path on the same host.
+        return _same_server(url, configured)
+    extra = os.environ.get("OSMCP_ANALYSIS_ALLOWED_HOSTS", "")
+    return any(_allowed_entry_matches(entry, origin) for entry in extra.split(","))
+
+
 def _server_url(server_url: str | None = None) -> str:
-    url = server_url or os.environ.get("OPENSTUDIO_SERVER_URL") or os.environ.get("OS_SERVER_URL")
+    from mcp_server.identity import _is_http_transport
+
+    configured = _configured_server_url()
+    url = (server_url or configured or "").strip()
     if not url:
         raise ValueError("Missing server_url. Pass server_url or set OPENSTUDIO_SERVER_URL / OS_SERVER_URL.")
-    return url.rstrip("/")
+    # urlsplit silently drops tab/newline (WHATWG), but http.client then raises InvalidURL
+    # on the raw string; refuse up front instead of surfacing a socket-layer error.
+    if any(ch in url for ch in "\t\r\n "):
+        raise ValueError(f"server_url must not contain whitespace, got {url!r}")
+    if not url.isascii():  # http.client would raise UnicodeEncodeError on the request target
+        raise ValueError(f"server_url must be ASCII, got {url!r}")
+    url = url.rstrip("/")
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise ValueError(f"server_url must be an absolute http(s) URL, got {url!r}")
+    # Endpoint paths are appended to this base; a '?' or '#' would push them into the
+    # query/fragment and send the request (and token) to the caller's path instead.
+    if "?" in url or "#" in url:
+        raise ValueError(f"server_url must not contain a query or fragment, got {url!r}")
+    try:
+        _ = parts.port  # a non-numeric port raises here
+    except ValueError:
+        raise ValueError(f"server_url has an invalid port, got {url!r}") from None
+    # The bearer token is only ever sent to the configured server; without one, a token
+    # would be silently withheld and every call would fail with an unexplained 401.
+    if not configured and _api_token():
+        raise ValueError(
+            "OPENSTUDIO_API_TOKEN is set but OPENSTUDIO_SERVER_URL is not. The token is only "
+            "sent to the configured server, so set OPENSTUDIO_SERVER_URL to the server it belongs to.",
+        )
+    # On the shared HTTP server a tenant must not aim the server's network access at
+    # arbitrary hosts (SSRF); only the operator-configured server or allowlisted hosts.
+    if _is_http_transport() and not _server_url_allowed(url):
+        raise ValueError(
+            "server_url is not permitted on this server; use the operator-configured "
+            "OPENSTUDIO_SERVER_URL (or a host in OSMCP_ANALYSIS_ALLOWED_HOSTS).",
+        )
+    return url
 
 
-def _auth_headers() -> dict[str, str]:
-    token = os.environ.get("OPENSTUDIO_API_TOKEN") or os.environ.get("OS_SERVER_API_TOKEN")
-    return {"Authorization": f"Bearer {token}"} if token else {}
+def _auth_headers(server_url: str) -> dict[str, str]:
+    """Bearer header, sent only to the operator-configured server (never to a caller-chosen host)."""
+    token = _api_token()
+    configured = _configured_server_url()
+    if not token or not configured or not _same_server(server_url, configured):
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _seg(value: Any) -> str:
+    """One URL path segment: quote everything, including '/', so ids cannot traverse.
+
+    quote() leaves '.' alone, and '.'/'..' segments are collapsed by servers and proxies,
+    so dot-only (or empty) identifiers are refused outright.
+    """
+    text = str(value)
+    if not text or set(text) <= {"."}:
+        raise ValueError(f"invalid identifier {text!r}")
+    return quote(text, safe="")
 
 
 def _url(server_url: str, path: str) -> str:
     return f"{server_url}/{path.lstrip('/')}"
+
+
+def _is_http_mode() -> bool:
+    from mcp_server.identity import _is_http_transport
+
+    return _is_http_transport()
 
 
 def _is_analysis_path_allowed(path: Path, *, write: bool = False) -> bool:
@@ -358,6 +506,10 @@ def _is_analysis_path_allowed(path: Path, *, write: bool = False) -> bool:
 
     if is_path_allowed(path, write=write):
         return True
+    from mcp_server.identity import _is_http_transport
+
+    if _is_http_transport():
+        return False  # /tmp is shared between tenants
     temp_root = Path(tempfile.gettempdir()).resolve()
     return path == temp_root or str(path).startswith(str(temp_root) + os.sep)
 
@@ -579,6 +731,9 @@ def _osa_schema_path(schema_path: str | Path | None = None) -> Path:
 
 def _read_osa_schema(schema_path: str | Path | None = None) -> tuple[Path, dict[str, Any]]:
     path = _osa_schema_path(schema_path)
+    # The bundled/env schema is operator-owned; a caller-supplied path is tenant input.
+    if schema_path is not None and not _is_analysis_path_allowed(path):
+        raise ValueError(f"Schema path is not allowed: {path}")
     try:
         schema = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -606,9 +761,19 @@ def _json_path(parts: Iterable[str | int]) -> str:
     return rendered
 
 
+def _refuse_remote_ref(uri: str):
+    raise NoSuchResource(ref=uri)
+
+
 def _schema_issues(data: dict[str, Any], schema: dict[str, Any]) -> list[str]:
-    validator = Draft4Validator(schema)
-    errors = sorted(validator.iter_errors(data), key=lambda e: (list(e.absolute_path), e.message))
+    # A tenant-supplied schema may carry a remote $ref; jsonschema would fetch it with its
+    # own urllib (http, file, redirects), bypassing every gate in this module. The registry
+    # below refuses all retrieval; '#/...' refs still resolve from the root resource.
+    validator = Draft4Validator(schema, registry=Registry(retrieve=_refuse_remote_ref))
+    try:
+        errors = sorted(validator.iter_errors(data), key=lambda e: (list(e.absolute_path), e.message))
+    except Unresolvable as e:
+        raise ValueError(f"OSA JSON schema contains a remote or unresolvable $ref: {e}") from None
     return [f"{_json_path(error.absolute_path)}: {error.message}" for error in errors]
 
 
@@ -849,9 +1014,13 @@ def _coerce_value(value_type: str, value: Any) -> Any:
 
 def _read_measure_metadata(measure_dir: str | Path) -> dict[str, Any]:
     measure_path = Path(measure_dir).expanduser().resolve()
+    if not _is_analysis_path_allowed(measure_path):
+        raise ValueError(f"Measure directory is not allowed: {measure_path}")
     if not measure_path.is_dir():
         raise ValueError(f"Measure directory not found: {measure_path}")
     xml_path = measure_path / "measure.xml"
+    if xml_path.is_symlink() or not _is_analysis_path_allowed(xml_path.resolve()):
+        raise ValueError(f"measure.xml is not allowed: {xml_path}")
     if not xml_path.is_file():
         raise ValueError(f"measure.xml not found in measure directory: {measure_path}")
 
@@ -1014,7 +1183,7 @@ def _request_json(
     body: dict[str, Any] | None = None,
     timeout: int = 600,
 ) -> dict[str, Any]:
-    headers = {"Accept": "application/json", **_auth_headers()}
+    headers = {"Accept": "application/json", **_auth_headers(server_url)}
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
@@ -1033,6 +1202,8 @@ def _request_json(
         raise RuntimeError(f"OpenStudio Server HTTP {e.code} for {path}: {detail}") from None
     except URLError as e:
         raise RuntimeError(f"Could not reach OpenStudio Server at {server_url}: {e.reason}") from None
+    except HTTPException as e:
+        raise RuntimeError(f"Invalid request to OpenStudio Server at {server_url}: {e}") from None
 
 
 def _request_form(
@@ -1046,7 +1217,7 @@ def _request_form(
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
-        **_auth_headers(),
+        **_auth_headers(server_url),
     }
     data = urlencode({key: str(value) for key, value in form.items() if value is not None}).encode("utf-8")
     req = Request(_url(server_url, path), data=data, headers=headers, method=method)
@@ -1060,6 +1231,8 @@ def _request_form(
         return {"ok": False, "error": f"OpenStudio Server HTTP {e.code} for {path}: {detail}"}
     except URLError as e:
         return {"ok": False, "error": f"Could not reach OpenStudio Server at {server_url}: {e.reason}"}
+    except HTTPException as e:
+        return {"ok": False, "error": f"Invalid request to OpenStudio Server at {server_url}: {e}"}
 
 
 def _download(
@@ -1070,7 +1243,10 @@ def _download(
     *,
     timeout: int = 3600,
 ) -> dict[str, Any]:
-    req = Request(_url(server_url, path), headers={"Accept": "*/*", **_auth_headers()}, method="GET")
+    out_dir = Path(output_dir).expanduser().resolve()
+    if not _is_analysis_path_allowed(out_dir, write=True):  # before any request: no fetch for a refused dir
+        return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
+    req = Request(_url(server_url, path), headers={"Accept": "*/*", **_auth_headers(server_url)}, method="GET")
     try:
         with urlopen(req, timeout=timeout) as resp:
             body = resp.read()
@@ -1078,11 +1254,12 @@ def _download(
             match = re.search(r'filename="?([^";]+)"?', disposition, flags=re.IGNORECASE)
             filename = match.group(1) if match else fallback_name
             safe_name = "".join(c if c.isalnum() or c in ("-", "_", ".", " ") else "_" for c in filename).strip()
-            out_dir = Path(output_dir).expanduser().resolve()
-            if not _is_analysis_path_allowed(out_dir, write=True):
-                return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / (safe_name or fallback_name)
+            # The dir is the caller's, but a symlink planted inside it would redirect
+            # write_bytes anywhere (another tenant's file); refuse rather than follow.
+            if out_path.is_symlink() or (out_path.exists() and not out_path.is_file()):
+                return {"ok": False, "error": f"Refusing to write through a symlink or non-file: {out_path}"}
             out_path.write_bytes(body)
             return {
                 "ok": True,
@@ -1095,10 +1272,14 @@ def _download(
         return {"ok": False, "error": f"OpenStudio Server HTTP {e.code} for {path}: {detail}"}
     except URLError as e:
         return {"ok": False, "error": f"Could not reach OpenStudio Server at {server_url}: {e.reason}"}
+    except HTTPException as e:
+        return {"ok": False, "error": f"Invalid request to OpenStudio Server at {server_url}: {e}"}
 
 
 def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, timeout: int = 1800) -> dict[str, Any]:
     p = Path(file_path).expanduser().resolve()
+    if not _is_analysis_path_allowed(p):
+        return {"ok": False, "error": f"Upload file path is not allowed: {p}"}
     if not p.exists():
         return {"ok": False, "error": f"Upload file not found: {p}"}
     boundary = f"----openstudio-mcp-{uuid.uuid4().hex}"
@@ -1117,7 +1298,7 @@ def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, time
         "Content-Type": f"multipart/form-data; boundary={boundary}",
         "Content-Length": str(len(body)),
         "Accept": "application/json",
-        **_auth_headers(),
+        **_auth_headers(server_url),
     }
     req = Request(_url(server_url, path), data=body, headers=headers, method="POST")
     try:
@@ -1309,6 +1490,8 @@ def preflight_seed_for_analysis_package(
     seed_hash = _sha256_file(seed)
     epw_hash = _sha256_file(epw) if epw else None
     manifest = Path(manifest_path).expanduser().resolve() if manifest_path else None
+    if manifest and not _is_analysis_path_allowed(manifest, write=True):
+        return {"ok": False, "ready": False, "error": f"Manifest path is not writable/allowed: {manifest}"}
     if manifest and manifest.exists() and not force_rerun:
         existing_manifest = _read_manifest(manifest)
         if existing_manifest and _manifest_is_valid(
@@ -1408,30 +1591,60 @@ def _resolve_package_weather(package_dir: Path, weather_file: str | None) -> Pat
     return candidates[0].resolve() if candidates else None
 
 
-def _write_support_zip(package_dir: Path, output_zip_path: Path) -> None:
+def _inside(path: Path, root: Path) -> bool:
+    resolved = path.resolve()
+    return resolved == root or str(resolved).startswith(str(root) + os.sep)
+
+
+def _write_support_zip(package_dir: Path, output_zip_path: Path) -> str | None:
+    """Zip the package roots. Returns an error string instead of following a symlink.
+
+    archive.write() follows symlinks, so a member planted as a link into another tenant's
+    root would be copied into the zip as a regular file (and pass every later zip check).
+    """
+    package_root = package_dir.resolve()
     output_zip_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for root in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
             root_dir = package_dir / root
             if not root_dir.exists():
                 continue
+            if root_dir.is_symlink():
+                return f"package member is a symlink (not allowed): {root}"
             for path in sorted(root_dir.rglob("*")):
                 arcname = path.relative_to(package_dir).as_posix()
+                if path.is_symlink() or not _inside(path, package_root):
+                    return f"package member is a symlink (not allowed): {arcname}"
                 if path.is_dir():
                     continue
                 archive.write(path, arcname)
+    return None
 
 
 def _ensure_foundational_measures_in_package(package_dir: Path) -> dict[str, Any]:
     copied: list[str] = []
     present: list[str] = []
     missing: list[str] = []
+    package_root = package_dir.resolve()
     target_root = package_dir / "measures"
+
+    def _refused(what: Path) -> dict[str, Any]:
+        # rmtree/copytree below would follow the link and delete/write another tenant's tree.
+        return {
+            "ok": False, "copied": copied, "present": present, "missing": missing,
+            "common_measures_dir": str(_common_measures_dir()),
+            "error": f"package measures path is a symlink or resolves outside the package (not allowed): {what}",
+        }
+
+    if target_root.is_symlink():
+        return _refused(target_root)
     target_root.mkdir(parents=True, exist_ok=True)
 
     for spec in FOUNDATIONAL_ANALYSIS_MEASURES:
         measure_name = str(spec["measure_name"])
         target = target_root / measure_name
+        if target.is_symlink() or not _inside(target, package_root):
+            return _refused(target)
         if target.is_dir() and (target / "measure.rb").is_file() and (target / "measure.xml").is_file():
             present.append(measure_name)
             continue
@@ -1506,7 +1719,15 @@ def prepare_analysis_package(
             "foundational_measures": foundational_measures,
         }
 
-    _write_support_zip(pkg, out)
+    zip_error = _write_support_zip(pkg, out)
+    if zip_error:
+        out.unlink(missing_ok=True)
+        return {
+            "ok": False,
+            "error": zip_error,
+            "preflight": preflight,
+            "foundational_measures": foundational_measures,
+        }
     validation = validate_analysis_package(str(out), require_seed_qaqc=True, require_foundational_measures=True)
     return {
         "ok": validation.get("ok", False),
@@ -1637,6 +1858,8 @@ def validate_analysis_package(
     successfully and passed basic QA/QC.
     """
     path = Path(zip_path).expanduser().resolve()
+    if not _is_analysis_path_allowed(path):
+        return {"ok": False, "error": f"Analysis package path is not allowed: {path}", "issues": ["Path not allowed."]}
     issues: list[str] = []
     seed_qaqc_manifest: dict[str, Any] | None = None
     try:
@@ -1806,7 +2029,10 @@ def create_project(project_name: str, server_url: str | None = None) -> dict[str
 
 
 def check_server_health(server_url: str | None = None) -> dict[str, Any]:
-    base = _server_url(server_url)
+    try:
+        base = _server_url(server_url)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     try:
         response = _request_json("GET", base, "/status.json", timeout=60)
     except RuntimeError as e:
@@ -1841,7 +2067,11 @@ def submit_analysis(
                 "package_validation": package_validation,
             }
 
-    base = _server_url(server_url)
+    try:
+        base = _server_url(server_url)
+        _seg(project_id)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     formulation = _read_json(osa_json_path)
     if analysis_name:
         formulation["analysis"]["display_name"] = analysis_name
@@ -1851,7 +2081,7 @@ def submit_analysis(
         response = _request_json(
             "POST",
             base,
-            f"/projects/{quote(project_id)}/analyses.json",
+            f"/projects/{_seg(project_id)}/analyses.json",
             body=formulation,
             timeout=600,
         )
@@ -1868,7 +2098,16 @@ def submit_analysis(
 
     upload = None
     if upload_zip_path:
-        upload = _multipart_upload(base, f"/analyses/{quote(str(analysis_id))}/upload.json", upload_zip_path)
+        try:
+            upload_path = f"/analyses/{_seg(analysis_id)}/upload.json"
+        except ValueError as e:  # the server handed back an id that cannot form a path segment
+            return {
+                "ok": False,
+                "error": f"Analysis created but its id is unusable for upload: {e}",
+                "analysis_id": analysis_id,
+                "response": response,
+            }
+        upload = _multipart_upload(base, upload_path, upload_zip_path)
         if not upload.get("ok"):
             return {
                 "ok": False,
@@ -1892,11 +2131,15 @@ def start_analysis(
     analysis_type: str = "single_run",
     without_delay: bool = False,
 ) -> dict[str, Any]:
-    base = _server_url(server_url)
+    try:
+        base = _server_url(server_url)
+        path = f"/analyses/{_seg(analysis_id)}/action.json"
+    except ValueError as e:
+        return {"ok": False, "analysis_id": analysis_id, "analysis_type": analysis_type, "error": str(e)}
     result = _request_form(
         "POST",
         base,
-        f"/analyses/{quote(analysis_id)}/action.json",
+        path,
         form={
             "analysis_action": "start",
             "analysis_type": analysis_type,
@@ -1987,9 +2230,13 @@ def get_analysis_status(
     server_url: str | None = None,
     analysis_type: str | None = None,
 ) -> dict[str, Any]:
-    base = _server_url(server_url)
     try:
-        response = _request_json("GET", base, f"/analyses/{quote(analysis_id)}/status.json", timeout=300)
+        base = _server_url(server_url)
+        path = f"/analyses/{_seg(analysis_id)}/status.json"
+    except ValueError as e:
+        return {"ok": False, "analysis_id": analysis_id, "error": str(e)}
+    try:
+        response = _request_json("GET", base, path, timeout=300)
     except RuntimeError as e:
         return {"ok": False, "analysis_id": analysis_id, "error": str(e), "server_url": base}
     analysis = response.get("analysis") if isinstance(response.get("analysis"), dict) else {}
@@ -2109,7 +2356,15 @@ def _build_static_workflow_from_package(zip_path: str, package_validation: dict[
     if not measure_names:
         raise ValueError("Package contains no measure directories to submit in the smoke-test OSA JSON.")
 
-    with tempfile.TemporaryDirectory(prefix="openstudio_smoke_measures_") as tmpdir:
+    # Extract under the caller's own run root on the shared server: the global tempdir is
+    # outside every tenant root there, so _read_measure_metadata would refuse the measures.
+    base_dir = None
+    if _is_http_mode():
+        from mcp_server.config import user_run_root
+
+        base_dir = user_run_root()
+    tmpdir = tempfile.mkdtemp(prefix="openstudio_smoke_measures_", dir=base_dir)
+    try:
         tmp = Path(tmpdir)
         with zipfile.ZipFile(Path(zip_path).expanduser().resolve()) as archive:
             for info in archive.infolist():
@@ -2121,6 +2376,8 @@ def _build_static_workflow_from_package(zip_path: str, package_validation: dict[
             build_measure_workflow_step(str(tmp / "measures" / measure_name))
             for measure_name in measure_names
         ]
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
     for index, step in enumerate(workflow):
         step["workflow_index"] = index
@@ -2129,7 +2386,7 @@ def _build_static_workflow_from_package(zip_path: str, package_validation: dict[
 
 def test_server_config_single_run(
     upload_zip_path: str,
-    server_url: str | None = "http://localhost:8080",
+    server_url: str | None = None,
     output_dir: str | None = None,
     project_name: str = "OpenStudio Server Config Smoke Test",
     wait_timeout_seconds: int = 600,
@@ -2137,7 +2394,10 @@ def test_server_config_single_run(
     schema_path: str | None = None,
 ) -> dict[str, Any]:
     """Smoke-test OpenStudio Server by submitting and starting a single_run analysis."""
-    base = _server_url(server_url)
+    try:
+        base = _server_url(server_url)
+    except ValueError as e:
+        return {"ok": False, "stage": "server_url", "error": str(e)}
     health = check_server_health(base)
     if not health.get("ok"):
         return {"ok": False, "stage": "health", "server_url": base, "health": health}
@@ -2169,9 +2429,14 @@ def test_server_config_single_run(
 
     if output_dir:
         out_dir = Path(output_dir).expanduser().resolve()
+        if not _is_analysis_path_allowed(out_dir, write=True):
+            return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
         out_dir.mkdir(parents=True, exist_ok=True)
     else:
-        out_dir = Path(tempfile.mkdtemp(prefix="openstudio_server_config_", dir="/tmp")).resolve()
+        from mcp_server.config import user_run_root
+
+        base_dir = user_run_root() if _is_http_mode() else Path(tempfile.gettempdir())
+        out_dir = Path(tempfile.mkdtemp(prefix="openstudio_server_config_", dir=base_dir)).resolve()
 
     osa_path = out_dir / "single_run_server_config_test.json"
     created = create_osa_json(
@@ -2310,6 +2575,8 @@ def wait_for_analysis(
     last_status: dict[str, Any] | None = None
     while time.monotonic() - started <= timeout_seconds:
         last_status = get_analysis_status(analysis_id, server_url=server_url, analysis_type=analysis_type)
+        if not last_status.get("ok"):
+            return {"ok": False, **last_status}
         if last_status["done"]:
             return {"ok": True, **last_status}
         if last_status["failed"]:
@@ -2329,20 +2596,28 @@ def download_analysis_data(
     server_url: str | None = None,
     file_format: str = "csv",
 ) -> dict[str, Any]:
-    base = _server_url(server_url)
+    # file_format becomes a path suffix: allowlist it rather than quote it, so it can
+    # neither traverse nor request a format the server does not serve.
+    if file_format not in DOWNLOAD_FORMATS:
+        return {"ok": False, "error": f"file_format must be one of {', '.join(DOWNLOAD_FORMATS)}; got {file_format!r}"}
+    try:
+        base = _server_url(server_url)
+        segment = _seg(analysis_id)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     query = urlencode({"export": "true"})
     return _download(
         base,
-        f"/analyses/{quote(analysis_id)}/download_data.{quote(file_format)}?{query}",
+        f"/analyses/{segment}/download_data.{file_format}?{query}",
         output_dir,
-        f"analysis_{analysis_id}_data.{file_format}",
+        f"analysis_{segment}_data.{file_format}",
     )
 
 
 def get_analysis_results_json(analysis_id: str, server_url: str | None = None) -> dict[str, Any]:
     try:
         base = _server_url(server_url)
-        response = _request_json("GET", base, f"/analyses/{quote(analysis_id)}/analysis_data.json", timeout=600)
+        response = _request_json("GET", base, f"/analyses/{_seg(analysis_id)}/analysis_data.json", timeout=600)
     except (ValueError, RuntimeError) as e:
         return {"ok": False, "error": str(e), "analysis_id": analysis_id}
     return {"ok": True, "analysis_id": analysis_id, "response": response}

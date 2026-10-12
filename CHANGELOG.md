@@ -11,6 +11,18 @@
   in the run dir, so `cancel_run` cannot be aimed at another process); the record is written
   atomically so a planted symlink is replaced, not followed. Oversize err files are parsed
   from the head and flagged `truncated` instead of silently dropping the error summary.
+- Analysis tools (`openstudio_analysis_*`): a tenant-supplied OSA schema can no longer make the
+  server fetch remote `$ref`s (jsonschema's own urllib bypassed every URL gate); `schema_path`
+  must lie inside the caller's roots; `analysis_id`/`project_id` are fully URL-quoted so they
+  cannot traverse the server's path space with the operator token; `file_format` is limited to
+  `csv`/`rdata`; downloads check the output directory before fetching and never write through
+  a symlink; `measure.xml`, package zip members and the package `measures/` dir are refused
+  when they are symlinks. Behaviour changes: a
+  bad `server_url` now returns `{"ok": false}` instead of raising through MCP;
+  `openstudio_analysis_test_server_config` no longer defaults to `http://localhost:8080` and
+  works again in HTTP mode; with `OPENSTUDIO_API_TOKEN` set but no `OPENSTUDIO_SERVER_URL`,
+  calls fail with an explicit message instead of silently sending no token; allowlist entries
+  are compared as origins (`osa` matches `osa:80`).
 - `guarded_extract` (measure downloads and file-transfer uploads) now accepts only stored or
   deflated zip members. bzip2/lzma members are decompressed without an output bound by
   Python's `zipfile`, so a 1.7 KB archive could drive the server past 4 GB of RAM before the
