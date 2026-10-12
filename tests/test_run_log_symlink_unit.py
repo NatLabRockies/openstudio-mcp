@@ -512,3 +512,45 @@ def test_launch_log_is_not_opened_through_symlink(tmp_path):
     with pytest.raises(OSError, match="symbolic link"):
         open_nofollow_for_write(tmp_path / "openstudio.log")
     assert victim.read_text() == "keep"
+
+
+# ------------------------------------------------- queued runs across a restart (#175)
+
+def test_queued_record_from_previous_server_fails_on_reload(run_root):
+    # Regression: the scheduler queue is in-memory, so a record persisted as "queued" by a
+    # previous server process was reloaded as queued and stayed queued forever (never
+    # dispatched, never terminal); reproduced with a real restart on 2026-10-12
+    run_dir = run_root / "run_a"
+    _write_record(run_dir, status="queued", pid=None, started_at=None, ended_at=None, exit_code=None)
+    rec = sim_ops._load_run_record_from_disk("run_a")
+    assert rec.status == "failed"
+    assert "restarted before this run started" in rec.error
+    assert rec.ended_at is not None
+    res = sim_ops.get_run_status("run_a")
+    assert res["ok"] is True and res["run"]["status"] == "failed", res
+    assert "restarted" in res["run"]["error"]
+    on_disk = json.loads((run_dir / "run_record.json").read_text())
+    assert on_disk["status"] == "failed", "the failed status must be persisted so GC can reclaim the dir"
+    res = sim_ops.cancel_run("run_a")
+    assert res == {"ok": True, "run_id": "run_a", "cancelled": False, "status": "failed"}
+
+
+def test_retention_keeps_queued_run_only_while_this_process_queues_it(run_root):
+    # Regression: retention treated any on-disk "queued" record as active, so an orphaned
+    # queued run from a previous server process was never GC-eligible
+    run_dir = run_root / "run_a"
+    _write_record(run_dir, status="queued", pid=None, started_at=None, ended_at=None, exit_code=None)
+    assert retention._is_active(run_dir) is False
+    rec = sim_ops.RunRecord(
+        run_id="run_a", user_key="local", name="x", status="queued", created_at=1.0,
+        started_at=None, ended_at=None, pid=None, run_dir=run_dir,
+        osw_path=run_dir / "workflow.osw", epw_path=None, exit_code=None, error=None,
+    )
+    sim_ops._RUNS["run_a"] = rec
+    try:
+        assert retention._is_active(run_dir) is True
+        rec.status = "failed"
+        assert retention._is_active(run_dir) is False
+    finally:
+        sim_ops._RUNS.pop("run_a", None)
+

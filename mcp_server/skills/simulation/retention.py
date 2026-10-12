@@ -143,7 +143,10 @@ def _is_active(d: Path) -> bool:
         return True  # unreadable record -> don't risk deleting an active run
     status = data.get("status")
     if status == "queued":
-        return True
+        # Only a run this process holds in its queue can still start; a queued record
+        # left by a previous server process is an orphan (issue #175) and is reclaimable.
+        rec = _RUNS.get(d.name)
+        return rec is not None and rec.status == "queued"
     if status == "running":
         pid = data.get("pid")
         try:

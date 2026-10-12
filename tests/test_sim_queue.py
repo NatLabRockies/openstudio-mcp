@@ -219,3 +219,58 @@ def test_kill_process_group_terminates_session_leader():
             p.kill()
         with _ctx.suppress(Exception):
             p.wait(timeout=2)
+
+
+@pytest.mark.integration
+def test_queued_run_fails_after_server_restart():
+    # Regression: the queue is in-memory, so a run that was still queued when the server
+    # died stayed "queued" forever after a restart (never dispatched, never terminal), and
+    # a queued run was not even written to disk until something polled it. Reproduced with
+    # this exact sequence on 2026-10-12 (issue #175).
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+    import json
+    import os
+    import signal
+
+    env = {"MCP_AUTH": "token", "MCP_TOKENS": '{"tok": "alice"}', "OSMCP_MAX_CONCURRENCY": "1"}
+
+    async def _submit(url):
+        async with http_session(url, token="tok") as s:  # noqa: S106 - test fixture token
+            cr = unwrap(await s.call_tool("create_example_osm", {"name": f"restart_{uuid.uuid4().hex[:8]}"}))
+            assert cr["ok"] is True, cr
+            runs = []
+            for i in range(2):
+                r = unwrap(await s.call_tool(
+                    "run_simulation", {"osm_path": cr["osm_path"], "epw_path": EPW_PATH, "name": f"rs{i}"},
+                ))
+                assert r["ok"] is True, r
+                runs.append(r)
+            # The queued run must already be on disk, or a restart cannot even find it.
+            for r in runs:
+                rec = json.loads((Path(r["run_dir"]) / "run_record.json").read_text())
+                assert rec["status"] in ("queued", "running"), rec
+            statuses = [
+                unwrap(await s.call_tool("get_run_status", {"run_id": r["run_id"]}))["run"]["status"]
+                for r in runs
+            ]
+            assert statuses == ["running", "queued"], statuses
+            return [r["run_id"] for r in runs]
+
+    async def _after_restart(url, run_ids):
+        async with http_session(url, token="tok") as s:  # noqa: S106 - test fixture token
+            first = unwrap(await s.call_tool("get_run_status", {"run_id": run_ids[0]}))
+            second = unwrap(await s.call_tool("get_run_status", {"run_id": run_ids[1]}))
+            await s.call_tool("cancel_run", {"run_id": run_ids[0]})
+            assert first["ok"] is True and first["run"]["status"] in ("running", "success", "failed"), first
+            assert second["ok"] is True, second
+            assert second["run"]["status"] == "failed", second["run"]
+            assert "restarted before this run started" in second["run"]["error"], second["run"]
+
+    with http_server(env) as (url, proc):
+        run_ids = asyncio.run(_submit(url))
+        os.kill(proc.pid, signal.SIGKILL)  # a crash, not a graceful stop: nothing gets to clean up
+        proc.wait(timeout=10)
+    with http_server(env) as (url, _proc):
+        asyncio.run(_after_restart(url, run_ids))
+

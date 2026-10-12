@@ -211,6 +211,16 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
         status = data.get("status")
         if not isinstance(status, str) or status not in _STATUSES:
             status = "unknown"
+        ended_at = _coerce_number(data.get("ended_at"))
+        error = str(data["error"]) if data.get("error") is not None else None
+        if status == "queued":
+            # Every run this process queued is in _RUNS, so a queued record that had to be
+            # read from disk was queued by a previous server process. The queue is
+            # in-memory and nothing will ever dispatch it (issue #175): report it as
+            # failed instead of leaving it "queued" forever.
+            status = "failed"
+            error = "server restarted before this run started; resubmit it"
+            ended_at = ended_at or _now()
         epw = data.get("epw_path")
         return RunRecord(
             run_id=run_id,
@@ -219,13 +229,13 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
             status=status,
             created_at=_coerce_number(data.get("created_at")) or 0.0,
             started_at=_coerce_number(data.get("started_at")),
-            ended_at=_coerce_number(data.get("ended_at")),
+            ended_at=ended_at,
             pid=pid,
             run_dir=run_dir,
             osw_path=osw_path,
             epw_path=Path(str(epw)) if isinstance(epw, str) and epw else None,
             exit_code=_coerce_int(data.get("exit_code")),
-            error=str(data["error"]) if data.get("error") is not None else None,
+            error=error,
         )
     except Exception:
         return None
@@ -762,6 +772,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     )
     with _sim_lock:
         _RUNS[run_id] = rec
+        # On disk from the moment it is queued: without this a run that was still queued
+        # when the server died was "Unknown run_id" after the restart (issue #175).
+        _persist_run_record(rec)
     audit("sim_queued", run_id=run_id, user=rec.user_key, name=run_name)
     _enqueue(run_id)
     _ensure_dispatcher()

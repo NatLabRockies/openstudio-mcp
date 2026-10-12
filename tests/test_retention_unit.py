@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+import mcp_server.skills.simulation.operations as sim_ops
 from mcp_server.skills.simulation.retention import (
     _run_root_is_sane,
     _sweep_user_root,
@@ -39,7 +40,9 @@ def _mk(root, name, record=None, *, out_osw=False, pinned=False, payload=2048):
 @pytest.mark.unit
 def test_sweep_deletes_old_terminal_runs_only(tmp_path):
     # Validates: GC removes terminal run dirs past the age cutoff, and spares
-    # fresh / pinned / queued / running / non-run dirs — the core retention policy.
+    # fresh / pinned / running / non-run dirs and queued runs this process still holds;
+    # a queued record left by a previous server process can never start (issue #175)
+    # and is reclaimed like any other dead run.
     _mk(tmp_path, "succ_old", {"status": "success", "ended_at": OLD})
     _mk(tmp_path, "cxl_old", {"status": "cancelled", "ended_at": OLD})
     _mk(tmp_path, "fail_old", {"status": "failed", "ended_at": OLD})
@@ -47,7 +50,13 @@ def test_sweep_deletes_old_terminal_runs_only(tmp_path):
     _mk(tmp_path, "outosw_old", out_osw=True)  # no record -> mtime fallback (huge vs NOW)
 
     _mk(tmp_path, "succ_fresh", {"status": "success", "ended_at": FRESH})       # too young
-    _mk(tmp_path, "queued_old", {"status": "queued", "created_at": OLD})        # active
+    _mk(tmp_path, "queued_old", {"status": "queued", "created_at": OLD})        # orphan: previous process
+    held_dir = _mk(tmp_path, "queued_held", {"status": "queued", "created_at": OLD})  # this process's queue
+    sim_ops._RUNS["queued_held"] = sim_ops.RunRecord(
+        run_id="queued_held", user_key="u", name="x", status="queued", created_at=OLD,
+        started_at=None, ended_at=None, pid=None, run_dir=held_dir,
+        osw_path=held_dir / "workflow.osw", epw_path=None, exit_code=None, error=None,
+    )
     # "alive" means the run's own child (launched with cwd=run_dir); a live pid that runs
     # elsewhere is a forged record and must not pin the dir (run-record trust).
     sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
@@ -65,17 +74,19 @@ def test_sweep_deletes_old_terminal_runs_only(tmp_path):
         recs, freed = _sweep_user_root(
             tmp_path, "u", WEEK, NOW, dry_run=False, reason="gc")
     finally:
+        sim_ops._RUNS.pop("queued_held", None)
         for proc in (alive, stranger):
             proc.kill()
             proc.wait(timeout=10)
 
     deleted = {r["run_id"] for r in recs}
-    assert deleted == {"succ_old", "cxl_old", "fail_old", "running_dead", "running_forged", "outosw_old"}, deleted
-    assert freed > 0, "deleting 6 run dirs must free bytes"
+    assert deleted == {"succ_old", "cxl_old", "fail_old", "running_dead", "running_forged", "outosw_old",
+                       "queued_old"}, deleted
+    assert freed > 0, "deleting 7 run dirs must free bytes"
 
-    for gone in ("succ_old", "cxl_old", "fail_old", "running_dead", "running_forged", "outosw_old"):
+    for gone in ("succ_old", "cxl_old", "fail_old", "running_dead", "running_forged", "outosw_old", "queued_old"):
         assert not (tmp_path / gone).exists(), f"{gone} should be deleted"
-    for kept in ("succ_fresh", "queued_old", "running_alive", "pinned_old", "examples", "stray"):
+    for kept in ("succ_fresh", "queued_held", "running_alive", "pinned_old", "examples", "stray"):
         assert (tmp_path / kept).exists(), f"{kept} must be spared"
 
 

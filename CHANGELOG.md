@@ -39,6 +39,12 @@
   change sandbox ownership; existing data is not migrated automatically. See
   [principal-key migration](docs/security-isolation.md#principal-key-migration) before upgrading.
 
+### Fixed
+- A simulation that was still queued when the server died is reported as `failed`
+  ("server restarted before this run started; resubmit it") after the restart instead of
+  staying `queued` forever, and is reclaimable by run retention. Queued runs are now
+  written to disk at enqueue time, so a restart can find them at all. (#175)
+
 ### Added
 - **`set_ground_temperatures`** (weather skill): applies an EPW header's `GROUND TEMPERATURES`
   record to the model's four `Site:GroundTemperature:*` objects. A gbXML translation sets none of
