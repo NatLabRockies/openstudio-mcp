@@ -318,8 +318,15 @@ def verify_download(token: str) -> dict:
     path = payload.get("p")
     if not key or not path:
         return {"ok": False, "status": 403, "error": "bad token"}
-    target = Path(path).resolve()
-    if not is_path_allowed_for(key, target):
+    try:
+        run_root_for(key)  # refuse a tampered tenant root before resolving a path under it
+        target = Path(path).resolve()
+        allowed = is_path_allowed_for(key, target)
+    except ValueError as e:  # InvalidUserKeyError after the URL was minted
+        return {"ok": False, "status": 403, "error": str(e)}
+    except (OSError, RuntimeError):  # unresolvable path (e.g. symlink loop below the root)
+        return {"ok": False, "status": 403, "error": "not allowed"}
+    if not allowed:
         return {"ok": False, "status": 403, "error": "not allowed"}
     if not target.exists():
         return {"ok": False, "status": 404, "error": "not found"}

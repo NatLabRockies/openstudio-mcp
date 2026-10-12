@@ -324,6 +324,7 @@ lines — to stderr (`docker logs`) and, if `MCP_AUDIT_FILE` is set, to that fil
 {"ts":1717532001.4, "event":"sim_launched", "run_id":"…", "user":"alice", "pid":123}
 {"ts":1717532019.9, "event":"sim_finished", "run_id":"…", "user":"alice", "status":"success"}
 {"ts":1718136600.0, "event":"run_evicted",  "run_id":"…", "user":"alice", "reason":"gc", "age_days":8.2, "freed_mb":50.2}
+{"ts":1718140000.0, "event":"principal_rejected", "tool":"run_simulation", "error":"Authenticated token has no usable principal"}
 ```
 
 So you can answer "who ran what, when, did it succeed". Disable with `MCP_AUDIT=off`.
