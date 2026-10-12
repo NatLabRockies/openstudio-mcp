@@ -459,14 +459,15 @@ def test_build_auth_wires_portal_verifier_from_env(monkeypatch):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(("drop", "expected_claims"), [
-    ("MCP_JWT_AUDIENCE", (JWT_ISSUER, None)),
-    ("MCP_JWT_ISSUER", (None, JWT_AUDIENCE)),
+@pytest.mark.parametrize(("drop", "blank", "expected_claims"), [
+    ("MCP_JWT_AUDIENCE", None, (JWT_ISSUER, None)),
+    ("MCP_JWT_ISSUER", None, (None, JWT_AUDIENCE)),
+    ("MCP_JWT_AUDIENCE", "  ", (JWT_ISSUER, None)),  # Regression: whitespace passed the check
 ])
-def test_build_auth_requires_issuer_and_audience(monkeypatch, drop, expected_claims):
+def test_build_auth_requires_issuer_and_audience(monkeypatch, drop, blank, expected_claims):
     # Validates: _build_auth wires require_issuer_audience: jwt mode without issuer or
-    # audience fails startup naming the variable; MCP_JWT_ALLOW_UNSCOPED=true builds a
-    # verifier with the missing claim unenforced (the documented opt-out).
+    # audience (unset or blank) fails startup naming the variable; MCP_JWT_ALLOW_UNSCOPED=true
+    # builds a verifier with the missing claim unenforced (the documented opt-out).
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
 
@@ -476,6 +477,8 @@ def test_build_auth_requires_issuer_and_audience(monkeypatch, drop, expected_cla
     _, public_pem = mint_token.generate_keypair()
     env = _jwt_env(public_pem)
     env.pop(drop)
+    if blank is not None:
+        env[drop] = blank
     for name in ("MCP_JWT_ISSUER", "MCP_JWT_AUDIENCE", "MCP_JWT_ALLOW_UNSCOPED"):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():

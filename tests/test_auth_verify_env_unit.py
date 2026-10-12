@@ -88,6 +88,10 @@ def test_env_invalid_values_fail_fast_naming_the_variable(monkeypatch, name, raw
     ("iss", None, "MCP_JWT_AUDIENCE"),
     (None, None, "MCP_JWT_ISSUER and MCP_JWT_AUDIENCE"),
     ("", "", "MCP_JWT_ISSUER and MCP_JWT_AUDIENCE"),
+    # Regression: whitespace-only values passed the check, and the server then started
+    # but rejected every normally issued token instead of reporting the blank config
+    (" ", "aud", "MCP_JWT_ISSUER"),
+    ("iss", "	", "MCP_JWT_AUDIENCE"),
 ])
 def test_require_issuer_audience_rejects_unscoped_jwt(monkeypatch, iss, aud, missing):
     # Validates: JWT mode refuses to start without issuer+audience (tokens minted for
@@ -122,6 +126,8 @@ def test_require_issuer_audience_accepts(monkeypatch, iss, aud, allow_unscoped, 
 @pytest.mark.parametrize(("host", "warns"), [
     ("portal.internal", True), ("10.0.0.5", True),
     ("localhost:8080", False), ("127.0.0.2", False), ("[::1]", False), ("[0:0:0:0:0:0:0:1]", False),
+    ("localhost.:8080", False),  # Regression: the absolute spelling warned as non-loopback
+    ("user:pw@localhost", False), ("localhost.internal", True),
 ])
 def test_plain_http_verify_url_warns_off_loopback(monkeypatch, host, warns):
     # Validates: the verify URL carries the bearer token, so plain http off loopback warns.

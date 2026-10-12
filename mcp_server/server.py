@@ -55,8 +55,8 @@ def _build_auth():
             require_issuer_audience,
         )
 
-        issuer = os.environ.get("MCP_JWT_ISSUER") or None
-        audience = os.environ.get("MCP_JWT_AUDIENCE") or None
+        issuer = os.environ.get("MCP_JWT_ISSUER", "").strip() or None
+        audience = os.environ.get("MCP_JWT_AUDIENCE", "").strip() or None
         require_issuer_audience(issuer, audience)
         return RevocationAwareJWTVerifier(
             public_key=os.environ.get("MCP_JWT_PUBLIC_KEY") or None,

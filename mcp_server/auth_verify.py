@@ -260,7 +260,7 @@ def _env_number(name: str, default: float, *, allow_zero: bool) -> float:
 
 
 def _is_loopback_host(host: str | None) -> bool:
-    if host == "localhost":
+    if (host or "").rstrip(".") == "localhost":  # "localhost." is the absolute spelling
         return True
     try:
         return ipaddress.ip_address(host or "").is_loopback
@@ -290,6 +290,10 @@ def require_issuer_audience(issuer: str | None, audience: str | None) -> None:
     Without both, any token signed by the same key or IdP for a different service
     is accepted. ``MCP_JWT_ALLOW_UNSCOPED=true`` is the explicit opt-out.
     """
+    # Blank is missing: a whitespace issuer would start the server and then reject
+    # every normally issued token instead of reporting the configuration error.
+    issuer = (issuer or "").strip() or None
+    audience = (audience or "").strip() or None
     if issuer and audience:
         return
     if _env_flag("MCP_JWT_ALLOW_UNSCOPED"):
