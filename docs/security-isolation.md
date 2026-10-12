@@ -108,8 +108,48 @@ empty values, characters needing substitution) becomes
 `<prefix>~<sha256>`. The mapping is injective — `a@x.com` and `a_x.com`
 never share a run root — and never yields `local`, which owns the whole
 `RUN_ROOT` in stdio mode only. `run_root_for` rejects keys that are not a
-direct child of `RUN_ROOT`. Plain keys are lowercase-only (case-insensitive
+direct child of `RUN_ROOT`, including paths or symlinks aliasing another tenant. Plain keys are lowercase-only (case-insensitive
 filesystems) and must not look like a local run id (`*_<12 hex>`). Note: principals
 whose ids previously needed substitution (e.g. emails) now get a new hashed
 directory; their old `<sanitized>` dir is not migrated automatically. Remaining #170 items (signing-key placement,
 replay, DoS limits, permissions) are tracked separately.
+
+
+### Principal-key migration
+
+Stop the server and drain or cancel queued/running work before upgrading. Back up
+both `RUN_ROOT` and `MEASURES_DIR`, including run metadata. Plain lowercase keys
+such as `alice` stay unchanged. Mixed-case names, emails, reserved names, and
+local-run-shaped names now use `<prefix>~<full sha256>`. The fixed directory
+inventory is `config.LOCAL_RUN_DIR_NAMES`; `local` is additionally reserved.
+For example, `Alice` becomes
+`Alice~3bc51062973c458d5a6f2d8d64a023246354ad7e064b1e4e009ec8a0699a3043`.
+Tokens without a usable principal, including the literal `unknown`, are refused;
+issue replacement tokens with distinct principals before restoring access.
+
+There is **no automatic migration**. A changed key leaves the old directory
+unreachable through the new identity, and quota accounting starts at the new
+root. The change applies to both `RUN_ROOT/<key>` and `MEASURES_DIR/<key>`.
+Sandbox uid/gid derivation also changes with the key.
+
+For each affected principal, verify ownership from trusted operator records before
+moving data. The previous sanitizer could merge distinct identities, and a
+reserved name could overlap local storage. Never assign such a directory wholesale
+to one principal without separating the verified owners' files.
+
+After verifying ownership, migrate the user's run and measure directories to the
+new key. Review every persisted `run_record.json`: its `user_key` must match the
+new key, and absolute `run_dir`, `osw_path`, and `epw_path` references must point
+to their new locations where applicable. Merely renaming the directory leaves
+old run ownership/path metadata unusable. Review other saved workflows for
+absolute paths into the old storage. Reassign file ownership to the uid/gid from
+`sandbox_ids(new_key)` where necessary; newly launched runs prepare their own
+work directories, but existing data and measure directories may retain old ids.
+
+Restart and verify that each user can access their migrated runs/measures and
+cannot access another user's files. Remint signed transfer URLs, which carry the
+old key. Retain the backups until migration and quota accounting are verified.
+
+The uid hash allocation remains a separate limitation: distinct keys can still
+hash to the same numeric uid. Collision-checked allocation is follow-up work;
+this change fixes selection of the run owner, not uid allocation.

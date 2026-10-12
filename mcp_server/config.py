@@ -8,6 +8,13 @@ from pathlib import Path
 RUN_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs"))).resolve()
 RUN_ROOT.mkdir(parents=True, exist_ok=True)
 
+# Fixed local storage names must never become a remote principal's run root.
+# Keep this inventory current when adding a fixed directory under user_run_root().
+LOCAL_RUN_DIR_NAMES = frozenset({
+    "python_packages", "uploads", "lost+found", "examples", "models", "exports",
+    "bar_building", "floorspacejs", "custom_measures",
+})
+
 def _safe_int(env_val: str, default: int) -> int:
     try:
         return int(env_val)
@@ -169,15 +176,16 @@ def _derive_tenant_uid(key: str) -> int:
     return _PER_TENANT_UID_BASE + (int.from_bytes(digest[:4], "big") % _PER_TENANT_UID_SPAN)
 
 
-def sandbox_ids() -> tuple[int, int]:
-    """(uid, gid) the CURRENT caller's confined subprocess drops to.
+def sandbox_ids(key: str | None = None) -> tuple[int, int]:
+    """(uid, gid) for an explicit run owner, or the current caller when omitted.
 
     Resolved per-call from caller identity (same key in → same uid out, so a
     request's prepare_workdir chown and the shim's setuid agree). LOCAL → the
     baked SANDBOX_UID/GID; each remote tenant → its own derived uid (gid==uid).
     """
     from mcp_server.identity import LOCAL, user_key
-    key = user_key()
+    if key is None:
+        key = user_key()
     if key == LOCAL:
         return (SANDBOX_UID, SANDBOX_GID)
     uid = _derive_tenant_uid(key)
@@ -250,11 +258,12 @@ def user_run_root() -> Path:
     original /runs/<run_id> layout — while each HTTP user is scoped to
     RUN_ROOT/<user_key>.
     """
-    from mcp_server.identity import LOCAL, user_key
-    key = user_key()
-    root = (RUN_ROOT if key == LOCAL else RUN_ROOT / key).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    from mcp_server.identity import user_key
+    return run_root_for(user_key())
+
+
+class InvalidUserKeyError(ValueError):
+    """A user key aliases storage outside its own canonical directory."""
 
 
 def run_root_for(key: str) -> Path:
@@ -266,9 +275,12 @@ def run_root_for(key: str) -> Path:
     RUN_ROOT, matching user_run_root().
     """
     from mcp_server.identity import LOCAL
-    root = (RUN_ROOT if key == LOCAL else RUN_ROOT / key).resolve()
-    if key != LOCAL and (not key or root.parent != RUN_ROOT):
-        raise ValueError(f"invalid user key: {key!r}")
+    if key != LOCAL and (not key or key in (".", "..") or "/" in key or "\\" in key):
+        raise InvalidUserKeyError(f"invalid user key: {key!r}")
+    expected = RUN_ROOT if key == LOCAL else RUN_ROOT / key
+    root = expected.resolve()
+    if key != LOCAL and (root.parent != RUN_ROOT or root != expected):
+        raise InvalidUserKeyError(f"invalid user key: {key!r}")
     root.mkdir(parents=True, exist_ok=True)
     return root
 
