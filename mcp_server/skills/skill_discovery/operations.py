@@ -62,9 +62,9 @@ def list_skills_op() -> dict:
         skills.append({"name": name, "description": description})
 
     out = {"ok": True, "skills": skills, "count": len(skills)}
-    # Skill guides name create_measure & co.; when the tool policy hides them (HTTP
-    # mode without OSMCP_ENABLE_CODE_TOOLS, issue #180) say so instead of letting the
-    # agent follow steps it cannot execute.
+    # Skill guides name create_measure & co.; when the tool policy hides them
+    # (OSMCP_ENABLE_CODE_TOOLS=false or a deny/allow list, issue #180) say so instead of
+    # letting the agent follow steps it cannot execute.
     hidden = sorted(t for t in CODE_AUTHORING_TOOLS if not tool_enabled(t))
     if hidden:
         out["policy_note"] = (

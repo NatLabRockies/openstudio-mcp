@@ -34,12 +34,12 @@ async def _initialize(url):
             return init.instructions or "", tools
 
 
-def test_http_hides_code_tools_and_says_so():
-    # Validates: on a default HTTP server the five code-authoring tools are absent from
-    # list_tools, a call to one is refused, the server instructions no longer tell the
-    # agent to "ALWAYS use create_measure", and list_skills carries the policy note
+def test_http_opt_out_hides_code_tools_and_says_so():
+    # Validates: with OSMCP_ENABLE_CODE_TOOLS=false the five code-authoring tools are absent
+    # from list_tools, a call to one by name is refused (hidden means unregistered, not
+    # filtered from the listing), the server instructions no longer tell the agent to
+    # "ALWAYS use create_measure", and list_skills carries the policy note
     _skip_unless_integration()
-    # conftest enables the code tools for the suite; this test wants the shipped default
     with http_server({"MCP_AUTH": "none", "OSMCP_ENABLE_CODE_TOOLS": "false"}) as (url, _proc):
         async def _run():
             instructions, tools = await _initialize(url)
@@ -60,11 +60,12 @@ def test_http_hides_code_tools_and_says_so():
         asyncio.run(_run())
 
 
-def test_http_enable_code_tools_restores_authoring():
-    # Validates: OSMCP_ENABLE_CODE_TOOLS=true is the operator opt-in: the tools are listed
-    # again, the instructions name create_measure, and list_skills carries no policy note
+def test_http_default_exposes_authoring():
+    # Validates: the shipped default on HTTP exposes measure authoring (maintainer decision:
+    # a deployment must actively opt out of code writing): the five tools are listed, the
+    # instructions name create_measure, and list_skills carries no policy note
     _skip_unless_integration()
-    with http_server({"MCP_AUTH": "none", "OSMCP_ENABLE_CODE_TOOLS": "true"}) as (url, _proc):
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
         async def _run():
             instructions, tools = await _initialize(url)
             assert CODE_TOOLS <= tools, f"missing: {CODE_TOOLS - tools}"
@@ -77,12 +78,11 @@ def test_http_enable_code_tools_restores_authoring():
 
 
 def test_deny_listed_create_measure_is_not_advertised():
-    # Regression: the instructions keyed on the HTTP code-tools flag, so with the code tools
-    # enabled but create_measure deny-listed the agent was still told to "ALWAYS use
-    # create_measure" (Codex review); guidance must follow the tool's actual exposure
+    # Regression: the instructions keyed on the code-tools flag, so with create_measure
+    # deny-listed the agent was still told to "ALWAYS use create_measure" (Codex review);
+    # guidance must follow the tool's actual exposure
     _skip_unless_integration()
-    with http_server({"MCP_AUTH": "none", "OSMCP_ENABLE_CODE_TOOLS": "true",
-                      "OSMCP_TOOLS_DENY": "create_measure"}) as (url, _proc):
+    with http_server({"MCP_AUTH": "none", "OSMCP_TOOLS_DENY": "create_measure"}) as (url, _proc):
         async def _run():
             instructions, tools = await _initialize(url)
             assert "create_measure" not in tools and "edit_measure" in tools

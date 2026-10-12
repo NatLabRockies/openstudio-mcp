@@ -498,8 +498,8 @@ HTTP server limits what an agent can be steered into:
 
 | Variable | Effect |
 |---|---|
-| `OSMCP_ENABLE_CODE_TOOLS` | In HTTP mode `create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin` and `install_plugin_packages` are hidden unless this is `true`. The server instructions and `list_skills` then say that measure authoring is disabled instead of telling the agent to call them. |
-| `OSMCP_TOOLS_ALLOW` | Comma list; when set, only these tools are registered (any transport). Listing a code-authoring tool here does not imply `OSMCP_ENABLE_CODE_TOOLS`. |
+| `OSMCP_ENABLE_CODE_TOOLS` | Default `true`: measure authoring is available on every transport. Set `false` on a deployment that must not let agents write code: `create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin` and `install_plugin_packages` are then not registered at all (a client that knows the name gets tool-not-found), and the server instructions and `list_skills` say that measure authoring is disabled instead of telling the agent to call them. |
+| `OSMCP_TOOLS_ALLOW` | Comma list; when set, only these tools are registered (any transport). Listing a code-authoring tool here does not override `OSMCP_ENABLE_CODE_TOOLS=false`. |
 | `OSMCP_TOOLS_DENY` | Comma list of tools to hide (any transport). A tool in both lists is hidden (deny wins). |
 | `OSMCP_ALLOW_UNSANDBOXED` | The HTTP server refuses to start (exit status 3) unless the full tier is configured: `OSMCP_SANDBOX=auto` (or `full`/`landlock`), `OSMCP_SANDBOX_NET=deny`, on Linux. `true` overrides, with a logged warning. |
 

@@ -67,8 +67,8 @@ def _build_auth():
 def _instructions() -> str:
     """Server instructions; the measure-authoring guidance follows the tool policy.
 
-    When create_measure is hidden (HTTP mode without OSMCP_ENABLE_CODE_TOOLS, or
-    an allow/deny list, issue #180) the agent must not be told to call it.
+    When create_measure is hidden (OSMCP_ENABLE_CODE_TOOLS=false or an allow/deny
+    list, issue #180) the agent must not be told to call it.
     """
     if tool_enabled("create_measure"):
         measures = (

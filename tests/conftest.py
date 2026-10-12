@@ -179,10 +179,6 @@ def http_server(env_overrides: dict | None = None, port: int | None = None):
         # Disable the auto-GC daemon by default so the suite never reclaims the
         # shared /runs out from under other tests; retention tests opt in.
         "OSMCP_RUN_RETENTION_DAYS": "0",
-        # The suite authors probe measures over HTTP (test_sandbox, test_measure_discovery);
-        # the shipped default hides the code-authoring tools in HTTP mode (issue #180).
-        # test_tool_policy overrides this to exercise the default posture.
-        "OSMCP_ENABLE_CODE_TOOLS": "true",
     })
     if env_overrides:
         env.update(env_overrides)

@@ -5,10 +5,12 @@
 ### Security
 - **Breaking (HTTP mode):** the server refuses to start (exit status 3) unless the full
   sandbox tier is configured (`OSMCP_SANDBOX=auto`, `OSMCP_SANDBOX_NET=deny`, Linux); set
-  `OSMCP_ALLOW_UNSANDBOXED=true` to accept the risk. The code-authoring tools
-  (`create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin`,
-  `install_plugin_packages`) are hidden in HTTP mode unless `OSMCP_ENABLE_CODE_TOOLS=true`;
-  the server instructions and `list_skills` say so instead of steering the agent to them.
+  `OSMCP_ALLOW_UNSANDBOXED=true` to accept the risk. `OSMCP_ENABLE_CODE_TOOLS=false` (any
+  transport) leaves the code-authoring tools (`create_measure`, `edit_measure`,
+  `create_python_plugin`, `edit_python_plugin`, `install_plugin_packages`) unregistered for
+  deployments that must not let agents write code; the default keeps them on, and the
+  server instructions and `list_skills` say when they are off instead of steering the
+  agent to them.
   New `OSMCP_TOOLS_ALLOW` / `OSMCP_TOOLS_DENY` lists limit the roster on any transport;
   entries are case-insensitive, deny wins, an unknown name or an empty allow-list refuses
   startup rather than failing open, and under `OSMCP_CODE_MODE=1` the synthetic

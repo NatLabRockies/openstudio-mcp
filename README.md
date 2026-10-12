@@ -255,7 +255,7 @@ untrusted measures.
 | `OSMCP_SANDBOX_RLIMIT_AS` | `0` | Optional virtual-memory limit. Prefer Docker memory limits because restrictive address-space limits can break EnergyPlus. |
 | `OSMCP_SIM_TIMEOUT_SECONDS` | `7200` | Wall-clock timeout for a simulation. `0` disables the timeout. |
 | `OSMCP_ALLOW_UNSANDBOXED` | unset | In HTTP mode the server refuses to start (exit 3) unless the full tier is configured (`OSMCP_SANDBOX=auto`, `OSMCP_SANDBOX_NET=deny`, Linux). `true` overrides with a logged warning. |
-| `OSMCP_ENABLE_CODE_TOOLS` | unset | In HTTP mode the code-authoring tools (`create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin`, `install_plugin_packages`) are hidden unless `true`. |
+| `OSMCP_ENABLE_CODE_TOOLS` | `true` | Set `false` to not register the code-authoring tools (`create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin`, `install_plugin_packages`) on a deployment that must not let agents write code. |
 | `OSMCP_TOOLS_ALLOW` | unset | Comma list; when set, only these tools are registered. Unknown names refuse startup. |
 | `OSMCP_TOOLS_DENY` | unset | Comma list of tools to hide (deny wins over allow). Unknown names refuse startup. |
 

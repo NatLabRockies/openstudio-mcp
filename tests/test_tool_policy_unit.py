@@ -60,14 +60,25 @@ def test_stdio_exposes_code_tools(name):
 
 
 @pytest.mark.parametrize("transport", ["http", "streamable-http", "HTTP"])
-def test_http_hides_code_tools_by_default(monkeypatch, transport):
-    # Validates: under either HTTP transport spelling the five code-authoring tools are
-    # hidden unless OSMCP_ENABLE_CODE_TOOLS=true, while execution tools stay visible
+def test_http_exposes_code_tools_by_default(monkeypatch, transport):
+    # Validates: measure authoring is on by default on every transport (maintainer
+    # decision: a deployment must actively choose to forbid writing code); the five
+    # code-authoring tools are exposed on HTTP with no flag set
     monkeypatch.setenv("MCP_TRANSPORT", transport)
+    assert all(tool_policy.tool_enabled(t) for t in tool_policy.CODE_AUTHORING_TOOLS)
+
+
+@pytest.mark.parametrize(("transport", "value"), [
+    ("http", "false"), ("streamable-http", "0"), ("stdio", "no"), ("http", " OFF "),
+])
+def test_code_tools_opt_out_hides_on_any_transport(monkeypatch, transport, value):
+    # Validates: OSMCP_ENABLE_CODE_TOOLS=false (any false spelling) hides exactly the five
+    # code-authoring tools on any transport, while execution tools stay visible
+    monkeypatch.setenv("MCP_TRANSPORT", transport)
+    monkeypatch.setenv("OSMCP_ENABLE_CODE_TOOLS", value)
     assert all(not tool_policy.tool_enabled(t) for t in tool_policy.CODE_AUTHORING_TOOLS)
     assert tool_policy.tool_enabled("apply_measure") is True
-    monkeypatch.setenv("OSMCP_ENABLE_CODE_TOOLS", "true")
-    assert all(tool_policy.tool_enabled(t) for t in tool_policy.CODE_AUTHORING_TOOLS)
+    assert tool_policy.tool_enabled("test_measure") is True
 
 
 @pytest.mark.parametrize(("deny", "hidden", "visible"), [
@@ -93,10 +104,10 @@ def test_allow_list_restricts_and_deny_wins(monkeypatch):
     assert tool_policy.tool_enabled("run_osw") is False
 
 
-def test_allow_listing_code_tool_does_not_imply_enable(monkeypatch):
-    # Validates: in HTTP mode an allow-listed create_measure stays hidden until
-    # OSMCP_ENABLE_CODE_TOOLS=true; the allow-list narrows, it never widens
-    monkeypatch.setenv("MCP_TRANSPORT", "http")
+def test_allow_listing_code_tool_does_not_override_opt_out(monkeypatch):
+    # Validates: with OSMCP_ENABLE_CODE_TOOLS=false an allow-listed create_measure stays
+    # hidden; the allow-list narrows, it never widens
+    monkeypatch.setenv("OSMCP_ENABLE_CODE_TOOLS", "false")
     monkeypatch.setenv("OSMCP_TOOLS_ALLOW", "create_measure,apply_measure")
     assert tool_policy.tool_enabled("create_measure") is False
     assert tool_policy.tool_enabled("apply_measure") is True
@@ -104,9 +115,18 @@ def test_allow_listing_code_tool_does_not_imply_enable(monkeypatch):
     assert tool_policy.tool_enabled("create_measure") is True
 
 
+@pytest.mark.parametrize("value", ["flase", "disabled", "maybe"])
+def test_validate_policy_rejects_non_boolean_code_tools_flag(monkeypatch, value):
+    # Validates: a misspelt OSMCP_ENABLE_CODE_TOOLS refuses startup instead of silently
+    # keeping the default, since the operator clearly meant to set it
+    monkeypatch.setenv("OSMCP_ENABLE_CODE_TOOLS", value)
+    with pytest.raises(RuntimeError, match="OSMCP_ENABLE_CODE_TOOLS"):
+        tool_policy.validate_policy(_KNOWN)
+
+
 # ------------------------------------------------------------ validate_policy
 
-_KNOWN = frozenset({"apply_measure", "run_osw", "get_model_summary"})
+_KNOWN = frozenset({"apply_measure", "run_osw", "get_model_summary", "create_measure"})
 
 
 @pytest.mark.parametrize(("var", "value", "unknown"), [
@@ -153,8 +173,10 @@ def test_validate_policy_knows_code_mode_tools(monkeypatch):
 # ----------------------------------------------------- CollectingMCP enforcement
 
 @pytest.mark.parametrize(("env", "hidden", "visible"), [
-    ({"MCP_TRANSPORT": "http"}, tool_policy.CODE_AUTHORING_TOOLS, {"apply_measure", "run_osw"}),
-    ({"MCP_TRANSPORT": "http", "OSMCP_ENABLE_CODE_TOOLS": "true"}, set(), tool_policy.CODE_AUTHORING_TOOLS),
+    ({"MCP_TRANSPORT": "http"}, set(), tool_policy.CODE_AUTHORING_TOOLS | {"apply_measure"}),
+    ({"MCP_TRANSPORT": "http", "OSMCP_ENABLE_CODE_TOOLS": "false"}, tool_policy.CODE_AUTHORING_TOOLS,
+     {"apply_measure", "run_osw"}),
+    ({"OSMCP_ENABLE_CODE_TOOLS": "false"}, tool_policy.CODE_AUTHORING_TOOLS, {"apply_measure"}),
     ({"OSMCP_TOOLS_DENY": "Run_OSW, view_model"}, {"run_osw", "view_model"}, {"apply_measure"}),
     ({"OSMCP_TOOLS_ALLOW": "get_model_summary,list_skills"}, {"apply_measure", "run_osw"},
      {"get_model_summary", "list_skills"}),

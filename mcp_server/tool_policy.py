@@ -3,7 +3,9 @@
 Tools that author or install executable content (measures, Python plugins,
 pip packages) are the prompt-injection blast radius on a multi-user server:
 injected text in an uploaded model can steer an agent into writing and running
-code. In HTTP mode they are hidden unless the operator opts in.
+code. They are exposed by default (measure authoring is a core workflow); a
+deployment that must not let agents write code opts out explicitly with
+OSMCP_ENABLE_CODE_TOOLS=false, on any transport.
 
 Hiding them is a steering control, not an execution boundary: uploads still
 auto-extract measure zips and ``apply_measure``/``run_osw``/``test_measure``
@@ -12,7 +14,7 @@ still run tenant code. The sandbox (``enforce_http_sandbox``) is the boundary.
 Env:
   OSMCP_TOOLS_ALLOW   comma list; when set, ONLY these tools are registered
   OSMCP_TOOLS_DENY    comma list of tools to hide (any transport); deny wins
-  OSMCP_ENABLE_CODE_TOOLS=true  expose CODE_AUTHORING_TOOLS in HTTP mode
+  OSMCP_ENABLE_CODE_TOOLS=false hide CODE_AUTHORING_TOOLS (default true, any transport)
   OSMCP_ALLOW_UNSANDBOXED=true  let the HTTP server start without full confinement
 
 Every ALLOW/DENY entry must name a registered tool (case-insensitive); an
@@ -61,17 +63,24 @@ def _code_mode() -> bool:
     return os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
 
 
+_TRUE = ("1", "true", "yes", "on")
+_FALSE = ("0", "false", "no", "off")
+
+
 def code_tools_enabled() -> bool:
-    """Whether the code-authoring tools are exposed under the current transport/flags."""
-    return not _http() or _flag("OSMCP_ENABLE_CODE_TOOLS")
+    """Whether the code-authoring tools are exposed: on unless OSMCP_ENABLE_CODE_TOOLS
+    is explicitly false. An unrecognised value is rejected by ``validate_policy``;
+    here it counts as the default (on) so registration never hides on a typo alone.
+    """
+    return os.environ.get("OSMCP_ENABLE_CODE_TOOLS", "true").strip().lower() not in _FALSE
 
 
 def tool_enabled(name: str) -> bool:
     """Whether `name` should be registered under the current environment.
 
     Order: allow-list narrows, deny-list hides (deny wins over allow), then the
-    HTTP code-authoring hide applies regardless of the allow-list, so listing
-    ``create_measure`` in OSMCP_TOOLS_ALLOW never implies OSMCP_ENABLE_CODE_TOOLS.
+    code-authoring opt-out applies regardless of the allow-list, so listing
+    ``create_measure`` in OSMCP_TOOLS_ALLOW never overrides OSMCP_ENABLE_CODE_TOOLS=false.
     """
     key = name.lower()
     allow = _csv("OSMCP_TOOLS_ALLOW")
@@ -92,6 +101,12 @@ def validate_policy(known_names: Iterable[str]) -> None:
     known = {n.lower() for n in known_names}
     if _code_mode():
         known |= CODE_MODE_TOOLS
+    raw_code = os.environ.get("OSMCP_ENABLE_CODE_TOOLS")
+    if raw_code is not None and raw_code.strip().lower() not in _TRUE + _FALSE:
+        raise RuntimeError(
+            f"OSMCP_ENABLE_CODE_TOOLS={raw_code!r} is not a boolean; use true or false "
+            "(unset means true).",
+        )
     raw_allow = os.environ.get("OSMCP_TOOLS_ALLOW")
     if raw_allow is not None and not _csv("OSMCP_TOOLS_ALLOW"):
         raise RuntimeError(
