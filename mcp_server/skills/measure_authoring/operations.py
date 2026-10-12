@@ -959,7 +959,7 @@ def _test_reporting_measure_with_run(
     import json
 
     from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
-    from mcp_server.util import resolve_run_dir
+    from mcp_server.util import is_regular_file_inside, resolve_run_dir
 
     try:
         sim_dir = resolve_run_dir(user_run_root(), run_id)
@@ -967,10 +967,11 @@ def _test_reporting_measure_with_run(
         return {"ok": False, "error": f"Simulation run not found: {run_id}"}
 
     sql_src = sim_dir / "run" / "eplusout.sql"
-    if sql_src.is_symlink():  # written by the sandboxed run: never copy through a link
-        return {"ok": False, "error": f"eplusout.sql in run {run_id} is a symlink (not allowed)"}
     if not sql_src.is_file():
         return {"ok": False, "error": f"No eplusout.sql in run {run_id} — simulation may not have completed"}
+    # Written by the sandboxed run: never copy through a link, including a linked run/ parent
+    if not is_regular_file_inside(sql_src, sim_dir):
+        return {"ok": False, "error": f"eplusout.sql in run {run_id} is a symlink or outside the run (not allowed)"}
 
     # Build temp run dir
     _test_run_id, run_dir = create_run_dir(user_run_root(), "measure_test", mdir.name)
@@ -981,13 +982,13 @@ def _test_reporting_measure_with_run(
     shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
     for fname in ["in.osm", "in.idf"]:
         src = sim_dir / "run" / fname
-        if src.is_file() and not src.is_symlink():
+        if is_regular_file_inside(src, sim_dir):
             shutil.copy2(str(src), str(ep_run / fname))
 
     # Copy seed model for OSW
     osm_src = sim_dir / "run" / "in.osm"
     temp_osm = run_dir / "in.osm"
-    if osm_src.is_file() and not osm_src.is_symlink():
+    if is_regular_file_inside(osm_src, sim_dir):
         shutil.copy2(str(osm_src), str(temp_osm))
     else:
         # Fallback: create empty model

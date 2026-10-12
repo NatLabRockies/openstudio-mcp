@@ -223,6 +223,95 @@ def test_loaded_record_drops_pid_that_is_not_this_runs_child(run_root):
 
 
 @posix_only
+def test_uninspectable_live_pid_is_kept_but_never_signalled(run_root, monkeypatch):
+    # Regression: an identity check that could not inspect the process (AccessDenied) was
+    # treated as "not ours", the pid was dropped, _refresh_status saw no out.osw and marked a
+    # live run failed, and retention could then delete it
+    run_dir = run_root / "run_a"
+    run_dir.mkdir()
+    alive = _sleeper(run_root / "run_other")
+    try:
+        time.sleep(0.2)
+        monkeypatch.setattr(sim_ops, "_pid_is_runs_child", lambda *_a: None)
+        monkeypatch.setattr(retention, "_pid_is_runs_child", lambda *_a: None)
+        _write_record(run_dir, status="running", pid=alive.pid)
+        assert sim_ops._load_run_record_from_disk("run_a").pid == alive.pid
+        assert sim_ops.get_run_status("run_a")["run"]["status"] == "running"
+        assert retention._is_active(run_dir) is True
+        res = sim_ops.cancel_run("run_a")
+        assert res["ok"] is False and "not this run's process" in res["error"], res
+        assert alive.poll() is None
+    finally:
+        _stop(alive)
+
+
+def test_dead_pid_in_record_is_dropped_and_run_classified(run_root):
+    # Validates: a pid that no longer exists is dropped on reload and the run is classified
+    # from its artifacts (no out.osw -> failed) rather than left running
+    run_dir = run_root / "run_a"
+    _write_record(run_dir, status="running", pid=2**22 - 1)
+    assert sim_ops._load_run_record_from_disk("run_a").pid is None
+    assert sim_ops.get_run_status("run_a")["run"]["status"] == "failed"
+
+
+def test_cancel_run_leaves_reloaded_terminal_record_alone(run_root):
+    # Regression: a reloaded terminal record has no pid, and the pid-is-None branch marked it
+    # cancelled (and persisted that) before the terminal guard ran
+    run_dir = run_root / "run_a"
+    _write_record(run_dir, status="success", pid=None)
+    res = sim_ops.cancel_run("run_a")
+    assert res == {"ok": True, "run_id": "run_a", "cancelled": False, "status": "success"}
+    assert json.loads((run_dir / "run_record.json").read_text())["status"] == "success"
+
+
+@posix_only
+def test_regular_file_inside_rejects_planted_parent_link(tmp_path):
+    # Regression: the staging copies and SDK loads checked only the leaf, so run/ planted as a
+    # symlink to another tenant's run made run/in.osm look like a regular file of this run
+    from mcp_server.util import is_regular_file_inside
+
+    outside = tmp_path / "outside" / "run"
+    outside.mkdir(parents=True)
+    (outside / "in.osm").write_text("x")
+    run_dir = tmp_path / "run_a"
+    run_dir.mkdir()
+    (run_dir / "run").symlink_to(outside, target_is_directory=True)
+    assert is_regular_file_inside(run_dir / "run" / "in.osm", run_dir) is False
+    (run_dir / "run").unlink()
+    (run_dir / "run").mkdir()
+    (run_dir / "run" / "in.osm").write_text("x")
+    assert is_regular_file_inside(run_dir / "run" / "in.osm", run_dir) is True
+    (run_dir / "run" / "in.idf").symlink_to(outside / "in.osm")
+    assert is_regular_file_inside(run_dir / "run" / "in.idf", run_dir) is False
+
+
+@posix_only
+@pytest.mark.parametrize("identity", [False, None])
+def test_timeout_enforcement_never_signals_unverified_pid(run_root, monkeypatch, identity):
+    # Regression: _enforce_timeouts killed an expired record's pid on liveness alone, so a
+    # reused or uninspectable pid could be signalled as root on timeout
+    run_dir = run_root / "run_a"
+    run_dir.mkdir()
+    stranger = _sleeper(run_root / "run_other")
+    try:
+        time.sleep(0.2)
+        if identity is None:
+            monkeypatch.setattr(sim_ops, "_pid_is_runs_child", lambda *_a: None)
+        monkeypatch.setattr(sim_ops, "SIM_TIMEOUT_SECONDS", 1)
+        rec = sim_ops.RunRecord(
+            run_id="run_a", user_key="local", name="x", status="running", created_at=1.0,
+            started_at=1.0, ended_at=None, pid=stranger.pid, run_dir=run_dir,
+            osw_path=run_dir / "workflow.osw", epw_path=None, exit_code=None, error=None,
+        )
+        sim_ops._RUNS["run_a"] = rec
+        sim_ops._enforce_timeouts()
+        assert stranger.poll() is None
+        assert rec.status == "running"
+    finally:
+        _stop(stranger)
+
+
+@posix_only
 def test_cancel_run_refuses_foreign_pid_on_cached_record(run_root):
     # Regression: an in-memory record whose pid had been reused by another process was
     # signalled as root; the identity check now runs right before the kill

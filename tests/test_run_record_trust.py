@@ -61,8 +61,11 @@ def test_forged_run_record_cannot_reach_sibling_tenant_or_kill_stranger():
                     assert status["ok"] is True, status
                     assert status["run"]["run_dir"] == str(forged)
                     assert status["run"]["pid"] is None
+                    # the stranger is not this run's process, so with no out.osw the run is
+                    # classified failed from its (absent) artifacts, and cancel has nothing to do
+                    assert status["run"]["status"] == "failed"
                     cancelled = unwrap(await alice.call_tool("cancel_run", {"run_id": forged.name}))
-                    assert cancelled == {"ok": True, "run_id": forged.name, "cancelled": True}
+                    assert cancelled == {"ok": True, "run_id": forged.name, "cancelled": False, "status": "failed"}
                     via_link = unwrap(await alice.call_tool("get_run_status", {"run_id": linked.name}))
                     assert via_link["ok"] is False and "Unknown run_id" in via_link["error"], via_link
             asyncio.run(run())

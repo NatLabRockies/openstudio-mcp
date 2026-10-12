@@ -201,8 +201,13 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
         if not _inside(osw_path, run_dir):
             osw_path = run_dir / "workflow.osw"
         pid = _coerce_int(data.get("pid"))
-        if pid is not None and _pid_is_runs_child(pid, run_dir) is not True:
-            pid = None
+        if pid is not None:
+            if not _pid_alive(pid):
+                pid = None  # gone: classify from artifacts below
+            elif _pid_is_runs_child(pid, run_dir) is False:
+                pid = None  # someone else's live process: never poll or signal it
+            # True, or None (alive but not inspectable): keep it so the run is still seen as
+            # running; cancel_run only signals on True, retention only frees on False.
         status = data.get("status")
         if not isinstance(status, str) or status not in _STATUSES:
             status = "unknown"
@@ -563,6 +568,9 @@ def _enforce_timeouts() -> None:
             # _dispatch_once()/_refresh_status() classify it by its real exit code
             # instead of force-failing a run that may have completed successfully.
             and _pid_alive(rec.pid)
+            # Never signal a pid we cannot prove is this run's own child (pid reuse, or a
+            # reloaded record whose process could not be inspected).
+            and _pid_is_runs_child(rec.pid, rec.run_dir) is True
         ]
     for rec in expired:
         _kill_process_group(rec.pid)  # whole group: EnergyPlus + any forked helpers
@@ -972,6 +980,8 @@ def cancel_run(run_id: str) -> dict[str, Any]:
     if not rec:
         return {"ok": False, "error": f"Unknown run_id: {run_id}"}
 
+    if rec.status in _TERMINAL:  # before the pid branch: reloaded terminal records carry no pid
+        return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     pid = rec.pid
     if pid is None:
         # Queued (or never started) — mark cancelled; dispatcher skips non-queued.
@@ -983,8 +993,6 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         audit("sim_cancelled", run_id=run_id, user=rec.user_key)
         return {"ok": True, "run_id": run_id, "cancelled": True}
 
-    if rec.status in _TERMINAL:
-        return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
     if not _pid_alive(pid):
         # Finished before the cancel landed — classify by exit code, don't mislabel
         # a completed run as cancelled.

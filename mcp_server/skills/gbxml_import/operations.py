@@ -42,7 +42,13 @@ from mcp_server.skills.geometry.paired_vertex_sync import sync_paired_surface_ve
 from mcp_server.skills.geometry.winding import normalize_local_frame_winding
 from mcp_server.skills.measures.runner_messages import OSW_MAX_BYTES, parse_all_step_messages
 from mcp_server.skills.weather.ground_temperatures import find_missing_ground_temperatures
-from mcp_server.util import create_run_dir, read_file_bounded, read_tail_bounded, reject_escaping_symlinks
+from mcp_server.util import (
+    create_run_dir,
+    is_regular_file_inside,
+    read_file_bounded,
+    read_tail_bounded,
+    reject_escaping_symlinks,
+)
 
 # Failure-path log tail: 50 lines fit comfortably in 200KB; read_tail_bounded
 # seeks to the end so a giant log is never loaded whole (PR #105).
@@ -282,10 +288,14 @@ def import_gbxml_op(
             return result
 
         output_osm = run_dir / "run" / "in.osm"
-        if output_osm.is_symlink():  # written by the sandboxed translator: never load through a link
-            return {"ok": False, "error": "Output OSM is a symlink (not allowed)", "run_dir": str(run_dir)}
         if not output_osm.is_file():
             return {"ok": False, "error": "Output OSM not found after gbXML import", "run_dir": str(run_dir)}
+        if not is_regular_file_inside(output_osm, run_dir):  # sandboxed output: never load through a link
+            return {
+                "ok": False,
+                "error": "Output OSM is a symlink or outside the run (not allowed)",
+                "run_dir": str(run_dir),
+            }
 
         model_result = openstudio.model.Model.load(str(output_osm))
         if not model_result.is_initialized():
