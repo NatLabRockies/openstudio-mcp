@@ -25,6 +25,10 @@ def _clean(monkeypatch):
     for v in _POLICY_VARS:
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+    yield
+    # A policy-filtered roster must not outlive the test: ensure_collected() returns
+    # early on a non-empty registry, so a later router/catalog test would see it.
+    tool_registry.reset_descriptors()
 
 
 class _FakeMCP:
