@@ -47,6 +47,40 @@ async def _upload(session, url: str, filename: str, data: bytes, kind: str = "au
 
 
 @pytest.mark.integration
+def test_upload_rejects_bzip2_measure_archive():
+    # Regression: request_upload auto-extracts measure zips through guarded_extract, so the
+    # bzip2 memory bomb reached the server through the upload route as well as BCL downloads
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_BZIP2) as zf:
+        zf.writestr("m/measure.rb", "class M; end\n")
+    data = buf.getvalue()
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                req = unwrap(await s.call_tool("request_upload", {
+                    "filename": "codec.zip", "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(), "kind": "measure",
+                }))
+                assert req["ok"] is True, req
+                r = _put(url, req["upload_path"], data)
+                assert r.status_code == 422, f"bzip2 member must be refused: {r.status_code} {r.text}"
+                assert r.json() == {
+                    "ok": False,
+                    "error": "archive entry 'm/measure.rb' uses unsupported compression (bzip2); "
+                             "only stored or deflated members are accepted",
+                }
+                info = unwrap(await s.call_tool("get_upload", {"file_id": req["file_id"]}))
+                assert info["ok"] is True and info["status"] == "pending", info
+                assert info["ready"] is False, info
+
+        asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_upload_roundtrip_loads_model():
     # Validates: a model uploaded out-of-band becomes a server path that load_osm_model loads
     if not integration_enabled():

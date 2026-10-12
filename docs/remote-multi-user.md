@@ -390,7 +390,7 @@ Don't expose port 8000 to the public internet directly.
 | `OSMCP_MAX_UPLOAD_MB` | `200` | max size of a single uploaded file |
 | `OSMCP_USER_QUOTA_MB` | `4096` | per-user cap on total bytes under `uploads/` (`0` = unlimited) |
 | `OSMCP_UPLOAD_URL_TTL` | `300` | seconds a signed upload/download URL stays valid |
-| `OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB` | `1024` | zip-bomb cap on extracted archive size |
+| `OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB` | `1024` | zip-bomb cap on extracted archive size; only stored/deflated members are accepted (bzip2/lzma are refused) |
 | `OSMCP_MAX_ARCHIVE_ENTRIES` | `5000` | max entries in an uploaded archive |
 | `OSMCP_PUBLIC_BASE_URL` | — | pin the public origin for signed file URLs (set behind a TLS reverse proxy); direct connections auto-resolve it from the request `Host` |
 | `OSMCP_FILE_SIGNING_KEY` | auto | HMAC key for signed file URLs (auto-generated + persisted under `RUN_ROOT` if unset) |

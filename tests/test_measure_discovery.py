@@ -9,6 +9,7 @@ import types
 import zipfile
 from io import BytesIO
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -407,3 +408,224 @@ def test_custom_measures_isolated_across_http_sessions():
                 assert "not allowed" in denied["error"].lower(), denied
 
         asyncio.run(_run())
+
+
+class _FakeResp(BytesIO):
+    """urlopen() stand-in: a byte body plus the headers/geturl surface _read_url touches."""
+    headers: ClassVar[dict] = {}
+
+    def geturl(self):
+        return "https://bcl.nlr.gov/x"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+class _DeclaredOversize(_FakeResp):
+    headers: ClassVar[dict] = {"Content-Length": "50"}
+
+    def read(self, *_a):
+        pytest.fail("a response declaring Content-Length over the cap must not be read at all")
+
+
+class _UnboundedReadTrap(_FakeResp):
+    def read(self, amt=None):
+        assert amt is not None, "_read_url must bound its read()"
+        return super().read(amt)
+
+
+@pytest.mark.parametrize(("resp", "ok"), [
+    (_UnboundedReadTrap(b"x" * 50), False),
+    (_DeclaredOversize(b"x" * 50), False),
+    (_UnboundedReadTrap(b"x" * 5), True),
+])
+def test_read_url_enforces_byte_cap(monkeypatch, request, tmp_path, resp, ok):
+    # Regression: BCL/GitHub bodies were read with an unbounded read(); the cap must refuse
+    # both a lying/absent Content-Length (streamed) and a declared oversize (never read).
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    monkeypatch.setattr(ops, "MAX_DOWNLOAD_BYTES", 10, raising=False)
+    monkeypatch.setattr(ops, "urlopen", lambda *_a, **_k: resp)
+    if ok:
+        assert ops._read_url("https://bcl.nlr.gov/x", 5)[0] == b"x" * 5
+    else:
+        with pytest.raises(ValueError, match="exceeds 10 bytes"):
+            ops._read_url("https://bcl.nlr.gov/x", 5)
+
+
+def test_safe_extract_zip_routes_through_guarded_cap(monkeypatch, request, tmp_path):
+    # Validates: measure extraction is wired to the shared guarded_extract with the module's
+    # MAX_EXTRACT_BYTES (the header here is honest; the streamed-vs-header case is archive.py's)
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100, raising=False)
+    z = tmp_path / "big.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("a.txt", "0" * 1000)
+    with pytest.raises(ValueError, match="expands beyond limit"):
+        ops._safe_extract_zip(z, tmp_path / "out")
+
+
+def _zip(*members: tuple) -> bytes:
+    """(name, content[, compress_type]) members; a bzip2 member is refused by guarded_extract
+    only when reached, so a valid member before it is extracted first (partial extraction)."""
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, content, *method in members:
+            zf.writestr(name, content, compress_type=method[0] if method else zipfile.ZIP_STORED)
+    return buf.getvalue()
+
+
+def _download_ops(monkeypatch, request, tmp_path, payload: bytes):
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    root = tmp_path / "measures"
+    root.mkdir(exist_ok=True)
+    monkeypatch.setattr(ops, "user_measures_root", root.resolve)
+    monkeypatch.setattr(ops, "is_path_allowed", lambda *_a, **_k: True)
+    monkeypatch.setattr(ops, "MAX_EXTRACT_BYTES", 100, raising=False)
+    monkeypatch.setattr(ops, "_read_url", lambda *_a, **_k: (payload, "application/zip"))
+    return ops, root
+
+
+# Members at the archive root, so the measure lands directly in <measures>/m.
+_PARTIAL = (("measure.rb", "# evil\n"), ("plugin.rb", "x", zipfile.ZIP_BZIP2))
+
+
+def test_download_failure_leaves_nothing_behind(monkeypatch, request, tmp_path):
+    # Regression: an archive refused part-way through extraction left the extracted members
+    # and the archive behind, which a later download could silently merge with
+    ops, root = _download_ops(monkeypatch, request, tmp_path, _zip(*_PARTIAL))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res["ok"] is False
+    assert "unsupported compression (bzip2)" in res["error"], res
+    assert sorted(p.name for p in root.iterdir()) == [], "no partial tree, archive or staging dir may remain"
+
+
+def test_download_failure_leaves_existing_measure_untouched(monkeypatch, request, tmp_path):
+    # Regression: re-downloading into an existing measure dir extracted straight into it, so an
+    # archive refused after its first member had already overwritten the tenant's measure.rb
+    root = tmp_path / "measures"
+    (root / "m").mkdir(parents=True)
+    (root / "m" / "measure.rb").write_text("# keep\n", encoding="utf-8")
+    ops, root = _download_ops(monkeypatch, request, tmp_path, _zip(*_PARTIAL))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res["ok"] is False
+    assert "unsupported compression (bzip2)" in res["error"], res
+    assert sorted(p.name for p in root.iterdir()) == ["m"], "no archive or staging dir may remain"
+    assert sorted(p.name for p in (root / "m").iterdir()) == ["measure.rb"]
+    assert (root / "m" / "measure.rb").read_text(encoding="utf-8") == "# keep\n"
+
+
+def test_download_replaces_existing_measure_wholesale(monkeypatch, request, tmp_path):
+    # Validates: a successful re-download replaces the measure dir, so stale files from the
+    # previous version are gone and no staging/replaced dirs remain
+    root = tmp_path / "measures"
+    (root / "m").mkdir(parents=True)
+    (root / "m" / "stale.rb").write_text("old\n", encoding="utf-8")
+    ops, root = _download_ops(monkeypatch, request, tmp_path, _zip(("measure.rb", "# new\n")))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res["ok"] is True, res
+    assert sorted(p.name for p in root.iterdir()) == ["m", "x.zip"], "no staging/replaced dirs may remain"
+    assert sorted(p.name for p in (root / "m").iterdir()) == ["measure.rb"]
+    assert (root / "m" / "measure.rb").read_text(encoding="utf-8") == "# new\n"
+
+
+
+def test_download_without_measure_keeps_existing_measure(monkeypatch, request, tmp_path):
+    # Regression: the previous measure was replaced before the new archive was checked for a
+    # measure, so a valid zip holding only a README deleted the tenant's measure
+    root = tmp_path / "measures"
+    (root / "m").mkdir(parents=True)
+    (root / "m" / "measure.rb").write_text("# keep\n", encoding="utf-8")
+    ops, root = _download_ops(monkeypatch, request, tmp_path, _zip(("README.md", "hi\n")))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res == {
+        "ok": False,
+        "error": "Downloaded archive did not contain a measure directory with measure.rb or measure.py.",
+    }
+    assert sorted(p.name for p in root.iterdir()) == ["m"], "no archive or staging dir may remain"
+    assert (root / "m" / "measure.rb").read_text(encoding="utf-8") == "# keep\n"
+
+
+def test_list_local_measures_skips_staging_dirs_only(monkeypatch, request, tmp_path):
+    # Regression: download staging dirs (.extract_*, .replaced_*) sit beside real measures and
+    # were returned by list_local_measures/find_measure while a promotion was in flight; other
+    # hidden dirs (a .cache checkout, a .private measure) must stay discoverable
+    ops = _import_measure_ops(monkeypatch, request, tmp_path / "runs")
+    monkeypatch.setattr(ops, "is_path_allowed", lambda *_a, **_k: True)
+    root = tmp_path / "measures"
+    for d in (".extract_ab12/m", ".replaced_cd34/m", "m2", ".private", ".cache/m4"):
+        (root / d).mkdir(parents=True)
+        (root / d / "measure.rb").write_text("# m\n", encoding="utf-8")
+    res = ops.list_local_measures(root_dir=str(root), max_depth=4)
+    assert res["ok"] is True, res
+    assert sorted(Path(m["measure_dir"]).name for m in res["measures"]) == [".private", "m2", "m4"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+def test_download_promoted_dir_is_readable_by_sandbox(monkeypatch, request, tmp_path):
+    # Regression: the staging dir comes from mkdtemp (0700, root-owned); promoting it as-is
+    # would hide the measure from the sandboxed OpenStudio CLI running under the tenant uid
+    ops, root = _download_ops(monkeypatch, request, tmp_path, _zip(("measure.rb", "# new\n")))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res["ok"] is True, res
+    assert (root / "m").stat().st_mode & 0o777 == 0o755
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink test")
+@pytest.mark.parametrize("planted", ["file", "dir"])
+def test_download_never_writes_through_planted_symlink(monkeypatch, request, tmp_path, planted):
+    # Regression: promoting with copytree followed a symlink planted inside the existing measure
+    # dir (a sandboxed measure test can write there) and overwrote the target as root
+    root = tmp_path / "measures"
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret\n", encoding="utf-8")
+    other = root / "other"
+    other.mkdir(parents=True)
+    (other / "keep.rb").write_text("keep\n", encoding="utf-8")
+    if planted == "file":
+        (root / "m").mkdir()
+        (root / "m" / "measure.rb").symlink_to(outside)
+    else:
+        (root / "m").symlink_to(other, target_is_directory=True)
+    ops, root = _download_ops(monkeypatch, request, tmp_path, _zip(("measure.rb", "# new\n")))
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res["ok"] is True, res
+    assert outside.read_text(encoding="utf-8") == "secret\n"
+    assert sorted(p.name for p in other.iterdir()) == ["keep.rb"]
+    assert not (root / "m").is_symlink() and not (root / "m" / "measure.rb").is_symlink()
+    assert (root / "m" / "measure.rb").read_text(encoding="utf-8") == "# new\n"
+
+
+def test_download_http_error_body_read_is_bounded(monkeypatch, request, tmp_path):
+    # Regression: HTTPError bodies from allowlisted hosts were read with an unbounded read()
+    from urllib.error import HTTPError
+
+    class _Body:
+        def read(self, amt=None):
+            assert amt is not None and amt <= 65536, "HTTPError body read must be bounded"
+            return b"nope"
+
+    ops, root = _download_ops(monkeypatch, request, tmp_path, b"")
+
+    def _raise(*_a, **_k):
+        raise HTTPError("https://github.com/o/r/archive/x.zip", 500, "boom", {}, _Body())
+
+    monkeypatch.setattr(ops, "_read_url", _raise)
+    res = ops.download_measure_archive(
+        "https://github.com/o/r/archive/x.zip", output_dir=str(root), measure_name="m",
+    )
+    assert res == {"ok": False, "error": "Download failed with HTTP 500: nope"}
