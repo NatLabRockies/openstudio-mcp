@@ -1083,14 +1083,22 @@ def _stdio_env(monkeypatch):
 
 
 def _http_tenant(monkeypatch, tmp_path) -> Path:
-    """Shared HTTP mode with the caller's run root at tmp_path/runs (no /tmp fallback)."""
+    """Shared HTTP mode as tenant 'alice': RUN_ROOT=tmp_path/runs, returns alice's own root.
+
+    A sibling tenant 'bob' (RUN_ROOT/bob) exists so tests can prove isolation, and the
+    stdio-only tempdir fallback is off.
+    """
     from mcp_server import config
 
     _stdio_env(monkeypatch)
-    root = (tmp_path / "runs").resolve()
-    root.mkdir()
-    monkeypatch.setattr(config, "RUN_ROOT", root)
+    run_root = (tmp_path / "runs").resolve()
+    (run_root / "bob").mkdir(parents=True)
+    monkeypatch.setattr(config, "RUN_ROOT", run_root)
+    monkeypatch.setattr(config, "MEASURES_DIR", (tmp_path / "measures").resolve())
     monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+    monkeypatch.setattr("mcp_server.identity.user_key", lambda: "alice")
+    root = run_root / "alice"
+    root.mkdir()
     return root
 
 
@@ -1455,6 +1463,107 @@ def test_tmp_fallback_disabled_in_http_mode(monkeypatch, tmp_path):
     monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
     assert operations._is_analysis_path_allowed((tmp_path / "f").resolve()) is False
+
+
+def test_http_tenant_cannot_touch_sibling_root(monkeypatch, tmp_path):
+    # Validates: the tenant fixture is a real scoped tenant (not 'local' owning RUN_ROOT), so a
+    # sibling tenant's dir is refused for both reads and writes
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "m").mkdir()
+    (bob / "m" / "measure.xml").write_text(_measure_xml("m"), encoding="utf-8")
+    with pytest.raises(ValueError, match="not allowed"):
+        operations._read_measure_metadata(bob / "m")
+    with pytest.raises(ValueError, match="not writable/allowed"):
+        operations._write_json(bob / "x.json", {})
+    assert operations._write_json(root / "x.json", {}) == str(root / "x.json")
+
+
+def test_server_url_rejects_query_fragment_and_foreign_path(monkeypatch):
+    # Regression: with OPENSTUDIO_SERVER_URL=http://osa/prefix, server_url=http://osa/admin/secret#
+    # passed the origin check and the endpoint landed in the fragment, so the request (with the
+    # operator token) went to /admin/secret; a plain foreign path on the same host was accepted too
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa/prefix")
+    monkeypatch.setenv("OPENSTUDIO_API_TOKEN", "secret")
+    for bad in ("http://osa/admin/secret#", "http://osa/prefix?x=1", "http://osa/prefix#"):
+        with pytest.raises(ValueError, match="query or fragment"):
+            operations._server_url(bad)
+    with pytest.raises(ValueError, match="not permitted"):
+        operations._server_url("http://osa/admin")
+    assert operations._server_url("http://osa/prefix/") == "http://osa/prefix"
+    assert operations._auth_headers("http://osa/prefix") == {"Authorization": "Bearer secret"}
+    assert operations._auth_headers("http://osa/admin") == {}
+
+
+@pytest.mark.parametrize("bad_id", ["..", ".", "...", ""])
+def test_dot_only_ids_are_refused(monkeypatch, bad_id):
+    # Regression: quote(safe='') leaves '.' alone, so analysis_id='..' still sent
+    # /analyses/../status.json, which servers and proxies collapse out of the namespace
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    for res in (
+        operations.get_analysis_status(bad_id, server_url="http://osa:8080"),
+        operations.start_analysis(bad_id, server_url="http://osa:8080"),
+        operations.download_analysis_data(bad_id, output_dir=".", server_url="http://osa:8080"),
+        operations.get_analysis_results_json(bad_id, server_url="http://osa:8080"),
+    ):
+        assert res["ok"] is False
+        assert "invalid identifier" in res["error"], res
+
+
+def test_dot_only_project_id_is_refused(monkeypatch, tmp_path):
+    # Regression: project_id went through the same quote() path as analysis_id
+    _stdio_env(monkeypatch)
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    osa_path = tmp_path / "osa.json"
+    operations.create_osa_json(str(osa_path), "Dots", seed="./seed.osm", weather_file="./w.epw")
+    res = operations.submit_analysis(project_id="..", osa_json_path=str(osa_path), server_url="http://osa:8080")
+    assert res["ok"] is False
+    assert "invalid identifier" in res["error"], res
+
+
+def test_non_ascii_server_url_returns_error(monkeypatch):
+    # Regression: a non-ASCII path passed validation and http.client raised UnicodeEncodeError,
+    # which is neither URLError nor HTTPException, so it escaped as a raw exception
+    _stdio_env(monkeypatch)
+    res = operations.get_analysis_status("a", server_url="http://osa:8080/caf\u00e9")
+    assert res["ok"] is False
+    assert "ASCII" in res["error"], res
+
+
+def test_download_never_writes_through_planted_symlink(monkeypatch, tmp_path):
+    # Regression: output_dir was gated but the final file was not, so results.csv planted as a
+    # symlink into another tenant's root made write_bytes overwrite that tenant's file
+    root = _http_tenant(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
+    victim = root.parent / "bob" / "victim.csv"
+    victim.write_text("keep", encoding="utf-8")
+    (root / "results.csv").symlink_to(victim)
+
+    def serve_csv(req, timeout):
+        return _FakeResponse(
+            b"evil", {"content-disposition": 'attachment; filename="results.csv"', "content-type": "text/csv"},
+        )
+
+    monkeypatch.setattr(operations, "urlopen", serve_csv)
+    res = operations.download_analysis_data("1", output_dir=str(root))
+    assert res["ok"] is False
+    assert "symlink" in res["error"], res
+    assert victim.read_text(encoding="utf-8") == "keep"
+
+
+def test_measure_xml_symlink_outside_tenant_refused(monkeypatch, tmp_path):
+    # Regression: the measure dir was gated but measure.xml inside it was not, so a symlink to
+    # another tenant's measure.xml was parsed and its metadata returned
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob_xml = root.parent / "bob" / "measure.xml"
+    bob_xml.write_text(_measure_xml("bobs_secret_measure"), encoding="utf-8")
+    (root / "m").mkdir()
+    (root / "m" / "measure.xml").symlink_to(bob_xml)
+    with pytest.raises(ValueError, match=r"measure.xml is not allowed"):
+        operations._read_measure_metadata(root / "m")
 
 
 def test_measure_metadata_and_manifest_gated_by_tenant_root(monkeypatch, tmp_path):

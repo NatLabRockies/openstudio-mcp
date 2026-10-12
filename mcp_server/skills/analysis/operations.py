@@ -411,12 +411,19 @@ def _allowed_entry_matches(entry: str, origin: tuple[str, str, int | None]) -> b
     return entry_port is None or entry_port == port
 
 
+def _same_server(a: str, b: str) -> bool:
+    """Same origin AND same path prefix: `http://osa/admin` is not the configured `http://osa/prefix`."""
+    return _origin(a) == _origin(b) and urlsplit(a).path.rstrip("/") == urlsplit(b).path.rstrip("/")
+
+
 def _server_url_allowed(url: str) -> bool:
     """May a caller-supplied server_url be used on the shared HTTP server?"""
     origin = _origin(url)
     configured = _configured_server_url()
     if configured and _origin(configured) == origin:
-        return True
+        # The operator's server: only its exact base, so a caller cannot aim the
+        # bearer token at another path on the same host.
+        return _same_server(url, configured)
     extra = os.environ.get("OSMCP_ANALYSIS_ALLOWED_HOSTS", "")
     return any(_allowed_entry_matches(entry, origin) for entry in extra.split(","))
 
@@ -432,10 +439,16 @@ def _server_url(server_url: str | None = None) -> str:
     # on the raw string; refuse up front instead of surfacing a socket-layer error.
     if any(ch in url for ch in "\t\r\n "):
         raise ValueError(f"server_url must not contain whitespace, got {url!r}")
+    if not url.isascii():  # http.client would raise UnicodeEncodeError on the request target
+        raise ValueError(f"server_url must be ASCII, got {url!r}")
     url = url.rstrip("/")
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise ValueError(f"server_url must be an absolute http(s) URL, got {url!r}")
+    # Endpoint paths are appended to this base; a '?' or '#' would push them into the
+    # query/fragment and send the request (and token) to the caller's path instead.
+    if "?" in url or "#" in url:
+        raise ValueError(f"server_url must not contain a query or fragment, got {url!r}")
     try:
         _ = parts.port  # a non-numeric port raises here
     except ValueError:
@@ -461,14 +474,21 @@ def _auth_headers(server_url: str) -> dict[str, str]:
     """Bearer header, sent only to the operator-configured server (never to a caller-chosen host)."""
     token = _api_token()
     configured = _configured_server_url()
-    if not token or not configured or _origin(server_url) != _origin(configured):
+    if not token or not configured or not _same_server(server_url, configured):
         return {}
     return {"Authorization": f"Bearer {token}"}
 
 
 def _seg(value: Any) -> str:
-    """One URL path segment: quote everything, including '/', so ids cannot traverse."""
-    return quote(str(value), safe="")
+    """One URL path segment: quote everything, including '/', so ids cannot traverse.
+
+    quote() leaves '.' alone, and '.'/'..' segments are collapsed by servers and proxies,
+    so dot-only (or empty) identifiers are refused outright.
+    """
+    text = str(value)
+    if not text or set(text) <= {"."}:
+        raise ValueError(f"invalid identifier {text!r}")
+    return quote(text, safe="")
 
 
 def _url(server_url: str, path: str) -> str:
@@ -999,6 +1019,8 @@ def _read_measure_metadata(measure_dir: str | Path) -> dict[str, Any]:
     if not measure_path.is_dir():
         raise ValueError(f"Measure directory not found: {measure_path}")
     xml_path = measure_path / "measure.xml"
+    if xml_path.is_symlink() or not _is_analysis_path_allowed(xml_path.resolve()):
+        raise ValueError(f"measure.xml is not allowed: {xml_path}")
     if not xml_path.is_file():
         raise ValueError(f"measure.xml not found in measure directory: {measure_path}")
 
@@ -1234,6 +1256,10 @@ def _download(
             safe_name = "".join(c if c.isalnum() or c in ("-", "_", ".", " ") else "_" for c in filename).strip()
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / (safe_name or fallback_name)
+            # The dir is the caller's, but a symlink planted inside it would redirect
+            # write_bytes anywhere (another tenant's file); refuse rather than follow.
+            if out_path.is_symlink() or (out_path.exists() and not out_path.is_file()):
+                return {"ok": False, "error": f"Refusing to write through a symlink or non-file: {out_path}"}
             out_path.write_bytes(body)
             return {
                 "ok": True,
@@ -2005,6 +2031,7 @@ def submit_analysis(
 
     try:
         base = _server_url(server_url)
+        _seg(project_id)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     formulation = _read_json(osa_json_path)
@@ -2059,12 +2086,13 @@ def start_analysis(
 ) -> dict[str, Any]:
     try:
         base = _server_url(server_url)
+        path = f"/analyses/{_seg(analysis_id)}/action.json"
     except ValueError as e:
         return {"ok": False, "analysis_id": analysis_id, "analysis_type": analysis_type, "error": str(e)}
     result = _request_form(
         "POST",
         base,
-        f"/analyses/{_seg(analysis_id)}/action.json",
+        path,
         form={
             "analysis_action": "start",
             "analysis_type": analysis_type,
@@ -2157,10 +2185,11 @@ def get_analysis_status(
 ) -> dict[str, Any]:
     try:
         base = _server_url(server_url)
+        path = f"/analyses/{_seg(analysis_id)}/status.json"
     except ValueError as e:
         return {"ok": False, "analysis_id": analysis_id, "error": str(e)}
     try:
-        response = _request_json("GET", base, f"/analyses/{_seg(analysis_id)}/status.json", timeout=300)
+        response = _request_json("GET", base, path, timeout=300)
     except RuntimeError as e:
         return {"ok": False, "analysis_id": analysis_id, "error": str(e), "server_url": base}
     analysis = response.get("analysis") if isinstance(response.get("analysis"), dict) else {}
@@ -2526,14 +2555,15 @@ def download_analysis_data(
         return {"ok": False, "error": f"file_format must be one of {', '.join(DOWNLOAD_FORMATS)}; got {file_format!r}"}
     try:
         base = _server_url(server_url)
+        segment = _seg(analysis_id)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     query = urlencode({"export": "true"})
     return _download(
         base,
-        f"/analyses/{_seg(analysis_id)}/download_data.{file_format}?{query}",
+        f"/analyses/{segment}/download_data.{file_format}?{query}",
         output_dir,
-        f"analysis_{_seg(analysis_id)}_data.{file_format}",
+        f"analysis_{segment}_data.{file_format}",
     )
 
 
