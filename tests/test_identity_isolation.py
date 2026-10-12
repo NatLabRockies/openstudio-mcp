@@ -200,6 +200,9 @@ def test_dispatch_uses_each_run_owner(caller):
                         time.sleep(0.02)
                     assert tuple(process.uids()) == (expected_uid,) * 3
                     assert tuple(process.gids()) == (expected_uid,) * 3
+                    # The run-record trust check must recognise a real privilege-dropped
+                    # child (cwd is unreadable without CAP_SYS_PTRACE; argv is used instead).
+                    assert ops._pid_is_runs_child(rec.pid, rec.run_dir) is True
                 finally:
                     if rec.pid is not None:
                         ops._kill_process_group(rec.pid)

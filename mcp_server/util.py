@@ -94,6 +94,40 @@ def read_tail_bounded(path: Path, max_bytes: int) -> bytes:
     return _read_bounded(path, max_bytes, from_end=True)
 
 
+def read_text_capped(path: Path, max_bytes: int) -> tuple[str, bool]:
+    """Decode a regular file: the whole file when it fits in ``max_bytes``, else its first
+    ``max_bytes`` with ``truncated=True``. Never follows a final-component symlink
+    (``ValueError``, like the other bounded readers). For logs whose useful part is at the
+    start (EnergyPlus .err: fatals/severes come before the warning flood)."""
+    try:
+        return read_file_bounded(path, max_bytes).decode("utf-8", errors="replace"), False
+    except ValueError:
+        # Oversize is the only refusal we recover from; a symlink/non-file is re-raised.
+        if path.is_symlink() or not path.is_file():
+            raise
+        return read_head_bounded(path, max_bytes).decode("utf-8", errors="replace"), True
+
+
+def is_regular_file_inside(path: Path, root: Path) -> bool:
+    """True only for a regular, non-symlink file whose fully resolved path lies inside
+    ``root``. A leaf ``is_symlink()`` check alone misses a planted parent directory link
+    (``run/ -> /other/tenant/run``), which makes every file beneath it look regular."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        return str(path.resolve()).startswith(str(root.resolve()) + os.sep)
+    except OSError:
+        return False
+
+
+def open_nofollow_for_write(path: Path, mode: int = 0o644):
+    """Open ``path`` for writing (create/truncate) without following a symlink at the
+    final component; returns a text file object. Server-side writes into tenant-writable
+    dirs (run logs, pin markers) must never be redirected by a planted link."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    return os.fdopen(os.open(path, flags, mode), "w", encoding="utf-8")
+
+
 def read_head_bounded(path: Path, max_bytes: int) -> bytes:
     """Read the FIRST ``max_bytes`` of a regular file with the same no-follow
     guarantees as read_tail_bounded. Pairs with it when the interesting part
