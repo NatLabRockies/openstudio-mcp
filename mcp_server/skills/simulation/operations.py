@@ -36,6 +36,7 @@ from mcp_server.util import (
     create_run_dir,
     read_file_bounded,
     read_tail_bounded,
+    read_text_capped,
     reject_escaping_symlinks,
     resolve_run_dir,
     safe_name,
@@ -43,6 +44,7 @@ from mcp_server.util import (
 
 MAX_LOG_READ_BYTES = 4 * 1024 * 1024
 MAX_ERR_READ_BYTES = 16 * 1024 * 1024
+MAX_RECORD_BYTES = 64 * 1024  # run_record.json / out.osw are small; anything bigger is hostile
 
 # Where the MCP server stores runs inside the container
 DEFAULT_LOG_TAIL = LOG_TAIL_DEFAULT
@@ -84,6 +86,35 @@ def _run_record_path(run_dir: Path) -> Path:
     return run_dir / "run_record.json"
 
 
+def _read_record_json(path: Path) -> dict[str, Any] | None:
+    """A small JSON file from a run dir, never through a symlink; None if absent/refused/invalid.
+
+    Everything in a run dir is written by the tenant's sandboxed process, so a planted link
+    must not redirect the read (the readers open with O_NOFOLLOW).
+    """
+    try:
+        data = json.loads(read_file_bounded(path, MAX_RECORD_BYTES).decode("utf-8", errors="replace"))
+    except (ValueError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        return str(path.resolve()).startswith(str(root.resolve()) + os.sep)
+    except OSError:
+        return False
+
+
+def _pid_belongs_to_run(pid: int, run_dir: Path) -> bool:
+    """Only the run's own child may be polled or signalled: every launch uses cwd=run_dir,
+    so a pid the record names that is not running there is a forgery (or long gone)."""
+    try:
+        return Path(psutil.Process(pid).cwd()).resolve() == run_dir.resolve()
+    except (psutil.Error, OSError):
+        return False
+
+
 def _persist_run_record(rec: RunRecord) -> None:
     """Persist minimal run metadata for restart-safe lookup."""
     try:
@@ -103,7 +134,13 @@ def _persist_run_record(rec: RunRecord) -> None:
             "exit_code": rec.exit_code,
             "error": rec.error,
         }
-        _run_record_path(rec.run_dir).write_text(json.dumps(data, indent=2))
+        # Temp file + os.replace: a symlink planted at run_record.json is replaced, never
+        # followed (write_text as root would have overwritten the link's target).
+        fd, tmp_name = tempfile.mkstemp(prefix=".run_record-", dir=rec.run_dir)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, indent=2))
+        Path(tmp_name).chmod(0o644)
+        Path(tmp_name).replace(_run_record_path(rec.run_dir))
     except Exception:
         # Best-effort persistence only
         return
@@ -116,11 +153,19 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
     except FileNotFoundError:
         return None
 
-    meta_path = _run_record_path(run_dir)
-    if not meta_path.exists():
+    data = _read_record_json(_run_record_path(run_dir))
+    if data is None:
         return None
     try:
-        data = json.loads(meta_path.read_text())
+        # The record is tenant-writable. run_dir is whatever the user-scoped lookup resolved,
+        # never the persisted string (which could name another tenant's run and would then
+        # receive this run's reads AND the record write-back); osw_path must stay inside it;
+        # a pid is kept only if that process really runs in this dir (cancel_run kills it).
+        osw_path = Path(data.get("osw_path") or (run_dir / "workflow.osw"))
+        if not _inside(osw_path, run_dir):
+            osw_path = run_dir / "workflow.osw"
+        pid = data.get("pid")
+        pid = int(pid) if pid is not None and _pid_belongs_to_run(int(pid), run_dir) else None
         return RunRecord(
             run_id=data["run_id"],
             user_key=data.get("user_key") or user_key(),
@@ -129,9 +174,9 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
             created_at=float(data.get("created_at") or 0.0),
             started_at=data.get("started_at"),
             ended_at=data.get("ended_at"),
-            pid=data.get("pid"),
-            run_dir=Path(data.get("run_dir") or str(run_dir)),
-            osw_path=Path(data.get("osw_path") or (run_dir / "workflow.osw")),
+            pid=pid,
+            run_dir=run_dir,
+            osw_path=osw_path,
             epw_path=Path(data["epw_path"]) if data.get("epw_path") else None,
             exit_code=data.get("exit_code"),
             error=data.get("error"),
@@ -159,18 +204,20 @@ def _now() -> float:
     return time.time()
 
 
-def _tail_text(path: Path, tail_lines: int) -> str:
-    """Read the last N lines from a text file."""
+def _tail_text(path: Path, tail_lines: int) -> str | None:
+    """Last N lines of a log: "" when the file does not exist yet, None when it was refused.
+
+    Logs are written by confined-but-untrusted code: a symlink or non-regular file is
+    refused (None) rather than read, and never more than the tail window is loaded.
+    """
     if not path.exists() and not path.is_symlink():
         return ""
-    # Logs are written by confined-but-untrusted code: refuse symlinks/non-regular
-    # files and never load more than the tail window into memory.
     try:
         raw = read_tail_bounded(path, MAX_LOG_READ_BYTES)
-        data = raw.decode("utf-8", errors="replace").splitlines()
-        return "\n".join(data[-tail_lines:])
-    except Exception:
-        return ""
+    except (ValueError, OSError):
+        return None
+    data = raw.decode("utf-8", errors="replace").splitlines()
+    return "\n".join(data[-tail_lines:])
 
 
 def _copy_tree(src_dir: Path, dst_dir: Path) -> None:
@@ -716,7 +763,7 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
     err: str | None = None
     if out_osw.exists():
         try:
-            out = _load_json(out_osw)
+            out = _read_record_json(out_osw) or {}
             status = "success" if out.get("completed_status") == "Success" else "failed"
         except Exception as e:
             err = f"Failed to parse out.osw: {e}"
@@ -769,9 +816,10 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         if err_path.exists():
             try:
                 from mcp_server.skills.results.err_parser import parse_err_file
-                parsed = parse_err_file(
-                    read_file_bounded(err_path, MAX_ERR_READ_BYTES).decode("utf-8", errors="replace"),
-                )
+                # Oversize err files (warning floods) are parsed from the head and flagged,
+                # rather than silently losing the summary; a symlink is refused (no summary).
+                text, truncated = read_text_capped(err_path, MAX_ERR_READ_BYTES)
+                parsed = parse_err_file(text)
                 run_dict["error_summary"] = {
                     "fatal_count": len(parsed["fatal"]),
                     "severe_count": len(parsed["severe"]),
@@ -779,8 +827,9 @@ def get_run_status(run_id: str) -> dict[str, Any]:
                     "first_fatal": parsed["fatal"][0] if parsed["fatal"] else None,
                     "first_severe": parsed["severe"][0] if parsed["severe"] else None,
                     "summary": parsed["summary"],
+                    "truncated": truncated,
                 }
-            except Exception:
+            except (ValueError, OSError):
                 pass
 
     return {"ok": True, "run": run_dict}
@@ -810,13 +859,22 @@ def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "open
         if not path.exists():
             path = rec.run_dir / "energyplus.err"
 
+    text = _tail_text(path, tail_lines)
+    if text is None:
+        return {
+            "ok": False,
+            "run_id": run_id,
+            "stream": stream,
+            "path": str(path),
+            "error": f"log file is a symlink or not a regular file (refused): {path.name}",
+        }
     return {
         "ok": True,
         "run_id": run_id,
         "stream": stream,
         "path": str(path),
         "tail": tail_lines,
-        "text": _tail_text(path, tail_lines),
+        "text": text,
     }
 
 

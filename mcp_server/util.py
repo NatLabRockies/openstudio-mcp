@@ -94,6 +94,18 @@ def read_tail_bounded(path: Path, max_bytes: int) -> bytes:
     return _read_bounded(path, max_bytes, from_end=True)
 
 
+def read_text_capped(path: Path, max_bytes: int) -> tuple[str, bool]:
+    """Decode a regular file: the whole file when it fits in ``max_bytes``, else its first
+    ``max_bytes`` with ``truncated=True``. Never follows a final-component symlink
+    (``ValueError``, like the other bounded readers). For logs whose useful part is at the
+    start (EnergyPlus .err: fatals/severes come before the warning flood)."""
+    if path.is_symlink():
+        raise ValueError(f"cannot read {path}: symlink")
+    if path.stat().st_size > max_bytes:
+        return read_head_bounded(path, max_bytes).decode("utf-8", errors="replace"), True
+    return read_file_bounded(path, max_bytes).decode("utf-8", errors="replace"), False
+
+
 def read_head_bounded(path: Path, max_bytes: int) -> bytes:
     """Read the FIRST ``max_bytes`` of a regular file with the same no-follow
     guarantees as read_tail_bounded. Pairs with it when the interesting part

@@ -852,6 +852,8 @@ def apply_measure(
             except FileNotFoundError:
                 return {"ok": False, "error": f"Simulation run not found: {run_id}"}
             sql_src = sim_dir / "run" / "eplusout.sql"
+            if sql_src.is_symlink():  # written by the sandboxed run: never copy through a link
+                return {"ok": False, "error": f"eplusout.sql in run {run_id} is a symlink (not allowed)"}
             if not sql_src.is_file():
                 return {"ok": False, "error": f"No eplusout.sql in run {run_id} — simulation may not have completed"}
             # Stage simulation artifacts so the reporting measure can find them.
@@ -860,7 +862,7 @@ def apply_measure(
             ep_run.mkdir(exist_ok=True)
             shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
             osm_src = sim_dir / "run" / "in.osm"
-            if osm_src.is_file():
+            if osm_src.is_file() and not osm_src.is_symlink():
                 shutil.copy2(str(osm_src), str(ep_run / "in.osm"))
             idf_src = sim_dir / "run" / "in.idf"
             if idf_src.is_file():

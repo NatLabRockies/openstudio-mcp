@@ -967,6 +967,8 @@ def _test_reporting_measure_with_run(
         return {"ok": False, "error": f"Simulation run not found: {run_id}"}
 
     sql_src = sim_dir / "run" / "eplusout.sql"
+    if sql_src.is_symlink():  # written by the sandboxed run: never copy through a link
+        return {"ok": False, "error": f"eplusout.sql in run {run_id} is a symlink (not allowed)"}
     if not sql_src.is_file():
         return {"ok": False, "error": f"No eplusout.sql in run {run_id} — simulation may not have completed"}
 
@@ -979,7 +981,7 @@ def _test_reporting_measure_with_run(
     shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
     for fname in ["in.osm", "in.idf"]:
         src = sim_dir / "run" / fname
-        if src.is_file():
+        if src.is_file() and not src.is_symlink():
             shutil.copy2(str(src), str(ep_run / fname))
 
     # Copy seed model for OSW

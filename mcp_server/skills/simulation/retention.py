@@ -31,8 +31,14 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.identity import user_key
-from mcp_server.skills.simulation.operations import _RUNS, _pid_alive, _sim_lock
-from mcp_server.util import resolve_run_dir
+from mcp_server.skills.simulation.operations import (
+    _RUNS,
+    MAX_RECORD_BYTES,
+    _pid_alive,
+    _pid_belongs_to_run,
+    _sim_lock,
+)
+from mcp_server.util import read_file_bounded, resolve_run_dir
 
 PIN_MARKER = ".pinned"
 _NOT_A_RUN = {"examples", "exports"}  # user working dirs, never GC'd
@@ -106,12 +112,13 @@ def _is_run_dir(d: Path) -> bool:
 
 def _record(d: Path) -> dict[str, Any] | None:
     rec = d / "run_record.json"
-    if not rec.exists():
+    if not rec.exists() and not rec.is_symlink():
         return None
-    try:
-        return json.loads(rec.read_text())
+    try:  # never through a symlink: the record is written inside the tenant's run dir
+        data = json.loads(read_file_bounded(rec, MAX_RECORD_BYTES).decode("utf-8", errors="replace"))
     except Exception:
-        return {}  # present but unreadable -> treat conservatively (see _is_active)
+        return {}  # present but unreadable/refused -> treat conservatively (see _is_active)
+    return data if isinstance(data, dict) else {}
 
 
 def _run_age_seconds(d: Path, now: float) -> float:
@@ -139,8 +146,8 @@ def _is_active(d: Path) -> bool:
         return True
     if status == "running":
         pid = data.get("pid")
-        try:
-            return bool(pid and _pid_alive(int(pid)))
+        try:  # a forged pid (someone else's live process) must not pin the dir forever
+            return bool(pid and _pid_alive(int(pid)) and _pid_belongs_to_run(int(pid), d))
         except (ValueError, TypeError):
             return True
     return False  # success / failed / cancelled -> terminal
