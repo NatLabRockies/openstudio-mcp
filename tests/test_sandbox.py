@@ -194,6 +194,8 @@ def sandbox_server():
     with http_server({
         "MCP_AUTH": "none",
         "OSMCP_SANDBOX": "off",
+        # HTTP refuses weaker tiers (issue #180); this fixture tests the tier itself
+        "OSMCP_ALLOW_UNSANDBOXED": "true",
         "OSMCP_CANARY_SECRET": canary,
     }) as (url, _proc):
         yield url, canary
@@ -208,6 +210,7 @@ def confined_server():
     with http_server({
         "MCP_AUTH": "none",
         "OSMCP_SANDBOX": "posix",
+        "OSMCP_ALLOW_UNSANDBOXED": "true",  # deliberately below the HTTP gate (issue #180)
         "OSMCP_CANARY_SECRET": canary,
     }) as (url, _proc):
         yield url, canary
@@ -236,6 +239,7 @@ def net_allow_server():
         "MCP_AUTH": "none",
         "OSMCP_SANDBOX": "auto",
         "OSMCP_SANDBOX_NET": "allow",
+        "OSMCP_ALLOW_UNSANDBOXED": "true",  # net allow is below the HTTP gate (issue #180)
     }) as (url, _proc):
         yield url
 

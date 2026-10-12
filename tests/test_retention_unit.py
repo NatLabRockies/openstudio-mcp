@@ -5,7 +5,8 @@ fixed clock, so age/pin/active/run-dir predicates are all checked deterministica
 without Docker, OpenStudio, or a real simulation.
 """
 import json
-import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -47,21 +48,32 @@ def test_sweep_deletes_old_terminal_runs_only(tmp_path):
 
     _mk(tmp_path, "succ_fresh", {"status": "success", "ended_at": FRESH})       # too young
     _mk(tmp_path, "queued_old", {"status": "queued", "created_at": OLD})        # active
-    _mk(tmp_path, "running_alive", {"status": "running", "pid": os.getpid(), "created_at": OLD})
+    # "alive" means the run's own child (launched with cwd=run_dir); a live pid that runs
+    # elsewhere is a forged record and must not pin the dir (run-record trust).
+    sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+    alive = subprocess.Popen([*sleeper, str(tmp_path / "running_alive" / "workflow.osw")])  # noqa: S603 - fixed argv
+    stranger = subprocess.Popen([*sleeper, str(tmp_path / "elsewhere" / "workflow.osw")])  # noqa: S603 - fixed argv
+    _mk(tmp_path, "running_alive", {"status": "running", "pid": alive.pid, "created_at": OLD})
+    _mk(tmp_path, "running_forged", {"status": "running", "pid": stranger.pid, "created_at": OLD})
     _mk(tmp_path, "pinned_old", {"status": "success", "ended_at": OLD}, pinned=True)
     _mk(tmp_path, "examples", {"status": "success", "ended_at": OLD})           # excluded by name
     stray = tmp_path / "stray"
     stray.mkdir()
     (stray / "notes.txt").write_text("not a run")                              # not a run dir
 
-    recs, freed = _sweep_user_root(
-        tmp_path, "u", WEEK, NOW, dry_run=False, reason="gc")
+    try:
+        recs, freed = _sweep_user_root(
+            tmp_path, "u", WEEK, NOW, dry_run=False, reason="gc")
+    finally:
+        for proc in (alive, stranger):
+            proc.kill()
+            proc.wait(timeout=10)
 
     deleted = {r["run_id"] for r in recs}
-    assert deleted == {"succ_old", "cxl_old", "fail_old", "running_dead", "outosw_old"}, deleted
-    assert freed > 0, "deleting 5 run dirs must free bytes"
+    assert deleted == {"succ_old", "cxl_old", "fail_old", "running_dead", "running_forged", "outosw_old"}, deleted
+    assert freed > 0, "deleting 6 run dirs must free bytes"
 
-    for gone in ("succ_old", "cxl_old", "fail_old", "running_dead", "outosw_old"):
+    for gone in ("succ_old", "cxl_old", "fail_old", "running_dead", "running_forged", "outosw_old"):
         assert not (tmp_path / gone).exists(), f"{gone} should be deleted"
     for kept in ("succ_fresh", "queued_old", "running_alive", "pinned_old", "examples", "stray"):
         assert (tmp_path / kept).exists(), f"{kept} must be spared"
