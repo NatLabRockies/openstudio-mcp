@@ -6,6 +6,8 @@ set, appended to that file too. Disable entirely with MCP_AUDIT=off.
 Sources of events:
   - AuditMiddleware: one `tool_call` line per MCP tool invocation (user, session,
     tool, args preview, ok, duration). One chokepoint — the tools are untouched.
+  - IdentityGuard: `principal_rejected` when an authenticated token has no usable
+    principal (refused before AuditMiddleware runs, so it logs the attempt itself).
   - simulation ops: `sim_queued` / `sim_launched` / `sim_finished` / `sim_cancelled`
     (these complete in a background thread that no request/middleware sees).
   - retention: `run_evicted` (background GC daemon) / `run_deleted` / `run_pinned`

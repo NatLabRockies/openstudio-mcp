@@ -1,20 +1,30 @@
 """Caller identity for multi-user isolation.
 
-Two keys, both safe to call from any tool body or off-request:
+Two keys, callable from any tool body or off-request:
 
   session_key() — per-connection. Keys ephemeral *model* state, so two AI
                   windows (even same user) never stomp each other's model.
   user_key()    — per-authenticated-user. Keys durable run dirs + path scope,
-                  so a user sees their own runs across sessions.
+                  so a user sees their own runs across sessions. Raises
+                  InvalidPrincipalError for an authenticated token with no
+                  usable principal; IdentityGuard turns that into an ok:false
+                  tool response before any tool body runs.
 
 stdio (single local user) and off-request callers (unit tests, atexit)
 collapse to "local", preserving today's single-user behavior unchanged.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 
+from mcp_server.config import LOCAL_RUN_DIR_NAMES
+
 LOCAL = "local"
+
+
+class InvalidPrincipalError(ValueError):
+    """An authenticated token cannot identify a storage owner."""
 
 
 def _ctx():
@@ -61,8 +71,10 @@ def user_key() -> str:
     """
     # With auth, the verified token's client_id is the principal (StaticToken/JWT).
     tok = _access_token()
-    cid = getattr(tok, "client_id", None) if tok is not None else None
-    if cid:
+    if tok is not None:
+        cid = tok.client_id
+        if not cid or cid == "unknown":
+            raise InvalidPrincipalError("Authenticated token has no usable principal")
         return _sanitize(cid)
     # Non-HTTP transport = one local user; FastMCP still assigns stdio a session
     # id, but that must not splinter the single user's run root per connection.
@@ -75,7 +87,32 @@ def user_key() -> str:
     return _sanitize(sid) if sid else LOCAL
 
 
+# Lowercase only: keys must stay distinct on case-insensitive filesystems.
+_PLAIN_KEY = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}")
+# LOCAL run dirs are named <label>_<12 hex>; a plain key of that shape could alias one.
+_RUN_ID_SHAPE = re.compile(r".*_[0-9a-f]{12}")
+# Names that would alias LOCAL or a server-owned entry directly under RUN_ROOT.
+_RESERVED_KEYS = LOCAL_RUN_DIR_NAMES | {LOCAL}
+
+
 def _sanitize(key: str) -> str:
-    """Reduce an identity to a safe directory-name component."""
-    s = re.sub(r"[^A-Za-z0-9_.-]", "_", str(key)).strip("._")
-    return s or LOCAL
+    """Map an identity to an injective, filesystem-safe directory name.
+
+    Names that are already safe pass through unchanged (existing run dirs keep
+    working). Anything else — reserved names, empty/dot-only values, or
+    characters needing substitution — becomes ``<readable-prefix>~<sha256>``.
+    ``~`` is outside the plain alphabet, so hashed and plain keys can never
+    collide, and distinct raw identities never share a key. The result is never
+    LOCAL, which owns the whole RUN_ROOT.
+    """
+    raw = str(key)
+    if (
+        _PLAIN_KEY.fullmatch(raw)
+        and raw not in _RESERVED_KEYS
+        and not raw.endswith(".")
+        and not _RUN_ID_SHAPE.fullmatch(raw)
+    ):
+        return raw
+    digest = hashlib.sha256(raw.encode("utf-8", errors="surrogatepass")).hexdigest()
+    prefix = re.sub(r"[^A-Za-z0-9_.-]", "_", raw).strip("._")[:32]
+    return f"{prefix}~{digest}" if prefix else f"~{digest}"
