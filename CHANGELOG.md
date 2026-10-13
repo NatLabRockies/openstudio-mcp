@@ -58,6 +58,12 @@
   [principal-key migration](docs/security-isolation.md#principal-key-migration) before upgrading.
 
 ### Fixed
+- `run_simulation` warns (`warnings` + `user_message`) when the session model loaded from
+  or saved to that path has edits that are not saved, including after a measure reloaded
+  the model; it simulated the stale file on disk silently. `set_run_period` rejects days
+  that do not exist in the month for the model's calendar year (February 30 was accepted
+  and failed in EnergyPlus). Load, save and `run_simulation` now take a content digest of
+  the model, about 0.3 s per 5,000 objects. (#177)
 - A simulation that was still queued when the server died is reported as `failed`
   ("server restarted before this run started; resubmit it") after the restart instead of
   staying `queued` forever, and is reclaimable by run retention. Queued runs are now

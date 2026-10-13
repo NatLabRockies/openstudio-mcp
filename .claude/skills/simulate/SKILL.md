@@ -20,7 +20,9 @@ Run a simulation on the currently loaded model and present results.
    list_weather_files()
    ```
 
-3. Run the simulation with the path the save returned:
+3. Run the simulation with the path the save returned. If the response carries a `warnings`
+   entry about edits that are not saved, the file on disk is behind the session model:
+   save again and rerun.
    ```
    run_simulation(osm_path=<osm_path from save>, epw_path="<epw_path>")
    ```
