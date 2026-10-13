@@ -370,3 +370,44 @@ def test_signed_url_not_in_access_log():
         assert up_token not in log, "upload token leaked into the access log"
         assert dl_token not in log, "download token leaked into the access log"
         assert log.count("?[redacted]") == 2, log[-2000:]
+
+
+@pytest.mark.integration
+def test_websocket_upgrade_to_signed_url_not_in_server_log():
+    # Regression: a WebSocket upgrade request to a signed /files/ URL is refused but logged by
+    # uvicorn's error logger with the full token, which stayed replayable with a plain GET
+    # (Codex review of #194, reproduced in Docker with uvicorn 0.52/0.53)
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+    import time
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        port = url.split(":")[-1].split("/")[0]
+        run_root = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT",
+                                       os.environ.get("OSMCP_RUN_ROOT", "/runs")))
+        log_path = run_root / f"_httpsrv_{port}.log"
+
+        data = b"OS:Version,3.11.0;\nws bytes\n"
+
+        async def _run():
+            async with http_session(url) as s:
+                info = await _upload(s, url, "ws.osm", data)
+                dl = unwrap(await s.call_tool("request_download", {"path": info["server_path"]}))
+                assert dl["ok"] is True, dl
+                return dl
+
+        dl = asyncio.run(_run())
+        token = dl["download_path"].split("?t=", 1)[1]
+        r = httpx.get(dl["download_url"], timeout=30, headers={
+            "Connection": "Upgrade", "Upgrade": "websocket",
+            "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+        })
+        assert r.status_code in (400, 403, 426), r.status_code  # refused, never 101
+        assert httpx.get(dl["download_url"], timeout=30).content == data  # token still valid
+        deadline = time.time() + 5
+        while True:
+            log = log_path.read_text(errors="replace")
+            if log.count("/files/d/ws.osm") >= 2 or time.time() > deadline:
+                break
+            time.sleep(0.2)
+        assert token not in log, "download token leaked into the server log via the upgrade path"

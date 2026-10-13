@@ -60,3 +60,17 @@ def test_non_access_records_pass_through():
     assert rec.args == ("msg",)
     rec = logging.LogRecord("uvicorn.access", logging.INFO, "x", 1, "no args", None, None)
     assert RedactSignedUrlFilter().filter(rec) is True
+
+
+def test_websocket_rejection_line_is_redacted():
+    # Regression: a WebSocket upgrade to a signed /files/ URL is refused by uvicorn and logged
+    # through uvicorn.error as '%s - "WebSocket %s" 403' with the full path; the token was
+    # replayable from that line (Codex review of #194, reproduced in Docker)
+    from mcp_server.access_log import RedactSignedUrlFilter
+    rec = logging.LogRecord(
+        "uvicorn.error", logging.INFO, "websockets_impl.py", 1,
+        '%s - "WebSocket %s" 403', ("127.0.0.1:1234", f"/files/d/model.osm?t={TOKEN}"), None,
+    )
+    assert RedactSignedUrlFilter().filter(rec) is True
+    assert rec.args == ("127.0.0.1:1234", "/files/d/model.osm?[redacted]"), rec.args
+    assert TOKEN not in rec.getMessage()
