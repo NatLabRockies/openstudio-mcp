@@ -70,6 +70,9 @@
   host path (`runs/exports/...`) that HTTP agents cannot reach. Download URLs get their
   own `OSMCP_DOWNLOAD_URL_TTL` (default 900 s) instead of the 300 s upload TTL, which
   expired before a relayed link was clicked. (#167)
+- Signed upload/download tokens no longer appear in the HTTP access log: the query
+  string of `/files/` request lines is replaced by `[redacted]`. Anyone who could read
+  the log could replay a download until the token expired. (#170)
 - A simulation that was still queued when the server died is reported as `failed`
   ("server restarted before this run started; resubmit it") after the restart instead of
   staying `queued` forever, and is reclaimable by run retention. Queued runs are now

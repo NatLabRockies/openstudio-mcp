@@ -447,7 +447,9 @@ python -m mcp_server.tools.osmcp get /runs/<user>/<run>/exports/model.osm -o mod
 filename can't traverse paths. Enforced: `OSMCP_MAX_UPLOAD_MB`,
 `OSMCP_USER_QUOTA_MB`, optional sha256 integrity, and archive bomb/escape guards.
 The signed URL carries no bearer token, so it never enters the model context and
-expires after `OSMCP_UPLOAD_URL_TTL` (default 300 s). That TTL bounds when the PUT
+expires after `OSMCP_UPLOAD_URL_TTL` (default 300 s). The server drops the query
+string of `/files/` requests from its own access log, so the token is not
+replayable from that log; a reverse proxy in front writes its own log. That TTL bounds when the PUT
 must **begin**, not how long the transfer may take — the URL is verified once when
 the route receives the request, then bytes stream — so a large model over a slow
 link is fine as long as the agent doesn't stall between `request_upload` and the
