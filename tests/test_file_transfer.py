@@ -370,4 +370,3 @@ def test_signed_url_not_in_access_log():
         assert up_token not in log, "upload token leaked into the access log"
         assert dl_token not in log, "download token leaked into the access log"
         assert log.count("?[redacted]") == 2, log[-2000:]
-
