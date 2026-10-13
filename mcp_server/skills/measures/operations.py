@@ -34,7 +34,7 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
-from mcp_server.model_manager import get_model, load_model
+from mcp_server.model_manager import get_model, reload_model
 from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
@@ -930,8 +930,10 @@ def apply_measure(
         if not is_regular_file_inside(output_osm, run_dir):  # sandboxed output: never load through a link
             return {"ok": False, "error": "Output OSM is a symlink or outside the run (not allowed)"}
 
-        # Reload model
-        load_model(output_osm)
+        # Reload the measure's output as the session model. reload_model keeps
+        # the user's loaded/saved paths marked with their pre-measure digests,
+        # so run_simulation on one of them warns that it is stale (issue #177).
+        reload_model(output_osm)
 
         result = {
             "ok": True,

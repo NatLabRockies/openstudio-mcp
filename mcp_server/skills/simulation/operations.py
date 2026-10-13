@@ -1172,6 +1172,18 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
                 "immediately. Set weather with change_building_location or "
                 "pass epw_path.")}
 
+    # The file on disk is what gets simulated. Say so when the session model
+    # loaded from (or saved to) this path has edits the file lacks (issue #177):
+    # the agent otherwise believes it simulated its edits.
+    from mcp_server.model_manager import unsaved_edits_for
+    unsaved_warning: str | None = None
+    if unsaved_edits_for(osm):
+        unsaved_warning = (
+            f"The session model loaded from {osm} has edits that are not saved. "
+            "This simulation uses the file on disk, without those edits. "
+            "Call save_osm_model first to simulate the edits."
+        )
+
     # Stage the minimal OSW in a throwaway temp dir. run_osw() copies the staged
     # files into the real per-user run dir before it returns, so nothing here
     # needs to persist — this avoids leaving an orphan sim_* dir under /runs.
@@ -1203,9 +1215,13 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         # Delegate to run_osw — pass epw_path so it handles staging into files/.
         # _internal=True: osm + epw are already is_path_allowed above and the temp
         # OSW is server-built in a private staging dir (not a caller-supplied path).
-        return run_osw(
+        result = run_osw(
             osw_path=str(osw_path_out),
             epw_path=epw_abs,
             name=name or osm.stem,
             _internal=True,
         )
+    if unsaved_warning and result.get("ok"):
+        result.setdefault("warnings", []).append(unsaved_warning)
+        result["user_message"] = unsaved_warning
+    return result

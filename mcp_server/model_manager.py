@@ -14,6 +14,7 @@ so the 100+ call sites are untouched by the multi-user refactor.
 from __future__ import annotations
 
 import atexit
+import hashlib
 import itertools
 import os
 import threading
@@ -54,6 +55,11 @@ class _SessionState:
     # unrelated skills can't collide. Shares this session's TTL/LRU eviction,
     # so wizard state and its model are always dropped together.
     extra: dict[str, Any] = field(default_factory=dict)
+    # Resolved file paths this session loaded or saved, each with the digest of
+    # the model at that moment. run_simulation compares against this to warn
+    # when the file on disk is behind the session model (issue #177). Every
+    # path stays in the dict, so a save-as to B keeps A with its older digest.
+    clean: dict[Path, str] = field(default_factory=dict)
 
 
 _lock = threading.RLock()
@@ -66,6 +72,15 @@ _load_tokens = itertools.count(1)
 
 def _now() -> float:
     return time.monotonic()
+
+
+def _digest(model: openstudio.model.Model) -> str:
+    """Content digest of the model (SHA-256 of its IDF text).
+
+    0.27 s on a 5k-object model, deterministic for one model object. Not
+    comparable across loads: the version translator assigns new handles.
+    """
+    return hashlib.sha256(str(model).encode("utf-8")).hexdigest()
 
 
 def _touch(state: _SessionState) -> None:
@@ -119,6 +134,25 @@ def load_model_with_generation(
     model_generation() in a second call could observe a *later* load_model
     and bind the state to the wrong model.
     """
+    return _load_into_session(osm_path, version_translate, keep_clean=False)
+
+
+def reload_model(osm_path: Path) -> openstudio.model.Model:
+    """Replace the session model with a file the server wrote itself.
+
+    For apply_measure, which reloads the measure's output OSM: the paths the
+    user loaded or saved stay in `clean` with their older digests, so the next
+    run_simulation on one of them warns that it is behind the session model
+    (issue #177). Everything else behaves exactly like load_model, including
+    `path`.
+    """
+    model, _generation = _load_into_session(osm_path, True, keep_clean=True)
+    return model
+
+
+def _load_into_session(
+    osm_path: Path, version_translate: bool, *, keep_clean: bool,
+) -> tuple[openstudio.model.Model, int]:
     abs_path = str(Path(osm_path).resolve())
     with suppress_openstudio_warnings():
         if version_translate:
@@ -128,6 +162,9 @@ def load_model_with_generation(
         if not loaded.is_initialized():
             raise ValueError(f"Failed to load OSM: {osm_path}")
         model = loaded.get()
+        # Taken before the model is published to the session, so no concurrent
+        # tool call on this session can edit it between load and digest.
+        digest = _digest(model)
     key = session_key()
     with _lock:
         _sweep_idle()
@@ -136,6 +173,13 @@ def load_model_with_generation(
         st.model = model
         st.path = Path(osm_path)
         st.generation = next(_load_tokens)
+        if not keep_clean:
+            st.clean = {}
+        if not keep_clean or Path(abs_path) not in st.clean:
+            # A user load starts a fresh clean set. An internal reload keeps the
+            # user's paths; the reloaded file itself is only recorded when it is
+            # new, so a user path that was reloaded over keeps its older digest.
+            st.clean[Path(abs_path)] = digest
         _touch(st)
         return model, st.generation
 
@@ -154,7 +198,21 @@ def save_model(save_path: Path | None = None) -> Path:
         model = st.model
         _touch(st)
     with suppress_openstudio_warnings():
-        model.save(str(path), True)
+        # Digest BEFORE the save: an edit that lands between the two reaches
+        # disk but not the digest, so the next run_simulation warns once (safe
+        # side). Digesting after the save could record an edit that never
+        # reached disk and hide a real warning.
+        digest = _digest(model)
+        saved = model.save(str(path), True)
+    if saved:
+        with _lock:
+            st = _sessions.get(key)
+            # Recorded even when a concurrent load_model replaced the session
+            # model meanwhile: the file now holds THIS model's content, so its
+            # digest is the truth about the file. The replacement model's digest
+            # differs, so run_simulation on this path warns, which is correct.
+            if st is not None:
+                st.clean[Path(path).resolve()] = digest
     return path
 
 
@@ -204,6 +262,27 @@ def ensure_generation_unchanged(generation: int) -> None:
             "The session model was replaced by another tool call while this operation "
             f"ran (model generation {generation} -> {current}); re-run it on the current model.",
         )
+
+
+def unsaved_edits_for(path: Path) -> bool:
+    """True when `path` was loaded or saved by this session and the session model has changed since.
+
+    A path this session never touched returns False: the check covers only
+    what this session knows the file held. The digest runs outside _lock
+    (0.27 s on a 5k-object model would block every other session).
+    """
+    key = session_key()
+    with _lock:
+        _sweep_idle()
+        st = _sessions.get(key)
+        if st is None or st.model is None:
+            return False
+        clean_digest = st.clean.get(Path(path).resolve())
+        if clean_digest is None:
+            return False
+        model = st.model
+        _touch(st)
+    return _digest(model) != clean_digest
 
 
 def get_model_path() -> Path | None:

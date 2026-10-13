@@ -6,6 +6,7 @@ Complementary to OSW-level epw_path override in simulation/operations.py.
 """
 from __future__ import annotations
 
+import calendar
 from pathlib import Path
 from typing import Any
 
@@ -549,6 +550,22 @@ def set_run_period(
                 return {"ok": False, "error": f"{label} must be 1-31, got {val}"}
 
         model = get_model()
+        # The SDK setters accept any day 1-31 (February 30 included) and EnergyPlus
+        # fails later (issue #177). Check against the model's own calendar:
+        # isLeapYear() follows OS:YearDescription's calendar year.
+        leap = model.getYearDescription().isLeapYear()
+        for label, month, day in [
+            ("begin_day", begin_month, begin_day), ("end_day", end_month, end_day),
+        ]:
+            limit = calendar.monthrange(2000 if leap else 2001, month)[1]
+            if not (1 <= day <= limit):
+                return {"ok": False, "error": (
+                    f"{label} must be 1-{limit}: {calendar.month_name[month]} has "
+                    f"{limit} days in this model's year, got {day}"
+                )}
+        # An end date before the begin date is NOT an error: EnergyPlus runs the
+        # period across the year end (Dec 1 to Jan 31 verified 2026-10-13).
+
         rp = model.getRunPeriod()
         if name is not None:
             rp.setName(name)
