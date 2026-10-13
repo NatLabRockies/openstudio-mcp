@@ -60,6 +60,11 @@ class _SessionState:
     # when the file on disk is behind the session model (issue #177). Every
     # path stays in the dict, so a save-as to B keeps A with its older digest.
     clean: dict[Path, str] = field(default_factory=dict)
+    # Serializes digest + file write + `clean` publication of saves on this
+    # session. Two concurrent saves to one path could otherwise write in one
+    # order and publish in the other, leaving `clean` describing a model that
+    # is not the one on disk (Codex review of #192).
+    save_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 _lock = threading.RLock()
@@ -145,6 +150,12 @@ def reload_model(osm_path: Path) -> openstudio.model.Model:
     run_simulation on one of them warns that it is behind the session model
     (issue #177). Everything else behaves exactly like load_model, including
     `path`.
+
+    Known false positive: a file written by an older OpenStudio version gets
+    new object handles on every version-translated load, so after a measure
+    that changed nothing the reloaded model still digests differently and the
+    user's path warns. Same-version files (everything this server saves) are
+    stable across reloads.
     """
     model, _generation = _load_into_session(osm_path, True, keep_clean=True)
     return model
@@ -196,23 +207,26 @@ def save_model(save_path: Path | None = None) -> Path:
         if path is None:
             raise RuntimeError("No save path specified and no current path.")
         model = st.model
+        save_lock = st.save_lock
         _touch(st)
-    with suppress_openstudio_warnings():
+    with save_lock, suppress_openstudio_warnings():
         # Digest BEFORE the save: an edit that lands between the two reaches
         # disk but not the digest, so the next run_simulation warns once (safe
         # side). Digesting after the save could record an edit that never
         # reached disk and hide a real warning.
         digest = _digest(model)
         saved = model.save(str(path), True)
-    if saved:
-        with _lock:
-            st = _sessions.get(key)
-            # Recorded even when a concurrent load_model replaced the session
-            # model meanwhile: the file now holds THIS model's content, so its
-            # digest is the truth about the file. The replacement model's digest
-            # differs, so run_simulation on this path warns, which is correct.
-            if st is not None:
-                st.clean[Path(path).resolve()] = digest
+        if saved:
+            with _lock:
+                st = _sessions.get(key)
+                # Recorded even when a concurrent load_model replaced the
+                # session model meanwhile: the file now holds THIS model's
+                # content, so its digest is the truth about the file. The
+                # replacement model's digest differs, so run_simulation on this
+                # path warns, which is correct. Still under save_lock so no
+                # other save on this session can write between the two steps.
+                if st is not None:
+                    st.clean[Path(path).resolve()] = digest
     return path
 
 
