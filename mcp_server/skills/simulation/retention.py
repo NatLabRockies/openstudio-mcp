@@ -33,6 +33,7 @@ from mcp_server.config import (
 from mcp_server.identity import user_key
 from mcp_server.skills.simulation.operations import (
     _RUNS,
+    _TERMINAL,
     MAX_RECORD_BYTES,
     _pid_alive,
     _pid_is_runs_child,
@@ -143,7 +144,12 @@ def _is_active(d: Path) -> bool:
         return True  # unreadable record -> don't risk deleting an active run
     status = data.get("status")
     if status == "queued":
-        return True
+        # Only a run this process holds can still start; a queued record left by a previous
+        # server process is an orphan (issue #175) and is reclaimable. Any non-terminal
+        # in-memory record keeps it: the dispatcher flips memory to "running" before it
+        # persists, so disk can still say "queued" for a run that has just launched.
+        rec = _RUNS.get(d.name)
+        return rec is not None and rec.status not in _TERMINAL
     if status == "running":
         pid = data.get("pid")
         try:
