@@ -64,6 +64,12 @@
   that do not exist in the month for the model's calendar year (February 30 was accepted
   and failed in EnergyPlus). Load, save and `run_simulation` now take a content digest of
   the model, about 0.3 s per 5,000 objects. (#177)
+- The report tools (`view_model`, `view_simulation_data`, `generate_results_report`,
+  `run_qaqc_checks`) and the oversized-response spill now give a hint that matches the
+  transport: `copy_file` over stdio, `request_download` over HTTP. The old text named a
+  host path (`runs/exports/...`) that HTTP agents cannot reach. Download URLs get their
+  own `OSMCP_DOWNLOAD_URL_TTL` (default 900 s) instead of the 300 s upload TTL, which
+  expired before a relayed link was clicked. (#167)
 - A simulation that was still queued when the server died is reported as `failed`
   ("server restarted before this run started; resubmit it") after the restart instead of
   staying `queued` forever, and is reclaimable by run retention. Queued runs are now
