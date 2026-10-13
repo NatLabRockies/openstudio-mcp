@@ -216,8 +216,8 @@ OSMCP_UPLOAD_URL_TTL = _safe_int(os.environ.get("OSMCP_UPLOAD_URL_TTL", "300"), 
 # How long a minted download URL stays valid (seconds). Longer than uploads: the
 # agent relays it to a person who then clicks or pastes it; 300 s was not enough
 # for that hop (issue #167). A leaked URL replays until it expires, so keep it
-# bounded. The server redacts the token from its own access log; a proxy's log
-# is outside this process.
+# bounded; keeping the token out of the server's own access log is issue #170,
+# and a proxy's log is outside this process either way.
 OSMCP_DOWNLOAD_URL_TTL = _safe_int(os.environ.get("OSMCP_DOWNLOAD_URL_TTL", "900"), 900)
 # Zip-bomb backstops for auto-extracted archives.
 OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB = _safe_int(
