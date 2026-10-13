@@ -456,3 +456,53 @@ def test_build_auth_wires_portal_verifier_from_env(monkeypatch):
     monkeypatch.setenv("MCP_JWT_VERIFY_TIMEOUT", "fast")
     with pytest.raises(ValueError, match="MCP_JWT_VERIFY_TIMEOUT"):
         _build_auth()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("drop", "blank", "expected_claims"), [
+    ("MCP_JWT_AUDIENCE", None, (JWT_ISSUER, None)),
+    ("MCP_JWT_ISSUER", None, (None, JWT_AUDIENCE)),
+    ("MCP_JWT_AUDIENCE", "  ", (JWT_ISSUER, None)),  # Regression: whitespace passed the check
+])
+def test_build_auth_requires_issuer_and_audience(monkeypatch, drop, blank, expected_claims):
+    # Validates: _build_auth wires require_issuer_audience: jwt mode without issuer or
+    # audience (unset or blank) fails startup naming the variable; MCP_JWT_ALLOW_UNSCOPED=true
+    # builds a verifier with the missing claim unenforced (the documented opt-out).
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    from mcp_server.auth_verify import RevocationAwareJWTVerifier
+    from mcp_server.server import _build_auth
+
+    _, public_pem = mint_token.generate_keypair()
+    env = _jwt_env(public_pem)
+    env.pop(drop)
+    if blank is not None:
+        env[drop] = blank
+    for name in ("MCP_JWT_ISSUER", "MCP_JWT_AUDIENCE", "MCP_JWT_ALLOW_UNSCOPED"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match=drop):
+        _build_auth()
+
+    monkeypatch.setenv("MCP_JWT_ALLOW_UNSCOPED", "true")
+    verifier = _build_auth()
+    assert isinstance(verifier, RevocationAwareJWTVerifier)
+    assert (verifier.issuer, verifier.audience) == expected_claims
+
+
+@pytest.mark.integration
+def test_http_server_refuses_jwt_without_audience():
+    # Validates: the shipped entrypoint fails to start (not just _build_auth in-process)
+    # when MCP_AUTH=jwt lacks MCP_JWT_AUDIENCE, and the log names the variable.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    _, public_pem = mint_token.generate_keypair()
+    env = _jwt_env(public_pem)
+    env.pop("MCP_JWT_AUDIENCE")
+    with pytest.raises(RuntimeError, match=r"HTTP server exited[\s\S]*MCP_JWT_AUDIENCE"):
+        with http_server(env):
+            pass

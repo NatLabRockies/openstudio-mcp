@@ -81,3 +81,62 @@ def test_env_invalid_values_fail_fast_naming_the_variable(monkeypatch, name, raw
 
     with pytest.raises(ValueError, match=name):
         build_verifier_kwargs_from_env()
+
+
+@pytest.mark.parametrize(("iss", "aud", "missing"), [
+    (None, "aud", "MCP_JWT_ISSUER"),
+    ("iss", None, "MCP_JWT_AUDIENCE"),
+    (None, None, "MCP_JWT_ISSUER and MCP_JWT_AUDIENCE"),
+    ("", "", "MCP_JWT_ISSUER and MCP_JWT_AUDIENCE"),
+    # Regression: whitespace-only values passed the check, and the server then started
+    # but rejected every normally issued token instead of reporting the blank config
+    (" ", "aud", "MCP_JWT_ISSUER"),
+    ("iss", "	", "MCP_JWT_AUDIENCE"),
+])
+def test_require_issuer_audience_rejects_unscoped_jwt(monkeypatch, iss, aud, missing):
+    # Validates: JWT mode refuses to start without issuer+audience (tokens minted for
+    # other services by the same IdP would otherwise be accepted); the error names
+    # exactly the missing variable(s).
+    from mcp_server.auth_verify import require_issuer_audience
+
+    monkeypatch.delenv("MCP_JWT_ALLOW_UNSCOPED", raising=False)
+    with pytest.raises(ValueError, match=missing):
+        require_issuer_audience(iss, aud)
+
+
+@pytest.mark.parametrize(("iss", "aud", "allow_unscoped", "warns"), [
+    ("iss", "aud", None, False),
+    (None, None, "true", True),
+    (None, "aud", "1", True),
+])
+def test_require_issuer_audience_accepts(monkeypatch, iss, aud, allow_unscoped, warns):
+    # Validates: both values present passes silently; MCP_JWT_ALLOW_UNSCOPED is the only
+    # opt-out and it logs a warning naming what is not enforced.
+    from mcp_server import auth_verify
+
+    monkeypatch.delenv("MCP_JWT_ALLOW_UNSCOPED", raising=False)
+    if allow_unscoped:
+        monkeypatch.setenv("MCP_JWT_ALLOW_UNSCOPED", allow_unscoped)
+    seen = []
+    monkeypatch.setattr(auth_verify.logger, "warning", lambda msg, *a, **_: seen.append(msg % a))
+    auth_verify.require_issuer_audience(iss, aud)
+    assert any("NOT enforced" in m for m in seen) is warns, seen
+
+
+@pytest.mark.parametrize(("host", "warns"), [
+    ("portal.internal", True), ("10.0.0.5", True),
+    ("localhost:8080", False), ("127.0.0.2", False), ("[::1]", False), ("[0:0:0:0:0:0:0:1]", False),
+    ("localhost.:8080", False),  # Regression: the absolute spelling warned as non-loopback
+    ("user:pw@localhost", False), ("localhost.internal", True),
+])
+def test_plain_http_verify_url_warns_off_loopback(monkeypatch, host, warns):
+    # Validates: the verify URL carries the bearer token, so plain http off loopback warns.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("MCP_JWT_VERIFY_URL", f"http://{host}/.well-known/verify-token")
+    from mcp_server import auth_verify
+
+    seen = []
+    # fastmcp's logger does not propagate to caplog; record calls directly.
+    monkeypatch.setattr(auth_verify.logger, "warning", lambda msg, *a, **_: seen.append(msg % a))
+    build_verifier_kwargs_from_env()
+    assert any("plain http" in m for m in seen) is warns

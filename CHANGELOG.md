@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Security
+- **Breaking (`MCP_AUTH=jwt`):** `MCP_JWT_ISSUER` and `MCP_JWT_AUDIENCE` are now required; the
+  server refuses to start without both, naming the missing variable. Without them any token
+  signed by the same IdP for another service was accepted. `MCP_JWT_ALLOW_UNSCOPED=true` is
+  the explicit opt-out (logged, not recommended). A plain-`http` `MCP_JWT_VERIFY_URL` to a
+  non-loopback host logs a warning at startup, since the bearer token is sent to it. (#172)
 - **Breaking (HTTP mode):** the server refuses to start (exit status 3) unless the full
   sandbox tier is configured (`OSMCP_SANDBOX=auto`, `OSMCP_SANDBOX_NET=deny`, Linux); set
   `OSMCP_ALLOW_UNSANDBOXED=true` to accept the risk. `OSMCP_ENABLE_CODE_TOOLS=false` (any
