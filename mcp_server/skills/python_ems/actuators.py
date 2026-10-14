@@ -17,6 +17,7 @@ import openstudio
 
 from mcp_server import model_manager, sandbox
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
+from mcp_server.resources import stage_model_resources
 from mcp_server.skills.python_ems.edd_parser import parse_edd
 
 _DISCOVERY_TIMEOUT_SECONDS = 300
@@ -34,8 +35,9 @@ def list_ems_actuators_op(
     max_results: int = 50,
 ) -> dict[str, Any]:
     """Run a sizing-only sim of the loaded model and parse its .edd dictionary."""
-    model = model_manager.get_model_if_loaded()
-    if model is None:
+    try:
+        model, generation = model_manager.get_model_with_generation()
+    except RuntimeError:
         return {"ok": False, "error": "No model loaded. Call load_osm_model first."}
     if len(model.getDesignDays()) == 0:
         return {
@@ -66,6 +68,18 @@ def list_ems_actuators_op(
         for instance in copy.getPythonPluginInstances():
             instance.remove()
         copy.save(str(osm_path), True)
+
+        # The model's resources (Schedule:File CSVs, its own EPW) go where the
+        # CLI's default search path looks, <work>/files, like run_simulation
+        # stages them; without them EnergyPlus dies before writing the .edd.
+        with model_manager.session_io_lock():
+            pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
+            stage_err = stage_model_resources(
+                model_manager.get_model_path(), work / "files",
+                first=[pending] if pending is not None else [],
+            )
+        if stage_err:
+            return {"ok": False, "error": stage_err}
 
         (work / "workflow.osw").write_text(
             json.dumps({"seed_file": "in.osm", "file_paths": [],

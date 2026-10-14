@@ -29,9 +29,12 @@ out-of-band over signed HTTP routes on the same port.
 
 ## Download (hand a server file back to the user)
 
-`request_download(path=<server_path>)` or
-`request_download(run_id=<run_id>, bundle=True)` → `download_url`; the user
-fetches it:
+`request_download(path=<server_path>)` for one file,
+`request_download(path=<model.osm>, bundle=True)` for a model with its
+companion `files/` (Schedule:File CSVs, plugin scripts, custom EPWs; the zip
+is the OpenStudio Application layout, so it opens there), or
+`request_download(run_id=<run_id>, bundle=True)` for a run's reports →
+`download_url`; the user fetches it:
 ```
 curl -O -J "<download_url>"
 ```

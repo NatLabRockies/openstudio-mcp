@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- A model's resources (its companion folder `<model>/files/`: Schedule:File CSVs, Python
+  EMS plugin scripts, custom EPWs) now travel with it wherever the server moves or
+  snapshots the OSM: `request_download(path=<model.osm>, bundle=True)` zips the model
+  in the OpenStudio Application layout, `copy_file` writes the companion folder beside
+  the copy, `test_measure` stages the resources where the test workflow searches (and
+  always tests a private copy, copying `measure.xml` and `tests/test_model.osm` back for
+  your own measures), the ReportingMeasure test gets the run's `files/`, and actuator
+  discovery stages them for its sizing run. (#198)
+
 ### Security
 - **Breaking (`MCP_AUTH=jwt`):** `MCP_JWT_ISSUER` and `MCP_JWT_AUDIENCE` are now required; the
   server refuses to start without both, naming the missing variable. Without them any token
