@@ -100,12 +100,12 @@ def _zip_model_bundle(osm: Path, key: str) -> FileResponse | JSONResponse:
     """Zip <stem>.osm + <stem>/files/ + marker to a temp file; 409 on a planted link."""
     import functools
 
-    from mcp_server.config import is_path_allowed_for, run_root_for
+    from mcp_server.config import is_path_allowed_for
     from mcp_server.model_bundle import lexical_link_issue, write_bundle_zip
 
     # Same component check as the mint: a directory on the path swapped for a
     # link since then is refused here too.
-    issue = lexical_link_issue(osm, run_root_for(key))
+    issue = lexical_link_issue(osm)
     if issue:
         return JSONResponse({"ok": False, "error": f"model bundle refused: {issue}"}, status_code=409)
     fd, tmp_name = tempfile.mkstemp(prefix="bundle_", suffix=".zip")

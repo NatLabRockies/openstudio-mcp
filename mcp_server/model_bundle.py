@@ -56,21 +56,22 @@ def _resource_dirs(osm: Path, first: list[Path], allowed: PathAllowed | None) ->
     return sources
 
 
-def lexical_link_issue(path: Path, root: Path) -> str | None:
-    """A symlink at `path` or at any component between `root` and it, else None.
+def lexical_link_issue(path: Path) -> str | None:
+    """Why `path` cannot be used as the lexical location of a bundle, else None.
 
     `is_path_allowed_for` resolves before it checks, so a link inside the
     caller's own root passes it; the bundle must still never read through
-    one (the companion folder next to a linked OSM is not the model's).
+    one (the companion folder next to a linked OSM is not the model's). So
+    every component from the filesystem anchor down is checked for a link,
+    and a path with `.` or `..` parts is refused outright: `/x/../y/m.osm`
+    means different things depending on whether `x` is a link.
     """
     if not path.is_absolute():
         return f"{path} is not an absolute path"
-    try:
-        rel = path.relative_to(root)
-    except ValueError:
-        return f"{path} is a symlink" if path.is_symlink() else None
-    here = root
-    for part in rel.parts:
+    if any(part in (".", "..") for part in path.parts):
+        return f"{path} contains '.' or '..' components"
+    here = Path(path.anchor)
+    for part in path.parts[1:]:
         here = here / part
         if here.is_symlink():
             return f"{here} is a symlink"

@@ -1196,30 +1196,20 @@ def test_measure_op(
         # private copy the model under test wins over a same-named fixture the
         # measure ships; the measure dir itself keeps its fixture.
         test_model_dst = test_dir / "test_model.osm"
-        src_model = resource_osm = pending = snapshot_generation = None
+        explicit: Path | None = None
         if model_path:
             src = Path(model_path)
             if not is_path_allowed(src):
                 return {"ok": False, "error": f"model_path not allowed: {model_path}"}
             if src.is_file():
-                src_model = resource_osm = src
-        if not src_model:
-            src_model, resource_osm, pending, snapshot_generation = _find_test_model()
-        if src_model:
-            shutil.copy2(str(src_model), str(test_model_dst))
-            if snapshot_generation is not None:
-                src_model.unlink(missing_ok=True)  # only the snapshot this call created
-            stage_err = stage_model_resources(
-                resource_osm, mdir / "files", first=[pending] if pending is not None else [],
-                overwrite=True,
-            )
-            if stage_err:
-                return {"ok": False, "error": stage_err}
-            if snapshot_generation is not None:
-                # A load during staging would have paired the snapshot with
-                # another model's resources: refuse rather than test a mix.
-                from mcp_server.model_manager import ensure_generation_unchanged
-                ensure_generation_unchanged(snapshot_generation)
+                explicit = src
+        if explicit is not None:
+            shutil.copy2(str(explicit), str(test_model_dst))
+            stage_err = stage_model_resources(explicit, mdir / "files", overwrite=True)
+        else:
+            stage_err = _stage_session_or_asset_model(mdir, test_model_dst)
+        if stage_err:
+            return {"ok": False, "error": stage_err}
 
         if language == "Python":
             test_cmd = ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"]
@@ -1345,6 +1335,37 @@ def test_measure_op(
     finally:
         if _private_copy is not None:
             shutil.rmtree(_private_copy, ignore_errors=True)
+
+
+def _stage_session_or_asset_model(mdir: Path, test_model_dst: Path) -> str | None:
+    """Copy the session model (else the bundled asset) into tests/ and stage its resources.
+
+    Snapshot, path, pending workspace and the resource copy all happen under
+    the session lock: save_osm_model moves the pending files into a (possibly
+    new) companion folder under that lock without changing the generation,
+    so a generation check alone would not notice a save in between. The
+    generation is still re-checked afterwards for load_model, which does not
+    take the lock. Returns an error string when the resources could not be
+    staged; raises RuntimeError when the model was replaced.
+    """
+    from mcp_server.model_manager import ensure_generation_unchanged, session_io_lock
+
+    with session_io_lock():
+        src_model, resource_osm, pending, snapshot_generation = _find_test_model()
+        if src_model is None:
+            return None
+        shutil.copy2(str(src_model), str(test_model_dst))
+        if snapshot_generation is not None:
+            src_model.unlink(missing_ok=True)  # only the snapshot this call created
+        err = stage_model_resources(
+            resource_osm, mdir / "files", first=[pending] if pending is not None else [],
+            overwrite=True,
+        )
+        if err:
+            return err
+        if snapshot_generation is not None:
+            ensure_generation_unchanged(snapshot_generation)
+    return None
 
 
 def _copy_back_test_outputs(private_copy: Path, own_dir: Path) -> str | None:

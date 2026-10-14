@@ -198,6 +198,16 @@ def test_download_bundle_never_follows_planted_links():
                 rel = unwrap(await s.call_tool("request_download", {
                     "path": str(Path(osm).relative_to("/")), "bundle": True}))
                 assert rel["ok"] is False and "absolute" in rel["error"], rel
+                # an absolute path spelled through '..' or through a linked directory
+                # above the OSM is refused, even though both resolve inside the root
+                alias = models.parent / f"alias_{name}"
+                alias.symlink_to(models, target_is_directory=True)
+                via_alias = unwrap(await s.call_tool("request_download", {
+                    "path": str(alias / Path(osm).name), "bundle": True}))
+                assert via_alias["ok"] is False and "symlink" in via_alias["error"], via_alias
+                dotted_path = str(models.parent / "x" / ".." / Path(osm).relative_to(models.parent))
+                dotted = unwrap(await s.call_tool("request_download", {"path": dotted_path, "bundle": True}))
+                assert dotted["ok"] is False and "'..'" in dotted["error"], dotted
 
                 async def refused_at_mint(path: Path) -> None:
                     # the mint runs the same link checks as the route, so the caller sees

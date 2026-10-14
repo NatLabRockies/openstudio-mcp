@@ -256,7 +256,7 @@ def _request_model_bundle(key: str, path: str) -> dict:
         return {"ok": False, "error": f"file not accessible: {path}"}
     if target.suffix.lower() != ".osm":
         return {"ok": False, "error": "bundle download requires run_id or an .osm path"}
-    issue = lexical_link_issue(lexical, run_root_for(key))
+    issue = lexical_link_issue(lexical)
     if issue:
         return {"ok": False, "error": f"refusing to bundle through a symlink: {issue}"}
     try:
