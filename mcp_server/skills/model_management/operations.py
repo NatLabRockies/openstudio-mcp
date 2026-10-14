@@ -13,6 +13,7 @@ from mcp_server.resources import (
     companion_files_dir,
     copy_resources,
     legacy_files_dir,
+    legacy_migrated,
     mark_legacy_migrated,
     resource_dir_issue,
     resource_sources,
@@ -336,9 +337,20 @@ def save_osm_model(
                     "dir into the model's companion folder"
                 )
             failed_regular = [(name, why) for name, why in carried["skipped"] if why != "not a regular file"]
-            if consulted_legacy and not failed_regular:
+            source_migrated = source_path is not None and legacy_migrated(source_path)
+            if (consulted_legacy or source_migrated) and not failed_regular:
                 # Complete: from now on the companion folder is the whole truth.
-                mark_legacy_migrated(p)
+                # A save-as carries that state, otherwise the copy would start
+                # consulting the source's legacy dir again.
+                try:
+                    mark_legacy_migrated(p)
+                except ValueError as e:
+                    return {
+                        "ok": False,
+                        "error": f"Model saved to {saved_path}, resources written, but the migration "
+                                 f"marker could not be written: {e}",
+                        "osm_path": str(saved_path),
+                    }
             if carried["replaced"]:
                 result["replaced_files"] = list(carried["replaced"])
             if carried["skipped"]:

@@ -24,7 +24,7 @@ from typing import Any
 import openstudio
 
 from mcp_server.config import is_path_allowed
-from mcp_server.util import copy_regular_file_nofollow
+from mcp_server.util import copy_regular_file_nofollow, open_nofollow_for_write
 
 # Per-file budget matches the measure-output budget in measures/operations.py;
 # the aggregate caps bound one copy (a save, a run staging) as a whole.
@@ -76,17 +76,26 @@ def resource_dir_issue(files_dir: Path, *, write: bool) -> str | None:
 
 
 def legacy_migrated(osm_path: Path | str) -> bool:
-    """True once a save has copied the model's legacy sibling files/ into its companion folder."""
-    return (companion_folder(osm_path) / MIGRATED_MARKER).is_file()
+    """True once a save has copied the model's legacy sibling files/ into its companion folder.
+
+    Only a regular file counts: the companion folder is tenant-writable, and
+    a link planted at the marker's name must neither count nor be written.
+    """
+    marker = companion_folder(osm_path) / MIGRATED_MARKER
+    return marker.is_file() and not marker.is_symlink()
 
 
 def mark_legacy_migrated(osm_path: Path | str) -> None:
+    """Write the marker; refuses (ValueError) a link or non-regular entry at its name."""
     folder = companion_folder(osm_path)
+    if folder.is_symlink():
+        raise ValueError(f"{folder} is a symlink")
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / MIGRATED_MARKER).write_text(
-        "legacy sibling files/ copied into files/ by save_osm_model\n",
-        encoding="utf-8",
-    )
+    marker = folder / MIGRATED_MARKER
+    if marker.is_symlink() or (marker.exists() and not marker.is_file()):
+        raise ValueError(f"{marker} is not a regular file; refusing to write the migration marker")
+    with open_nofollow_for_write(marker) as fh:
+        fh.write("legacy sibling files/ copied into files/ by save_osm_model\n")
 
 
 def resource_sources(osm_path: Path | str) -> list[Path]:
@@ -147,23 +156,40 @@ def _related(a: Path, b: Path) -> str | None:
     return None
 
 
+def _components_are_real_dirs(base: Path, rel_dir: Path) -> bool:
+    """True when every directory from `base` down to `base/rel_dir` exists as a real dir or not yet.
+
+    A link at any intermediate component would redirect a write below it, so
+    each component is checked, not only the immediate parent.
+    """
+    here = base
+    for part in rel_dir.parts:
+        here = here / part
+        if here.is_symlink():
+            return False
+        if here.exists() and not here.is_dir():
+            return False
+    return True
+
+
 def copy_resources(
     sources: list[Path], dst: Path, *, overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Copy resource files from `sources` into `dst`, first source wins per name.
+    """Copy resource files from `sources` into `dst`, first source wins per relative path.
 
-    Top-level regular files only, through no-follow opens with the size
-    budget: resources are referenced by bare name (ExternalFile), and a flat
-    copy is what keeps a link planted at an intermediate directory from ever
-    being traversed. `dst` and its parent (the companion folder) must not be
-    links. An entry already present in `dst` is left alone unless `overwrite`
-    (then reported in "replaced"); a link or directory at a destination name
-    is never written through and is reported as skipped. A source that IS
-    `dst` is ignored; a source that nests with `dst` (a `files.osm` whose
-    companion sits inside the legacy `files/`) raises ValueError, as does
-    exceeding the aggregate budget. Creates `dst` only when there is
-    something to copy. Returns {"copied": [(name, source_index)],
-    "replaced": [name], "skipped": [(name, why)]}.
+    Regular files only, through no-follow opens with the size budget, keeping
+    relative subpaths (a plugin may import a sibling package). Links are
+    never followed: the walk does not descend into linked dirs, a linked
+    entry is skipped, and on the destination every directory component down
+    to the target is checked (`dst` and its parent, the companion folder,
+    included). An entry already present in `dst` is left alone unless
+    `overwrite` (then reported in "replaced"); a link or directory at a
+    destination file name is never written through and is reported as
+    skipped. A source that IS `dst` is ignored; a source that nests with
+    `dst` (a `files.osm` whose companion sits inside the legacy `files/`)
+    raises ValueError, as does exceeding the aggregate budget. Creates `dst`
+    only when there is something to copy. Returns {"copied": [(rel,
+    source_index)], "replaced": [rel], "skipped": [(rel, why)]}.
     """
     if dst.is_symlink() or dst.parent.is_symlink():
         raise ValueError(f"{dst} or its parent is a symlink; refusing to write resources there")
@@ -180,35 +206,46 @@ def copy_resources(
             continue
         if relation == "inside":
             raise ValueError(f"{src} and {dst} nest inside each other; refusing to copy resources")
-        for entry in sorted(src.iterdir()):
-            name = entry.name
-            if name in seen or name == MIGRATED_MARKER:
-                continue
-            seen.add(name)
-            if entry.is_symlink() or not entry.is_file():
-                skipped.append((name, "not a regular file"))
-                continue
-            target = dst / name
-            if target.is_symlink() or target.is_dir():
-                skipped.append((name, "destination is a link or directory"))
-                continue
-            existed = target.exists()
-            if existed and not overwrite:
-                continue
-            if len(copied) + 1 > MAX_RESOURCE_FILES:
-                raise ValueError(f"more than {MAX_RESOURCE_FILES} resource files; refusing to copy")
-            total += entry.stat().st_size
-            if total > MAX_RESOURCE_TOTAL_BYTES:
-                raise ValueError(f"resources exceed {MAX_RESOURCE_TOTAL_BYTES} bytes in total; refusing to copy")
-            dst.mkdir(parents=True, exist_ok=True)
-            try:
-                copy_regular_file_nofollow(entry, target, MAX_RESOURCE_FILE_BYTES)
-            except (OSError, ValueError) as e:
-                skipped.append((name, str(e)))
-                continue
-            copied.append((name, index))
-            if existed:
-                replaced.append(name)
+        for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
+            here = Path(dirpath)
+            linked_dirs = [d for d in dirnames if (here / d).is_symlink()]
+            for d in linked_dirs:
+                skipped.append((str((here / d).relative_to(src)), "not a regular file"))
+            dirnames[:] = sorted(d for d in dirnames if d not in linked_dirs)
+            rel_dir = here.relative_to(src)
+            for fname in sorted(filenames):
+                rel = str(rel_dir / fname) if rel_dir.parts else fname
+                if rel in seen or fname == MIGRATED_MARKER:
+                    continue
+                seen.add(rel)
+                entry = here / fname
+                if entry.is_symlink() or not entry.is_file():
+                    skipped.append((rel, "not a regular file"))
+                    continue
+                target = dst / rel
+                if not _components_are_real_dirs(dst, rel_dir):
+                    skipped.append((rel, "destination parent is a link"))
+                    continue
+                if target.is_symlink() or target.is_dir():
+                    skipped.append((rel, "destination is a link or directory"))
+                    continue
+                existed = target.exists()
+                if existed and not overwrite:
+                    continue
+                if len(copied) + 1 > MAX_RESOURCE_FILES:
+                    raise ValueError(f"more than {MAX_RESOURCE_FILES} resource files; refusing to copy")
+                total += entry.stat().st_size
+                if total > MAX_RESOURCE_TOTAL_BYTES:
+                    raise ValueError(f"resources exceed {MAX_RESOURCE_TOTAL_BYTES} bytes in total; refusing to copy")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    copy_regular_file_nofollow(entry, target, MAX_RESOURCE_FILE_BYTES)
+                except (OSError, ValueError) as e:
+                    skipped.append((rel, str(e)))
+                    continue
+                copied.append((rel, index))
+                if existed:
+                    replaced.append(rel)
     return {"copied": copied, "replaced": replaced, "skipped": skipped}
 
 
