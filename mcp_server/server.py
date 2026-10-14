@@ -186,6 +186,8 @@ def main():
     start_retention_gc(days=resolve_gc_days(sys.argv[1:], RUN_RETENTION_DAYS))
     transport = os.environ.get("MCP_TRANSPORT", "stdio").lower()
     if transport in ("http", "streamable-http"):
+        from mcp_server.access_log import install as install_access_log_filter
+        install_access_log_filter()  # signed /files/ tokens never reach the access log (#170)
         mcp.run(
             transport="http",
             host=os.environ.get("MCP_HOST", "0.0.0.0"),  # noqa: S104 - container binds all interfaces; lock down via VPN/proxy

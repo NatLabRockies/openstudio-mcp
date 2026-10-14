@@ -326,3 +326,88 @@ def test_report_download_roundtrip_uses_download_ttl():
                 assert t0 + 300 - 2 <= _token_exp(up["upload_path"]) <= t0 + 300 + 15, up
 
         asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_signed_url_not_in_access_log():
+    # Regression: after a client PUT/GET a signed /files/ URL, uvicorn's access log held the
+    # full request line with the token, replayable until expiry (issue #170, reproduced
+    # 2026-10-13 on develop; 157 fixture logs on the dev machine held tokens)
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+    import time
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        port = url.split(":")[-1].split("/")[0]
+        run_root = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT",
+                                       os.environ.get("OSMCP_RUN_ROOT", "/runs")))
+        log_path = run_root / f"_httpsrv_{port}.log"  # conftest.http_server's log file
+
+        async def _run():
+            async with http_session(url) as s:
+                data = b"OS:Version,3.11.0;\nbytes\n"
+                req = unwrap(await s.call_tool("request_upload", {
+                    "filename": "log.osm", "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }))
+                assert req["ok"] is True, req
+                assert _put(url, req["upload_path"], data).status_code == 200
+                info = unwrap(await s.call_tool("get_upload", {"file_id": req["file_id"]}))
+                dl = unwrap(await s.call_tool("request_download", {"path": info["server_path"]}))
+                assert dl["ok"] is True, dl
+                assert httpx.get(dl["download_url"], timeout=30).status_code == 200
+                return req["upload_path"].split("?t=", 1)[1], dl["download_path"].split("?t=", 1)[1]
+
+        up_token, dl_token = asyncio.run(_run())
+        # The child writes the log through the file handle conftest gave it; poll briefly.
+        deadline = time.time() + 5
+        while True:
+            log = log_path.read_text(errors="replace")
+            if ("PUT /files/u/" in log and "GET /files/d/" in log) or time.time() > deadline:
+                break
+            time.sleep(0.2)
+        assert "PUT /files/u/" in log and "GET /files/d/" in log, log[-2000:]
+        assert up_token not in log, "upload token leaked into the access log"
+        assert dl_token not in log, "download token leaked into the access log"
+        assert log.count("?[redacted]") == 2, log[-2000:]
+
+
+@pytest.mark.integration
+def test_websocket_upgrade_to_signed_url_not_in_server_log():
+    # Regression: a WebSocket upgrade request to a signed /files/ URL is refused but logged by
+    # uvicorn's error logger with the full token, which stayed replayable with a plain GET
+    # (Codex review of #194, reproduced in Docker with uvicorn 0.52/0.53)
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+    import time
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        port = url.split(":")[-1].split("/")[0]
+        run_root = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT",
+                                       os.environ.get("OSMCP_RUN_ROOT", "/runs")))
+        log_path = run_root / f"_httpsrv_{port}.log"
+
+        data = b"OS:Version,3.11.0;\nws bytes\n"
+
+        async def _run():
+            async with http_session(url) as s:
+                info = await _upload(s, url, "ws.osm", data)
+                dl = unwrap(await s.call_tool("request_download", {"path": info["server_path"]}))
+                assert dl["ok"] is True, dl
+                return dl
+
+        dl = asyncio.run(_run())
+        token = dl["download_path"].split("?t=", 1)[1]
+        r = httpx.get(dl["download_url"], timeout=30, headers={
+            "Connection": "Upgrade", "Upgrade": "websocket",
+            "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+        })
+        assert r.status_code in (400, 403, 426), r.status_code  # refused, never 101
+        assert httpx.get(dl["download_url"], timeout=30).content == data  # token still valid
+        deadline = time.time() + 5
+        while True:
+            log = log_path.read_text(errors="replace")
+            if log.count("/files/d/ws.osm") >= 2 or time.time() > deadline:
+                break
+            time.sleep(0.2)
+        assert token not in log, "download token leaked into the server log via the upgrade path"
