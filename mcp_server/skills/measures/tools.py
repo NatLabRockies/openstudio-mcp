@@ -139,6 +139,10 @@ def register(mcp):
         run's SQL/IDF are staged and only reporting measures execute
         (--postprocess_only), leaving the loaded model untouched.
 
+        The loaded model's files/ resources are available to the measure.
+        Files the measure generates are kept with the session and written to
+        the model's files/ dir by save_osm_model (see generated_files).
+
         Args:
             measure_dir: Path to the measure directory (contains measure.rb)
             arguments: Optional dict of argument_name -> value overrides

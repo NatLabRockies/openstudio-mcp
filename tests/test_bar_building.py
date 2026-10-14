@@ -4,6 +4,7 @@ Tests create_bar_building, create_new_building, and the bar→typical chain.
 """
 import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import integration_enabled, server_params, unwrap
@@ -351,4 +352,37 @@ def test_import_floorspacejs_host_path_error_names_roots():
                 assert "list_files" in res["error"], f"error must point at discovery tool: {res['error']}"
                 assert "/inputs" in res["error"], f"error must name readable roots: {res['error']}"
 
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_bar_building_from_nothing_has_no_file_until_saved():
+    # Validates: create_bar_building with no model loaded starts an in-memory model (the
+    # Application's New document): a bare save is refused naming save_name, no empty.osm
+    # seed is written, and save_name establishes the file for later bare saves
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("pytest_bar_new")
+    seed = Path("/runs/examples/bar_building/empty.osm")
+    seed_mtime = seed.stat().st_mtime if seed.exists() else None
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = unwrap(await s.call_tool("create_bar_building", {}))
+                assert res["ok"] is True, res
+
+                bare = unwrap(await s.call_tool("save_osm_model", {}))
+                assert bare["ok"] is False, bare
+                assert "save_name" in bare["error"], bare
+                assert (seed.stat().st_mtime if seed.exists() else None) == seed_mtime, (
+                    "a model created from nothing must not write an empty.osm seed")
+
+                saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
+                assert saved["ok"] is True, saved
+                assert saved["osm_path"].endswith(f"/models/{name}.osm"), saved
+                again = unwrap(await s.call_tool("save_osm_model", {}))
+                assert again["ok"] is True, again
+                assert again["osm_path"] == saved["osm_path"], "first save must establish the session path"
     asyncio.run(_run())

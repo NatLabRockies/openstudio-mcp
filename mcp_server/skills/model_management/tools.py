@@ -39,9 +39,15 @@ def register(mcp):
         A model loaded from a read-only area (staged inputs, repo assets)
         cannot be saved back in place; save_name always works.
 
+        After a save-as the session points at the saved file (later bare
+        saves and new companion resources go there). Files a measure
+        generated are written to the model's files/ dir on save.
+
         Args:
             osm_path: Optional explicit server-side path. If neither arg is
-                given, saves to the original load path.
+                given, saves to the file the model was loaded from or last
+                saved to. A model created in memory (e.g. create_bar_building
+                with nothing loaded) has no file yet: pass save_name.
             save_name: Bare file name, e.g. "baseline" (".osm" appended;
                 no directories). Mutually exclusive with osm_path.
         """

@@ -8,7 +8,14 @@ import uuid
 from pathlib import Path
 
 import pytest
-from conftest import integration_enabled, server_params, setup_example, unwrap
+from conftest import (
+    EPW_PATH,
+    integration_enabled,
+    poll_until_done,
+    server_params,
+    setup_example,
+    unwrap,
+)
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -19,6 +26,8 @@ def _unique(prefix: str = "pytest_measures") -> str:
 
 # Measure path inside container (repo mounted at /repo)
 MEASURE_DIR = "/repo/tests/assets/measures/set_building_name"
+RESOURCE_MEASURE_DIR = "/repo/tests/assets/measures/read_resource_file"
+GENERATED_MEASURE_DIR = "/repo/tests/assets/measures/write_generated_file"
 
 BOGUS_EPW_NAME = "ZZZ_Nowhere.Fake.999999_TMY3.epw"
 
@@ -400,4 +409,79 @@ def test_bare_save_after_measure_writes_users_file():
                 bldg = unwrap(await s.call_tool("get_building_info", {}))
                 assert bldg["building"]["name"] == new_name, (
                     "the user's file on disk must hold the measure result after a bare save")
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_measure_can_read_model_resource_file():
+    # Regression: apply_measure never put the model's companion files/ on the measure
+    # workflow's file search paths, so a measure calling workflow.findFile on a model
+    # resource (EMS plugin script, Schedule:File CSV) could not find it (#195 follow-up)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                cr = unwrap(await s.call_tool("create_example_osm", {"name": _unique()}))
+                assert cr["ok"] is True, cr
+                files_dir = Path(cr["osm_path"]).parent / "files"
+                files_dir.mkdir(parents=True, exist_ok=True)
+                (files_dir / "note.txt").write_text("hello from files\n", encoding="utf-8")
+                lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
+                assert lr["ok"] is True, lr
+
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": RESOURCE_MEASURE_DIR,
+                    "arguments": {"file_name": "note.txt"},
+                }))
+                assert res["ok"] is True, f"measure must find the model's files/ resource: {res}"
+                bldg = unwrap(await s.call_tool("get_building_info", {}))
+                assert bldg["building"]["name"] == "resource:hello from files", bldg
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_generated_file_persists_on_save_and_simulates():
+    # Validates: a file a measure generates (the CLI's generated_files/) is kept in the
+    # session workspace, written next to the model on save, and resolved from there by
+    # run_simulation: the Application's Apply-Measure-Now copy-back, persisted on Save
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("pytest_generated")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, name)
+                rp = unwrap(await s.call_tool("set_run_period", {
+                    "begin_month": 1, "begin_day": 1, "end_month": 1, "end_day": 2,
+                }))
+                assert rp["ok"] is True, rp
+
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": GENERATED_MEASURE_DIR,
+                    "arguments": {"file_name": "generated_schedule.csv"},
+                }))
+                assert res["ok"] is True, res
+                assert res["generated_files"] == ["generated_schedule.csv"], (
+                    f"apply_measure must report the file the measure generated: {res}")
+
+                saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
+                assert saved["ok"] is True, saved
+                csv = Path(saved["osm_path"]).parent / "files" / "generated_schedule.csv"
+                assert csv.is_file(), f"generated file must be persisted next to the saved model: {saved}"
+                assert saved["files_dir"] == str(csv.parent), saved
+                assert csv.read_text(encoding="utf-8").splitlines()[8] == "1", (
+                    "persisted CSV must be the measure's content (hour 8 is occupied)")
+
+                sim = unwrap(await s.call_tool("run_simulation", {
+                    "osm_path": saved["osm_path"], "epw_path": EPW_PATH,
+                }))
+                assert sim["ok"] is True, sim
+                status = await poll_until_done(s, sim["run_id"])
+                assert status["run"]["status"].lower() == "success", (
+                    f"simulation must resolve the Schedule:File CSV from files/: {status}")
     asyncio.run(_run())

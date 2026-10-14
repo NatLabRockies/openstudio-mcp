@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>read_resource_file</name>
+  <uid>00000000-0000-0000-0000-000000000002</uid>
+  <version_id>3b1c2d4e-5f60-4718-8a9b-0c1d2e3f4a5b</version_id>
+  <version_modified>2026-10-14T00:00:00Z</version_modified>
+  <xml_checksum>00000000</xml_checksum>
+  <class_name>ReadResourceFile</class_name>
+  <display_name>Read Resource File</display_name>
+  <description>Fails unless the named resource file is reachable through the workflow file search paths.</description>
+  <modeler_description>Calls runner.workflow.findFile(file_name) and sets the building name to the file's first line.</modeler_description>
+  <arguments>
+    <argument>
+      <name>file_name</name>
+      <display_name>Resource file name</display_name>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Whole Building.Space Types</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>00000000</checksum>
+    </file>
+  </files>
+</measure>

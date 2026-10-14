@@ -15,7 +15,6 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import user_run_root
 from mcp_server.model_manager import get_model
 from mcp_server.skills.measures.operations import apply_measure
 
@@ -329,18 +328,14 @@ def _expand_climate_zone(cz: str) -> str:
 
 
 
-def _create_empty_model() -> Path:
-    """Create an empty OSM, save it, and load it as current model.
+def _create_empty_model() -> None:
+    """Start an in-memory model with no file (the Application's New document).
 
-    Returns the path to the saved OSM file.
+    apply_measure seeds the measure run from its own save of the session
+    model, so no file is needed; the first save_osm_model(save_name=...)
+    establishes where the model lives.
     """
-    run_dir = user_run_root() / "examples" / "bar_building"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    osm_path = run_dir / "empty.osm"
-    empty = openstudio.model.Model()
-    empty.save(str(osm_path), True)
-    model_manager.load_model(osm_path)
-    return osm_path
+    model_manager.set_model(openstudio.model.Model())
 
 
 def create_bar_building(

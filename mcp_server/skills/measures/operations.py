@@ -34,7 +34,14 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
-from mcp_server.model_manager import get_model, get_model_with_generation, reload_model
+from mcp_server.model_manager import (
+    get_model,
+    get_model_path,
+    get_model_with_generation,
+    pending_files_dir,
+    pending_files_dir_if_exists,
+    reload_model,
+)
 from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
@@ -793,6 +800,13 @@ def apply_measure(
         if arguments:
             measure_args = {k: str(v) for k, v in arguments.items()}
 
+        # Put the model's resources where the CLI's own file search finds them
+        # (<run_dir>/files is on every run's search path), as the Application's
+        # Apply Measure Now adds the document's files dir to its temp OSW.
+        stage_err = _stage_model_resources(run_dir)
+        if stage_err:
+            return {"ok": False, "error": stage_err, "run_dir": str(run_dir)}
+
         # Resolve the model's weather reference so the OSW runner's
         # Initialization state doesn't abort on a bare/stale EPW url —
         # the runner validates weather even for --measures_only.
@@ -946,6 +960,19 @@ def apply_measure(
             "arguments_applied": measure_args,
         }
 
+        # Files the measure generated (the CLI's generated_files/) belong to
+        # the model now (it references them by bare name). Keep them with the
+        # session until save_osm_model writes them next to the model, like the
+        # Application copies generated_files into its document on Accept and
+        # persists them on Save. Only after the reload was adopted: a refused
+        # reload must not leak the measure's files into the session.
+        generated = _adopt_generated_files(run_dir)
+        if generated:
+            result["generated_files"] = generated
+            result["generated_files_note"] = (
+                "kept with the session; written to the model's files/ dir by save_osm_model"
+            )
+
         # If weather was stripped from the seed, restore the original
         # reference — unless the measure set a new one (e.g.
         # ChangeBuildingLocation)
@@ -994,6 +1021,53 @@ def apply_measure(
         return result
     except Exception as e:
         return {"ok": False, "error": f"Failed to apply measure: {e}"}
+
+
+def _stage_model_resources(run_dir: Path) -> str | None:
+    """Copy the model's companion files/ and the session's pending resources into <run_dir>/files.
+
+    The CLI searches <run_dir>/files (and generated_files, weather, the OSW
+    dir) for ExternalFile names, so a measure that reads a model resource finds
+    it there without any path in the model or OSW being rewritten. The copy,
+    rather than a file_paths entry pointing at the model dir, is what the
+    sandbox tier needs: the confined subprocess can read only its run dir.
+    Returns an error string when a source dir holds an escaping symlink.
+    """
+    sources: list[Path] = []
+    model_path = get_model_path()
+    if model_path is not None:
+        sources.append(model_path.resolve().parent / "files")
+    pending = pending_files_dir_if_exists()
+    if pending is not None:
+        sources.append(pending)
+    dst = run_dir / "files"
+    for src in sources:
+        if not src.is_dir():
+            continue
+        # copytree FOLLOWS symlinks (same guard as run_simulation staging)
+        err = reject_escaping_symlinks(src)
+        if err:
+            return f"Model files/ dir was not staged for the measure: {err}"
+        dst.mkdir(exist_ok=True)
+        shutil.copytree(str(src), str(dst), dirs_exist_ok=True)
+    return None
+
+
+def _adopt_generated_files(run_dir: Path) -> list[str]:
+    """Move top-level regular files from <run_dir>/generated_files into the session workspace."""
+    src = run_dir / "generated_files"
+    if not src.is_dir():
+        return []
+    names: list[str] = []
+    dst: Path | None = None
+    for f in sorted(src.iterdir()):
+        if not is_regular_file_inside(f, src):  # skips links, dirs, anything odd
+            continue
+        if dst is None:
+            dst = pending_files_dir()
+        shutil.copy2(str(f), str(dst / f.name))
+        names.append(f.name)
+    return names
 
 
 def _measure_failure(returncode: int, run_dir: Path, log_path: Path) -> dict[str, Any]:

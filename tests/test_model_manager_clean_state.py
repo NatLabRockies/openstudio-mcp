@@ -139,3 +139,37 @@ def test_reload_model_rejects_stale_generation(mm, tmp_path):
     with pytest.raises(RuntimeError, match="replaced or evicted"):
         mm.reload_model(c, expected_generation=gen)
     assert mm.get_model_if_loaded() is None, "rejected reload must not create session state"
+
+
+def test_set_model_is_pathless_with_workspace_removed_on_clear(mm):
+    # Validates: set_model installs an in-memory model with no path (bare save refused), a
+    # fresh generation, and a session workspace under the user's run root that
+    # clear_model removes together with the model
+    import openstudio
+
+    from mcp_server.config import user_run_root
+    gen_before = mm.model_generation()
+    mm.set_model(openstudio.model.exampleModel())
+    assert mm.get_model_path() is None
+    assert mm.model_generation() > gen_before
+    with pytest.raises(RuntimeError, match="No save path"):
+        mm.save_model()
+    pending = mm.pending_files_dir()
+    assert pending.is_dir()
+    assert user_run_root() in pending.parents, "workspace must live under the caller's run root"
+    (pending / "generated.csv").write_text("1\n", encoding="utf-8")
+    mm.clear_model()
+    assert not pending.exists(), "clearing the session must remove its workspace"
+
+
+def test_rebind_path_requires_current_generation(mm, tmp_path):
+    # Validates: rebind_path (save-as) only moves the session path for the generation the
+    # save was made from; a model loaded meanwhile keeps its own path
+    a = _example_file(tmp_path)
+    b = tmp_path / "saved_as.osm"
+    _model, gen = mm.load_model_with_generation(a)
+    assert mm.rebind_path(b, gen) is True
+    assert mm.get_model_path() == b
+    mm.load_model(a)
+    assert mm.rebind_path(b, gen) is False
+    assert mm.get_model_path() == a, "a stale rebind must not touch the newer model's path"

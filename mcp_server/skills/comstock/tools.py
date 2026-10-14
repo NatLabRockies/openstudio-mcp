@@ -43,7 +43,8 @@ def register(mcp):
         and space types. Does NOT add constructions, loads, HVAC, or schedules —
         use create_typical_building after this for a complete model.
 
-        Creates an empty model if none is loaded. All units are imperial (ft, ft²).
+        Starts a new in-memory model if none is loaded; it has no file until
+        save_osm_model(save_name=...). All units are imperial (ft, ft²).
 
         Args:
             building_type: DOE prototype — "SmallOffice", "MediumOffice", "LargeOffice",

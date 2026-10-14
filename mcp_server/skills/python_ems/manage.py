@@ -29,12 +29,18 @@ def _script_path_for(file_name: str) -> Path | None:
     anchored under files/, and never read through a symlink.
     """
     safe_name = Path(file_name).name
-    osm_path = model_manager.get_model_path()
-    if not safe_name or osm_path is None:
+    if not safe_name:
         return None
-    candidate = osm_path.resolve().parent / "files" / safe_name
-    if candidate.is_file() and not candidate.is_symlink():
-        return candidate
+    candidates: list[Path] = []
+    osm_path = model_manager.get_model_path()
+    if osm_path is not None:
+        candidates.append(osm_path.resolve().parent / "files" / safe_name)
+    pending = model_manager.pending_files_dir_if_exists()
+    if pending is not None:  # not yet saved next to the model
+        candidates.append(pending / safe_name)
+    for candidate in candidates:
+        if candidate.is_file() and not candidate.is_symlink():
+            return candidate
     return None
 
 

@@ -42,7 +42,7 @@ from mcp_server.skills.simulation.operations import (
 from mcp_server.util import open_nofollow_for_write, read_file_bounded, resolve_run_dir
 
 PIN_MARKER = ".pinned"
-_NOT_A_RUN = {"examples", "exports"}  # user working dirs, never GC'd
+_NOT_A_RUN = {"examples", "exports", "workspace"}  # user working dirs, never GC'd
 _CLEANUP_FALLBACK_DAYS = 7.0  # manual cleanup_runs default window when GC is off
 
 # Effective retention window for the auto-GC daemon. Starts from the env value
