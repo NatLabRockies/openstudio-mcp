@@ -40,8 +40,10 @@ def register(mcp):
         cannot be saved back in place; save_name always works.
 
         After a save-as the session points at the saved file (later bare
-        saves and new companion resources go there). Files a measure
-        generated are written to the model's files/ dir on save.
+        saves and new companion resources go there). A model's resources
+        (plugin scripts, Schedule:File CSVs, files a measure generated) are
+        written to its companion folder <dir>/<model>/files/, the OpenStudio
+        Application layout; the response's files_dir names it.
 
         Args:
             osm_path: Optional explicit server-side path. If neither arg is
@@ -97,7 +99,7 @@ def register(mcp):
     def list_files_tool(
         directory: str | None = None,
         pattern: str = "*",
-        max_depth: int = 2,
+        max_depth: int = 3,
         max_results: int = 10,
     ):
         """List files in /inputs and /runs only. Default 10 results.
@@ -110,7 +112,8 @@ def register(mcp):
         Args:
             directory: Directory under /inputs or /runs (e.g. "/runs/my_run"). If omitted, scans both.
             pattern: Glob pattern (e.g. "*.osm"). Default "*".
-            max_depth: Max directory depth (1 = top-level only). Default 2.
+            max_depth: Max directory depth (1 = top-level only). Default 3
+                (reaches a model's resources at <dir>/<model>/files/).
             max_results: Max items (default 10, 0=unlimited)
         """
         mr = None if max_results == 0 else max_results

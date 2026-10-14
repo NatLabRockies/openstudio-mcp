@@ -271,9 +271,17 @@ def ems_sim_mode(args) -> dict:
     if not src_osm.exists():
         return {"saved": False, "error": f"saved model missing: {src_osm}"}
     facts: dict = {"saved": True}
-    src_files = src_osm.parent / "files"
-    if src_files.is_dir():
-        shutil.copytree(src_files, work / "files")
+    # The model's resources, as the server resolves them: the older sibling
+    # files/ only until a save has migrated it (marker in the companion
+    # folder), then the companion folder <model>/files/ on top so its copy wins.
+    companion = src_osm.parent / src_osm.stem
+    marker = companion / ".resources-migrated"
+    migrated = marker.is_file() and not marker.is_symlink()  # same predicate as the server
+    sources = [] if migrated else [src_osm.parent / "files"]
+    sources.append(companion / "files")
+    for src_files in sources:
+        if src_files.is_dir():
+            shutil.copytree(src_files, work / "files", dirs_exist_ok=True)
     model = _load_model(str(src_osm))
     if model is None:
         return facts | {"load_ok": False, "error": "could not load saved model"}

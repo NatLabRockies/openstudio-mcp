@@ -426,7 +426,8 @@ def test_measure_can_read_model_resource_file():
                 await s.initialize()
                 cr = unwrap(await s.call_tool("create_example_osm", {"name": _unique()}))
                 assert cr["ok"] is True, cr
-                files_dir = Path(cr["osm_path"]).parent / "files"
+                osm = Path(cr["osm_path"])
+                files_dir = osm.parent / osm.stem / "files"  # the model's companion folder
                 files_dir.mkdir(parents=True, exist_ok=True)
                 (files_dir / "note.txt").write_text("hello from files\n", encoding="utf-8")
                 lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
@@ -474,7 +475,8 @@ def test_generated_file_persists_on_save_and_simulates():
 
                 saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
                 assert saved["ok"] is True, saved
-                csv = Path(saved["osm_path"]).parent / "files" / csv_name
+                saved_osm = Path(saved["osm_path"])
+                csv = saved_osm.parent / saved_osm.stem / "files" / csv_name
                 assert saved["persisted_files"] == [csv_name], saved
                 assert csv.is_file(), f"generated file must be persisted next to the saved model: {saved}"
                 assert saved["files_dir"] == str(csv.parent), saved
@@ -525,7 +527,8 @@ def test_link_left_in_generated_files_is_not_adopted():
                 saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
                 assert saved["ok"] is True, saved
                 assert saved["persisted_files"] == [csv_name], saved
-                files_dir = Path(saved["osm_path"]).parent / "files"
+                saved_osm = Path(saved["osm_path"])
+                files_dir = saved_osm.parent / saved_osm.stem / "files"
                 assert not (files_dir / "linked.txt").exists(), "the link must not reach files/"
     asyncio.run(_run())
 
@@ -560,7 +563,8 @@ def test_generated_files_replaced_by_a_link_refuses_the_result():
                 saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
                 assert saved["ok"] is True, saved
                 assert "persisted_files" not in saved, saved
-                assert not (Path(saved["osm_path"]).parent / "files" / "private.txt").exists()
+                saved_osm = Path(saved["osm_path"])
+                assert not (saved_osm.parent / saved_osm.stem / "files" / "private.txt").exists()
     asyncio.run(_run())
 
 
@@ -591,9 +595,9 @@ def test_save_never_persists_through_a_link_at_the_destination():
                 }))
                 assert res["ok"] is True, res
 
-                # Link at the destination file name
-                files_dir = model_dir / "files"
-                files_dir.mkdir(exist_ok=True)
+                # Link at the destination file name, inside the model's companion folder
+                files_dir = model_dir / Path(lr["osm_path"]).stem / "files"
+                files_dir.mkdir(parents=True, exist_ok=True)
                 (files_dir / csv_name).symlink_to(target / "private.txt")
                 saved = unwrap(await s.call_tool("save_osm_model", {}))
                 assert saved["ok"] is True, saved
@@ -607,6 +611,16 @@ def test_save_never_persists_through_a_link_at_the_destination():
                 files_dir.symlink_to(target, target_is_directory=True)
                 saved2 = unwrap(await s.call_tool("save_osm_model", {}))
                 assert saved2["ok"] is False, saved2
-                assert "not a writable real directory" in saved2["error"], saved2
+                assert "is a symlink" in saved2["error"], saved2
                 assert not (target / csv_name).exists(), "nothing may be written through files/"
+
+                # Link at the companion folder itself: same refusal, nothing written through
+                files_dir.unlink()
+                companion = files_dir.parent
+                companion.rmdir()
+                companion.symlink_to(target, target_is_directory=True)
+                saved3 = unwrap(await s.call_tool("save_osm_model", {}))
+                assert saved3["ok"] is False, saved3
+                assert "is a symlink" in saved3["error"], saved3
+                assert not (target / "files").exists(), "nothing may be created through the companion link"
     asyncio.run(_run())

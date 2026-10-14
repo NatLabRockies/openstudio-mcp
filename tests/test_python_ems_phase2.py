@@ -394,10 +394,16 @@ def test_python_plugin_traversal_filename_blocked():
                 secret = Path(f"/runs/{name}_secret.txt")
                 secret.write_text("TOP_SECRET_MARKER_77", encoding="utf-8")
 
+                # The script dir is the companion folder /runs/<name>/model/files/,
+                # so three levels up reaches the secret; prove the unguarded path
+                # would, otherwise a broken guard passes this test
+                traversal = f"../../../{name}_secret.txt"
+                files_dir = Path(f"/runs/{name}/model/files")
+                assert (files_dir / traversal).resolve() == secret.resolve(), (
+                    "the traversal must point at the secret from the companion folder")
                 osm = Path(save_path)
-                hacked = osm.read_text(encoding="utf-8").replace(
-                    "trav_check.py", f"../../{name}_secret.txt")
-                assert f"../../{name}_secret.txt" in hacked, "fileName hack did not apply"
+                hacked = osm.read_text(encoding="utf-8").replace("trav_check.py", traversal)
+                assert traversal in hacked, "fileName hack did not apply"
                 osm.write_text(hacked, encoding="utf-8")
                 lr = unwrap(await session.call_tool("load_osm_model",
                                                     {"osm_path": save_path}))

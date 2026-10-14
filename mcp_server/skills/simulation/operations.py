@@ -32,6 +32,7 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.identity import user_key
+from mcp_server.resources import stage_model_resources
 from mcp_server.util import (
     create_run_dir,
     open_nofollow_for_write,
@@ -688,9 +689,11 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     # and rewrite the OSW pointer so OpenStudio finds it.
     osw = _load_json(staged_osw)
     seed_rel = osw.get("seed_file")
+    seed_resource_src: Path | None = None  # the seed as found, for its companion resources
     if seed_rel:
         seed_src = (src_dir / seed_rel).resolve()
         if seed_src.exists():
+            seed_resource_src = seed_src
             # Flatten: use just the filename, always inside run_dir
             seed_dst = run_dir / Path(seed_rel).name
             if not seed_dst.exists():
@@ -709,6 +712,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             found, _denied = _resolve_osw_file(seed_rel, src_dir, osw,
                                                gated=not _internal)
             if found is not None:
+                seed_resource_src = found
                 seed_dst = run_dir / found.name
                 if not seed_dst.exists():
                     shutil.copy2(found, seed_dst)
@@ -730,6 +734,23 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                 str(w_direct).startswith(str(src_dir) + os.sep)
             if not inside_src and (_internal or is_path_allowed(w_direct)):
                 found = w_direct
+            elif inside_src and Path(weather_rel).is_absolute():
+                # Usually mirrored by _copy_tree already: point the staged OSW
+                # at the mirror instead of the original absolute path, which
+                # the sandboxed child may not be able to read. A file under a
+                # dir the mirror skips (run/, generated_files/) is staged into
+                # files/ instead.
+                mirrored = run_dir / w_direct.relative_to(src_dir)
+                if not mirrored.is_file() or mirrored.is_symlink():
+                    files_dir = run_dir / "files"
+                    files_dir.mkdir(parents=True, exist_ok=True)
+                    mirrored = files_dir / w_direct.name
+                    if mirrored.is_symlink() or mirrored.is_dir():
+                        return {"ok": False,
+                                "error": f"{mirrored} is a link or directory; refusing to stage weather there"}
+                    shutil.copy2(w_direct, mirrored)
+                osw["weather_file"] = str(mirrored)
+                _dump_json(staged_osw, osw)
         else:
             found, _denied = _resolve_osw_file(weather_rel, src_dir, osw,
                                                gated=not _internal)
@@ -737,8 +758,13 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             files_dir = run_dir / "files"
             files_dir.mkdir(parents=True, exist_ok=True)
             weather_dst = files_dir / found.name
-            if not weather_dst.exists():
-                shutil.copy2(found, weather_dst)
+            # The OSW's explicit choice replaces a same-named file the OSW-dir
+            # mirror brought along (an OSW inside a model's companion folder
+            # mirrors that model's files/); a link there is never written
+            # through.
+            if weather_dst.is_symlink() or weather_dst.is_dir():
+                return {"ok": False, "error": f"{weather_dst} is a link or directory; refusing to stage weather there"}
+            shutil.copy2(found, weather_dst)
             osw["weather_file"] = str(weather_dst)
             _dump_json(staged_osw, osw)
 
@@ -751,6 +777,18 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         shutil.copy2(epw_src, staged_epw)
         osw["weather_file"] = f"files/{epw_src.name}"
         _dump_json(staged_osw, osw)
+
+    # The seed's own resources (its companion folder <seed>/files/, or an older
+    # sibling files/) travel into the run's files/ behind everything the OSW
+    # dir and the weather staging above provided: an explicit OSW weather_file
+    # or epw_path keeps its copy, the companion never overwrites. The CLI's
+    # default search paths look beside the OSW, not in the seed's companion
+    # folder. run_simulation stages them itself (_internal) from a temp dir
+    # outside the allowed roots.
+    if seed_resource_src is not None and not _internal:
+        stage_err = stage_model_resources(seed_resource_src, run_dir / "files")
+        if stage_err:
+            return {"ok": False, "error": stage_err}
 
     # Build the run command (executed later by the dispatcher when a slot frees)
     cmd = _build_run_cmd(staged_osw)
@@ -1192,16 +1230,14 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         staged_osm = stage / osm.name
         shutil.copy2(str(osm), str(staged_osm))
 
-        # Stage the model's companion files/ dir (ExternalFile resources, e.g.
-        # Python EMS plugin scripts). Workflow-time forward translation resolves
-        # an OSM's relative OS:External:File name via the OSW search paths
-        # (osw dir, then files/), so the dir must travel with the seed.
-        src_files = osm.resolve().parent / "files"
-        if src_files.is_dir():
-            sym_err = reject_escaping_symlinks(src_files)
-            if sym_err:
-                return {"ok": False, "error": sym_err}
-            shutil.copytree(str(src_files), str(stage / "files"), dirs_exist_ok=True)
+        # Stage the model's resources (its companion folder <model>/files/, or
+        # this server's older sibling files/). Workflow-time forward
+        # translation resolves an OSM's relative OS:External:File name via the
+        # OSW search paths (osw dir, then files/), so they must travel with
+        # the seed.
+        stage_err = stage_model_resources(osm, stage / "files")
+        if stage_err:
+            return {"ok": False, "error": stage_err}
 
         osw: dict[str, Any] = {
             "seed_file": osm.name,

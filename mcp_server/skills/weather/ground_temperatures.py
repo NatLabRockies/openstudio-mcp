@@ -51,7 +51,8 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.config import is_path_allowed, path_denied_hint
-from mcp_server.model_manager import ensure_generation_unchanged, get_model_with_generation
+from mcp_server.model_manager import ensure_generation_unchanged, get_model_path, get_model_with_generation
+from mcp_server.resources import find_resource
 from mcp_server.skills.weather.epw_ground_temperatures import (
     EpwGroundTemperatureError,
     GroundTemperatureSet,
@@ -218,6 +219,17 @@ def _model_weather_epw(model) -> Path | None:
     # the allowed roots would be an existence probe even though the result is never returned.
     if candidate.is_absolute() and is_path_allowed(candidate) and candidate.is_file():
         return candidate
+
+    # The model's own resources (companion folder, legacy sibling files/) win
+    # over a same-named EPW in the known weather dirs.
+    model_path = get_model_path()
+    if model_path is not None:
+        try:
+            own = find_resource(model_path, candidate.name)
+        except ValueError:
+            own = None  # planted link at a resource dir: not read around
+        if own is not None and is_path_allowed(own):
+            return own
 
     found = find_epw_by_name(candidate.name)
     if found is not None and is_path_allowed(found):

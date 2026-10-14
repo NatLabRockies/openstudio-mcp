@@ -16,8 +16,9 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import is_path_allowed, user_pkgs_root
+from mcp_server.config import user_pkgs_root
 from mcp_server.osm_helpers import parse_str_list
+from mcp_server.resources import companion_files_dir, resource_dir_issue
 from mcp_server.skills.python_ems import templates
 
 _MAX_SOURCE_CHARS = 24_000
@@ -30,8 +31,9 @@ class _EmsError(Exception):
 def _files_context() -> tuple[Any, Path, Path]:
     """Resolve (model, osm_dir, files_dir) for the loaded model.
 
-    Points the model's workflow at the OSM's own dir so ExternalFile copies
-    land in <osm_dir>/files/ (ExternalFile copies into <oswDir>/files).
+    Points the model's workflow at the model's companion folder so
+    ExternalFile copies land in <dir>/<model>/files/ (ExternalFile copies
+    into <oswDir>/files), the OpenStudio Application layout.
     """
     model = model_manager.get_model_if_loaded()
     if model is None:
@@ -41,15 +43,19 @@ def _files_context() -> tuple[Any, Path, Path]:
         # A model with no file yet: resources go to the session workspace and
         # are written next to the model by its first save_osm_model.
         files_dir = model_manager.pending_files_dir()
-        osm_dir = files_dir.parent
     else:
-        osm_dir = osm_path.resolve().parent
-        files_dir = osm_dir / "files"
-        if not is_path_allowed(files_dir, write=True):
+        # The companion folder <dir>/<model>/files/ (Application layout).
+        files_dir = companion_files_dir(osm_path.resolve())
+        issue = resource_dir_issue(files_dir, write=True)
+        if issue:
             raise _EmsError(
-                f"Model directory is not writable for this session: {osm_dir}. "
+                f"The model's resources dir cannot be used for this session ({issue}). "
                 "save_osm_model(save_name=...) first (the session then points at "
                 "the saved copy), then retry.")
+        files_dir.mkdir(parents=True, exist_ok=True)
+    # ExternalFile.getExternalFile copies into the workflow's first file path,
+    # ./files under the workflow dir, so the dir above files/ is the OSW dir.
+    osm_dir = files_dir.parent
     model.workflowJSON().setOswDir(openstudio.path(str(osm_dir)))
     return model, osm_dir, files_dir
 
