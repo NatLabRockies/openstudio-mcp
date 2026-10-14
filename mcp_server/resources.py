@@ -288,7 +288,7 @@ def copy_resources(
 
 def stage_model_resources(
     osm_path: Path | str | None, dst: Path, *,
-    first: list[Path] = (), allowed: PathAllowed | None = None,
+    first: list[Path] = (), allowed: PathAllowed | None = None, overwrite: bool = False,
 ) -> str | None:
     """Copy a model's resources (and `first` dirs, which win) into a run's `files/`.
 
@@ -296,8 +296,9 @@ def stage_model_resources(
     for ExternalFile names, so the resources travel with the seed without any
     path in the model or OSW being rewritten; the copy, rather than a search
     path pointing at the model dir, is what the sandbox tier needs (the
-    confined subprocess reads only its run dir). Returns an error string when
-    a source dir is not usable (a planted link), else None.
+    confined subprocess reads only its run dir). A file already in `dst` is
+    kept unless `overwrite`. Returns an error string when a source dir is
+    not usable (a planted link), else None.
     """
     sources = list(first)
     if osm_path is not None:
@@ -308,7 +309,7 @@ def stage_model_resources(
     if not sources:
         return None
     try:
-        outcome = copy_resources(sources, dst)
+        outcome = copy_resources(sources, dst, overwrite=overwrite)
     except ValueError as e:
         return f"Model resources were not staged: {e}"
     # A link is skipped on purpose; a regular resource that could not be

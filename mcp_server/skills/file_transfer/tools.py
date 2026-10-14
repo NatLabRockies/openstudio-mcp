@@ -6,7 +6,10 @@ LLM context), landing in the caller's isolated, sandboxed RUN_ROOT/<user>/upload
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from mcp_server.skills.file_transfer.operations import (
+    UNSAVED_EDITS_WARNING,
     delete_upload_op,
     get_upload_op,
     list_uploads_op,
@@ -98,7 +101,16 @@ def register(mcp):
             bundle: If True, zip a run's reports (with run_id) or a model with
                 its companion folder (with path=<model.osm>)
         """
-        return request_download_op(path=path, run_id=run_id, bundle=bundle)
+        result = request_download_op(path=path, run_id=run_id, bundle=bundle)
+        target = result.pop("target", None)
+        if target is not None:
+            # Tool boundary only: model_manager imports the SDK, and the
+            # operation stays importable in the unit tier.
+            from mcp_server.model_manager import unsaved_edits_for
+
+            if unsaved_edits_for(Path(target)):
+                result["warnings"] = [UNSAVED_EDITS_WARNING]
+        return result
 
     # Out-of-band byte channel on the same app/port. Authorization is the signed
     # URL (these routes are NOT behind the MCP auth verifier). Guarded so skill

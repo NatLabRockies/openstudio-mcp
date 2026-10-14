@@ -225,6 +225,12 @@ def request_download_op(path: str | None = None, run_id: str | None = None,
             "size_bytes": target.stat().st_size}
 
 
+UNSAVED_EDITS_WARNING = (
+    "The session model has edits that are not saved to this file; the bundle is the "
+    "file on disk. Call save_osm_model first to download the current model."
+)
+
+
 def _request_model_bundle(key: str, path: str) -> dict:
     """Mint a URL for the model bundle: the OSM plus its companion folder as a zip.
 
@@ -258,20 +264,11 @@ def _request_model_bundle(key: str, path: str) -> dict:
     token = signing.make_token(key, "-", "d", OSMCP_DOWNLOAD_URL_TTL, p=str(lexical), b=1)
     stem = lexical.stem
     url = f"/files/d/{stem}.zip?t={token}"
-    result = {
+    return {
         "ok": True, "method": "GET", "download_url": _public_url(url),
         "download_path": url, "expires_in": OSMCP_DOWNLOAD_URL_TTL,
-        "bundle": True, "members": members,
+        "bundle": True, "members": members, "target": str(target),
     }
-    # In request context only: the session may hold edits the file does not.
-    from mcp_server.model_manager import unsaved_edits_for
-
-    if unsaved_edits_for(target):
-        result["warnings"] = [
-            "The session model has edits that are not saved to this file; the bundle "
-            "is the file on disk. Call save_osm_model first to download the current model.",
-        ]
-    return result
 
 
 # --- signed-route helpers (no MCP context) ------------------------------------

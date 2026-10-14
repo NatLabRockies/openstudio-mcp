@@ -38,12 +38,22 @@ RUBY_FIND = (
     '      runner.registerError("schedule.csv not found; searched #{runner.workflow.absoluteFilePaths.map(&:to_s)}")\n'
     '      return false\n'
     '    end\n'
+    '    first = File.open(found.get.to_s, &:readline).strip\n'
+    '    if first == "fixture"\n'
+    '      runner.registerError("the measure fixture shadowed the model resource")\n'
+    '      return false\n'
+    '    end\n'
     '    runner.registerInfo("found #{found.get}")'
 )
 PYTHON_FIND = (
     '        found = runner.workflow().findFile(openstudio.toPath("schedule.csv"))\n'
     '        if not found.is_initialized():\n'
     '            runner.registerError("schedule.csv not found")\n'
+    '            return False\n'
+    '        with open(str(found.get())) as fh:\n'
+    '            first = fh.readline().strip()\n'
+    '        if first == "fixture":\n'
+    '            runner.registerError("the measure fixture shadowed the model resource")\n'
     '            return False\n'
     '        runner.registerInfo(f"found {found.get()}")'
 )
@@ -60,6 +70,15 @@ def _companion_files(osm_path: str | Path) -> Path:
 
 def _base(url: str) -> str:
     return url[: -len("/mcp")] if url.endswith("/mcp") else url
+
+
+def _zip_contains(content: bytes, needle: bytes) -> bool:
+    """True when any member of the zip in `content` holds `needle` (decompressed)."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile:
+        return needle in content
+    return any(needle in zf.read(n) for n in zf.namelist())
 
 
 async def _model_with_resource(s, name: str) -> str:
@@ -214,8 +233,23 @@ def test_download_bundle_never_follows_planted_links():
                 stem = leaf_osm.stem
                 assert f"{stem}/files/ok.csv" in zf.namelist()
                 assert f"{stem}/files/leak.csv" not in zf.namelist(), zf.namelist()
-                assert secret not in r.content
+                assert not _zip_contains(r.content, secret)
                 assert (victim_dir / "files" / "secret.csv").read_bytes() == secret
+
+                # 5. a directory on the path swapped for a link after the URL was minted:
+                # the route repeats the component check and refuses
+                swap_dir = models.parent / f"swap_{name}"
+                swap_dir.mkdir()
+                swap_osm = swap_dir / f"{name}.osm"
+                swap_osm.write_bytes(Path(osm).read_bytes())
+                minted = unwrap(await s.call_tool("request_download", {"path": str(swap_osm), "bundle": True}))
+                assert minted["ok"] is True, minted
+                moved = models.parent / f"moved_{name}"
+                swap_dir.rename(moved)
+                swap_dir.symlink_to(moved, target_is_directory=True)
+                r = httpx.get(_base(url) + minted["download_path"], timeout=120)
+                assert r.status_code == 409, r.text
+                assert "symlink" in r.json()["error"], r.text
 
         asyncio.run(_run())
 
@@ -315,13 +349,19 @@ def test_test_measure_sees_the_models_resources(language, run_body):
                 }))
                 assert create["ok"] is True, create
                 mdir = Path(create["measure_dir"])
+                # A fixture the measure ships under the same name: in the private test
+                # copy the model's resource replaces it; the measure dir keeps it
+                (mdir / "files").mkdir()
+                (mdir / "files" / CSV).write_text("fixture\n", encoding="utf-8")
 
                 test = unwrap(await s.call_tool("test_measure", {"measure_dir": str(mdir)}))
                 assert test["ok"] is True, test.get("test_output", test)
                 assert test["failed"] == 0 and test["errors"] == 0, test
                 assert test["passed"] >= 1, test
                 assert (mdir / "tests" / "test_model.osm").is_file(), "the test model still comes back"
-                assert not (mdir / "files").exists(), "staged resources never land in the measure dir"
+                assert sorted(p.name for p in (mdir / "files").iterdir()) == [CSV], (
+                    "staged resources never land in the measure dir")
+                assert (mdir / "files" / CSV).read_text(encoding="utf-8") == "fixture\n"
                 if language == "Ruby":
                     assert "test_model.osm" in (mdir / "measure.xml").read_text(encoding="utf-8")
 
@@ -383,3 +423,53 @@ def test_list_ems_actuators_sees_the_models_resources():
                     f"the Schedule:File fed by the companion CSV must be actuatable; got {sorted(keys)[:10]}")
 
     asyncio.run(_run())
+
+
+def test_copy_back_only_returns_regular_files_inside_the_test_copy():
+    # Validates: the copy-back from a private test copy into the caller's measure dir
+    # copies measure.xml and tests/test_model.osm only when each is a regular file
+    # resolving inside the copy and no destination component is a link; the first
+    # refusal ends the copy-back and is reported
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    pytest.importorskip("openstudio")
+    from mcp_server.skills.measure_authoring.operations import _copy_back_test_outputs
+
+    base = Path(f"/runs/{_unique('copyback')}")
+    elsewhere = base / "elsewhere" / "tests"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "test_model.osm").write_text("elsewhere\n", encoding="utf-8")
+
+    # source side: tests/ is a link to a dir outside the private copy
+    private = base / "private"
+    private.mkdir()
+    (private / "measure.xml").write_text("<measure/>\n", encoding="utf-8")
+    (private / "tests").symlink_to(elsewhere, target_is_directory=True)
+    own = base / "own"
+    own.mkdir()
+    err = _copy_back_test_outputs(private, own)
+    assert err is not None and "link" in err, err
+    assert (own / "measure.xml").read_text(encoding="utf-8") == "<measure/>\n", "the regular file before it came back"
+    assert not (own / "tests").exists(), "nothing was written for the linked entry"
+
+    # destination side: tests/ in the own dir is a link
+    private2 = base / "private2"
+    (private2 / "tests").mkdir(parents=True)
+    (private2 / "measure.xml").write_text("<measure/>\n", encoding="utf-8")
+    (private2 / "tests" / "test_model.osm").write_text("model\n", encoding="utf-8")
+    own2 = base / "own2"
+    own2.mkdir()
+    target_dir = base / "own2_target"
+    target_dir.mkdir()
+    (own2 / "tests").symlink_to(target_dir, target_is_directory=True)
+    err2 = _copy_back_test_outputs(private2, own2)
+    assert err2 is not None and "symlink" in err2, err2
+    assert not (target_dir / "test_model.osm").exists(), "no write through the linked destination"
+
+    # the normal case: both come back
+    own3 = base / "own3"
+    own3.mkdir()
+    assert _copy_back_test_outputs(private2, own3) is None
+    assert (own3 / "tests" / "test_model.osm").read_text(encoding="utf-8") == "model\n"
+    assert (own3 / "measure.xml").read_text(encoding="utf-8") == "<measure/>\n"
+

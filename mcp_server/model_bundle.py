@@ -102,10 +102,10 @@ def list_bundle_members(
                 rel = str(rel_dir / fname) if rel_dir.parts else fname
                 if rel in seen or fname == MIGRATED_MARKER:
                     continue
+                seen.add(rel)  # before the regular-file test, exactly as copy_resources does
                 entry = here / fname
                 if entry.is_symlink() or not entry.is_file():
                     continue
-                seen.add(rel)
                 members.append(f"{stem}/files/{Path(rel).as_posix()}")
     members.append(f"{stem}/{MIGRATED_MARKER}")
     return members

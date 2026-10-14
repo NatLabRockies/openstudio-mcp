@@ -73,6 +73,10 @@ def list_ems_actuators_op(
         # CLI's default search path looks, <work>/files, like run_simulation
         # stages them; without them EnergyPlus dies before writing the .edd.
         with model_manager.session_io_lock():
+            # The snapshot above is of `generation`; the path and pending dir
+            # must belong to the same model, so a replacement in between is an
+            # error, not a silent None.
+            model_manager.ensure_generation_unchanged(generation)
             pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
             stage_err = stage_model_resources(
                 model_manager.get_model_path(), work / "files",
@@ -117,6 +121,8 @@ def list_ems_actuators_op(
     except subprocess.TimeoutExpired:
         return {"ok": False,
                 "error": f"Discovery run timed out after {_DISCOVERY_TIMEOUT_SECONDS}s"}
+    except RuntimeError as e:  # session model replaced mid-discovery
+        return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"Actuator discovery failed: {e}"}
     finally:

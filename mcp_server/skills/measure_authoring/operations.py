@@ -6,11 +6,11 @@ script with user-provided arguments and run() body.
 from __future__ import annotations
 
 import contextlib
-import os
 import re
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -102,7 +102,8 @@ def _find_test_model() -> tuple[Path | None, Path | None, Path | None]:
         )
         with session_io_lock():
             model, generation = get_model_with_generation()
-            tmp = custom_measures_dir() / "_test_model.osm"
+            # Unique per call: two tests in one session must not share a snapshot
+            tmp = custom_measures_dir() / f"_test_model_{uuid.uuid4().hex[:8]}.osm"
             tmp.parent.mkdir(parents=True, exist_ok=True)
             model.save(openstudio.toPath(str(tmp)), True)
             return tmp, get_model_path(), pending_files_dir_if_exists(expected_generation=generation)
@@ -1015,18 +1016,13 @@ def _test_reporting_measure_with_run(
     # The resources the simulation used (Schedule:File CSVs, plugin scripts,
     # its EPW) were staged into <run>/files; the postprocess workflow's default
     # search path is its own files/, so a measure that reads one finds it.
-    # Tenant-written: regular files resolving inside the run only, no links.
+    # Tenant-written, so it goes through the resource copy (regular files,
+    # no-follow, budgets, unreadable subtrees reported), not a bare copytree.
     run_files = sim_dir / "files"
     if run_files.is_dir() and not run_files.is_symlink():
-        for dirpath, dirnames, filenames in os.walk(run_files, followlinks=False):
-            here = Path(dirpath)
-            dirnames[:] = [d for d in dirnames if not (here / d).is_symlink()]
-            for fname in filenames:
-                src = here / fname
-                if is_regular_file_inside(src, sim_dir):
-                    dst = run_dir / "files" / src.relative_to(run_files)
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(str(src), str(dst))
+        stage_err = stage_model_resources(None, run_dir / "files", first=[run_files])
+        if stage_err:
+            return {"ok": False, "error": f"Run {run_id} resources: {stage_err}"}
 
     # Copy measure
     measures_dir = run_dir / "measures"
@@ -1194,8 +1190,9 @@ def test_measure_op(
 
         # Copy test model into tests/ so the test template can load it, and
         # stage its resources where the template's pathless WorkflowJSON looks:
-        # ./files relative to the test's cwd, which is the measure dir. The
-        # measure's own files/ entries win over a same-named model resource.
+        # ./files relative to the test's cwd, which is the measure dir. In the
+        # private copy the model under test wins over a same-named fixture the
+        # measure ships; the measure dir itself keeps its fixture.
         test_model_dst = test_dir / "test_model.osm"
         src_model = resource_osm = pending = None
         if model_path:
@@ -1208,8 +1205,11 @@ def test_measure_op(
             src_model, resource_osm, pending = _find_test_model()
         if src_model:
             shutil.copy2(str(src_model), str(test_model_dst))
+            if src_model.name.startswith("_test_model_"):
+                src_model.unlink(missing_ok=True)  # the per-call session snapshot
             stage_err = stage_model_resources(
                 resource_osm, mdir / "files", first=[pending] if pending is not None else [],
+                overwrite=True,
             )
             if stage_err:
                 return {"ok": False, "error": stage_err}
@@ -1349,15 +1349,24 @@ def _copy_back_test_outputs(private_copy: Path, own_dir: Path) -> str | None:
     opened no-follow: the private copy was writable by the test, the own
     dir by the caller. Returns an error string on failure.
     """
-    from mcp_server.util import copy_regular_file_nofollow
+    from mcp_server.util import copy_regular_file_nofollow, is_regular_file_inside
 
     for rel in ("measure.xml", Path("tests") / "test_model.osm"):
         src = private_copy / rel
-        if src.is_symlink() or not src.is_file():
+        if not src.exists() and not src.is_symlink():
             continue
+        # Both trees are writable by others (the private copy by the test, the
+        # own dir by the caller): the source must be a regular file resolving
+        # inside the private copy, every destination component must be a real
+        # directory, and the first failure ends the copy-back.
+        if not is_regular_file_inside(src, private_copy):
+            return f"{rel} in the test copy is a link or resolves outside it; nothing further copied back"
+        here = own_dir
+        for part in Path(rel).parts:
+            here = here / part
+            if here.is_symlink():
+                return f"{here} is a symlink; nothing further copied back"
         dst = own_dir / rel
-        if dst.is_symlink():
-            return f"{dst} is a symlink; not overwritten"
         dst.parent.mkdir(parents=True, exist_ok=True)
         try:
             copy_regular_file_nofollow(src, dst, _COPY_BACK_MAX_BYTES)
