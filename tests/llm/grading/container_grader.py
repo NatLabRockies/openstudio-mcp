@@ -271,9 +271,10 @@ def ems_sim_mode(args) -> dict:
     if not src_osm.exists():
         return {"saved": False, "error": f"saved model missing: {src_osm}"}
     facts: dict = {"saved": True}
-    # The model's resources: companion folder <model>/files/ (Application
-    # layout), with the older sibling files/ as fallback.
-    for src_files in (src_osm.parent / src_osm.stem / "files", src_osm.parent / "files"):
+    # The model's resources: the older sibling files/ first, then the
+    # companion folder <model>/files/ (Application layout) on top, so the
+    # companion copy wins like it does in the server's own precedence.
+    for src_files in (src_osm.parent / "files", src_osm.parent / src_osm.stem / "files"):
         if src_files.is_dir():
             shutil.copytree(src_files, work / "files", dirs_exist_ok=True)
     model = _load_model(str(src_osm))

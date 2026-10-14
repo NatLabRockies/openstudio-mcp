@@ -719,16 +719,6 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                 osw["seed_file"] = str(seed_dst)
                 _dump_json(staged_osw, osw)
 
-    # The seed's own resources (its companion folder <seed>/files/, or an older
-    # sibling files/) travel into the run's files/ behind whatever the OSW dir
-    # itself provided; the CLI's default search paths look beside the OSW, not
-    # in the seed's companion folder. run_simulation stages them itself
-    # (_internal), from a temp dir outside the allowed roots.
-    if seed_resource_src is not None and not _internal:
-        stage_err = stage_model_resources(seed_resource_src, run_dir / "files")
-        if stage_err:
-            return {"ok": False, "error": stage_err}
-
     # Stage a weather_file the sandboxed child couldn't read in place: refs
     # resolving OUTSIDE the OSW dir (absolute path or ../ escape — _copy_tree
     # mirrors only the OSW dir itself) plus refs that only resolve via the
@@ -765,6 +755,18 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         shutil.copy2(epw_src, staged_epw)
         osw["weather_file"] = f"files/{epw_src.name}"
         _dump_json(staged_osw, osw)
+
+    # The seed's own resources (its companion folder <seed>/files/, or an older
+    # sibling files/) travel into the run's files/ behind everything the OSW
+    # dir and the weather staging above provided: an explicit OSW weather_file
+    # or epw_path keeps its copy, the companion never overwrites. The CLI's
+    # default search paths look beside the OSW, not in the seed's companion
+    # folder. run_simulation stages them itself (_internal) from a temp dir
+    # outside the allowed roots.
+    if seed_resource_src is not None and not _internal:
+        stage_err = stage_model_resources(seed_resource_src, run_dir / "files")
+        if stage_err:
+            return {"ok": False, "error": stage_err}
 
     # Build the run command (executed later by the dispatcher when a slot frees)
     cmd = _build_run_cmd(staged_osw)

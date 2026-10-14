@@ -13,6 +13,7 @@ from mcp_server.resources import (
     companion_files_dir,
     copy_resources,
     legacy_files_dir,
+    mark_legacy_migrated,
     resource_dir_issue,
     resource_sources,
 )
@@ -312,19 +313,13 @@ def save_osm_model(
                     "error": f"Model saved to {saved_path}, but its resources were NOT carried: {e}",
                     "osm_path": str(saved_path),
                 }
-            # Pinned to this save's generation: a workspace that now belongs to a
-            # model loaded meanwhile is left alone.
-            pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
-            if pending is not None:
-                persisted, replaced, skipped = _persist_pending_files(pending, dst_files)
-                if persisted:
-                    result["persisted_files"] = persisted
-                if replaced:
-                    result["replaced_files"] = replaced
-                if skipped:
-                    result["skipped_files"] = skipped
+            # 1. The source model's resources. A save-as replaces what an older
+            #    model at the destination left there (the OSM is now this
+            #    model, so its resources must be too); a bare save never
+            #    overwrites the companion folder with the legacy copy.
+            save_as = source_path is None or p != source_path.resolve()
             try:
-                carried = copy_resources(sources, dst_files)
+                carried = copy_resources(sources, dst_files, overwrite=save_as)
             except ValueError as e:
                 return {
                     "ok": False,
@@ -332,20 +327,36 @@ def save_osm_model(
                     "osm_path": str(saved_path),
                 }
             legacy = None if source_path is None else legacy_files_dir(source_path)
-            migrated = [
-                rel for rel, index in carried["copied"]
-                if legacy is not None and sources[index] == legacy
-            ]
+            consulted_legacy = legacy is not None and legacy in sources
+            migrated = [name for name, index in carried["copied"] if consulted_legacy and sources[index] == legacy]
             if migrated:
                 result["migrated_files"] = migrated
                 result["message"] += (
-                    f"; {len(migrated)} resource file(s) moved from the older sibling files/ "
+                    f"; {len(migrated)} resource file(s) copied from the older sibling files/ "
                     "dir into the model's companion folder"
                 )
+            failed_regular = [(name, why) for name, why in carried["skipped"] if why != "not a regular file"]
+            if consulted_legacy and not failed_regular:
+                # Complete: from now on the companion folder is the whole truth.
+                mark_legacy_migrated(p)
+            if carried["replaced"]:
+                result["replaced_files"] = list(carried["replaced"])
             if carried["skipped"]:
-                result.setdefault("skipped_files", []).extend(
-                    f"{rel} ({why})" for rel, why in carried["skipped"]
-                )
+                result["skipped_files"] = [f"{name} ({why})" for name, why in carried["skipped"]]
+            # 2. Last, so it wins: what the session holds but no dir has yet.
+            #    Pinned to this save's generation: a workspace that now belongs
+            #    to a model loaded meanwhile is left alone.
+            pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
+            if pending is not None:
+                persisted, replaced, skipped = _persist_pending_files(pending, dst_files)
+                if persisted:
+                    result["persisted_files"] = persisted
+                if replaced:
+                    result.setdefault("replaced_files", []).extend(
+                        name for name in replaced if name not in result.get("replaced_files", [])
+                    )
+                if skipped:
+                    result.setdefault("skipped_files", []).extend(skipped)
             if dst_files.is_dir():
                 result["files_dir"] = str(dst_files)
 

@@ -219,6 +219,8 @@ def test_retention_never_deletes_a_companion_folder():
                 csv = _companion_files(saved["osm_path"]) / f"{name}.csv"
                 assert csv.is_file() and csv.parent.parent.name == "run", csv
 
+                # Sweeps every eligible run in this container's /runs (other tests'
+                # finished runs included); only the saved model must survive
                 swept = unwrap(await s.call_tool("cleanup_runs", {"older_than_days": 0, "dry_run": False}))
                 assert swept["ok"] is True, swept
                 assert not run_dir.exists(), f"the sweep must have run (measure run dir still there): {swept}"
@@ -304,3 +306,159 @@ def test_edge_names_resolve_through_the_sdk_and_refuse_nesting():
         with pytest.raises(ValueError, match="nest"):
             copy_resources([legacy], companion_files_dir(d / "files.osm"))
         assert not (legacy / "files").exists(), "nothing may be copied into the nested companion"
+
+
+def test_save_as_over_an_existing_model_replaces_its_stale_resources():
+    # Regression: a save-as onto a path whose previous model kept a same-named resource
+    # left that stale file in place (copy never overwrote), so the OSM was model A but
+    # the resource was still model B's; the source model's resources now replace them
+    # and the replacement is reported
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("saveas_stale")
+    target_osm = f"/runs/{name}/target.osm"
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                # Model B: saved at the target with its own schedule.csv
+                await setup_example(s, f"{name}_b")
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": GENERATED_MEASURE_DIR, "arguments": {"file_name": "schedule.csv"},
+                }))
+                assert res["ok"] is True, res
+                saved_b = unwrap(await s.call_tool("save_osm_model", {"osm_path": target_osm}))
+                assert saved_b["ok"] is True, saved_b
+                stale = _companion_files(target_osm) / "schedule.csv"
+                stale.write_text("B\n", encoding="utf-8")
+
+                # Model A with a different schedule.csv, saved as the same target
+                await setup_example(s, f"{name}_a")
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": GENERATED_MEASURE_DIR, "arguments": {"file_name": "schedule.csv"},
+                }))
+                assert res["ok"] is True, res
+                saved_a = unwrap(await s.call_tool("save_osm_model", {"save_name": f"{name}_a"}))
+                assert saved_a["ok"] is True, saved_a
+                a_csv = _companion_files(saved_a["osm_path"]) / "schedule.csv"
+                a_csv.write_text("A\n", encoding="utf-8")
+                over = unwrap(await s.call_tool("save_osm_model", {"osm_path": target_osm}))
+                assert over["ok"] is True, over
+                assert over["replaced_files"] == ["schedule.csv"], over
+                assert stale.read_text(encoding="utf-8") == "A\n", (
+                    "the target's resource must be the source model's, not the previous model's")
+    asyncio.run(_run())
+
+
+def test_legacy_migration_completes_once():
+    # Validates: after the first save migrated a legacy sibling files/, the sibling dir is
+    # no longer consulted: a file added there later does not creep into the model, and a
+    # resource deleted from the companion folder does not come back
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("migrate_once")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, name)
+                saved = unwrap(await s.call_tool("save_osm_model", {"osm_path": f"/runs/{name}/model.osm"}))
+                assert saved["ok"] is True, saved
+                legacy = Path(f"/runs/{name}/files")
+                legacy.mkdir()
+                (legacy / "old.csv").write_text("old\n", encoding="utf-8")
+                companion = _companion_files(saved["osm_path"])
+
+                first = unwrap(await s.call_tool("save_osm_model", {}))
+                assert first["ok"] is True, first
+                assert first["migrated_files"] == ["old.csv"], first
+                assert (companion / "old.csv").is_file()
+
+                (legacy / "later.csv").write_text("later\n", encoding="utf-8")
+                (companion / "old.csv").unlink()
+                second = unwrap(await s.call_tool("save_osm_model", {}))
+                assert second["ok"] is True, second
+                assert "migrated_files" not in second, second
+                assert not (companion / "later.csv").exists(), "a migrated model no longer reads the legacy dir"
+                assert not (companion / "old.csv").exists(), "a deleted companion resource must not come back"
+    asyncio.run(_run())
+
+
+def test_oversize_resource_fails_staging_loudly():
+    # Validates: a regular resource that cannot be copied (over the per-file budget) makes
+    # the run refuse to stage instead of silently simulating without that resource
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    import mcp_server.resources as resources
+    from mcp_server.resources import stage_model_resources
+    name = _unique("oversize")
+    model_dir = Path(f"/runs/{name}")
+    files = model_dir / "m" / "files"
+    files.mkdir(parents=True)
+    (model_dir / "m.osm").write_text("", encoding="utf-8")
+    (files / "big.csv").write_bytes(b"x" * 4096)
+    (files / "link.csv").symlink_to(files / "big.csv")
+    original = resources.MAX_RESOURCE_FILE_BYTES
+    resources.MAX_RESOURCE_FILE_BYTES = 1024
+    try:
+        err = stage_model_resources(model_dir / "m.osm", model_dir / "stage" / "files")
+    finally:
+        resources.MAX_RESOURCE_FILE_BYTES = original
+    assert err is not None and "big.csv" in err and "exceeds" in err, err
+    assert "link.csv" not in err, "a skipped link is not an error, only a regular file that failed"
+    err_ok = stage_model_resources(model_dir / "m.osm", model_dir / "stage2" / "files")
+    assert err_ok is None
+    assert (model_dir / "stage2" / "files" / "big.csv").is_file()
+    assert not (model_dir / "stage2" / "files" / "link.csv").exists()
+
+
+def test_explicit_osw_weather_beats_the_seed_companion_epw():
+    # Validates: run_osw stages the seed's companion resources behind the OSW's own
+    # weather staging, so an explicit weather_file with the same basename as an EPW in
+    # the seed's companion folder keeps its own bytes
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from mcp_server.skills.weather.operations import find_epw_by_name
+    name = _unique("oswepw")
+    base = Path(f"/runs/{name}")
+    base.mkdir(parents=True)
+    shutil.copy2("/repo/tests/assets/SystemD_baseline.osm", base / "seed.osm")
+    source_epw = find_epw_by_name(BALTIMORE_EPW_NAME)
+    assert source_epw is not None
+    lines = source_epw.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+
+    def variant(tag: str) -> str:
+        return "".join(lines[:6]) + f"COMMENTS 2,{tag}-{name}\n" + "".join(lines[7:])
+
+    companion = base / "seed" / "files"
+    companion.mkdir(parents=True)
+    (companion / BALTIMORE_EPW_NAME).write_text(variant("companion"), encoding="utf-8")
+    # Outside the OSW dir: an in-dir file is mirrored as is, an external one is
+    # staged into the run's files/, which is where a companion copy could clash
+    explicit_dir = Path(f"/runs/{name}_explicit")
+    explicit_dir.mkdir()
+    (explicit_dir / BALTIMORE_EPW_NAME).write_text(variant("explicit"), encoding="utf-8")
+    import json
+    osw = base / "workflow.osw"
+    osw.write_text(json.dumps({
+        "seed_file": "seed.osm",
+        "weather_file": str(explicit_dir / BALTIMORE_EPW_NAME),
+        "steps": [],
+    }), encoding="utf-8")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                run = unwrap(await s.call_tool("run_osw", {"osw_path": str(osw)}))
+                assert run["ok"] is True, run
+                status = unwrap(await s.call_tool("get_run_status", {"run_id": run["run_id"]}))
+                run_dir = Path(status["run"]["run_dir"])
+                staged = run_dir / "files" / BALTIMORE_EPW_NAME
+                assert f"explicit-{name}" in staged.read_text(encoding="utf-8", errors="replace"), (
+                    "the OSW's explicit weather file must not be replaced by the seed companion's copy")
+                unwrap(await s.call_tool("cancel_run", {"run_id": run["run_id"]}))
+    asyncio.run(_run())
+
