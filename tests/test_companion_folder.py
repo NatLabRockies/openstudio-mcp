@@ -632,4 +632,3 @@ def test_absolute_weather_under_a_non_mirrored_osw_subdir_is_staged():
                 assert pointed == run_dir / "files" / BALTIMORE_EPW_NAME, staged_osw
                 unwrap(await s.call_tool("cancel_run", {"run_id": run["run_id"]}))
     asyncio.run(_run())
-
