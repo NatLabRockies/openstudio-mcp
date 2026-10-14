@@ -45,6 +45,13 @@ RUBY_FIND = (
     '    end\n'
     '    runner.registerInfo("found #{found.get}")'
 )
+# The ModelMeasure test body also writes a file during its test: that file lives
+# only in the private test copy and must not appear in the regenerated measure.xml
+RUBY_FIND_AND_WRITE = RUBY_FIND.replace(
+    '    runner.registerInfo("found #{found.get}")',
+    '    File.write(File.join("tests", "output.csv"), "1\\n")\n'
+    '    runner.registerInfo("found #{found.get}")',
+)
 PYTHON_FIND = (
     '        found = runner.workflow().findFile(openstudio.toPath("schedule.csv"))\n'
     '        if not found.is_initialized():\n'
@@ -342,7 +349,7 @@ def test_copy_file_oversize_resource_fails_without_a_marker():
     asyncio.run(_run())
 
 
-@pytest.mark.parametrize(("language", "run_body"), [("Ruby", RUBY_FIND), ("Python", PYTHON_FIND)])
+@pytest.mark.parametrize(("language", "run_body"), [("Ruby", RUBY_FIND_AND_WRITE), ("Python", PYTHON_FIND)])
 def test_test_measure_sees_the_models_resources(language, run_body):
     # Regression: test_measure copied only tests/test_model.osm, so a measure that reads
     # a model resource through runner.workflow.findFile failed its own test; the
@@ -377,7 +384,14 @@ def test_test_measure_sees_the_models_resources(language, run_body):
                     "staged resources never land in the measure dir")
                 assert (mdir / "files" / CSV).read_text(encoding="utf-8") == "fixture\n"
                 if language == "Ruby":
-                    assert "test_model.osm" in (mdir / "measure.xml").read_text(encoding="utf-8")
+                    import re
+                    manifest = (mdir / "measure.xml").read_text(encoding="utf-8")
+                    listed = re.findall(r"<filename>([^<]+)</filename>", manifest)
+                    assert "test_model.osm" in listed, listed
+                    assert "output.csv" not in listed, "a file the test wrote in the private copy is not in the measure"
+                    missing = [name for name in listed if not any(mdir.rglob(name))]
+                    assert missing == [], f"measure.xml lists files the measure dir does not have: {missing}"
+                    assert not (mdir / "tests" / "output.csv").exists()
 
     asyncio.run(_run())
 
@@ -441,7 +455,7 @@ def test_list_ems_actuators_sees_the_models_resources():
 
 def test_copy_back_only_returns_regular_files_inside_the_test_copy():
     # Validates: the copy-back from a private test copy into the caller's measure dir
-    # copies measure.xml and tests/test_model.osm only when each is a regular file
+    # copies tests/test_model.osm only when it is a regular file
     # resolving inside the copy and no destination component is a link; the first
     # refusal ends the copy-back and is reported
     if not integration_enabled():
@@ -463,7 +477,7 @@ def test_copy_back_only_returns_regular_files_inside_the_test_copy():
     own.mkdir()
     err = _copy_back_test_outputs(private, own)
     assert err is not None and "link" in err, err
-    assert (own / "measure.xml").read_text(encoding="utf-8") == "<measure/>\n", "the regular file before it came back"
+    assert not (own / "measure.xml").exists(), "measure.xml is regenerated in place, never copied"
     assert not (own / "tests").exists(), "nothing was written for the linked entry"
 
     # destination side: tests/ in the own dir is a regular file: refused, no exception
@@ -499,7 +513,7 @@ def test_copy_back_only_returns_regular_files_inside_the_test_copy():
     own3.mkdir()
     assert _copy_back_test_outputs(private2, own3) is None
     assert (own3 / "tests" / "test_model.osm").read_text(encoding="utf-8") == "model\n"
-    assert (own3 / "measure.xml").read_text(encoding="utf-8") == "<measure/>\n"
+    assert not (own3 / "measure.xml").exists()
 
 
 def test_test_measure_keeps_an_explicit_model_path_named_like_a_snapshot():
