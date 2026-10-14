@@ -3,8 +3,12 @@
 # workflow's generated files dir) and makes the model depend on it through a
 # Schedule:File assigned to every Lights object, so a later simulation can
 # only succeed if the generated file travels with the model.
+#
+# Two optional arguments make the measure output hostile, so the server's
+# guards on generated_files/ can be tested end to end:
+#   link_file_to: also leave generated_files/linked.txt as a symlink to this path
+#   link_dir_to:  leave generated_files itself as a symlink to this directory
 require "fileutils"
-require "tmpdir"
 
 class WriteGeneratedFile < OpenStudio::Measure::ModelMeasure
   def name
@@ -27,6 +31,16 @@ class WriteGeneratedFile < OpenStudio::Measure::ModelMeasure
     file_name.setDefaultValue("generated_schedule.csv")
     args << file_name
 
+    link_file_to = OpenStudio::Measure::OSArgument.makeStringArgument("link_file_to", false)
+    link_file_to.setDisplayName("Also leave generated_files/linked.txt as a symlink to this path (test only)")
+    link_file_to.setDefaultValue("")
+    args << link_file_to
+
+    link_dir_to = OpenStudio::Measure::OSArgument.makeStringArgument("link_dir_to", false)
+    link_dir_to.setDisplayName("Leave generated_files itself as a symlink to this directory (test only)")
+    link_dir_to.setDefaultValue("")
+    args << link_dir_to
+
     return args
   end
 
@@ -38,6 +52,8 @@ class WriteGeneratedFile < OpenStudio::Measure::ModelMeasure
     end
 
     file_name = runner.getStringArgumentValue("file_name", user_arguments)
+    link_file_to = runner.getStringArgumentValue("link_file_to", user_arguments)
+    link_dir_to = runner.getStringArgumentValue("link_dir_to", user_arguments)
 
     # Write the CSV somewhere disposable inside the run dir, then let the SDK
     # copy it into the workflow's file path like a real measure would.
@@ -66,6 +82,17 @@ class WriteGeneratedFile < OpenStudio::Measure::ModelMeasure
       count += 1
     end
     runner.registerInfo("Assigned '#{file_name}' schedule to #{count} Lights objects")
+
+    generated_dir = runner.workflow.absoluteFilePaths.first.to_s
+    if !link_file_to.empty?
+      File.symlink(link_file_to, File.join(generated_dir, "linked.txt"))
+      runner.registerInfo("Left generated_files/linked.txt as a link to #{link_file_to}")
+    end
+    if !link_dir_to.empty?
+      FileUtils.rm_rf(generated_dir)
+      File.symlink(link_dir_to, generated_dir)
+      runner.registerInfo("Left generated_files as a link to #{link_dir_to}")
+    end
 
     return true
   end

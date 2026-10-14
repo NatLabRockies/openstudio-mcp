@@ -489,3 +489,124 @@ def test_generated_file_persists_on_save_and_simulates():
                 assert status["run"]["status"].lower() == "success", (
                     f"simulation must resolve the Schedule:File CSV from files/: {status}")
     asyncio.run(_run())
+
+
+async def _target_dir(name: str) -> Path:
+    """A dir the test owns, holding a file a planted link could point at."""
+    d = Path(f"/runs/{name}_target")
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "private.txt").write_text("not for the model\n", encoding="utf-8")
+    return d
+
+
+@pytest.mark.integration
+def test_link_left_in_generated_files_is_not_adopted():
+    # Validates: a link a measure leaves in generated_files/ is neither adopted nor
+    # persisted; the real generated file still is (end to end through the CLI run)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("pytest_genlink")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, name)
+                target = await _target_dir(name)
+                csv_name = f"{name}.csv"
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": GENERATED_MEASURE_DIR,
+                    "arguments": {"file_name": csv_name,
+                                  "link_file_to": str(target / "private.txt")},
+                }))
+                assert res["ok"] is True, res
+                assert res["generated_files"] == [csv_name], (
+                    f"the planted link must not be adopted: {res}")
+                saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
+                assert saved["ok"] is True, saved
+                assert saved["persisted_files"] == [csv_name], saved
+                files_dir = Path(saved["osm_path"]).parent / "files"
+                assert not (files_dir / "linked.txt").exists(), "the link must not reach files/"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_generated_files_replaced_by_a_link_refuses_the_result():
+    # Validates: when the measure leaves generated_files/ as a link to another directory,
+    # apply_measure refuses the result (model not adopted, output path reported) and
+    # nothing from the link's target reaches the session or a later save
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("pytest_gendirlink")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, name)
+                before = unwrap(await s.call_tool("get_building_info", {}))["building"]["name"]
+                target = await _target_dir(name)
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": GENERATED_MEASURE_DIR,
+                    "arguments": {"file_name": f"{name}.csv", "link_dir_to": str(target)},
+                }))
+                assert res["ok"] is False, res
+                assert "generated_files" in res["error"] and "not adopted" in res["error"], res
+                assert res["output_osm"].endswith("/run/in.osm"), res
+
+                # The session model was not replaced and holds nothing from the target
+                after = unwrap(await s.call_tool("get_building_info", {}))["building"]["name"]
+                assert after == before
+                saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
+                assert saved["ok"] is True, saved
+                assert "persisted_files" not in saved, saved
+                assert not (Path(saved["osm_path"]).parent / "files" / "private.txt").exists()
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_save_never_persists_through_a_link_at_the_destination():
+    # Validates: a link planted at files/<generated name> before the save is skipped and
+    # reported, its target is untouched, and a link planted at files/ itself makes the
+    # save refuse to persist (model written, resources not)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("pytest_dstlink")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                cr = unwrap(await s.call_tool("create_example_osm", {"name": name}))
+                assert cr["ok"] is True, cr
+                lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
+                assert lr["ok"] is True, lr
+                model_dir = Path(lr["osm_path"]).parent
+                target = await _target_dir(name)
+                csv_name = f"{name}.csv"
+
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": GENERATED_MEASURE_DIR,
+                    "arguments": {"file_name": csv_name},
+                }))
+                assert res["ok"] is True, res
+
+                # Link at the destination file name
+                files_dir = model_dir / "files"
+                files_dir.mkdir(exist_ok=True)
+                (files_dir / csv_name).symlink_to(target / "private.txt")
+                saved = unwrap(await s.call_tool("save_osm_model", {}))
+                assert saved["ok"] is True, saved
+                assert saved.get("skipped_files") == [csv_name], saved
+                assert "persisted_files" not in saved, saved
+                assert (target / "private.txt").read_text(encoding="utf-8") == "not for the model\n"
+
+                # Link at files/ itself: the pending file is still waiting, the save refuses
+                (files_dir / csv_name).unlink()
+                files_dir.rmdir()
+                files_dir.symlink_to(target, target_is_directory=True)
+                saved2 = unwrap(await s.call_tool("save_osm_model", {}))
+                assert saved2["ok"] is False, saved2
+                assert "not a writable real directory" in saved2["error"], saved2
+                assert not (target / csv_name).exists(), "nothing may be written through files/"
+    asyncio.run(_run())

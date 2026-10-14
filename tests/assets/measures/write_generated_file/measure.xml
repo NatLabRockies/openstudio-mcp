@@ -19,6 +19,22 @@
       <model_dependent>false</model_dependent>
       <default_value>generated_schedule.csv</default_value>
     </argument>
+    <argument>
+      <name>link_file_to</name>
+      <display_name>Also leave generated_files/linked.txt as a symlink to this path (test only)</display_name>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
+    <argument>
+      <name>link_dir_to</name>
+      <display_name>Leave generated_files itself as a symlink to this directory (test only)</display_name>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
   </arguments>
   <outputs />
   <provenances />
