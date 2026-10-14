@@ -282,9 +282,9 @@ def test_model_own_epw_wins_over_same_named_global_epw():
 
 
 def test_edge_names_resolve_through_the_sdk_and_refuse_nesting():
-    # Validates: the companion folder comes from the SDK (model.v2.osm -> model.v2/files),
-    # a regular file at <stem> is refused, and files.osm (companion inside a legacy
-    # files/) is refused rather than copied into itself
+    # Validates: the companion folder follows the SDK's rule (model.v2.osm -> model.v2/files;
+    # full parity in test_model_bundle.py), a regular file at <stem> is refused, and
+    # files.osm (companion inside a legacy files/) is refused rather than copied into itself
     if not integration_enabled():
         pytest.skip("integration disabled")
     pytest.importorskip("openstudio")
