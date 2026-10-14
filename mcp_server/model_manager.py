@@ -202,8 +202,9 @@ def _load_into_session(
                 raise RuntimeError(
                     "The session model was replaced or evicted while the measure ran "
                     f"(model generation {expected_generation} -> {current_generation}); "
-                    f"nothing was changed. The measure output is at {osm_path}: "
-                    "load_osm_model it to adopt the result.",
+                    "the measure output was not adopted into the session. It is at "
+                    f"{osm_path}: load_osm_model it to adopt the result, then "
+                    "save_osm_model(save_name=...) to keep it.",
                 )
         _evict_if_needed(keep=key)
         st = _sessions.setdefault(key, _SessionState())
