@@ -200,9 +200,11 @@ def request_download_op(path: str | None = None, run_id: str | None = None,
     from mcp_server.identity import user_key
 
     key = user_key()
+    if bundle and path and not run_id:
+        return _request_model_bundle(key, path)
     if bundle:
         if not run_id:
-            return {"ok": False, "error": "bundle download requires run_id"}
+            return {"ok": False, "error": "bundle download requires run_id or an .osm path"}
         target = (run_root_for(key) / run_id).resolve()
         if not target.is_dir() or not is_path_allowed_for(key, target):
             return {"ok": False, "error": f"unknown run_id: {run_id}"}
@@ -221,6 +223,55 @@ def request_download_op(path: str | None = None, run_id: str | None = None,
     return {"ok": True, "method": "GET", "download_url": _public_url(url),
             "download_path": url, "expires_in": OSMCP_DOWNLOAD_URL_TTL,
             "size_bytes": target.stat().st_size}
+
+
+def _request_model_bundle(key: str, path: str) -> dict:
+    """Mint a URL for the model bundle: the OSM plus its companion folder as a zip.
+
+    The token carries the LEXICAL path: the route stages the bundle from it
+    through no-follow copies, so a link planted at the OSM between mint and
+    GET is refused there too. Here the link and policy checks run first so
+    the caller sees the refusal in the tool response, not as a 4xx later.
+    The members are listed without copying; the route copies.
+    """
+    import functools
+
+    from mcp_server.model_bundle import lexical_link_issue, list_bundle_members
+
+    lexical = Path(path)
+    allowed = functools.partial(is_path_allowed_for, key)
+    try:
+        target = lexical.resolve()
+    except (OSError, RuntimeError):
+        return {"ok": False, "error": f"file not accessible: {path}"}
+    if not target.is_file() or not allowed(target):
+        return {"ok": False, "error": f"file not accessible: {path}"}
+    if target.suffix.lower() != ".osm":
+        return {"ok": False, "error": "bundle download requires run_id or an .osm path"}
+    issue = lexical_link_issue(lexical, run_root_for(key))
+    if issue:
+        return {"ok": False, "error": f"refusing to bundle through a symlink: {issue}"}
+    try:
+        members = list_bundle_members(lexical, allowed=allowed)
+    except ValueError as e:
+        return {"ok": False, "error": f"model resources are not usable: {e}"}
+    token = signing.make_token(key, "-", "d", OSMCP_DOWNLOAD_URL_TTL, p=str(lexical), b=1)
+    stem = lexical.stem
+    url = f"/files/d/{stem}.zip?t={token}"
+    result = {
+        "ok": True, "method": "GET", "download_url": _public_url(url),
+        "download_path": url, "expires_in": OSMCP_DOWNLOAD_URL_TTL,
+        "bundle": True, "members": members,
+    }
+    # In request context only: the session may hold edits the file does not.
+    from mcp_server.model_manager import unsaved_edits_for
+
+    if unsaved_edits_for(target):
+        result["warnings"] = [
+            "The session model has edits that are not saved to this file; the bundle "
+            "is the file on disk. Call save_osm_model first to download the current model.",
+        ]
+    return result
 
 
 # --- signed-route helpers (no MCP context) ------------------------------------
@@ -331,7 +382,13 @@ def verify_download(token: str) -> dict:
         return {"ok": False, "status": 403, "error": "not allowed"}
     if not target.exists():
         return {"ok": False, "status": 404, "error": "not found"}
-    return {"ok": True, "path": target, "bundle": bool(payload.get("b")), "user": key}
+    bundle = bool(payload.get("b"))
+    lexical = Path(path)
+    if bundle and target.is_file() and lexical.is_symlink():
+        # A model bundle is staged from the lexical path (no-follow); a link
+        # swapped in after minting is refused rather than followed.
+        return {"ok": False, "status": 403, "error": "not allowed"}
+    return {"ok": True, "path": target, "lexical": lexical, "bundle": bundle, "user": key}
 
 
 def _public_meta(key: str, meta: dict) -> dict:

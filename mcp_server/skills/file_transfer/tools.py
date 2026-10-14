@@ -83,11 +83,20 @@ def register(mcp):
         text, read_file is simpler. GET the returned download_url, e.g.
         curl -O -J "<download_url>".
 
+        A model is more than its .osm: Schedule:File CSVs, Python EMS plugin
+        scripts and custom EPWs live in its companion folder <model>/files/.
+        To take a model elsewhere, pass path=<model.osm> with bundle=True: the
+        zip holds <stem>.osm and <stem>/files/ (the OpenStudio Application
+        layout, so it opens there after unzipping). The bundle is the saved
+        file; save_osm_model first, a warning says when the session has edits
+        the file does not.
+
         Args:
             path: Absolute server path to a single file (your run dir, or the
                 shared read-only roots e.g. bundled measures)
             run_id: With bundle=True, zip this run's reports/ for download
-            bundle: If True, bundle a run's reports into one .zip (requires run_id)
+            bundle: If True, zip a run's reports (with run_id) or a model with
+                its companion folder (with path=<model.osm>)
         """
         return request_download_op(path=path, run_id=run_id, bundle=bundle)
 

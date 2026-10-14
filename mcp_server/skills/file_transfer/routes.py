@@ -86,10 +86,33 @@ async def download_route(request: Request):
         return JSONResponse({"ok": False, "error": res["error"]}, status_code=res["status"])
     path: Path = res["path"]
     audit("file_download", user=res["user"], file=str(path), bundle=res["bundle"])
+    if res["bundle"] and path.is_file():
+        # A model bundle: the OSM plus its companion folder, staged under the
+        # token's tenant root through no-follow copies.
+        return await run_in_threadpool(_zip_model_bundle, res["lexical"], res["user"])
     if res["bundle"]:
         # Zipping a run dir is heavy sync I/O — keep it off the event loop.
         return await run_in_threadpool(_zip_bundle, path)
     return FileResponse(path, filename=path.name)
+
+
+def _zip_model_bundle(osm: Path, key: str) -> FileResponse | JSONResponse:
+    """Zip <stem>.osm + <stem>/files/ + marker to a temp file; 409 on a planted link."""
+    import functools
+
+    from mcp_server.config import is_path_allowed_for
+    from mcp_server.model_bundle import write_bundle_zip
+
+    fd, tmp_name = tempfile.mkstemp(prefix="bundle_", suffix=".zip")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        write_bundle_zip(osm, tmp_path, key=key, allowed=functools.partial(is_path_allowed_for, key))
+    except (ValueError, OSError) as e:
+        tmp_path.unlink(missing_ok=True)
+        return JSONResponse({"ok": False, "error": f"model bundle refused: {e}"}, status_code=409)
+    return FileResponse(tmp_path, filename=f"{osm.stem}.zip",
+                        background=BackgroundTask(tmp_path.unlink, missing_ok=True))
 
 
 def _zip_bundle(run_dir: Path) -> FileResponse:
