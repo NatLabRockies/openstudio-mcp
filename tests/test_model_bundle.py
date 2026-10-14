@@ -194,6 +194,10 @@ def test_download_bundle_never_follows_planted_links():
                 link_osm.symlink_to(victim_osm)
                 dl = unwrap(await s.call_tool("request_download", {"path": str(link_osm), "bundle": True}))
                 assert dl["ok"] is False and "symlink" in dl["error"], dl
+                # a relative path cannot be checked component by component: refused
+                rel = unwrap(await s.call_tool("request_download", {
+                    "path": str(Path(osm).relative_to("/")), "bundle": True}))
+                assert rel["ok"] is False and "absolute" in rel["error"], rel
 
                 async def refused_at_mint(path: Path) -> None:
                     # the mint runs the same link checks as the route, so the caller sees
@@ -452,6 +456,20 @@ def test_copy_back_only_returns_regular_files_inside_the_test_copy():
     assert (own / "measure.xml").read_text(encoding="utf-8") == "<measure/>\n", "the regular file before it came back"
     assert not (own / "tests").exists(), "nothing was written for the linked entry"
 
+    # destination side: tests/ in the own dir is a regular file: refused, no exception
+    own_file = base / "own_file"
+    own_file.mkdir()
+    (own_file / "tests").write_text("not a dir\n", encoding="utf-8")
+    err_file = _copy_back_test_outputs(private, own_file)
+    assert err_file is not None and "link" in err_file, err_file  # source link refused first
+    private_ok = base / "private_ok"
+    (private_ok / "tests").mkdir(parents=True)
+    (private_ok / "measure.xml").write_text("<measure/>\n", encoding="utf-8")
+    (private_ok / "tests" / "test_model.osm").write_text("model\n", encoding="utf-8")
+    err_file = _copy_back_test_outputs(private_ok, own_file)
+    assert err_file is not None and "not a directory" in err_file, err_file
+    assert (own_file / "tests").read_text(encoding="utf-8") == "not a dir\n"
+
     # destination side: tests/ in the own dir is a link
     private2 = base / "private2"
     (private2 / "tests").mkdir(parents=True)
@@ -472,4 +490,33 @@ def test_copy_back_only_returns_regular_files_inside_the_test_copy():
     assert _copy_back_test_outputs(private2, own3) is None
     assert (own3 / "tests" / "test_model.osm").read_text(encoding="utf-8") == "model\n"
     assert (own3 / "measure.xml").read_text(encoding="utf-8") == "<measure/>\n"
+
+
+def test_test_measure_keeps_an_explicit_model_path_named_like_a_snapshot():
+    # Regression: the per-call session snapshot was recognised by its file name prefix and
+    # unlinked after the copy, so a caller's own model_path with that name disappeared;
+    # only the snapshot this call created is removed
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    name = _unique("keep")
+    keep = Path(f"/runs/{name}")
+    keep.mkdir()
+    own_model = keep / "_test_model_mine.osm"
+    own_model.write_bytes(Path("/repo/tests/assets/SystemD_baseline.osm").read_bytes())
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                create = unwrap(await s.call_tool("create_measure", {
+                    "name": name, "description": "noop",
+                    "run_body": '    runner.registerInfo("ok")', "language": "Ruby",
+                }))
+                assert create["ok"] is True, create
+                test = unwrap(await s.call_tool("test_measure", {
+                    "measure_dir": create["measure_dir"], "model_path": str(own_model),
+                }))
+                assert test["ok"] is True, test
+                assert own_model.is_file(), "an explicit model_path is the caller's file; never removed"
+    asyncio.run(_run())
 

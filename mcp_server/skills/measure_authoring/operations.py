@@ -84,13 +84,15 @@ def _validate_measure_name(name: str) -> str | None:
     return None
 
 
-def _find_test_model() -> tuple[Path | None, Path | None, Path | None]:
-    """(OSM to copy into tests/, OSM whose resources to stage, pending workspace dir).
+def _find_test_model() -> tuple[Path | None, Path | None, Path | None, int | None]:
+    """(OSM to copy into tests/, OSM whose resources to stage, pending workspace dir,
+    session generation when the first item is a snapshot this call created, else None).
 
     The session model is snapshotted to a temp file, so its resources come
     from the path it was loaded from or saved to (its companion folder) plus
-    the session's pending workspace, read together under the session lock
-    so a concurrent load cannot pair one model with another's files.
+    the session's pending workspace, read together under the session lock;
+    the caller re-checks the generation after staging so a concurrent load
+    cannot pair one model with another's files.
     """
     # 1. Currently loaded model — save to temp file
     try:
@@ -106,14 +108,14 @@ def _find_test_model() -> tuple[Path | None, Path | None, Path | None]:
             tmp = custom_measures_dir() / f"_test_model_{uuid.uuid4().hex[:8]}.osm"
             tmp.parent.mkdir(parents=True, exist_ok=True)
             model.save(openstudio.toPath(str(tmp)), True)
-            return tmp, get_model_path(), pending_files_dir_if_exists(expected_generation=generation)
+            return tmp, get_model_path(), pending_files_dir_if_exists(expected_generation=generation), generation
     except RuntimeError:
         pass  # no model loaded
     # 2. Search known locations for SystemD_baseline.osm
     for p in _TEST_MODEL_CANDIDATES:
         if p.is_file():
-            return p, p, None
-    return None, None, None
+            return p, p, None, None
+    return None, None, None, None
 
 
 def _to_class_name(snake: str) -> str:
@@ -1194,7 +1196,7 @@ def test_measure_op(
         # private copy the model under test wins over a same-named fixture the
         # measure ships; the measure dir itself keeps its fixture.
         test_model_dst = test_dir / "test_model.osm"
-        src_model = resource_osm = pending = None
+        src_model = resource_osm = pending = snapshot_generation = None
         if model_path:
             src = Path(model_path)
             if not is_path_allowed(src):
@@ -1202,17 +1204,22 @@ def test_measure_op(
             if src.is_file():
                 src_model = resource_osm = src
         if not src_model:
-            src_model, resource_osm, pending = _find_test_model()
+            src_model, resource_osm, pending, snapshot_generation = _find_test_model()
         if src_model:
             shutil.copy2(str(src_model), str(test_model_dst))
-            if src_model.name.startswith("_test_model_"):
-                src_model.unlink(missing_ok=True)  # the per-call session snapshot
+            if snapshot_generation is not None:
+                src_model.unlink(missing_ok=True)  # only the snapshot this call created
             stage_err = stage_model_resources(
                 resource_osm, mdir / "files", first=[pending] if pending is not None else [],
                 overwrite=True,
             )
             if stage_err:
                 return {"ok": False, "error": stage_err}
+            if snapshot_generation is not None:
+                # A load during staging would have paired the snapshot with
+                # another model's resources: refuse rather than test a mix.
+                from mcp_server.model_manager import ensure_generation_unchanged
+                ensure_generation_unchanged(snapshot_generation)
 
         if language == "Python":
             test_cmd = ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"]
@@ -1362,13 +1369,17 @@ def _copy_back_test_outputs(private_copy: Path, own_dir: Path) -> str | None:
         if not is_regular_file_inside(src, private_copy):
             return f"{rel} in the test copy is a link or resolves outside it; nothing further copied back"
         here = own_dir
-        for part in Path(rel).parts:
+        for part in Path(rel).parts[:-1]:
             here = here / part
             if here.is_symlink():
                 return f"{here} is a symlink; nothing further copied back"
+            if here.exists() and not here.is_dir():
+                return f"{here} is not a directory; nothing further copied back"
         dst = own_dir / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.is_symlink():
+            return f"{dst} is a symlink; nothing further copied back"
         try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
             copy_regular_file_nofollow(src, dst, _COPY_BACK_MAX_BYTES)
         except (OSError, ValueError) as e:
             return f"could not copy {rel} back into the measure dir: {e}"

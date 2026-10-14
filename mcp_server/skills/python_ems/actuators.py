@@ -82,6 +82,10 @@ def list_ems_actuators_op(
                 model_manager.get_model_path(), work / "files",
                 first=[pending] if pending is not None else [],
             )
+            # load_model does not take this lock, so the check runs again after
+            # the reads and the copy: unchanged before and after means no load
+            # happened in between (the generation only ever grows).
+            model_manager.ensure_generation_unchanged(generation)
         if stage_err:
             return {"ok": False, "error": stage_err}
 

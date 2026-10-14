@@ -63,6 +63,8 @@ def lexical_link_issue(path: Path, root: Path) -> str | None:
     caller's own root passes it; the bundle must still never read through
     one (the companion folder next to a linked OSM is not the model's).
     """
+    if not path.is_absolute():
+        return f"{path} is not an absolute path"
     try:
         rel = path.relative_to(root)
     except ValueError:

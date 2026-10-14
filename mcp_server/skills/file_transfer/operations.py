@@ -245,6 +245,8 @@ def _request_model_bundle(key: str, path: str) -> dict:
     from mcp_server.model_bundle import lexical_link_issue, list_bundle_members
 
     lexical = Path(path)
+    if not lexical.is_absolute():
+        return {"ok": False, "error": "bundle download requires an absolute .osm path"}
     allowed = functools.partial(is_path_allowed_for, key)
     try:
         target = lexical.resolve()
@@ -381,7 +383,7 @@ def verify_download(token: str) -> dict:
         return {"ok": False, "status": 404, "error": "not found"}
     bundle = bool(payload.get("b"))
     lexical = Path(path)
-    if bundle and target.is_file() and lexical.is_symlink():
+    if bundle and target.is_file() and (lexical.is_symlink() or not lexical.is_absolute()):
         # A model bundle is staged from the lexical path (no-follow); a link
         # swapped in after minting is refused rather than followed.
         return {"ok": False, "status": 403, "error": "not allowed"}
