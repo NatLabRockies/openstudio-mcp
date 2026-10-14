@@ -32,12 +32,14 @@ def _script_path_for(file_name: str) -> Path | None:
     if not safe_name:
         return None
     candidates: list[Path] = []
+    pending = model_manager.pending_files_dir_if_exists()
+    if pending is not None:
+        # Newest first: a file a measure just generated supersedes the saved
+        # copy, as it does when the measure run stages its resources.
+        candidates.append(pending / safe_name)
     osm_path = model_manager.get_model_path()
     if osm_path is not None:
         candidates.append(osm_path.resolve().parent / "files" / safe_name)
-    pending = model_manager.pending_files_dir_if_exists()
-    if pending is not None:  # not yet saved next to the model
-        candidates.append(pending / safe_name)
     for candidate in candidates:
         if candidate.is_file() and not candidate.is_symlink():
             return candidate

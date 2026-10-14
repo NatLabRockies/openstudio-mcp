@@ -16,7 +16,10 @@ template fits.
 
 ## Workflow
 
-1. Model loaded (any create/load tool). The model must have a file path — save first if needed.
+1. Model loaded (any create/load tool). A model that has no file yet (e.g. `create_bar_building`
+   with nothing loaded) works too: its plugin script waits in the session and is written to
+   `files/` by the first `save_osm_model(save_name=...)`. A model loaded from a read-only
+   location must be saved with `save_name` first.
 2. Discover what you can control:
    ```
    list_ems_actuators(component_type="Schedule")

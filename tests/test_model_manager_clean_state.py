@@ -173,3 +173,21 @@ def test_rebind_path_requires_current_generation(mm, tmp_path):
     mm.load_model(a)
     assert mm.rebind_path(b, gen) is False
     assert mm.get_model_path() == a, "a stale rebind must not touch the newer model's path"
+
+
+def test_pending_files_dir_is_pinned_to_the_generation(mm, tmp_path):
+    # Validates: workspace access pinned to a generation is refused once the session model
+    # was replaced, so files generated for model A can never be dropped into (or carried
+    # away from) the workspace that now belongs to model B
+    a = _example_file(tmp_path)
+    b = _example_file(tmp_path, extra_spaces=3)
+    _model, gen_a = mm.load_model_with_generation(a)
+    pending_a = mm.pending_files_dir(expected_generation=gen_a)
+    (pending_a / "for_a.csv").write_text("1\n", encoding="utf-8")
+    assert mm.pending_files_dir_if_exists(expected_generation=gen_a) == pending_a
+
+    mm.load_model(b)  # replacement load: A's workspace is discarded with A
+    with pytest.raises(RuntimeError, match="replaced"):
+        mm.pending_files_dir(expected_generation=gen_a)
+    assert mm.pending_files_dir_if_exists(expected_generation=gen_a) is None
+    assert mm.pending_files_dir_if_exists() is None, "B starts with no pending files"

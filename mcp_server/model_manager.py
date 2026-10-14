@@ -67,7 +67,7 @@ class _SessionState:
     # session. Two concurrent saves to one path could otherwise write in one
     # order and publish in the other, leaving `clean` describing a model that
     # is not the one on disk (Codex review of #192).
-    save_lock: threading.Lock = field(default_factory=threading.Lock)
+    save_lock: threading.RLock = field(default_factory=threading.RLock)
     # Per-session resource workspace under the caller's run root (created on
     # first use). Holds files that belong to the model but are not yet next to
     # it on disk: what a measure generated (the CLI's generated_files/) and, for
@@ -103,17 +103,26 @@ def _touch(state: _SessionState) -> None:
     state.last_access = _now()
 
 
-def _discard_workspace(state: _SessionState | None) -> None:
-    """Remove a session's resource workspace (the model it served is going away)."""
+def _discard_workspace(state: _SessionState | None) -> threading.Thread | None:
+    """Detach and remove a session's resource workspace (its model is going away).
+
+    Callers hold _lock; the deletion itself runs on a daemon thread so a large
+    workspace never stalls every other session behind the global lock. Returns
+    the thread so an explicit clear can wait for it outside the lock.
+    """
     if state is None or state.workspace is None:
-        return
+        return None
     ws, state.workspace = state.workspace, None
-    shutil.rmtree(ws, ignore_errors=True)
+    t = threading.Thread(
+        target=shutil.rmtree, args=(ws,), kwargs={"ignore_errors": True}, daemon=True,
+    )
+    t.start()
+    return t
 
 
-def _drop_session(key: str) -> None:
+def _drop_session(key: str) -> threading.Thread | None:
     """Forget a session and its workspace. Caller holds _lock."""
-    _discard_workspace(_sessions.pop(key, None))  # drop Model ref -> GC
+    return _discard_workspace(_sessions.pop(key, None))  # drop Model ref -> GC
 
 
 def _sweep_idle() -> None:
@@ -192,10 +201,22 @@ def reload_model(osm_path: Path, expected_generation: int) -> openstudio.model.M
     user's path warns. Same-version files (everything this server saves) are
     stable across reloads.
     """
-    model, _generation = _load_into_session(
+    model, _generation = reload_model_with_generation(osm_path, expected_generation)
+    return model
+
+
+def reload_model_with_generation(
+    osm_path: Path, expected_generation: int,
+) -> tuple[openstudio.model.Model, int]:
+    """reload_model(), also returning the generation the reload produced.
+
+    For the caller's follow-up work on the reloaded model (adopting the files
+    the measure generated): passing this generation to pending_files_dir pins
+    that work to this model, not one a concurrent load_model installed since.
+    """
+    return _load_into_session(
         osm_path, True, keep_clean=True, expected_generation=expected_generation,
     )
-    return model
 
 
 def _load_into_session(
@@ -227,8 +248,9 @@ def _load_into_session(
                     "The session model was replaced or evicted while the measure ran "
                     f"(model generation {expected_generation} -> {current_generation}); "
                     "the measure output was not adopted into the session. It is at "
-                    f"{osm_path}: load_osm_model it to adopt the result, then "
-                    "save_osm_model(save_name=...) to keep it.",
+                    f"{osm_path} (files the measure generated, if any, are in its run "
+                    "dir's generated_files/): load_osm_model it to adopt the result, "
+                    "then save_osm_model(save_name=...) to keep it.",
                 )
         _evict_if_needed(keep=key)
         st = _sessions.setdefault(key, _SessionState())
@@ -290,12 +312,16 @@ def rebind_path(new_path: Path, generation: int) -> bool:
         return True
 
 
-def pending_files_dir() -> Path:
+def pending_files_dir(expected_generation: int | None = None) -> Path:
     """This session's resource workspace files dir, created on first use.
 
     Under the caller's run root (rule 14), never the model's own dir: files
     here are not yet part of the model on disk. save_osm_model moves them
     into the saved model's files/ dir; the dir is removed with the session.
+
+    `expected_generation` pins the request to the model the caller is working
+    on: RuntimeError when the session model has been replaced since, so files
+    that belong to one model are never dropped into the workspace of another.
     """
     key = session_key()
     with _lock:
@@ -303,22 +329,55 @@ def pending_files_dir() -> Path:
         st = _sessions.get(key)
         if st is None or st.model is None:
             raise RuntimeError("No model loaded. Call load_osm_model first.")
+        if expected_generation is not None and st.generation != expected_generation:
+            raise RuntimeError(
+                "The session model was replaced by another tool call "
+                f"(model generation {expected_generation} -> {st.generation}).",
+            )
         if st.workspace is None:
-            st.workspace = user_run_root() / "workspace" / f"ws_{uuid.uuid4().hex[:12]}"
+            root = user_run_root() / "workspace"
+            # The run root is tenant-writable: a link planted at workspace/
+            # must not redirect server-side writes elsewhere.
+            if root.is_symlink():
+                raise RuntimeError(f"{root} is a symlink; refusing to use it as the workspace root")
+            st.workspace = root / f"ws_{uuid.uuid4().hex[:12]}"
         files = st.workspace / "files"
+        # Created under the lock so an eviction cannot slip between publishing
+        # the path and creating the dir (which would orphan it).
+        files.mkdir(parents=True, exist_ok=True)
         _touch(st)
-    files.mkdir(parents=True, exist_ok=True)
     return files
 
 
-def pending_files_dir_if_exists() -> Path | None:
-    """The session's workspace files dir when it holds anything, else None (no creation)."""
+def pending_files_dir_if_exists(expected_generation: int | None = None) -> Path | None:
+    """The session's workspace files dir when it exists, else None (no creation).
+
+    With `expected_generation`, None also when the session model has been
+    replaced since: the pending files then belong to a model the caller is not
+    working on.
+    """
     with _lock:
         st = _sessions.get(session_key())
         if st is None or st.workspace is None:
             return None
+        if expected_generation is not None and st.generation != expected_generation:
+            return None
         files = st.workspace / "files"
     return files if files.is_dir() else None
+
+
+def session_io_lock() -> threading.RLock:
+    """Per-session lock serializing resource moves (measure output adoption, save).
+
+    Re-entrant: save_model takes it too. Without it a save could carry away
+    the workspace files while apply_measure is still filling it, or two saves
+    could persist and unlink the same pending files twice.
+    """
+    with _lock:
+        st = _sessions.get(session_key())
+        if st is None:
+            return threading.RLock()  # nothing to serialize against
+        return st.save_lock
 
 
 def save_model(save_path: Path | None = None) -> Path:
@@ -493,15 +552,23 @@ def get_session_extra() -> dict[str, Any]:
 
 
 def clear_model() -> None:
-    """Clear the current session's model state and workspace (mainly for testing)."""
+    """Clear the current session's model state and workspace (mainly for testing).
+
+    Waits for the workspace removal (outside the global lock) so the caller
+    sees it gone; the TTL/LRU sweeps do not wait.
+    """
     with _lock:
-        _drop_session(session_key())
+        t = _drop_session(session_key())
+    if t is not None:
+        t.join(timeout=30)
 
 
 def _clear_all() -> None:
     with _lock:
-        for key in list(_sessions):
-            _drop_session(key)
+        threads = [_drop_session(key) for key in list(_sessions)]
+    for t in threads:
+        if t is not None:
+            t.join(timeout=30)
 
 
 # Release SWIG Model* refs before interpreter shutdown (openstudio#5421)

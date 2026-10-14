@@ -10,7 +10,7 @@ pytestmark = pytest.mark.unit
 
 RESERVED = {
     "local", "python_packages", "uploads", "lost+found", "examples", "models",
-    "exports", "bar_building", "floorspacejs", "custom_measures",
+    "exports", "bar_building", "floorspacejs", "custom_measures", "workspace",
 }
 
 

@@ -11,7 +11,7 @@ import openstudio
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
 from mcp_server.skills.model_management.baseline_model import create_baseline_model
-from mcp_server.util import reject_escaping_symlinks
+from mcp_server.util import copy_regular_file_nofollow, reject_escaping_symlinks
 
 
 def _safe_name(s: str) -> str:
@@ -265,78 +265,118 @@ def save_osm_model(
     except Exception as e:
         return {"ok": False, "error": f"Failed to create parent directory: {e}"}
 
-    # Save the model
+    # Save the model. The session io lock serializes this with apply_measure's
+    # adoption of generated files, so the workspace is never carried away while
+    # it is still being filled, nor persisted twice by concurrent saves.
     try:
-        saved_path = model_manager.save_model(p)
+        with model_manager.session_io_lock():
+            saved_path = model_manager.save_model(p)
 
-        if not p.exists():
-            return {"ok": False, "error": f"Save appeared to succeed but file not found: {p}"}
+            if not p.exists():
+                return {"ok": False, "error": f"Save appeared to succeed but file not found: {p}"}
 
-        result: dict[str, Any] = {
-            "ok": True,
-            "osm_path": str(saved_path),
-            "message": f"Model saved successfully to {saved_path}",
-        }
+            result: dict[str, Any] = {
+                "ok": True,
+                "osm_path": str(saved_path),
+                "message": f"Model saved successfully to {saved_path}",
+            }
 
-        # Carry the model's companion files/ dir (ExternalFile resources, e.g.
-        # Python EMS plugin scripts) so a save-as stays runnable from its new
-        # location — the OSM stores only bare file names resolved via files/.
-        dst_files = p.parent / "files"
-        if source_path is not None:
-            src_files = source_path.resolve().parent / "files"
-            if src_files.is_dir() and src_files != dst_files.resolve():
-                # Same guard as run_simulation staging: copytree FOLLOWS
-                # symlinks, so a link planted in files/ would copy arbitrary
-                # host files into the new location.
-                sym_err = reject_escaping_symlinks(src_files)
-                if sym_err:
+            # Carry the model's companion files/ dir (ExternalFile resources, e.g.
+            # Python EMS plugin scripts) so a save-as stays runnable from its new
+            # location — the OSM stores only bare file names resolved via files/.
+            dst_files = p.parent / "files"
+            if source_path is not None:
+                src_files = source_path.resolve().parent / "files"
+                if src_files.is_dir() and src_files != dst_files.resolve():
+                    # Same guard as run_simulation staging: copytree FOLLOWS
+                    # symlinks, so a link planted in files/ would copy arbitrary
+                    # host files into the new location.
+                    sym_err = reject_escaping_symlinks(src_files)
+                    if sym_err:
+                        return {
+                            "ok": False,
+                            "error": f"Model saved to {saved_path}, but its files/ "
+                                     f"dir was NOT copied: {sym_err}",
+                            "osm_path": str(saved_path),
+                        }
+                    shutil.copytree(str(src_files), str(dst_files), dirs_exist_ok=True)
+                    result["files_dir"] = str(dst_files)
+
+            # Resources the session holds but the model dir does not yet: files a
+            # measure generated, or resources created while the model had no file.
+            # Persisted on save like the Application copies its document temp dir.
+            # Pinned to this save's generation: a workspace that now belongs to a
+            # model loaded meanwhile is left alone.
+            pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
+            if pending is not None:
+                # p is allowed, but its sibling files/ is tenant-writable and could
+                # be a link out of the caller's area.
+                if dst_files.is_symlink() or not is_path_allowed(dst_files, write=True):
                     return {
                         "ok": False,
-                        "error": f"Model saved to {saved_path}, but its files/ "
-                                 f"dir was NOT copied: {sym_err}",
+                        "error": f"Model saved to {saved_path}, but {dst_files} is not a "
+                                 "writable real directory; generated files were NOT persisted",
                         "osm_path": str(saved_path),
                     }
-                shutil.copytree(str(src_files), str(dst_files), dirs_exist_ok=True)
-                result["files_dir"] = str(dst_files)
+                persisted, replaced, skipped = _persist_pending_files(pending, dst_files)
+                if persisted:
+                    result["files_dir"] = str(dst_files)
+                    result["persisted_files"] = persisted
+                if replaced:
+                    result["replaced_files"] = replaced
+                if skipped:
+                    result["skipped_files"] = skipped
 
-        # Resources the session holds but the model dir does not yet: files a
-        # measure generated, or resources created while the model had no file.
-        # Persisted on save like the Application copies its document temp dir.
-        pending = model_manager.pending_files_dir_if_exists()
-        if pending is not None:
-            persisted = _persist_pending_files(pending, dst_files)
-            if persisted:
-                result["files_dir"] = str(dst_files)
-                result["persisted_files"] = persisted
+            # Application Save As semantics: the saved file becomes the session
+            # path, but only once the model and its resources are all there, and
+            # only for the model this save was made from.
+            if source_path is None or p != source_path.resolve():
+                if model_manager.rebind_path(p, generation):
+                    result["message"] += "; the session now points at this file"
 
-        # Application Save As semantics: the saved file becomes the session
-        # path, but only once the model and its resources are all there, and
-        # only for the model this save was made from.
-        if source_path is None or p != source_path.resolve():
-            if model_manager.rebind_path(p, generation):
-                result["message"] += "; the session now points at this file"
-
-        return result
+            return result
     except Exception as e:
         return {"ok": False, "error": f"Failed to save model: {e}", "osm_path": str(p)}
 
 
-def _persist_pending_files(pending: Path, dst_files: Path) -> list[str]:
+def _persist_pending_files(
+    pending: Path, dst_files: Path,
+) -> tuple[list[str], list[str], list[str]]:
     """Move the session workspace's files into the saved model's files/ dir.
 
-    Regular files only (a link or dir planted in generated_files is left
-    behind); a same-named existing file is replaced, since the generated file
-    is the model's newest truth (what the Application's copy-back does).
+    Returns (persisted, replaced, skipped) names. Regular files only, copied
+    through no-follow opens at both ends. A same-named regular file in files/
+    is replaced (reported in `replaced`): the generated file is the model's
+    newest truth, which is what the Application's copy-back does. A link or
+    directory already at the destination name is never written through; that
+    file is skipped and reported.
     """
-    names: list[str] = []
+    persisted: list[str] = []
+    replaced: list[str] = []
+    skipped: list[str] = []
     for src in sorted(pending.iterdir()):
         if src.is_symlink() or not src.is_file():
             continue
         dst_files.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(src), str(dst_files / src.name))
+        dst = dst_files / src.name
+        if dst.is_symlink() or dst.is_dir():
+            skipped.append(src.name)
+            continue
+        existed = dst.exists()
+        try:
+            copy_regular_file_nofollow(src, dst, _MAX_PERSISTED_FILE_BYTES)
+        except (OSError, ValueError):
+            skipped.append(src.name)
+            continue
         src.unlink()
-        names.append(src.name)
-    return names
+        persisted.append(src.name)
+        if existed:
+            replaced.append(src.name)
+    return persisted, replaced, skipped
+
+
+# Matches the measure-output budget in measures/operations.py.
+_MAX_PERSISTED_FILE_BYTES = 64 * 1024 * 1024
 
 
 def list_files(

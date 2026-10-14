@@ -40,7 +40,8 @@ from mcp_server.model_manager import (
     get_model_with_generation,
     pending_files_dir,
     pending_files_dir_if_exists,
-    reload_model,
+    reload_model_with_generation,
+    session_io_lock,
 )
 from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
@@ -48,6 +49,7 @@ from mcp_server.skills.measures.runner_messages import parse_runner_messages
 from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
 from mcp_server.util import (
     create_run_dir,
+    copy_regular_file_nofollow,
     is_regular_file_inside,
     reject_escaping_symlinks,
     resolve_run_dir,
@@ -951,7 +953,20 @@ def apply_measure(
         # Reload the measure's output as the session model. reload_model keeps
         # the user's loaded/saved paths marked with their pre-measure digests,
         # so run_simulation on one of them warns that it is stale (issue #177).
-        reload_model(output_osm, expected_generation=generation)
+        # Files the measure generated (the CLI's generated_files/) belong to
+        # the model now (it references them by bare name). Validated before the
+        # reload so an over-budget or hostile generated_files/ refuses the whole
+        # result instead of adopting a model whose resources are missing.
+        generated_files, gen_err = _collect_generated_files(run_dir)
+        if gen_err:
+            return {
+                "ok": False, "error": gen_err, "run_dir": str(run_dir),
+                "output_osm": str(output_osm),
+            }
+
+        _model, new_generation = reload_model_with_generation(
+            output_osm, expected_generation=generation,
+        )
 
         result = {
             "ok": True,
@@ -960,15 +975,17 @@ def apply_measure(
             "arguments_applied": measure_args,
         }
 
-        # Files the measure generated (the CLI's generated_files/) belong to
-        # the model now (it references them by bare name). Keep them with the
-        # session until save_osm_model writes them next to the model, like the
-        # Application copies generated_files into its document on Accept and
-        # persists them on Save. Only after the reload was adopted: a refused
-        # reload must not leak the measure's files into the session.
-        generated = _adopt_generated_files(run_dir)
-        if generated:
-            result["generated_files"] = generated
+        # Keep the generated files with the session until save_osm_model writes
+        # them next to the model, like the Application copies generated_files
+        # into its document on Accept and persists them on Save. Pinned to the
+        # generation the reload produced and serialized with saves, so they can
+        # neither land in another model's workspace nor be carried away half-way.
+        if generated_files:
+            with session_io_lock():
+                dst = pending_files_dir(expected_generation=new_generation)
+                for f in generated_files:
+                    copy_regular_file_nofollow(f, dst / f.name, MAX_GENERATED_FILE_BYTES)
+            result["generated_files"] = [f.name for f in generated_files]
             result["generated_files_note"] = (
                 "kept with the session; written to the model's files/ dir by save_osm_model"
             )
@@ -1023,6 +1040,13 @@ def apply_measure(
         return {"ok": False, "error": f"Failed to apply measure: {e}"}
 
 
+# Budget for what a measure may hand back through generated_files/: the copy
+# runs in the server (outside the subprocess rlimits), so it is bounded here.
+MAX_GENERATED_FILES = 100
+MAX_GENERATED_FILE_BYTES = 64 * 1024 * 1024
+MAX_GENERATED_TOTAL_BYTES = 256 * 1024 * 1024
+
+
 def _stage_model_resources(run_dir: Path) -> str | None:
     """Copy the model's companion files/ and the session's pending resources into <run_dir>/files.
 
@@ -1042,6 +1066,9 @@ def _stage_model_resources(run_dir: Path) -> str | None:
         sources.append(pending)
     dst = run_dir / "files"
     for src in sources:
+        if src.is_symlink():
+            # reject_escaping_symlinks checks what is inside, not the dir itself
+            return f"Model files/ dir was not staged for the measure: {src} is a symlink"
         if not src.is_dir():
             continue
         # copytree FOLLOWS symlinks (same guard as run_simulation staging)
@@ -1053,21 +1080,45 @@ def _stage_model_resources(run_dir: Path) -> str | None:
     return None
 
 
-def _adopt_generated_files(run_dir: Path) -> list[str]:
-    """Move top-level regular files from <run_dir>/generated_files into the session workspace."""
+def _collect_generated_files(run_dir: Path) -> tuple[list[Path], str | None]:
+    """Top-level regular files in <run_dir>/generated_files, or an error string.
+
+    generated_files/ is written by the measure, so nothing about it is
+    trusted: the dir must be a real directory right under the run dir (a
+    link there would make the server read, and later publish, another
+    tenant's files), only regular non-link entries count, and the count and
+    sizes are bounded. The copy itself happens after the reload through
+    no-follow opens, so a link swapped in between is still refused.
+    """
     src = run_dir / "generated_files"
-    if not src.is_dir():
-        return []
-    names: list[str] = []
-    dst: Path | None = None
+    if not src.exists() and not src.is_symlink():
+        return [], None
+    if src.is_symlink() or not src.is_dir():
+        return [], "generated_files/ in the measure run dir is not a real directory; its output was not adopted"
+    files: list[Path] = []
+    total = 0
     for f in sorted(src.iterdir()):
         if not is_regular_file_inside(f, src):  # skips links, dirs, anything odd
             continue
-        if dst is None:
-            dst = pending_files_dir()
-        shutil.copy2(str(f), str(dst / f.name))
-        names.append(f.name)
-    return names
+        size = f.stat().st_size
+        if size > MAX_GENERATED_FILE_BYTES:
+            return [], (
+                f"generated file {f.name} is {size} bytes, over the "
+                f"{MAX_GENERATED_FILE_BYTES}-byte limit; the measure output was not adopted"
+            )
+        total += size
+        files.append(f)
+    if len(files) > MAX_GENERATED_FILES:
+        return [], (
+            f"the measure generated {len(files)} files, over the {MAX_GENERATED_FILES} limit; "
+            "its output was not adopted"
+        )
+    if total > MAX_GENERATED_TOTAL_BYTES:
+        return [], (
+            f"the measure generated {total} bytes of files, over the "
+            f"{MAX_GENERATED_TOTAL_BYTES}-byte limit; its output was not adopted"
+        )
+    return files, None
 
 
 def _measure_failure(returncode: int, run_dir: Path, log_path: Path) -> dict[str, Any]:

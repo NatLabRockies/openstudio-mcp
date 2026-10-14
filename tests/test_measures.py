@@ -461,17 +461,21 @@ def test_generated_file_persists_on_save_and_simulates():
                 }))
                 assert rp["ok"] is True, rp
 
+                # Unique name: save_name models share one models/files/ dir, so a copy
+                # left by an earlier run must not be able to satisfy the checks below
+                csv_name = f"{name}.csv"
                 res = unwrap(await s.call_tool("apply_measure", {
                     "measure_dir": GENERATED_MEASURE_DIR,
-                    "arguments": {"file_name": "generated_schedule.csv"},
+                    "arguments": {"file_name": csv_name},
                 }))
                 assert res["ok"] is True, res
-                assert res["generated_files"] == ["generated_schedule.csv"], (
+                assert res["generated_files"] == [csv_name], (
                     f"apply_measure must report the file the measure generated: {res}")
 
                 saved = unwrap(await s.call_tool("save_osm_model", {"save_name": name}))
                 assert saved["ok"] is True, saved
-                csv = Path(saved["osm_path"]).parent / "files" / "generated_schedule.csv"
+                csv = Path(saved["osm_path"]).parent / "files" / csv_name
+                assert saved["persisted_files"] == [csv_name], saved
                 assert csv.is_file(), f"generated file must be persisted next to the saved model: {saved}"
                 assert saved["files_dir"] == str(csv.parent), saved
                 assert csv.read_text(encoding="utf-8").splitlines()[8] == "1", (
