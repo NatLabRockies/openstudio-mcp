@@ -622,9 +622,63 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
     if full.is_symlink() or dest_file.is_symlink():
         return {"ok": False, "error": "symlink_refused", "message": "Source or destination is a symlink"}
     shutil.copy2(str(full), str(dest_file))
-    return {
+    result = {
         "ok": True,
         "source": str(full),
         "destination": str(dest_file),
         "size_bytes": dest_file.stat().st_size,
+    }
+    if full.suffix.lower() == ".osm":
+        carried = _copy_model_resources(full, dest_file)
+        if not carried["ok"]:
+            return {**carried, "destination": str(dest_file)}
+        result.update(carried)
+    return result
+
+
+def _copy_model_resources(src_osm: Path, dest_osm: Path) -> dict[str, Any]:
+    """Carry a model's companion folder with its OSM copy (the Application's unit).
+
+    The saved resources only (companion folder, legacy sibling until
+    migrated): the session's pending workspace is not part of the file on
+    disk and the OSM bytes copied are the saved ones. A same-named file at
+    the destination is replaced and reported; nothing is deleted. The
+    migration marker is written whether or not there were resources, so the
+    copy never reads `<dest dir>/files/` as its own legacy resources. A
+    regular resource that could not be copied fails the call (the OSM copy
+    is still reported in `destination`) and leaves no marker.
+    """
+    from mcp_server.resources import (
+        companion_files_dir,
+        copy_resources,
+        mark_legacy_migrated,
+        resource_dir_issue,
+        resource_sources,
+    )
+
+    dst_files = companion_files_dir(dest_osm)
+    issue = resource_dir_issue(dst_files, write=True)
+    if issue:
+        return {"ok": False, "error": "invalid_destination",
+                "message": f"Model resources not copied: {issue}"}
+    try:
+        sources = resource_sources(src_osm)
+        outcome = (copy_resources(sources, dst_files, overwrite=True) if sources
+                   else {"copied": [], "replaced": [], "skipped": []})
+    except ValueError as e:
+        return {"ok": False, "error": "resources_not_copied", "message": f"Model resources not copied: {e}"}
+    failed = [f"{rel} ({why})" for rel, why in outcome["skipped"] if why != "not a regular file"]
+    if failed:
+        return {"ok": False, "error": "resources_not_copied",
+                "message": "Model resources not copied: " + "; ".join(failed)}
+    try:
+        mark_legacy_migrated(dest_osm)
+    except ValueError as e:
+        return {"ok": False, "error": "resources_not_copied",
+                "message": f"Model resources copied but the migration marker was refused: {e}"}
+    return {
+        "ok": True,
+        "resource_count": len(outcome["copied"]),
+        "replaced_resources": sorted(outcome["replaced"]),
+        "skipped_resources": [rel for rel, _ in outcome["skipped"]],
     }
