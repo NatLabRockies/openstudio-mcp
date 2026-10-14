@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +9,15 @@ import openstudio
 
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
+from mcp_server.resources import (
+    companion_files_dir,
+    copy_resources,
+    legacy_files_dir,
+    resource_dir_issue,
+    resource_sources,
+)
 from mcp_server.skills.model_management.baseline_model import create_baseline_model
-from mcp_server.util import copy_regular_file_nofollow, reject_escaping_symlinks
+from mcp_server.util import copy_regular_file_nofollow
 
 
 def _safe_name(s: str) -> str:
@@ -281,61 +287,67 @@ def save_osm_model(
                 "message": f"Model saved successfully to {saved_path}",
             }
 
-            # Carry the model's companion files/ dir (ExternalFile resources, e.g.
-            # Python EMS plugin scripts) so a save-as stays runnable from its new
-            # location — the OSM stores only bare file names resolved via files/.
-            dst_files = p.parent / "files"
-            src_files = None if source_path is None else source_path.resolve().parent / "files"
-            # Both files/ dirs are tenant-writable: a link at either must not
-            # redirect the server's copy (copytree follows it) or the persist.
-            for linked in (src_files, dst_files):
-                if linked is not None and linked.is_symlink():
-                    return {
-                        "ok": False,
-                        "error": f"Model saved to {saved_path}, but {linked} is a symlink, "
-                                 "not a writable real directory; companion resources were "
-                                 "NOT written",
-                        "osm_path": str(saved_path),
-                    }
-            if src_files is not None and src_files.is_dir() and src_files != dst_files.resolve():
-                # Same guard as run_simulation staging: copytree FOLLOWS
-                # symlinks, so a link planted in files/ would copy arbitrary
-                # host files into the new location.
-                sym_err = reject_escaping_symlinks(src_files)
-                if sym_err:
-                    return {
-                        "ok": False,
-                        "error": f"Model saved to {saved_path}, but its files/ "
-                                 f"dir was NOT copied: {sym_err}",
-                        "osm_path": str(saved_path),
-                    }
-                shutil.copytree(str(src_files), str(dst_files), dirs_exist_ok=True)
-                result["files_dir"] = str(dst_files)
-
-            # Resources the session holds but the model dir does not yet: files a
-            # measure generated, or resources created while the model had no file.
-            # Persisted on save like the Application copies its document temp dir.
+            # Resources go with the model into its companion folder
+            # (<model>/files/, the Application's layout). Newest first: what
+            # the session holds but no dir has yet (files a measure generated,
+            # resources created while the model had no file), then the source
+            # model's own companion folder (save-as), then a legacy sibling
+            # files/ from before the companion folder (migrated forward, never
+            # overwriting). Both ends are tenant-writable, so every dir is
+            # checked for links before anything is read or written.
+            dst_files = companion_files_dir(p)
+            issue = resource_dir_issue(dst_files, write=True)
+            if issue:
+                return {
+                    "ok": False,
+                    "error": f"Model saved to {saved_path}, but its companion folder cannot be "
+                             f"used ({issue}); resources were NOT written",
+                    "osm_path": str(saved_path),
+                }
+            try:
+                sources = [] if source_path is None else resource_sources(source_path)
+            except ValueError as e:
+                return {
+                    "ok": False,
+                    "error": f"Model saved to {saved_path}, but its resources were NOT carried: {e}",
+                    "osm_path": str(saved_path),
+                }
             # Pinned to this save's generation: a workspace that now belongs to a
             # model loaded meanwhile is left alone.
             pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
             if pending is not None:
-                # p is allowed, but its sibling files/ must be inside the
-                # caller's writable area too (link-ness was checked above).
-                if not is_path_allowed(dst_files, write=True):
-                    return {
-                        "ok": False,
-                        "error": f"Model saved to {saved_path}, but {dst_files} is not a "
-                                 "writable real directory; generated files were NOT persisted",
-                        "osm_path": str(saved_path),
-                    }
                 persisted, replaced, skipped = _persist_pending_files(pending, dst_files)
                 if persisted:
-                    result["files_dir"] = str(dst_files)
                     result["persisted_files"] = persisted
                 if replaced:
                     result["replaced_files"] = replaced
                 if skipped:
                     result["skipped_files"] = skipped
+            try:
+                carried = copy_resources(sources, dst_files)
+            except ValueError as e:
+                return {
+                    "ok": False,
+                    "error": f"Model saved to {saved_path}, but its resources were NOT carried: {e}",
+                    "osm_path": str(saved_path),
+                }
+            legacy = None if source_path is None else legacy_files_dir(source_path)
+            migrated = [
+                rel for rel, index in carried["copied"]
+                if legacy is not None and sources[index] == legacy
+            ]
+            if migrated:
+                result["migrated_files"] = migrated
+                result["message"] += (
+                    f"; {len(migrated)} resource file(s) moved from the older sibling files/ "
+                    "dir into the model's companion folder"
+                )
+            if carried["skipped"]:
+                result.setdefault("skipped_files", []).extend(
+                    f"{rel} ({why})" for rel, why in carried["skipped"]
+                )
+            if dst_files.is_dir():
+                result["files_dir"] = str(dst_files)
 
             # Application Save As semantics: the saved file becomes the session
             # path, but only once the model and its resources are all there, and
@@ -391,7 +403,7 @@ _MAX_PERSISTED_FILE_BYTES = 64 * 1024 * 1024
 def list_files(
     directory: str | None = None,
     pattern: str = "*",
-    max_depth: int = 2,
+    max_depth: int = 3,
     max_results: int = 10,
 ) -> dict[str, Any]:
     """List files in /inputs and /runs only.
@@ -400,7 +412,8 @@ def list_files(
         directory: Directory to list (must be under /inputs or /runs).
                    If None, scans both /inputs and /runs.
         pattern: Glob pattern to filter files (e.g. "*.osm"). Default "*".
-        max_depth: Max directory depth (1 = top-level only). Default 2.
+        max_depth: Max directory depth (1 = top-level only). Default 3, which
+            reaches a model's resources at <dir>/<model>/files/.
         max_results: Max items to return (default 10, None = unlimited).
 
     Returns:

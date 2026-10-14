@@ -18,7 +18,7 @@ template fits.
 
 1. Model loaded (any create/load tool). A model that has no file yet (e.g. `create_bar_building`
    with nothing loaded) works too: its plugin script waits in the session and is written to
-   `files/` by the first `save_osm_model(save_name=...)`. A model loaded from a read-only
+   the model's companion folder by the first `save_osm_model(save_name=...)`. A model loaded from a read-only
    location must be saved with `save_name` first.
 2. Discover what you can control:
    ```
@@ -33,7 +33,8 @@ template fits.
                         schedule_name="Htg Setpoint Sched", default_value=15.6,
                         rules=[{"days": "weekdays", "start_hour": 5, "end_hour": 19, "value": 21.0}])
    ```
-4. `save_osm_model()` — the script lives in the model's companion `files/` dir and travels with it.
+4. `save_osm_model()` — the script lives in the model's companion folder `<model>/files/` (the
+   OpenStudio Application layout) and travels with it on save-as.
 5. `run_simulation(...)`, then verify the plugin loaded: `extract_simulation_errors(run_id=<run_id>)`
    should show no severe messages; the .err file logs `PythonPlugin: Class X imported`.
 6. Read the plugin's outputs:

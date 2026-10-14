@@ -43,6 +43,7 @@ from mcp_server.model_manager import (
     reload_model_with_generation,
     session_io_lock,
 )
+from mcp_server.resources import stage_model_resources
 from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
@@ -1048,36 +1049,21 @@ MAX_GENERATED_TOTAL_BYTES = 256 * 1024 * 1024
 
 
 def _stage_model_resources(run_dir: Path) -> str | None:
-    """Copy the model's companion files/ and the session's pending resources into <run_dir>/files.
+    """Copy the model's resources and the session's pending ones into <run_dir>/files.
 
     The CLI searches <run_dir>/files (and generated_files, weather, the OSW
     dir) for ExternalFile names, so a measure that reads a model resource finds
-    it there without any path in the model or OSW being rewritten. The copy,
-    rather than a file_paths entry pointing at the model dir, is what the
-    sandbox tier needs: the confined subprocess can read only its run dir.
-    Returns an error string when a source dir holds an escaping symlink.
+    it there without any path in the model or OSW being rewritten, as the
+    Application's Apply Measure Now adds the document's files dir to its temp
+    OSW. The copy, rather than a search path pointing at the model dir, is
+    what the sandbox tier needs: the confined subprocess reads only its run
+    dir. Pending files (what an earlier measure generated) win over the saved
+    copies. Returns an error string when a source dir is not usable.
     """
-    sources: list[Path] = []
-    model_path = get_model_path()
-    if model_path is not None:
-        sources.append(model_path.resolve().parent / "files")
     pending = pending_files_dir_if_exists()
-    if pending is not None:
-        sources.append(pending)
-    dst = run_dir / "files"
-    for src in sources:
-        if src.is_symlink():
-            # reject_escaping_symlinks checks what is inside, not the dir itself
-            return f"Model files/ dir was not staged for the measure: {src} is a symlink"
-        if not src.is_dir():
-            continue
-        # copytree FOLLOWS symlinks (same guard as run_simulation staging)
-        err = reject_escaping_symlinks(src)
-        if err:
-            return f"Model files/ dir was not staged for the measure: {err}"
-        dst.mkdir(exist_ok=True)
-        shutil.copytree(str(src), str(dst), dirs_exist_ok=True)
-    return None
+    return stage_model_resources(
+        get_model_path(), run_dir / "files", first=[pending] if pending is not None else [],
+    )
 
 
 def _collect_generated_files(run_dir: Path) -> tuple[list[Path], str | None]:

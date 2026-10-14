@@ -119,7 +119,8 @@ def test_zone_metric_plugin_end_to_end():
                 assert created["ok"] is True, created
                 assert created["class_name"] == "ZoneMetricAggregate"
                 assert created["callbacks"] == ["on_end_of_zone_timestep_before_zone_reporting"]
-                assert created["script_path"].endswith("files/avg_zone_temp.py")
+                assert created["script_path"].endswith("/baseline_model/files/avg_zone_temp.py"), (
+                    "the script lives in the model's companion folder")
 
                 run_id = await _save_and_simulate(session, name)
                 status = await poll_until_done(session, run_id)
@@ -408,8 +409,8 @@ def test_plugin_travels_through_save_load():
                 saved = unwrap(await session.call_tool(
                     "save_osm_model", {"osm_path": save_path}))
                 assert saved["ok"] is True, saved
-                assert saved["files_dir"] == f"/runs/{name}/files", (
-                    f"save-as must carry the companion files dir: {saved}")
+                assert saved["files_dir"] == f"/runs/{name}/model/files", (
+                    f"save-as must carry the resources into the saved model's companion folder: {saved}")
 
                 loaded = unwrap(await session.call_tool(
                     "load_osm_model", {"osm_path": save_path}))
@@ -419,7 +420,7 @@ def test_plugin_travels_through_save_load():
                     "get_python_plugin", {"name": "Roundtrip Metric"}))
                 assert plugin["ok"] is True, plugin
                 assert plugin["plugin"]["class_name"] == "ZoneMetricAggregate"
-                assert plugin["plugin"]["script_path"] == f"/runs/{name}/files/roundtrip_metric.py"
+                assert plugin["plugin"]["script_path"] == f"/runs/{name}/model/files/roundtrip_metric.py"
                 assert "class ZoneMetricAggregate(EnergyPlusPlugin):" in plugin["source"], (
                     "script source must be readable from the carried files/ dir")
 
@@ -451,7 +452,7 @@ def test_plugin_survives_measure_and_save_as():
                 source = before["source"]
                 assert "class ZoneMetricAggregate(EnergyPlusPlugin):" in source, before
                 script_path = before["plugin"]["script_path"]
-                assert script_path == f"/runs/examples/{name}/files/measure_metric.py", before
+                assert script_path == f"/runs/examples/{name}/example_model/files/measure_metric.py", before
 
                 res = unwrap(await session.call_tool("enable_ideal_air_loads", {}))
                 assert res["ok"] is True, res
@@ -467,8 +468,8 @@ def test_plugin_survives_measure_and_save_as():
                 saved = unwrap(await session.call_tool(
                     "save_osm_model", {"osm_path": save_path}))
                 assert saved["ok"] is True, saved
-                assert saved["files_dir"] == f"/runs/{name}/files", saved
-                carried = Path(f"/runs/{name}/files/measure_metric.py")
+                assert saved["files_dir"] == f"/runs/{name}/model/files", saved
+                carried = Path(f"/runs/{name}/model/files/measure_metric.py")
                 assert carried.is_file(), f"save-as after a measure must carry the plugin script: {saved}"
                 assert carried.read_text(encoding="utf-8") == source
 
@@ -498,8 +499,8 @@ def test_plugin_created_after_save_as_lands_in_saved_model_files():
                 assert created["ok"] is True, created
                 plugin = unwrap(await session.call_tool("get_python_plugin", {"name": "After SaveAs"}))
                 assert plugin["ok"] is True, plugin
-                assert plugin["plugin"]["script_path"] == f"/runs/{name}/files/after_saveas.py", plugin
-                assert not Path(f"/runs/examples/{name}/files/after_saveas.py").exists(), (
+                assert plugin["plugin"]["script_path"] == f"/runs/{name}/model/files/after_saveas.py", plugin
+                assert not Path(f"/runs/examples/{name}/example_model/files/after_saveas.py").exists(), (
                     "the original model dir must not receive resources created after a save-as")
 
     asyncio.run(_run())

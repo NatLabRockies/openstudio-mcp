@@ -135,6 +135,8 @@ saying "150+ tools".
    model's `files/` dir into the staging dir; `run_osw`'s `_copy_tree`
    (`:167`) already copies the OSW parent wholesale, and workflow-time FT
    resolves the OSM's relative File Name via osw dir then `files/` (verified).
+   (Superseded 2026-10: resources now live in the model's companion folder
+   `<dir>/<model>/files/`, the Application layout; see plan-companion-folder.md.)
 3. **save/load portability**: `save_osm_model` copies the `files/` companion
    dir next to the target OSM; `load_osm_model` picks up a sibling `files/`
    dir into the new staging dir. Keeps controls attached across

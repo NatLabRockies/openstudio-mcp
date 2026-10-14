@@ -42,7 +42,7 @@ from mcp_server.skills.simulation.operations import (
 from mcp_server.util import open_nofollow_for_write, read_file_bounded, resolve_run_dir
 
 PIN_MARKER = ".pinned"
-_NOT_A_RUN = {"examples", "exports", "workspace"}  # user working dirs, never GC'd
+_NOT_A_RUN = {"examples", "exports", "workspace", "models"}  # user working dirs, never GC'd
 _CLEANUP_FALLBACK_DAYS = 7.0  # manual cleanup_runs default window when GC is off
 
 # Effective retention window for the auto-GC daemon. Starts from the env value
@@ -100,9 +100,18 @@ def _is_real_child(d: Path, parent: Path) -> bool:
         return False
 
 
+def _is_companion_folder(d: Path) -> bool:
+    """`<dir>/<stem>/` beside `<dir>/<stem>.osm`: a model's resources (Application layout).
+
+    Never a run, whatever it holds: the Application keeps `run/` and
+    `workflow.osw` inside it, and this server keeps `files/` there.
+    """
+    return (d.parent / f"{d.name}.osm").is_file()
+
+
 def _is_run_dir(d: Path) -> bool:
     """A dir is a run iff it holds a run record / OpenStudio output / run subdir."""
-    if d.name in _NOT_A_RUN:
+    if d.name in _NOT_A_RUN or _is_companion_folder(d):
         return False
     return (
         (d / "run_record.json").exists()

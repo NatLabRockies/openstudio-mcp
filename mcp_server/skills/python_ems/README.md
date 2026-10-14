@@ -20,13 +20,17 @@ Module layout:
 - `templates.py` — pure codegen + AST/package-spec validation (no openstudio import; unit-tested)
 - `edd_parser.py` — pure .edd parsing (unit-tested)
 - `operations.py` — create + model wiring (ExternalFile copy dest is controlled by
-  pointing the model's workflowJSON at the OSM's dir)
+  pointing the model's workflowJSON at the companion folder, so copies land in its `files/`)
 - `manage.py` — get/edit existing plugin instances
 - `packages.py` — per-user pip install (wheels-only)
 - `actuators.py` — discovery run under the simulation sandbox
 
 Plumbing this skill depends on:
-- `simulation/operations.py::run_simulation` stages the OSM's sibling `files/` dir
-- `model_management/operations.py::save_osm_model` carries `files/` on save-as
+- `resources.py` — companion folder `<dir>/<model>/files/` (SDK getCompanionFolder, the
+  Application layout), precedence copy (pending workspace, companion, legacy sibling `files/`)
+- `simulation/operations.py::run_simulation` and `measures/operations.py::apply_measure` stage
+  the model's resources into the run's `files/`
+- `model_management/operations.py::save_osm_model` carries resources into the saved model's
+  companion folder (save-as) and migrates a legacy sibling `files/` forward
 
 Served agent guidance lives in `.claude/skills/python-ems/SKILL.md`.

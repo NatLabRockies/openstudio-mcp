@@ -129,7 +129,7 @@ def test_create_ems_plugin_model():
     """Seed baseline + schedule_override Python plugin, saved for ems_edit cases."""
     # Validates: Claude seeds the EMS-plugin model (create_python_plugin +
     # save) that ems_edit progressive cases load and modify
-    # Order matters: the plugin script lands in <loaded-model-dir>/files/, and
+    # Order matters: the plugin script lands in the model's companion folder <model>/files/, and
     # save_osm_model does not retarget the loaded path — so save a copy, RELOAD
     # it, then create the plugin so script + model live together under
     # /runs/examples/llm-test-ems/.

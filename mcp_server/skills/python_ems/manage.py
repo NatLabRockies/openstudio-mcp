@@ -13,12 +13,14 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
+from mcp_server.resources import find_resource
 from mcp_server.skills.python_ems import templates
 from mcp_server.skills.python_ems.operations import (
     _MAX_SOURCE_CHARS,
     _EmsError,
     _files_context,
 )
+from mcp_server.util import open_nofollow_for_write
 
 
 def _script_path_for(file_name: str) -> Path | None:
@@ -31,19 +33,17 @@ def _script_path_for(file_name: str) -> Path | None:
     safe_name = Path(file_name).name
     if not safe_name:
         return None
-    candidates: list[Path] = []
+    # Newest first: a pending file a measure just generated, then the model's
+    # companion folder, then a legacy sibling files/ (the same precedence the
+    # measure run uses when it stages resources).
     pending = model_manager.pending_files_dir_if_exists()
-    if pending is not None:
-        # Newest first: a file a measure just generated supersedes the saved
-        # copy, as it does when the measure run stages its resources.
-        candidates.append(pending / safe_name)
-    osm_path = model_manager.get_model_path()
-    if osm_path is not None:
-        candidates.append(osm_path.resolve().parent / "files" / safe_name)
-    for candidate in candidates:
-        if candidate.is_file() and not candidate.is_symlink():
-            return candidate
-    return None
+    try:
+        return find_resource(
+            model_manager.get_model_path(), safe_name,
+            first=[pending] if pending is not None else [],
+        )
+    except ValueError:
+        return None  # a planted link at a resource dir is not read around
 
 
 def _instance_by_name(model, name: str):
@@ -153,16 +153,27 @@ def edit_python_plugin_op(name: str, code: str) -> dict[str, Any]:
         # fileName comes from the OSM: honor only its basename so a crafted
         # value ("../x.py", absolute path) can never write outside files/.
         file_name = Path(instance.externalFile().fileName()).name
-        script_path = files_dir / file_name
-        if not file_name or not script_path.exists():
+        existing = _script_path_for(file_name) if file_name else None
+        if existing is None:
             raise _EmsError(
-                f"Plugin script not found at {script_path} — the model's files/ "
-                "dir is missing. save_osm_model, then retry.")
+                f"Plugin script '{file_name}' not found in the model's resources "
+                "(companion folder files/, or the session's pending files). "
+                "save_osm_model, then retry.")
+        # The edit goes to the model's own resources dir (companion folder, or
+        # the pending workspace for a model with no file yet). A pending copy
+        # a measure generated is superseded and dropped; a legacy sibling
+        # copy is left behind, the companion copy now wins by precedence.
+        script_path = files_dir / file_name
         if script_path.is_symlink():
             raise _EmsError(
                 f"Plugin script {script_path} is a symlink — refusing to "
                 "write through it.")
-        script_path.write_text(code, encoding="utf-8")
+        files_dir.mkdir(parents=True, exist_ok=True)
+        with open_nofollow_for_write(script_path) as fh:
+            fh.write(code)
+        pending = model_manager.pending_files_dir_if_exists()
+        if existing != script_path and pending is not None and existing.parent == pending:
+            existing.unlink(missing_ok=True)
 
         return {
             "ok": True,

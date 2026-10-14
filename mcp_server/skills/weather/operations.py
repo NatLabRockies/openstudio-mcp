@@ -19,6 +19,7 @@ from mcp_server.config import (
     is_path_allowed,
 )
 from mcp_server.model_manager import get_model
+from mcp_server.resources import resource_sources
 
 
 def _estimate_climate_zone_from_epw(epw_path: Path) -> str | None:
@@ -254,23 +255,27 @@ def resolve_model_weather_epw(osm_path: Path) -> dict[str, Any]:
     if epw.is_file() and is_path_allowed(epw):
         result["epw"] = epw.resolve()
         return result
-    result["epw"] = _staged_epw_by_basename(osm_path.resolve().parent, epw.name)
+    result["epw"] = _staged_epw_by_basename(osm_path.resolve(), epw.name)
     return result
 
 
-def _staged_epw_by_basename(osm_dir: Path, basename: str) -> Path | None:
+def _staged_epw_by_basename(osm_path: Path, basename: str) -> Path | None:
     """Resolve a bare weather-file name to a stageable EPW, gating every hit.
 
-    Looks in the OSM's companion `files/` dir, then the OSM's own dir, then
-    the known weather dirs. Each hit is re-gated through is_path_allowed on
-    its RESOLVED target before it is returned: a companion entry may be a
-    symlink whose target escapes the allowlist
-    (files/weather.epw -> /other/tenant/secret), and /inputs is walked
-    recursively so a user-planted symlink could surface via find_epw_by_name;
-    is_path_allowed resolves the link first, so an escaping target is rejected
-    rather than staged.
+    Looks in the model's resources (companion folder <model>/files/, then a
+    legacy sibling files/), then the OSM's own dir, then the known weather
+    dirs. Each hit is re-gated through is_path_allowed on its RESOLVED target
+    before it is returned: a resource entry may be a symlink whose target
+    escapes the allowlist (files/weather.epw -> /other/tenant/secret), and
+    /inputs is walked recursively so a user-planted symlink could surface via
+    find_epw_by_name; is_path_allowed resolves the link first, so an escaping
+    target is rejected rather than staged.
     """
-    for candidate in (osm_dir / "files" / basename, osm_dir / basename):
+    try:
+        sources = resource_sources(osm_path)
+    except ValueError:
+        sources = []  # a planted link at a resource dir: fall through to the weather dirs
+    for candidate in (*(src / basename for src in sources), osm_path.parent / basename):
         if candidate.is_file() and is_path_allowed(candidate):
             return candidate.resolve()
     found = find_epw_by_name(basename)

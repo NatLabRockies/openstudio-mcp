@@ -230,10 +230,10 @@ def test_list_files():
 
 @pytest.mark.integration
 def test_save_as_refuses_escaping_symlink_in_files():
-    # Regression: save-as copied the model's companion files/ dir with copytree,
-    # which FOLLOWS symlinks — a link planted in files/ would copy arbitrary host
-    # files into the destination (PR #84 Copilot review); run_simulation already
-    # guards the identical copy with reject_escaping_symlinks
+    # Regression: save-as copied the model's files/ dir with copytree, which FOLLOWS
+    # symlinks — a link planted there would copy arbitrary host files into the
+    # destination (PR #84 Copilot review). Resources are now copied entry by entry
+    # through no-follow opens: the link is skipped and reported, its target never read
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
 
@@ -264,18 +264,20 @@ def test_save_as_refuses_escaping_symlink_in_files():
                     "load_osm_model", {"osm_path": first_path}))
                 assert reload_result["ok"] is True, reload_result
 
-                # --- Act: save-as must refuse to copy through the link ---
+                # --- Act: save-as must not copy through the link ---
                 second_path = f"/runs/{name}_copy/model.osm"
                 copy_result = unwrap(await session.call_tool(
                     "save_osm_model", {"osm_path": second_path}))
 
-                # --- Assert: refused, nothing copied, but the OSM was written ---
-                assert copy_result["ok"] is False, copy_result
-                assert "symlink" in copy_result["error"].lower(), copy_result
+                # --- Assert: the link is skipped and reported, nothing read through it ---
+                assert copy_result["ok"] is True, copy_result
+                assert copy_result["skipped_files"] == ["leak.txt (not a regular file)"], copy_result
+                copy_files = Path(f"/runs/{name}_copy/model/files")
+                assert not (copy_files / "leak.txt").exists(), (
+                    "a link in the source resources must never produce a file at the destination")
                 assert not Path(f"/runs/{name}_copy/files").exists(), (
-                    "files/ must not be copied when it contains an escaping symlink")
-                assert Path(second_path).exists(), (
-                    "the .osm itself is saved before the files/ copy is attempted")
+                    "resources go to the companion folder, not a sibling files/")
+                assert Path(second_path).exists()
 
     asyncio.run(_run())
 

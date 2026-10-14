@@ -53,6 +53,15 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
         out["weather_file"] = stage_epw_into_run(epw.resolve(), run_dir)
         return out
 
+    # Tier 1b: a bare name that the model's own resources provide. The
+    # caller staged the model's companion files/ into run_dir/files before
+    # this; that copy must not be replaced by a same-named EPW from the known
+    # weather dirs (the model's own weather is the more specific reference).
+    staged = run_dir / "files" / epw.name
+    if staged.is_file() and not staged.is_symlink():
+        out["weather_file"] = f"files/{epw.name}"
+        return out
+
     # Tier 2: bare/stale name — look in known weather dirs, stage like run_osw
     found = find_epw_by_name(epw.name)
     if found is not None:
