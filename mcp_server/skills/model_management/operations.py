@@ -246,7 +246,11 @@ def save_osm_model(
 
     # Validate path
     if not is_path_allowed(p, write=True):
-        return {"ok": False, "error": f"Save path is not allowed: {p}"}
+        return {
+            "ok": False,
+            "error": f"Save path is not allowed: {p}. "
+                     "Pass save_name=<name> to save into your run area.",
+        }
 
     # Ensure parent directory exists
     try:

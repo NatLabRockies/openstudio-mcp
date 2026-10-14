@@ -34,7 +34,7 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
-from mcp_server.model_manager import get_model, reload_model
+from mcp_server.model_manager import get_model, get_model_with_generation, reload_model
 from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
@@ -744,8 +744,12 @@ def apply_measure(
     """
     run_dir: Path | None = None
     log_path: Path | None = None
+    output_osm: Path | None = None
     try:
-        model = get_model()
+        # The generation pins the reload below to THIS model: if another tool
+        # call replaces the session model while the measure runs, the reload
+        # is refused instead of publishing the output under that model's path.
+        model, generation = get_model_with_generation()
         measure_path = Path(measure_dir)
         if not measure_path.is_dir():
             return {"ok": False, "error": f"Measure directory not found: {measure_dir}"}
@@ -933,7 +937,7 @@ def apply_measure(
         # Reload the measure's output as the session model. reload_model keeps
         # the user's loaded/saved paths marked with their pre-measure digests,
         # so run_simulation on one of them warns that it is stale (issue #177).
-        reload_model(output_osm)
+        reload_model(output_osm, expected_generation=generation)
 
         result = {
             "ok": True,
@@ -981,7 +985,13 @@ def apply_measure(
             result["log_hint"] = "Partial log: read_file(file_path=log_path)"
         return result
     except RuntimeError as e:
-        return {"ok": False, "error": str(e)}
+        result = {"ok": False, "error": str(e)}
+        if run_dir is not None:
+            result["run_dir"] = str(run_dir)
+        if output_osm is not None and output_osm.is_file():
+            # The measure itself succeeded; only adopting its output was refused.
+            result["output_osm"] = str(output_osm)
+        return result
     except Exception as e:
         return {"ok": False, "error": f"Failed to apply measure: {e}"}
 

@@ -364,3 +364,40 @@ def test_apply_measure_verify_model_changed():
                 assert bldg_after["building"]["name"] == new_name
                 assert bldg_after["building"]["name"] != original_name
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_bare_save_after_measure_writes_users_file():
+    # Regression: apply_measure reloaded the session model from <run_dir>/run/in.osm and a
+    # no-arg save_osm_model wrote there, leaving the user's file untouched (issue #195)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                cr = unwrap(await s.call_tool("create_example_osm", {"name": _unique()}))
+                assert cr["ok"] is True, cr
+                lr = unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))
+                assert lr["ok"] is True, lr
+                user_osm = lr["osm_path"]
+
+                new_name = f"Saved_{uuid.uuid4().hex[:6]}"
+                res = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": MEASURE_DIR,
+                    "arguments": {"building_name": new_name},
+                }))
+                assert res["ok"] is True, res
+
+                saved = unwrap(await s.call_tool("save_osm_model", {}))
+                assert saved["ok"] is True, saved
+                assert saved["osm_path"] == user_osm, (
+                    f"bare save must target the file the user loaded, not the measure run dir: {saved}")
+
+                reloaded = unwrap(await s.call_tool("load_osm_model", {"osm_path": user_osm}))
+                assert reloaded["ok"] is True, reloaded
+                bldg = unwrap(await s.call_tool("get_building_info", {}))
+                assert bldg["building"]["name"] == new_name, (
+                    "the user's file on disk must hold the measure result after a bare save")
+    asyncio.run(_run())

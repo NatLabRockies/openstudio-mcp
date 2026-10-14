@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import (
@@ -421,5 +422,54 @@ def test_plugin_travels_through_save_load():
                 assert plugin["plugin"]["script_path"] == f"/runs/{name}/files/roundtrip_metric.py"
                 assert "class ZoneMetricAggregate(EnergyPlusPlugin):" in plugin["source"], (
                     "script source must be readable from the carried files/ dir")
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_plugin_survives_measure_and_save_as():
+    # Regression: after apply_measure the session path pointed into the measure run dir, so
+    # get_python_plugin lost the script (source None) and save-as copied files/ from a dir
+    # that did not exist, dropping the plugin from the saved model (issue #195)
+    name = _unique("ems_measure")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                await _load_example(session, name)
+                created = unwrap(await session.call_tool("create_python_plugin", {
+                    "name": "Measure Metric",
+                    "template": "zone_metric_aggregate",
+                    "aggregation": "volume_weighted_average",
+                }))
+                assert created["ok"] is True, created
+                before = unwrap(await session.call_tool(
+                    "get_python_plugin", {"name": "Measure Metric"}))
+                assert before["ok"] is True, before
+                source = before["source"]
+                assert "class ZoneMetricAggregate(EnergyPlusPlugin):" in source, before
+                script_path = before["plugin"]["script_path"]
+                assert script_path == f"/runs/examples/{name}/files/measure_metric.py", before
+
+                res = unwrap(await session.call_tool("enable_ideal_air_loads", {}))
+                assert res["ok"] is True, res
+
+                after = unwrap(await session.call_tool(
+                    "get_python_plugin", {"name": "Measure Metric"}))
+                assert after["ok"] is True, after
+                assert after["plugin"]["script_path"] == script_path, (
+                    f"plugin script must still resolve from the user's files/ dir after a measure: {after}")
+                assert after["source"] == source
+
+                save_path = f"/runs/{name}/model.osm"
+                saved = unwrap(await session.call_tool(
+                    "save_osm_model", {"osm_path": save_path}))
+                assert saved["ok"] is True, saved
+                assert saved["files_dir"] == f"/runs/{name}/files", saved
+                carried = Path(f"/runs/{name}/files/measure_metric.py")
+                assert carried.is_file(), f"save-as after a measure must carry the plugin script: {saved}"
+                assert carried.read_text(encoding="utf-8") == source
 
     asyncio.run(_run())
