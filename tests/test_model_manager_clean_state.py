@@ -44,9 +44,9 @@ def test_reload_of_unchanged_same_version_file_is_clean(mm, tmp_path):
     # keeps the path clean; the digest is stable across loads of a same-version OSM. (A
     # version-translated file gets new handles on every load and is the documented exception.)
     p = _example_file(tmp_path)
-    mm.load_model(p)
+    _model, gen = mm.load_model_with_generation(p)
     assert mm.unsaved_edits_for(p) is False
-    mm.reload_model(p)
+    mm.reload_model(p, expected_generation=gen)
     assert mm.unsaved_edits_for(p) is False, "unchanged reload must not look like an edit"
     import openstudio
     openstudio.model.Space(mm.get_model()).setName("edit after reload")
@@ -105,3 +105,37 @@ def test_concurrent_saves_publish_digests_in_write_order(mm, tmp_path, monkeypat
         f"clean digest must describe the content actually in the file "
         f"(file holds {'B' if on_disk_is_session else 'OLD'})"
     )
+
+
+def test_reload_model_keeps_session_path(mm, tmp_path):
+    # Regression: reload_model (apply_measure's reload) replaced the session path with the
+    # run-dir output OSM, so a bare save_model() wrote there instead of the user's file (#195)
+    a = _example_file(tmp_path)
+    b = _example_file(tmp_path, extra_spaces=3)
+    _model, gen = mm.load_model_with_generation(a)
+    mm.reload_model(b, expected_generation=gen)
+    assert mm.get_model_path() == a, "reload must not move the session path to the internal file"
+    assert mm.unsaved_edits_for(a) is True, "A on disk is behind the reloaded model"
+    assert mm.save_model() == a, "bare save must target the file the user loaded"
+    assert _objects_on_disk(a) == _objects_on_disk(b), "bare save must write the reloaded content to A"
+    assert mm.unsaved_edits_for(a) is False
+
+
+def test_reload_model_rejects_stale_generation(mm, tmp_path):
+    # Validates: a reload whose expected generation is stale (a concurrent load_model on the
+    # session, or eviction, while the measure ran) is rejected without touching the session;
+    # otherwise the measure output would be published under the other model's path (#195)
+    a = _example_file(tmp_path)
+    b = _example_file(tmp_path, extra_spaces=3)
+    c = _example_file(tmp_path, extra_spaces=5)
+    _model, gen = mm.load_model_with_generation(a)
+    mm.load_model(b)
+    with pytest.raises(RuntimeError, match="replaced or evicted"):
+        mm.reload_model(c, expected_generation=gen)
+    assert mm.get_model_path() == b, "rejected reload must leave the session path alone"
+    assert mm.get_model().numObjects() == _objects_on_disk(b), "rejected reload must leave the model alone"
+
+    mm.clear_model()
+    with pytest.raises(RuntimeError, match="replaced or evicted"):
+        mm.reload_model(c, expected_generation=gen)
+    assert mm.get_model_if_loaded() is None, "rejected reload must not create session state"

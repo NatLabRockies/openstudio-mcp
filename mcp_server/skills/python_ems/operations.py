@@ -44,7 +44,8 @@ def _files_context() -> tuple[Any, Path, Path]:
     if not is_path_allowed(files_dir, write=True):
         raise _EmsError(
             f"Model directory is not writable for this session: {osm_dir}. "
-            "save_osm_model into your own run area first, then retry.")
+            "save_osm_model(save_name=...) first, then load_osm_model the "
+            "returned path (save-as does not move the session), then retry.")
     model.workflowJSON().setOswDir(openstudio.path(str(osm_dir)))
     return model, osm_dir, files_dir
 

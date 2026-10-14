@@ -142,14 +142,25 @@ def load_model_with_generation(
     return _load_into_session(osm_path, version_translate, keep_clean=False)
 
 
-def reload_model(osm_path: Path) -> openstudio.model.Model:
-    """Replace the session model with a file the server wrote itself.
+def reload_model(osm_path: Path, expected_generation: int) -> openstudio.model.Model:
+    """Replace the session model's CONTENT with a file the server wrote itself.
 
-    For apply_measure, which reloads the measure's output OSM: the paths the
-    user loaded or saved stay in `clean` with their older digests, so the next
-    run_simulation on one of them warns that it is behind the session model
-    (issue #177). Everything else behaves exactly like load_model, including
-    `path`.
+    For apply_measure, which reloads the measure's output OSM. Differences
+    from load_model:
+
+    - `path` is NOT changed: the session keeps pointing at the file the user
+      loaded (or the create_* tool wrote), so a bare save_model() and the
+      files/ companion-dir lookups still target the user's model, not the
+      internal run-dir copy that run retention deletes (issue #195).
+    - The paths the user loaded or saved stay in `clean` with their older
+      digests, so the next run_simulation on one of them warns that it is
+      behind the session model (issue #177).
+    - `expected_generation` (from get_model_with_generation() when the caller
+      captured the model it sent to the measure) must still be the session's
+      current generation. A concurrent load_model on this session, or TTL/LRU
+      eviction, while the measure ran raises RuntimeError and publishes
+      nothing; otherwise the measure output would land under the other
+      model's path and a bare save would overwrite that file.
 
     Known false positive: a file written by an older OpenStudio version gets
     new object handles on every version-translated load, so after a measure
@@ -157,12 +168,15 @@ def reload_model(osm_path: Path) -> openstudio.model.Model:
     user's path warns. Same-version files (everything this server saves) are
     stable across reloads.
     """
-    model, _generation = _load_into_session(osm_path, True, keep_clean=True)
+    model, _generation = _load_into_session(
+        osm_path, True, keep_clean=True, expected_generation=expected_generation,
+    )
     return model
 
 
 def _load_into_session(
     osm_path: Path, version_translate: bool, *, keep_clean: bool,
+    expected_generation: int | None = None,
 ) -> tuple[openstudio.model.Model, int]:
     abs_path = str(Path(osm_path).resolve())
     with suppress_openstudio_warnings():
@@ -179,10 +193,26 @@ def _load_into_session(
     key = session_key()
     with _lock:
         _sweep_idle()
+        if keep_clean:
+            # Internal reload: checked before any state is created or evicted,
+            # so a rejected reload has no side effects on this or other sessions.
+            current = _sessions.get(key)
+            current_generation = current.generation if current is not None else 0
+            if current is None or current_generation != expected_generation:
+                raise RuntimeError(
+                    "The session model was replaced or evicted while the measure ran "
+                    f"(model generation {expected_generation} -> {current_generation}); "
+                    "the measure output was not adopted into the session. It is at "
+                    f"{osm_path}: load_osm_model it to adopt the result, then "
+                    "save_osm_model(save_name=...) to keep it.",
+                )
         _evict_if_needed(keep=key)
         st = _sessions.setdefault(key, _SessionState())
         st.model = model
-        st.path = Path(osm_path)
+        if not keep_clean:
+            # A user load (or a create_* tool's output) is the file the session
+            # points at; an internal reload keeps it (issue #195).
+            st.path = Path(osm_path)
         st.generation = next(_load_tokens)
         if not keep_clean:
             st.clean = {}
@@ -300,7 +330,12 @@ def unsaved_edits_for(path: Path) -> bool:
 
 
 def get_model_path() -> Path | None:
-    """Return the file path of the current session's model, or None."""
+    """Return the file path of the current session's model, or None.
+
+    This is the file the user loaded or a create_* tool wrote: the default
+    target of a bare save_model() and the base dir of the model's companion
+    files/ resources. An internal reload (reload_model) does not move it.
+    """
     with _lock:
         _sweep_idle()
         st = _sessions.get(session_key())
