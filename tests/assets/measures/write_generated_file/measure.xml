@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>write_generated_file</name>
+  <uid>00000000-0000-0000-0000-000000000003</uid>
+  <version_id>7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f</version_id>
+  <version_modified>2026-10-14T00:00:00Z</version_modified>
+  <xml_checksum>00000000</xml_checksum>
+  <class_name>WriteGeneratedFile</class_name>
+  <display_name>Write Generated File</display_name>
+  <description>Creates an hourly CSV, registers it as an ExternalFile and uses it as the lighting schedule.</description>
+  <modeler_description>ExternalFile.getExternalFile copies the CSV into the workflow's first file path (generated_files under the CLI).</modeler_description>
+  <arguments>
+    <argument>
+      <name>file_name</name>
+      <display_name>Generated CSV file name</display_name>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>generated_schedule.csv</default_value>
+    </argument>
+    <argument>
+      <name>link_file_to</name>
+      <display_name>Also leave generated_files/linked.txt as a symlink to this path (test only)</display_name>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
+    <argument>
+      <name>link_dir_to</name>
+      <display_name>Leave generated_files itself as a symlink to this directory (test only)</display_name>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Whole Building.Space Types</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>00000000</checksum>
+    </file>
+  </files>
+</measure>

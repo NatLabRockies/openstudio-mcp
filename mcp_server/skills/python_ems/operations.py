@@ -38,14 +38,18 @@ def _files_context() -> tuple[Any, Path, Path]:
         raise _EmsError("No model loaded. Call load_osm_model first.")
     osm_path = model_manager.get_model_path()
     if osm_path is None:
-        raise _EmsError("Loaded model has no file path. Call save_osm_model first.")
-    osm_dir = osm_path.resolve().parent
-    files_dir = osm_dir / "files"
-    if not is_path_allowed(files_dir, write=True):
-        raise _EmsError(
-            f"Model directory is not writable for this session: {osm_dir}. "
-            "save_osm_model(save_name=...) first, then load_osm_model the "
-            "returned path (save-as does not move the session), then retry.")
+        # A model with no file yet: resources go to the session workspace and
+        # are written next to the model by its first save_osm_model.
+        files_dir = model_manager.pending_files_dir()
+        osm_dir = files_dir.parent
+    else:
+        osm_dir = osm_path.resolve().parent
+        files_dir = osm_dir / "files"
+        if not is_path_allowed(files_dir, write=True):
+            raise _EmsError(
+                f"Model directory is not writable for this session: {osm_dir}. "
+                "save_osm_model(save_name=...) first (the session then points at "
+                "the saved copy), then retry.")
     model.workflowJSON().setOswDir(openstudio.path(str(osm_dir)))
     return model, osm_dir, files_dir
 

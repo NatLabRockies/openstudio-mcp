@@ -12,7 +12,7 @@ RUN_ROOT.mkdir(parents=True, exist_ok=True)
 # Keep this inventory current when adding a fixed directory under user_run_root().
 LOCAL_RUN_DIR_NAMES = frozenset({
     "python_packages", "uploads", "lost+found", "examples", "models", "exports",
-    "bar_building", "floorspacejs", "custom_measures",
+    "bar_building", "floorspacejs", "custom_measures", "workspace",
 })
 
 def _safe_int(env_val: str, default: int) -> int:

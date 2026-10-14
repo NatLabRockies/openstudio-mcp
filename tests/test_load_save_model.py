@@ -278,3 +278,48 @@ def test_save_as_refuses_escaping_symlink_in_files():
                     "the .osm itself is saved before the files/ copy is attempted")
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_save_as_rebinds_session_path():
+    # Validates: after a save-as the session points at the saved file, so a bare save
+    # writes there and not the original (Application OSDocument::saveAs semantics);
+    # the original file keeps its pre-save-as content
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+    name = _unique_name("pytest_rebind")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                create_result = unwrap(await session.call_tool("create_example_osm", {"name": name}))
+                assert create_result["ok"] is True, create_result
+                load_result = unwrap(await session.call_tool(
+                    "load_osm_model", {"osm_path": create_result["osm_path"]}))
+                assert load_result["ok"] is True, load_result
+                original = load_result["osm_path"]
+
+                copy_path = f"/runs/{name}/model.osm"
+                save_as = unwrap(await session.call_tool("save_osm_model", {"osm_path": copy_path}))
+                assert save_as["ok"] is True, save_as
+
+                # Edit after the save-as, then a bare save: must land in the copy
+                rp = unwrap(await session.call_tool("set_run_period", {
+                    "begin_month": 3, "begin_day": 1, "end_month": 3, "end_day": 31,
+                }))
+                assert rp["ok"] is True, rp
+                bare = unwrap(await session.call_tool("save_osm_model", {}))
+                assert bare["ok"] is True, bare
+                assert bare["osm_path"] == copy_path, (
+                    f"bare save after save-as must target the saved copy: {bare}")
+
+                reloaded_copy = unwrap(await session.call_tool("load_osm_model", {"osm_path": copy_path}))
+                assert reloaded_copy["ok"] is True, reloaded_copy
+                assert unwrap(await session.call_tool("get_run_period", {}))["run_period"]["begin_month"] == 3
+                reloaded_orig = unwrap(await session.call_tool("load_osm_model", {"osm_path": original}))
+                assert reloaded_orig["ok"] is True, reloaded_orig
+                assert unwrap(await session.call_tool("get_run_period", {}))["run_period"]["begin_month"] == 1, (
+                    "the original file must not receive edits made after the save-as")
+
+    asyncio.run(_run())

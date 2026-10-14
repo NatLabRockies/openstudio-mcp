@@ -473,3 +473,33 @@ def test_plugin_survives_measure_and_save_as():
                 assert carried.read_text(encoding="utf-8") == source
 
     asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_plugin_created_after_save_as_lands_in_saved_model_files():
+    # Validates: new companion resources follow the session path after a save-as, so a
+    # plugin created then is written under the saved copy's files/, not the original's
+    name = _unique("ems_after_saveas")
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await _load_example(session, name)
+                save_path = f"/runs/{name}/model.osm"
+                saved = unwrap(await session.call_tool("save_osm_model", {"osm_path": save_path}))
+                assert saved["ok"] is True, saved
+
+                created = unwrap(await session.call_tool("create_python_plugin", {
+                    "name": "After SaveAs",
+                    "template": "zone_metric_aggregate",
+                    "aggregation": "volume_weighted_average",
+                }))
+                assert created["ok"] is True, created
+                plugin = unwrap(await session.call_tool("get_python_plugin", {"name": "After SaveAs"}))
+                assert plugin["ok"] is True, plugin
+                assert plugin["plugin"]["script_path"] == f"/runs/{name}/files/after_saveas.py", plugin
+                assert not Path(f"/runs/examples/{name}/files/after_saveas.py").exists(), (
+                    "the original model dir must not receive resources created after a save-as")
+
+    asyncio.run(_run())

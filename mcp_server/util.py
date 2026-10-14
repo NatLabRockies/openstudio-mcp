@@ -166,6 +166,40 @@ def safe_read_text(path: Path, max_bytes: int = 200_000) -> str:
     data = safe_read_bytes(path, max_bytes=max_bytes)
     return data.decode("utf-8", errors="replace")
 
+def copy_regular_file_nofollow(src: Path, dst: Path, max_bytes: int) -> int:
+    """Copy one regular file without following a symlink at either end.
+
+    Both ends are opened with O_NOFOLLOW and the source is checked by fstat
+    (so a link swapped in after a stat-based check is still refused: the open
+    fails on a link, and a non-regular file fails the fstat). The copy stops
+    with ValueError past ``max_bytes``. Returns the bytes copied. For
+    server-side moves between tenant-writable dirs (measure output into the
+    session workspace, workspace into the model's files/).
+    """
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    src_fd = os.open(src, os.O_RDONLY | nofollow)
+    try:
+        st = os.fstat(src_fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError(f"{src.name}: not a regular file")
+        if st.st_size > max_bytes:
+            raise ValueError(f"{src.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
+        dst_fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow, 0o644)
+        copied = 0
+        with os.fdopen(dst_fd, "wb") as out:
+            while True:
+                chunk = os.read(src_fd, 1 << 20)
+                if not chunk:
+                    break
+                copied += len(chunk)
+                if copied > max_bytes:
+                    raise ValueError(f"{src.name}: grew past the {max_bytes}-byte limit while copying")
+                out.write(chunk)
+        return copied
+    finally:
+        os.close(src_fd)
+
+
 def copy_into(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
