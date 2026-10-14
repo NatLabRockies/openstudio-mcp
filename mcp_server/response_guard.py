@@ -80,10 +80,11 @@ def build_replacement(tool: str, serialized: str, cap: int) -> dict[str, Any]:
         spill_path.write_text(serialized, encoding="utf-8")
         replacement["spilled_path"] = str(spill_path)
         replacement["run_id"] = run_id
+        from mcp_server.export_hint import export_hint
         replacement["user_message"] = (
             f"{tool} returned {size} bytes — over the {cap}-byte MCP response cap "
-            "(OSMCP_MAX_TOOL_RESPONSE_MB). Full payload saved to spilled_path; use "
-            "copy_file to export it, or rerun with narrower filters."
+            f"(OSMCP_MAX_TOOL_RESPONSE_MB). {export_hint(spill_path, 'Full payload')} "
+            "Or rerun with narrower filters."
         )
     except Exception as e:
         replacement["user_message"] = (

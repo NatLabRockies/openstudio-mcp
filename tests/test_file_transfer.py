@@ -251,3 +251,78 @@ def test_cli_put_get_roundtrip(tmp_path):
             capture_output=True, text=True, env=env, timeout=180, check=False)
         assert get.returncode == 0, f"osmcp get failed:\n{get.stderr}"
         assert out.read_bytes() == data
+
+
+def _token_exp(download_path: str) -> int:
+    """Decode the signed token's expiry (payload is base64url JSON before the dot)."""
+    import base64
+    token = download_path.split("?t=", 1)[1]
+    body = token.split(".", 1)[0]
+    return json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))["exp"]
+
+
+async def _view_model_report(s) -> dict:
+    cr = unwrap(await s.call_tool("create_example_osm", {"name": _uniq("report")}))
+    assert cr["ok"] is True, cr
+    assert unwrap(await s.call_tool("load_osm_model", {"osm_path": cr["osm_path"]}))["ok"] is True
+    res = unwrap(await s.call_tool("view_model", {}))
+    assert res["ok"] is True, res
+    assert res["report_path"].endswith("reports/view_model_report.html"), res
+    return res
+
+
+@pytest.mark.integration
+def test_view_model_hint_over_http():
+    # Regression: over HTTP the report tools said "find it on the host at runs/exports/...";
+    # the agent has no host mount there and gave up on the report (issue #167)
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+
+    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                res = await _view_model_report(s)
+                msg = res["user_message"]
+                assert f'request_download(path="{res["report_path"]}")' in msg, msg
+                assert "copy_file" not in msg and "runs/exports" not in msg, msg
+                assert "valid for 900 s" in msg, msg
+
+        asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_report_download_roundtrip_uses_download_ttl():
+    # Regression: download URLs were minted with the upload TTL (300 s); the mint -> relay ->
+    # click hop took longer and the user's link was dead (issue #167). Checks the signed
+    # expiry, not just the reported expires_in, for a file and for a bundle; uploads keep
+    # their own TTL.
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable integration tests.")
+    import time
+
+    env = {"MCP_AUTH": "none", "OSMCP_DOWNLOAD_URL_TTL": "777", "OSMCP_UPLOAD_URL_TTL": "300"}
+    with http_server(env) as (url, _proc):
+        async def _run():
+            async with http_session(url) as s:
+                res = await _view_model_report(s)
+                t0 = int(time.time())
+                dl = unwrap(await s.call_tool("request_download", {"path": res["report_path"]}))
+                assert dl["ok"] is True, dl
+                assert dl["expires_in"] == 777, dl
+                assert t0 + 777 - 2 <= _token_exp(dl["download_path"]) <= t0 + 777 + 5, dl
+                r = httpx.get(dl["download_url"], timeout=30)
+                assert r.status_code == 200, r.text
+                assert r.content == Path(res["report_path"]).read_bytes()
+
+                run_id = Path(res["run_dir"]).name  # apply_measure results carry run_dir only
+                bundle = unwrap(await s.call_tool("request_download",
+                                                  {"run_id": run_id, "bundle": True}))
+                assert bundle["ok"] is True, bundle
+                assert bundle["expires_in"] == 777, bundle
+                assert t0 + 777 - 2 <= _token_exp(bundle["download_path"]) <= t0 + 777 + 10, bundle
+
+                up = unwrap(await s.call_tool("request_upload", {"filename": "x.osm", "size_bytes": 3}))
+                assert up["ok"] is True and up["expires_in"] == 300, up
+                assert t0 + 300 - 2 <= _token_exp(up["upload_path"]) <= t0 + 300 + 15, up
+
+        asyncio.run(_run())

@@ -211,8 +211,14 @@ SANDBOX_RLIMIT_AS = _safe_int(os.environ.get("OSMCP_SANDBOX_RLIMIT_AS", "0"), 0)
 OSMCP_MAX_UPLOAD_MB = _safe_int(os.environ.get("OSMCP_MAX_UPLOAD_MB", "200"), 200)
 # Per-user cap on total bytes resident under their uploads/ dir (0 = unlimited).
 OSMCP_USER_QUOTA_MB = _safe_int(os.environ.get("OSMCP_USER_QUOTA_MB", "4096"), 4096)
-# How long a minted upload/download URL stays valid (seconds).
+# How long a minted upload URL stays valid (seconds). Bounds when the PUT must begin.
 OSMCP_UPLOAD_URL_TTL = _safe_int(os.environ.get("OSMCP_UPLOAD_URL_TTL", "300"), 300)
+# How long a minted download URL stays valid (seconds). Longer than uploads: the
+# agent relays it to a person who then clicks or pastes it; 300 s was not enough
+# for that hop (issue #167). A leaked URL replays until it expires, so keep it
+# bounded; keeping the token out of the server's own access log is issue #170,
+# and a proxy's log is outside this process either way.
+OSMCP_DOWNLOAD_URL_TTL = _safe_int(os.environ.get("OSMCP_DOWNLOAD_URL_TTL", "900"), 900)
 # Zip-bomb backstops for auto-extracted archives.
 OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB = _safe_int(
     os.environ.get("OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB", "1024"), 1024)

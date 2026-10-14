@@ -245,6 +245,12 @@ def test_view_model():
                 await _setup_baseline(s, _unique("view"))
                 res = unwrap(await s.call_tool("view_model", {}))
                 assert res["ok"] is True, f"view_model failed: {res}"
+                # stdio hint: copy_file, and no guessed host path (issue #167). The run
+                # root is only "runs/" on the host when it is bind-mounted under that name.
+                assert res["report_path"].endswith("reports/view_model_report.html"), res
+                assert f'copy_file(file_path="{res["report_path"]}")' in res["user_message"], res
+                assert "runs/exports" not in res["user_message"], res
+                assert "request_download" not in res["user_message"], res
 
                 # Verify run_dir returned and contains output files
                 run_dir = res["run_dir"]

@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from mcp_server.config import (
+    OSMCP_DOWNLOAD_URL_TTL,
     OSMCP_MAX_ARCHIVE_ENTRIES,
     OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB,
     OSMCP_MAX_UPLOAD_MB,
@@ -205,20 +206,20 @@ def request_download_op(path: str | None = None, run_id: str | None = None,
         target = (run_root_for(key) / run_id).resolve()
         if not target.is_dir() or not is_path_allowed_for(key, target):
             return {"ok": False, "error": f"unknown run_id: {run_id}"}
-        token = signing.make_token(key, "-", "d", OSMCP_UPLOAD_URL_TTL,
+        token = signing.make_token(key, "-", "d", OSMCP_DOWNLOAD_URL_TTL,
                                    p=str(target), b=1)
         url = f"/files/d/{run_id}.zip?t={token}"
         return {"ok": True, "method": "GET", "download_url": _public_url(url),
-                "download_path": url, "expires_in": OSMCP_UPLOAD_URL_TTL, "bundle": True}
+                "download_path": url, "expires_in": OSMCP_DOWNLOAD_URL_TTL, "bundle": True}
     if not path:
         return {"ok": False, "error": "provide a file path, or run_id + bundle=True"}
     target = Path(path).resolve()
     if not target.is_file() or not is_path_allowed_for(key, target):
         return {"ok": False, "error": f"file not accessible: {path}"}
-    token = signing.make_token(key, "-", "d", OSMCP_UPLOAD_URL_TTL, p=str(target))
+    token = signing.make_token(key, "-", "d", OSMCP_DOWNLOAD_URL_TTL, p=str(target))
     url = f"/files/d/{target.name}?t={token}"
     return {"ok": True, "method": "GET", "download_url": _public_url(url),
-            "download_path": url, "expires_in": OSMCP_UPLOAD_URL_TTL,
+            "download_path": url, "expires_in": OSMCP_DOWNLOAD_URL_TTL,
             "size_bytes": target.stat().st_size}
 
 

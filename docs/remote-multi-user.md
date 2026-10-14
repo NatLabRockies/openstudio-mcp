@@ -390,7 +390,8 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_AUDIT_FILE` | — | also append audit JSON lines to this file (e.g. `/runs/audit.log`) |
 | `OSMCP_MAX_UPLOAD_MB` | `200` | max size of a single uploaded file |
 | `OSMCP_USER_QUOTA_MB` | `4096` | per-user cap on total bytes under `uploads/` (`0` = unlimited) |
-| `OSMCP_UPLOAD_URL_TTL` | `300` | seconds a signed upload/download URL stays valid |
+| `OSMCP_UPLOAD_URL_TTL` | `300` | seconds a signed upload URL stays valid |
+| `OSMCP_DOWNLOAD_URL_TTL` | `900` | seconds a signed download URL stays valid (longer: the agent relays it to a person) |
 | `OSMCP_MAX_ARCHIVE_UNCOMPRESSED_MB` | `1024` | zip-bomb cap on extracted archive size; only stored/deflated members are accepted (bzip2/lzma are refused) |
 | `OSMCP_MAX_ARCHIVE_ENTRIES` | `5000` | max entries in an uploaded archive |
 | `OSMCP_PUBLIC_BASE_URL` | — | pin the public origin for signed file URLs (set behind a TLS reverse proxy); direct connections auto-resolve it from the request `Host` |
@@ -450,9 +451,10 @@ expires after `OSMCP_UPLOAD_URL_TTL` (default 300 s). That TTL bounds when the P
 must **begin**, not how long the transfer may take — the URL is verified once when
 the route receives the request, then bytes stream — so a large model over a slow
 link is fine as long as the agent doesn't stall between `request_upload` and the
-`curl`. Raise `OSMCP_UPLOAD_URL_TTL` if you expect a long gap there. The URL's
-absolute origin is resolved from the request host; behind a reverse proxy, set
-`OSMCP_PUBLIC_BASE_URL` to pin it.
+`curl`. Raise `OSMCP_UPLOAD_URL_TTL` if you expect a long gap there. Download URLs
+use `OSMCP_DOWNLOAD_URL_TTL` (default 900 s): the agent hands them to a person, who
+clicks or pastes them later. The URL's absolute origin is resolved from the request
+host; behind a reverse proxy, set `OSMCP_PUBLIC_BASE_URL` to pin it.
 
 ---
 

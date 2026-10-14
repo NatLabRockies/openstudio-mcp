@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from mcp_server.export_hint import export_hint
 from mcp_server.skills.measures.operations import apply_measure
 
 
@@ -28,6 +29,17 @@ def _ensure_climate_zone() -> None:
             czs.setClimateZone("ASHRAE", "5A")
     except RuntimeError:
         pass  # no model loaded yet
+
+
+def _attach_report(result: dict[str, Any], filename: str) -> dict[str, Any]:
+    """Add report_path / report_size_bytes / user_message for a measure's HTML report."""
+    if result.get("ok") and result.get("run_dir"):
+        report = Path(result["run_dir"]) / "reports" / filename
+        if report.is_file():
+            result["report_path"] = str(report)
+            result["report_size_bytes"] = report.stat().st_size
+            result["user_message"] = export_hint(report, "Report")
+    return result
 
 
 def _measure_path(measure_name: str) -> Path:
@@ -61,17 +73,7 @@ def view_model_op(geometry_diagnostics: bool = False) -> dict[str, Any]:
     result = _run("view_model", {
         "use_geometry_diagnostics": str(geometry_diagnostics).lower(),
     })
-    # Add output file path so agents know where the report is
-    if result.get("ok") and result.get("run_dir"):
-        report = Path(result["run_dir"]) / "reports" / "view_model_report.html"
-        if report.is_file():
-            result["report_path"] = str(report)
-            result["report_size_bytes"] = report.stat().st_size
-            result["user_message"] = (
-                "Report generated. Use copy_file to export, "
-                "then find it on the host at runs/exports/view_model_report.html"
-            )
-    return result
+    return _attach_report(result, "view_model_report.html")
 
 
 # --- 2. view_simulation_data: post-sim 3D data visualization ---
@@ -114,16 +116,7 @@ def view_simulation_data_op(
         "variable3_name": vars_[2],
         "use_geometry_diagnostics": "false",
     }, run_id=run_id)
-    if result.get("ok") and result.get("run_dir"):
-        report = Path(result["run_dir"]) / "reports" / "view_data_report.html"
-        if report.is_file():
-            result["report_path"] = str(report)
-            result["report_size_bytes"] = report.stat().st_size
-            result["user_message"] = (
-                "Report generated. Use copy_file to export, "
-                "then find it on the host at runs/exports/view_data_report.html"
-            )
-    return result
+    return _attach_report(result, "view_data_report.html")
 
 
 # --- 3. generate_results_report: comprehensive HTML report ---
@@ -140,16 +133,7 @@ def generate_results_report_op(units: str = "IP", run_id: str | None = None) -> 
     """
     _ensure_climate_zone()
     result = _run("openstudio_results", {"units": units}, run_id=run_id)
-    if result.get("ok") and result.get("run_dir"):
-        report = Path(result["run_dir"]) / "reports" / "openstudio_results_report.html"
-        if report.is_file():
-            result["report_path"] = str(report)
-            result["report_size_bytes"] = report.stat().st_size
-            result["user_message"] = (
-                "Report generated. Use copy_file to export, "
-                "then find it on the host at runs/exports/openstudio_results_report.html"
-            )
-    return result
+    return _attach_report(result, "openstudio_results_report.html")
 
 
 # --- 4. run_qaqc_checks: ASHRAE QA/QC ---
@@ -206,16 +190,7 @@ def run_qaqc_checks_op(
             args[check_name] = "true"
     _ensure_climate_zone()
     result = _run("generic_qaqc", args, run_id=run_id)
-    if result.get("ok") and result.get("run_dir"):
-        report = Path(result["run_dir"]) / "reports" / "generic_qaqc_report.html"
-        if report.is_file():
-            result["report_path"] = str(report)
-            result["report_size_bytes"] = report.stat().st_size
-            result["user_message"] = (
-                "Report generated. Use copy_file to export, "
-                "then find it on the host at runs/exports/generic_qaqc_report.html"
-            )
-    return result
+    return _attach_report(result, "generic_qaqc_report.html")
 
 
 # --- 5. adjust_thermostat_setpoints ---
