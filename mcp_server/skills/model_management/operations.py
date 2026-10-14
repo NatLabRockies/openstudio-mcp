@@ -285,22 +285,32 @@ def save_osm_model(
             # Python EMS plugin scripts) so a save-as stays runnable from its new
             # location — the OSM stores only bare file names resolved via files/.
             dst_files = p.parent / "files"
-            if source_path is not None:
-                src_files = source_path.resolve().parent / "files"
-                if src_files.is_dir() and src_files != dst_files.resolve():
-                    # Same guard as run_simulation staging: copytree FOLLOWS
-                    # symlinks, so a link planted in files/ would copy arbitrary
-                    # host files into the new location.
-                    sym_err = reject_escaping_symlinks(src_files)
-                    if sym_err:
-                        return {
-                            "ok": False,
-                            "error": f"Model saved to {saved_path}, but its files/ "
-                                     f"dir was NOT copied: {sym_err}",
-                            "osm_path": str(saved_path),
-                        }
-                    shutil.copytree(str(src_files), str(dst_files), dirs_exist_ok=True)
-                    result["files_dir"] = str(dst_files)
+            src_files = None if source_path is None else source_path.resolve().parent / "files"
+            # Both files/ dirs are tenant-writable: a link at either must not
+            # redirect the server's copy (copytree follows it) or the persist.
+            for linked in (src_files, dst_files):
+                if linked is not None and linked.is_symlink():
+                    return {
+                        "ok": False,
+                        "error": f"Model saved to {saved_path}, but {linked} is a symlink, "
+                                 "not a writable real directory; companion resources were "
+                                 "NOT written",
+                        "osm_path": str(saved_path),
+                    }
+            if src_files is not None and src_files.is_dir() and src_files != dst_files.resolve():
+                # Same guard as run_simulation staging: copytree FOLLOWS
+                # symlinks, so a link planted in files/ would copy arbitrary
+                # host files into the new location.
+                sym_err = reject_escaping_symlinks(src_files)
+                if sym_err:
+                    return {
+                        "ok": False,
+                        "error": f"Model saved to {saved_path}, but its files/ "
+                                 f"dir was NOT copied: {sym_err}",
+                        "osm_path": str(saved_path),
+                    }
+                shutil.copytree(str(src_files), str(dst_files), dirs_exist_ok=True)
+                result["files_dir"] = str(dst_files)
 
             # Resources the session holds but the model dir does not yet: files a
             # measure generated, or resources created while the model had no file.
@@ -309,9 +319,9 @@ def save_osm_model(
             # model loaded meanwhile is left alone.
             pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
             if pending is not None:
-                # p is allowed, but its sibling files/ is tenant-writable and could
-                # be a link out of the caller's area.
-                if dst_files.is_symlink() or not is_path_allowed(dst_files, write=True):
+                # p is allowed, but its sibling files/ must be inside the
+                # caller's writable area too (link-ness was checked above).
+                if not is_path_allowed(dst_files, write=True):
                     return {
                         "ok": False,
                         "error": f"Model saved to {saved_path}, but {dst_files} is not a "
@@ -330,9 +340,8 @@ def save_osm_model(
             # Application Save As semantics: the saved file becomes the session
             # path, but only once the model and its resources are all there, and
             # only for the model this save was made from.
-            if source_path is None or p != source_path.resolve():
-                if model_manager.rebind_path(p, generation):
-                    result["message"] += "; the session now points at this file"
+            if (source_path is None or p != source_path.resolve()) and model_manager.rebind_path(p, generation):
+                result["message"] += "; the session now points at this file"
 
             return result
     except Exception as e:
