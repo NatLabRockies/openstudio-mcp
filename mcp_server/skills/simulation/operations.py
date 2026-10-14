@@ -735,10 +735,21 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             if not inside_src and (_internal or is_path_allowed(w_direct)):
                 found = w_direct
             elif inside_src and Path(weather_rel).is_absolute():
-                # Mirrored by _copy_tree already; point the staged OSW at the
-                # mirror instead of the original absolute path, which the
-                # sandboxed child may not be able to read.
-                osw["weather_file"] = str(run_dir / w_direct.relative_to(src_dir))
+                # Usually mirrored by _copy_tree already: point the staged OSW
+                # at the mirror instead of the original absolute path, which
+                # the sandboxed child may not be able to read. A file under a
+                # dir the mirror skips (run/, generated_files/) is staged into
+                # files/ instead.
+                mirrored = run_dir / w_direct.relative_to(src_dir)
+                if not mirrored.is_file() or mirrored.is_symlink():
+                    files_dir = run_dir / "files"
+                    files_dir.mkdir(parents=True, exist_ok=True)
+                    mirrored = files_dir / w_direct.name
+                    if mirrored.is_symlink() or mirrored.is_dir():
+                        return {"ok": False,
+                                "error": f"{mirrored} is a link or directory; refusing to stage weather there"}
+                    shutil.copy2(w_direct, mirrored)
+                osw["weather_file"] = str(mirrored)
                 _dump_json(staged_osw, osw)
         else:
             found, _denied = _resolve_osw_file(weather_rel, src_dir, osw,

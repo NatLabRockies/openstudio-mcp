@@ -206,7 +206,8 @@ def copy_resources(
             continue
         if relation == "inside":
             raise ValueError(f"{src} and {dst} nest inside each other; refusing to copy resources")
-        for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
+        walk_errors: list[OSError] = []
+        for dirpath, dirnames, filenames in os.walk(src, followlinks=False, onerror=walk_errors.append):
             here = Path(dirpath)
             linked_dirs = [d for d in dirnames if (here / d).is_symlink()]
             for d in linked_dirs:
@@ -246,6 +247,16 @@ def copy_resources(
                 copied.append((rel, index))
                 if existed:
                     replaced.append(rel)
+        # A subtree the walk could not read must not vanish silently: it is
+        # reported as a failed (non-link) entry, so staging errors and a
+        # migration is not declared complete.
+        for err in walk_errors:
+            where = Path(err.filename) if err.filename else src
+            try:
+                rel = str(where.relative_to(src)) or "."
+            except ValueError:
+                rel = str(where)
+            skipped.append((rel, f"unreadable: {err.strerror or err}"))
     return {"copied": copied, "replaced": replaced, "skipped": skipped}
 
 

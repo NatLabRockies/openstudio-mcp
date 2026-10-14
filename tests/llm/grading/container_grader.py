@@ -275,7 +275,9 @@ def ems_sim_mode(args) -> dict:
     # files/ only until a save has migrated it (marker in the companion
     # folder), then the companion folder <model>/files/ on top so its copy wins.
     companion = src_osm.parent / src_osm.stem
-    sources = [] if (companion / ".resources-migrated").is_file() else [src_osm.parent / "files"]
+    marker = companion / ".resources-migrated"
+    migrated = marker.is_file() and not marker.is_symlink()  # same predicate as the server
+    sources = [] if migrated else [src_osm.parent / "files"]
     sources.append(companion / "files")
     for src_files in sources:
         if src_files.is_dir():

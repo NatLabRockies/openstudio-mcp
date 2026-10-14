@@ -596,3 +596,40 @@ def test_migration_marker_is_never_written_through_a_link():
                 assert plugin_free["ok"] is True, plugin_free
     asyncio.run(_run())
 
+
+def test_absolute_weather_under_a_non_mirrored_osw_subdir_is_staged():
+    # Regression: an OSW weather_file given as an absolute path under the OSW dir's run/
+    # (which the run mirror skips) was rewritten to the mirror location, where no file
+    # existed; it is now staged into the run's files/ and the staged OSW points there
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+    from mcp_server.skills.weather.operations import find_epw_by_name
+    name = _unique("absrun")
+    base = Path(f"/runs/{name}")
+    (base / "run").mkdir(parents=True)
+    shutil.copy2("/repo/tests/assets/SystemD_baseline.osm", base / "seed.osm")
+    source_epw = find_epw_by_name(BALTIMORE_EPW_NAME)
+    assert source_epw is not None
+    epw_in_run = base / "run" / BALTIMORE_EPW_NAME
+    shutil.copy2(source_epw, epw_in_run)
+    import json
+    osw = base / "workflow.osw"
+    osw.write_text(json.dumps({
+        "seed_file": "seed.osm", "weather_file": str(epw_in_run), "steps": [],
+    }), encoding="utf-8")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                run = unwrap(await s.call_tool("run_osw", {"osw_path": str(osw)}))
+                assert run["ok"] is True, run
+                status = unwrap(await s.call_tool("get_run_status", {"run_id": run["run_id"]}))
+                run_dir = Path(status["run"]["run_dir"])
+                staged_osw = json.loads((run_dir / "workflow.osw").read_text(encoding="utf-8"))
+                pointed = Path(staged_osw["weather_file"])
+                assert pointed.is_file(), f"the staged OSW must point at a file that exists: {staged_osw}"
+                assert pointed == run_dir / "files" / BALTIMORE_EPW_NAME, staged_osw
+                unwrap(await s.call_tool("cancel_run", {"run_id": run["run_id"]}))
+    asyncio.run(_run())
+
