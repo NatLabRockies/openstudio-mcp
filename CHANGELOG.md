@@ -8,8 +8,8 @@
   snapshots the OSM: `request_download(path=<model.osm>, bundle=True)` zips the model
   in the OpenStudio Application layout, `copy_file` writes the companion folder beside
   the copy, `test_measure` stages the resources where the test workflow searches (and
-  always tests a private copy, copying `measure.xml` and `tests/test_model.osm` back for
-  your own measures), the ReportingMeasure test gets the run's `files/`, and actuator
+  always tests a private copy, copying `tests/test_model.osm` back and regenerating
+  `measure.xml` in your own measure dir), the ReportingMeasure test gets the run's `files/`, and actuator
   discovery stages them for its sizing run. (#198)
 
 ### Security
