@@ -1821,25 +1821,44 @@ def _write_support_zip(package_dir: Path, output_zip_path: Path) -> str | None:
     check). A link anywhere under a package root, a non-regular file, or a member over the
     budgets is an error naming it.
     """
+    # The archive is written to a private temp name beside the output (created exclusively
+    # through the parent's descriptor) and published by rename on success, so the previous
+    # archive survives a failed attempt and a link planted at the output name is replaced,
+    # never written through. On failure only that temp file, identified by inode, is removed.
     try:
-        DirHandle.open(output_zip_path.parent, create=True).close()
-        out_fd = open_confined(output_zip_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        parent = DirHandle.open(output_zip_path.parent, create=True)
     except (OSError, ValueError) as e:
         return f"output zip path is not writable (not allowed): {output_zip_path} ({e})"
-    try:
-        with os.fdopen(out_fd, "wb") as out_f, \
-                zipfile.ZipFile(out_f, "w", compression=zipfile.ZIP_DEFLATED) as archive, \
-                DirHandle.open(package_dir) as pkg:
-            err = _zip_package_roots(archive, pkg)
-    except (OSError, ValueError) as e:
-        err = f"could not write the package zip: {e}"
-    if err:
-        # Only the archive this call created is discarded, as a file through its parent's
-        # descriptor: a path the caller gave that was never opened here is left alone.
-        with contextlib.suppress(OSError, ValueError), DirHandle.open(output_zip_path.parent) as parent:
-            st = parent.lstat(output_zip_path.name)
-            if st is not None and stat.S_ISREG(st.st_mode):
-                parent.unlink(output_zip_path.name)
+    with parent:
+        tmp_name = f".{output_zip_path.name}.{uuid.uuid4().hex[:8]}.part"
+        try:
+            out_fd, _existed = parent.create_file(tmp_name, overwrite=False)
+            ident = (os.fstat(out_fd).st_dev, os.fstat(out_fd).st_ino)
+        except (OSError, ValueError) as e:
+            return f"output zip path is not writable (not allowed): {output_zip_path} ({e})"
+        try:
+            with os.fdopen(out_fd, "wb") as out_f, \
+                    zipfile.ZipFile(out_f, "w", compression=zipfile.ZIP_DEFLATED) as archive, \
+                    DirHandle.open(package_dir) as pkg:
+                err = _zip_package_roots(archive, pkg)
+        except (OSError, ValueError) as e:
+            err = f"could not write the package zip: {e}"
+        if not err:
+            try:
+                existing = parent.lstat(output_zip_path.name)
+                if existing is not None and stat.S_ISDIR(existing.st_mode):
+                    err = f"output zip path is a directory (not allowed): {output_zip_path}"
+                elif parent.fd is None:
+                    os.replace(parent.path / tmp_name, parent.path / output_zip_path.name)
+                else:
+                    os.rename(tmp_name, output_zip_path.name, src_dir_fd=parent.fd, dst_dir_fd=parent.fd)
+            except (OSError, ValueError) as e:
+                err = f"could not publish the package zip at {output_zip_path}: {e}"
+        if err:
+            with contextlib.suppress(OSError, ValueError):
+                st = parent.lstat(tmp_name)
+                if st is not None and (st.st_dev, st.st_ino) == ident:
+                    parent.unlink(tmp_name)
     return err
 
 
@@ -2379,7 +2398,7 @@ def validate_analysis_package(
                     issues.append(f"{SEED_QAQC_MANIFEST} seed_sha256 does not match {member}.")
             try:
                 issues.extend(_lib_resource_issues(path, seed_qaqc_manifest, lib_files))
-            except (OSError, ValueError) as e:
+            except (*ZIP_MEMBER_ERRORS, OSError) as e:
                 issues.append(f"lib/ resources could not be read from the package: {e}")
 
     measures = _measure_dirs(measure_files)
@@ -2774,7 +2793,10 @@ def _build_static_workflow_from_package(zip_path: str, package_validation: dict[
     tmpdir = tempfile.mkdtemp(prefix="openstudio_smoke_measures_", dir=base_dir)
     try:
         tmp = Path(tmpdir)
-        with _zip_for_read(Path(zip_path).expanduser().resolve()) as archive:
+        # The path validation authorized, not a fresh resolve of the caller's string: a resolve
+        # here would follow a link swapped in since and hand the walk another tree's real path.
+        authorized = Path(package_validation.get("zip_path") or zip_path)
+        with _zip_for_read(authorized) as archive:
             for info in archive.infolist():
                 parts = _zip_member_parts(info.filename)
                 if len(parts) >= 2 and parts[0] == "measures":
@@ -2825,7 +2847,7 @@ def test_server_config_single_run(
         return {"ok": False, "stage": "package_validation", "error": "Package validation found no seed model."}
     try:
         workflow = _build_static_workflow_from_package(upload_zip_path, package_validation)
-    except ValueError as e:
+    except (*ZIP_MEMBER_ERRORS, OSError) as e:  # a package swapped, removed or truncated since validation
         return {
             "ok": False,
             "stage": "build_static_workflow",

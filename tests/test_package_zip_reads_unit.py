@@ -280,12 +280,16 @@ def test_malformed_caller_schema_keeps_its_diagnostic(tmp_path, monkeypatch):
         analysis._read_osa_schema(str(schema))
 
 
-def _manifest_zip(path: Path, owner: str) -> None:
+def _manifest_zip(path: Path, owner: str, *, resources: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    manifest: dict = {"owner": owner}
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("measures/m/measure.rb", "class M; end\n")
         zf.writestr("seeds/seed.osm", "OS:Version,\n")
-        zf.writestr(analysis.SEED_QAQC_MANIFEST, json.dumps({"owner": owner}))
+        if resources:
+            zf.writestr("lib/r.csv", "1,2\n")
+            manifest.update({"resources_sha256": "0" * 64, "resource_files": ["r.csv"]})
+        zf.writestr(analysis.SEED_QAQC_MANIFEST, json.dumps(manifest))
 
 
 @posix_only
@@ -320,3 +324,114 @@ def test_validate_package_reads_its_own_manifest(tmp_path, monkeypatch):
     _manifest_zip(root / "out" / "analysis.zip", "alice")
     res = analysis.validate_analysis_package(str(root / "out" / "analysis.zip"))
     assert res["seed_qaqc_manifest"] == {"owner": "alice"}
+
+
+def _measure_zip(path: Path, measure_name: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr(f"measures/{measure_name}/measure.rb", "class M; end\n")
+        zf.writestr(f"measures/{measure_name}/measure.xml", "<measure/>\n")
+        zf.writestr("seeds/seed.osm", "OS:Version,\n")
+
+
+@posix_only
+def test_smoke_workflow_opens_the_package_path_validation_authorized_not_a_re_resolved_one(tmp_path, monkeypatch):
+    # Regression: the smoke-test extractor resolved the package path again after validation had
+    # authorized it; alice's output dir replaced by a link to bob's in between resolved to bob's
+    # real zip, which the descriptor walk then opened (no link left on that path) and extracted
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    _measure_zip(bob / "out" / "analysis.zip", "BOBS_PRIVATE_MEASURE")
+    out = root / "out"
+    _measure_zip(out / "analysis.zip", "alices_measure")
+    validation = analysis.validate_analysis_package(str(out / "analysis.zip"))
+    assert validation["zip_path"] == str(out / "analysis.zip")
+    out.rename(root / "out_moved")
+    out.symlink_to(bob / "out", target_is_directory=True)
+    opened: list[Path] = []
+    real_open = analysis._zip_for_read
+
+    def recording_open(path):
+        opened.append(Path(path))
+        return real_open(path)
+
+    monkeypatch.setattr(analysis, "_zip_for_read", recording_open)
+    with pytest.raises((OSError, ValueError)):
+        analysis._build_static_workflow_from_package(str(out / "analysis.zip"), validation)
+    assert opened == [out / "analysis.zip"], "the open must be on the authorized path, not bob's resolved one"
+
+
+def test_smoke_test_reports_an_extractor_failure_instead_of_raising(tmp_path, monkeypatch):
+    # Regression: the smoke test's caller caught ValueError only, so a package whose directory
+    # was swapped (NotADirectoryError), vanished (FileNotFoundError) or was truncated
+    # (BadZipFile) between validation and extraction raised through the tool
+    root = _http_tenant(monkeypatch, tmp_path)
+    _measure_zip(root / "out" / "analysis.zip", "m")
+    monkeypatch.setattr(analysis, "_server_url", lambda *_a: "http://server.invalid")
+    monkeypatch.setattr(analysis, "check_server_health", lambda *_a: {"ok": True})
+    monkeypatch.setattr(analysis, "_package_seed_weather_refs", lambda *_a: ("seeds/seed.osm", None))
+    monkeypatch.setattr(analysis, "validate_analysis_package", lambda path, **_k: {
+        "ok": True, "zip_path": path, "measure_files": ["measures/m/measure.rb"], "issues": []})
+
+    def swapped_away(zip_path, validation):
+        raise NotADirectoryError(20, "Not a directory", "out")
+
+    monkeypatch.setattr(analysis, "_build_static_workflow_from_package", swapped_away)
+    res = analysis.test_server_config_single_run(upload_zip_path=str(root / "out" / "analysis.zip"))
+    assert res["ok"] is False and res["stage"] == "build_static_workflow", res
+    assert "Not a directory" in res["error"]
+
+
+def test_writer_keeps_the_previous_archive_and_leaves_no_temp_file_when_a_member_fails(tmp_path, monkeypatch):
+    # Regression: the writer truncated the output path first and, on error, unlinked whatever
+    # regular file sat at that name afterwards (a replacement written meanwhile included); it
+    # now writes a private temp file beside the output, publishes it by rename on success, and
+    # on failure removes only that temp file, so the previous archive survives
+    root = _http_tenant(monkeypatch, tmp_path)
+    pkg = _package(root)
+    out = root / "out" / "analysis.zip"
+    out.parent.mkdir()
+    out.write_bytes(b"previous archive")
+    monkeypatch.setattr(analysis, "MAX_PACKAGE_FILE_BYTES", 8)
+    err = analysis._write_support_zip(pkg, out)
+    assert err is not None and "exceeds" in err, err
+    assert out.read_bytes() == b"previous archive"
+    assert sorted(p.name for p in out.parent.iterdir()) == ["analysis.zip"], "no temp file left beside the output"
+
+
+@posix_only
+def test_writer_replaces_a_link_at_the_output_name_without_writing_through_it(tmp_path, monkeypatch):
+    # Validates: publishing by rename replaces a link planted at the output name with the new
+    # archive instead of writing through it; the link's target keeps every byte
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "target.zip").write_bytes(SECRET)
+    pkg = _package(root)
+    out = root / "out" / "analysis.zip"
+    out.parent.mkdir()
+    out.symlink_to(bob / "target.zip")
+    assert analysis._write_support_zip(pkg, out) is None
+    assert not out.is_symlink() and "seeds/seed.osm" in _members(out)
+    assert (bob / "target.zip").read_bytes() == SECRET
+
+
+def test_validation_reports_a_package_that_breaks_between_its_opens(tmp_path, monkeypatch):
+    # Regression: the lib/ resource check re-opened the package after the main open; a package
+    # truncated in between raised zipfile.BadZipFile through validate_analysis_package
+    root = _http_tenant(monkeypatch, tmp_path)
+    zip_path = root / "out" / "analysis.zip"
+    _manifest_zip(zip_path, "alice", resources=True)
+    real_open = analysis._zip_for_read
+    calls: list[int] = []
+
+    def truncate_before_second_open(path):
+        calls.append(1)
+        if len(calls) == 2:
+            Path(path).write_bytes(b"PK\x03\x04 truncated")
+        return real_open(path)
+
+    monkeypatch.setattr(analysis, "_zip_for_read", truncate_before_second_open)
+    res = analysis.validate_analysis_package(str(zip_path))
+    assert len(calls) >= 2, "the lib/ resource check must have re-opened the package"
+    assert res["ok"] is False
+    assert any("could not be read" in issue or "could not be hashed" in issue for issue in res["issues"]), res["issues"]
