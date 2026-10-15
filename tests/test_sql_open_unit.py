@@ -257,3 +257,30 @@ def test_summary_copies_the_result_file_once_for_its_three_reads(tmp_path, monke
     summary = results.extract_summary_metrics("run_s")
     assert summary["ok"] is True, summary
     assert len(copies) == 1, "one copy serves total site energy, unmet hours and EUI"
+
+
+@posix_only
+def test_an_uncheckpointed_wal_source_is_refused_instead_of_read_stale(tmp_path, monkeypatch):
+    # Regression: copying the main file of a WAL-mode database whose -wal still held committed
+    # pages read the pre-commit rows as if current; a source with a non-empty -wal is a tool
+    # error until its writer closes or checkpoints
+    root = _http_tenant(monkeypatch, tmp_path)
+    db = root / "run_u" / "run" / "eplusout.sql"
+    db.parent.mkdir(parents=True)
+    writer = sqlite3.connect(db)
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("PRAGMA wal_autocheckpoint=0")
+    writer.execute("CREATE TABLE ReportDataDictionary (Name, KeyValue, ReportingFrequency, Units, IsMeter)")
+    writer.execute("INSERT INTO ReportDataDictionary VALUES ('Old', 'Env', 'Hourly', 'C', 0)")
+    writer.commit()
+    writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    writer.execute("UPDATE ReportDataDictionary SET Name = 'Committed update'")
+    writer.commit()  # lands in eplusout.sql-wal, not in the main file
+    try:
+        assert (db.parent / "eplusout.sql-wal").stat().st_size > 0
+        res = results.list_output_variables_op("run_u")
+        assert res["ok"] is False and res["error"] == "sql_unreadable", res
+        assert "uncheckpointed WAL" in res["message"]
+        assert "Old" not in repr(res)
+    finally:
+        writer.close()
