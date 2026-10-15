@@ -102,21 +102,25 @@ def _find_test_model() -> tuple[Path | None, Path | None, Path | None, int | Non
     cannot pair one model with another's files.
     """
     # 1. Currently loaded model — save to temp file
-    try:
-        from mcp_server.model_manager import (
-            get_model_path,
-            get_model_with_generation,
-            pending_files_dir_if_exists,
-            session_io_lock,
-        )
-        with session_io_lock():
+    from mcp_server.model_manager import (
+        get_model_path,
+        get_model_with_generation,
+        pending_files_dir_if_exists,
+        session_io_lock,
+    )
+    with session_io_lock():
+        try:
             model, generation = get_model_with_generation()
+        except RuntimeError:
+            model = None  # no model loaded: the bundled baseline below
+        if model is not None:
             # Unique per call: two tests in one session must not share a snapshot
             tmp = custom_measures_dir() / f"_test_model_{uuid.uuid4().hex[:8]}.osm"
-            save_model_confined(model, tmp)  # staged, then copied by descriptor (#190)
+            # Staged, then copied by descriptor (#190). A failure here raises through to the
+            # caller's handler: a test must never run against the bundled baseline because the
+            # loaded model could not be written.
+            save_model_confined(model, tmp)
             return tmp, get_model_path(), pending_files_dir_if_exists(expected_generation=generation), generation
-    except RuntimeError:
-        pass  # no model loaded
     # 2. Search known locations for SystemD_baseline.osm
     for p in _TEST_MODEL_CANDIDATES:
         if p.is_file():
