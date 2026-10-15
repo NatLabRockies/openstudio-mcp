@@ -20,6 +20,7 @@ from typing import Any
 import openstudio
 
 from mcp_server.config import is_path_allowed
+from mcp_server.confined_fs import DirHandle
 from mcp_server.model_save import save_model_confined
 from mcp_server.skills.weather.operations import find_epw_by_name
 from mcp_server.util import copy_regular_file_nofollow
@@ -68,7 +69,9 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
     # Tier 2: bare/stale name — look in known weather dirs, stage like run_osw
     found = find_epw_by_name(epw.name)
     if found is not None:
-        copy_regular_file_nofollow(found, run_dir / "files" / found.name, MAX_STAGED_WEATHER_BYTES)  # #190
+        files_dir = run_dir / "files"
+        DirHandle.open(files_dir, create=True).close()  # created from the tenant root (#190)
+        copy_regular_file_nofollow(found, files_dir / found.name, MAX_STAGED_WEATHER_BYTES)
         out["weather_file"] = f"files/{found.name}"
         return out
 
@@ -90,7 +93,8 @@ def stage_epw_into_run(epw_src: Path, run_dir: Path) -> str:
     Returns the OSW-relative reference ('files/<name>').
     """
     files_dir = run_dir / "files"
-    copy_regular_file_nofollow(epw_src, files_dir / epw_src.name, MAX_STAGED_WEATHER_BYTES)  # #190
+    DirHandle.open(files_dir, create=True).close()  # created from the tenant root (#190)
+    copy_regular_file_nofollow(epw_src, files_dir / epw_src.name, MAX_STAGED_WEATHER_BYTES)
     for ext in (".ddy", ".stat"):
         companion = epw_src.with_suffix(ext)
         # Companions are derived paths that never went through is_path_allowed
