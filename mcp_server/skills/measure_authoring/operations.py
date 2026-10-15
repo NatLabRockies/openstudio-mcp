@@ -17,6 +17,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import sandbox
+from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.config import (
     INPUT_ROOT,
     is_path_allowed,
@@ -549,7 +550,12 @@ def _update_measure_xml(measure_dir: Path, language: str):
 
     with tempfile.TemporaryDirectory(prefix="osmcp_measure_xml_") as tmp:
         staged_measure = Path(tmp) / measure_dir.name
-        shutil.copytree(measure_dir, staged_measure, symlinks=True)
+        # The measure dir is tenant-writable and the temp dir a confinement root: both walked by
+        # descriptor (#190), so a link planted after the check above fails the staging.
+        try:
+            copy_tree_confined(measure_dir, staged_measure)
+        except (OSError, ValueError) as e:
+            raise RuntimeError(f"Could not stage {measure_dir.name} to update measure.xml: {e}") from e
         run_env = sandbox.build_env(staged_measure)
         sandbox.prepare_workdir(Path(tmp))
         try:
@@ -1039,9 +1045,13 @@ def _test_reporting_measure_with_run(
 
     # Copy measure
     measures_dir = run_dir / "measures"
-    measures_dir.mkdir(exist_ok=True)
     local_measure = measures_dir / mdir.name
-    shutil.copytree(str(mdir), str(local_measure), dirs_exist_ok=True)
+    # The private copy was written by the confined test: walked by descriptor at both ends (#190),
+    # links inside it kept as links instead of followed.
+    try:
+        copy_tree_confined(mdir, local_measure)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not stage measure {mdir.name}: {e}"}
 
     # Build OSW
     measure_args = {}
@@ -1180,7 +1190,12 @@ def test_measure_op(
         # after a successful run.
         own_dir = mdir if is_path_allowed(mdir, write=True) else None
         _private_copy = Path(tempfile.mkdtemp(prefix="measure_test_", dir=user_run_root()))
-        shutil.copytree(mdir, _private_copy, symlinks=True, dirs_exist_ok=True)
+        # Both trees walked by descriptor (#190): a component of the measure dir swapped for a
+        # link after the checks above fails the copy instead of staging another tree.
+        try:
+            copy_tree_confined(mdir, _private_copy)
+        except (OSError, ValueError) as e:
+            return {"ok": False, "error": f"Could not copy the measure for testing: {e}"}
         mdir = _private_copy
 
         # Detect language

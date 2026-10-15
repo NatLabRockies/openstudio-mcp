@@ -5,12 +5,12 @@ import json
 import mimetypes
 import os
 import re
-import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from mcp_server.config import user_run_root
+from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.confined_fs import DirHandle
 from mcp_server.skills.results.sql_open import _find_first_existing, connect_sql_readonly, connection_for
 from mcp_server.util import (
@@ -629,23 +629,26 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
         }
 
     if full.is_dir():
-        # Run dirs are tenant-written: a planted link would make copytree copy its target
+        # Run dirs are tenant-written: a planted link would make a pathname copy follow it
         link_err = reject_escaping_symlinks(full)
         if link_err:
             return {"ok": False, "error": "symlink_in_source", "message": link_err}
         dest_path = dest_dir / full.name
         if dest_path.is_symlink():
             return {"ok": False, "error": "invalid_destination", "message": f"Destination is a symlink: {dest_path}"}
-        if dest_path.exists():
-            shutil.rmtree(str(dest_path))
-        shutil.copytree(str(full), str(dest_path))
-        file_count = sum(1 for _ in dest_path.rglob("*") if _.is_file())
+        # Both trees walked by descriptor (#190): a component of either swapped for a link after
+        # the checks above fails the copy; an existing entry at the destination name is removed
+        # through its parent's descriptor, never through a link.
+        try:
+            counts = copy_tree_confined(full, dest_path, replace=True, max_file_bytes=MAX_COPY_FILE_BYTES)
+        except (OSError, ValueError) as e:
+            return {"ok": False, "error": "copy_failed", "message": f"Could not copy {full.name}: {e}"}
         return {
             "ok": True,
             "source": str(full),
             "destination": str(dest_path),
             "type": "directory",
-            "file_count": file_count,
+            "file_count": counts["files"],
         }
 
     dest_file = dest_dir / full.name

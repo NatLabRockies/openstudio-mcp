@@ -82,8 +82,12 @@ also written by that tenant's sandboxed processes, so between the server's check
 its open a directory component can be replaced by a symlink into another tenant's
 tree. The `util.py` file primitives (`read_file_bounded`, the head/tail readers,
 `open_nofollow_for_write`, the dir-fd reader and writer, `copy_regular_file_nofollow`,
-`sha256_regular_file_nofollow`), `resources.copy_resources` and
-`workspace_files.persist_pending_files` therefore anchor every access (issue #190):
+`sha256_regular_file_nofollow`), `resources.copy_resources`,
+`workspace_files.persist_pending_files`, the tree copier `confined_copy.copy_tree_confined`
+(what the server uses instead of `shutil.copytree` / `shutil.rmtree` for measure staging,
+OSW staging, OSAF package measures and `copy_file` of a directory) and the SQLite result
+readers (`results/sql_open.py`, which copy the file through the walk into a private temp
+file for SQLite) therefore anchor every access (issue #190):
 
 - the path is made absolute lexically (no `resolve()`), and the **confinement root**
   it lies under is found: `config.confinement_roots()` = `RUN_ROOT`, `MEASURES_DIR`
@@ -98,10 +102,12 @@ tree. The `util.py` file primitives (`read_file_bounded`, the head/tail readers,
   open; platforms without `dir_fd` (Windows) do too.
 
 Use those primitives (or `confined_fs.DirHandle` directly for a directory walk) for
-any server-side read, write or copy under a tenant-writable tree. Pathname APIs that
-cannot take a descriptor (`sqlite3.connect`, `shutil.copytree`, `model.save()`,
-`zipfile` writes from a tree) remain on their pathname checks; the open items are
-listed on issue #190.
+any server-side read, write or copy under a tenant-writable tree, and
+`confined_copy.copy_tree_confined` / `remove_tree_confined` for a directory tree (never
+`shutil.copytree` or `shutil.rmtree(path)` there: a tree copy keeps regular files and
+in-tree relative links only, and raises on anything else). Pathname APIs that cannot take
+a descriptor (`model.save()`, `zipfile` writes from a tree) remain on their pathname
+checks; the open items are listed on issue #190.
 
 **Anchor assumption.** A confinement root and every directory above it must not be
 writable by any tenant process, and a tenant-writable tree must have no alias outside
