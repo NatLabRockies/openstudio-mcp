@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 import pytest
@@ -222,3 +223,61 @@ def test_remove_tree_confined_with_ignore_errors_keeps_removing_after_a_failed_e
     assert sorted(str(p.relative_to(d)) for p in d.rglob("*")) == ["a.txt"], "every removable entry is gone"
     monkeypatch.undo()
     assert confined_copy.remove_tree_confined(d) is True and not d.exists()
+
+
+@posix_only
+def test_read_file_fifo_under_a_shared_read_root_is_not_found_without_blocking(tmp_path, monkeypatch):
+    # Regression: the plain open used for shared read roots blocked on a FIFO with no writer
+    # before fstat could reject it (the removed is_file() check used to answer not_found); the
+    # open is non-blocking and the FIFO is not_found at once
+    _http_tenant(monkeypatch, tmp_path)
+    shared = Path(tempfile.mkdtemp(prefix="shared_root_", dir=Path.cwd() / "runs"))
+    try:
+        assert confined_fs.confinement_root_for(shared) is None
+        os.mkfifo(shared / "pipe")
+        monkeypatch.setattr(config, "_SHARED_READ_ROOTS", [*config._SHARED_READ_ROOTS, shared.resolve()])
+        box: dict[str, object] = {}
+        worker = threading.Thread(target=lambda: box.update(res=results.read_file(str(shared / "pipe"))), daemon=True)
+        worker.start()
+        worker.join(timeout=5)
+        assert not worker.is_alive(), "read_file blocked on the FIFO"
+        assert box["res"]["ok"] is False and box["res"]["error"] == "not_found", box["res"]
+    finally:
+        shutil.rmtree(shared, ignore_errors=True)
+
+
+def test_read_file_closes_the_descriptor_when_the_type_check_fails(tmp_path, monkeypatch):
+    # Regression: on the shared-root branch an fstat failure after the open returned read_failed
+    # with the descriptor still open; repeated failures would exhaust descriptors
+    _http_tenant(monkeypatch, tmp_path)
+    shared = Path(tempfile.mkdtemp(prefix="shared_root_", dir=Path.cwd() / "runs"))
+    try:
+        assert confined_fs.confinement_root_for(shared) is None
+        (shared / "a.txt").write_bytes(b"a")
+        monkeypatch.setattr(config, "_SHARED_READ_ROOTS", [*config._SHARED_READ_ROOTS, shared.resolve()])
+        opened: list[int] = []
+        closed: list[int] = []
+        real_open, real_close, real_fstat = os.open, os.close, os.fstat
+
+        def tracking_open(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            opened.append(fd)
+            return fd
+
+        def tracking_close(fd):
+            closed.append(fd)
+            return real_close(fd)
+
+        def failing_fstat(fd):
+            if fd in opened:
+                raise OSError(5, "Input/output error")
+            return real_fstat(fd)
+
+        monkeypatch.setattr(os, "open", tracking_open)
+        monkeypatch.setattr(os, "close", tracking_close)
+        monkeypatch.setattr(os, "fstat", failing_fstat)
+        res = results.read_file(str(shared / "a.txt"))
+        assert res["ok"] is False and res["error"] == "read_failed", res
+        assert opened and sorted(closed) == sorted(opened), "every descriptor opened by read_file is closed"
+    finally:
+        shutil.rmtree(shared, ignore_errors=True)

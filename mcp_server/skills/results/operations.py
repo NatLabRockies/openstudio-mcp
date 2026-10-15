@@ -299,8 +299,15 @@ def read_file(
         if confinement_root_for(full) is not None:
             fd = open_confined(full, os.O_RDONLY)
         else:
-            fd = os.open(full, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
+            # Non-blocking so a FIFO cannot stall the open before fstat rejects it; a regular
+            # file reads the same with the flag set.
+            fd = os.open(full, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+            try:
+                regular = stat.S_ISREG(os.fstat(fd).st_mode)
+            except OSError:
+                os.close(fd)
+                raise
+            if not regular:
                 os.close(fd)
                 return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
     except FileNotFoundError:
