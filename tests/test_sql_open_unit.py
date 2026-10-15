@@ -66,16 +66,16 @@ def test_run_dir_swapped_right_after_the_descriptor_open_still_reads_the_tenants
     _result_db(run_dir / "run" / "eplusout.sql", "Alice Var")
     bob_run = root.parent / "bob" / "run_c" / "run"
     _result_db(bob_run / "eplusout.sql", "Bob Var")
-    real_open = confined_fs.open_confined
+    real_open_file = confined_fs.DirHandle.open_file
 
-    def open_then_swap(path, *args, **kwargs):
-        fd = real_open(path, *args, **kwargs)
-        if Path(path).name == "eplusout.sql" and not (run_dir / "run").is_symlink():
+    def open_then_swap(self, name, *args, **kwargs):
+        fd = real_open_file(self, name, *args, **kwargs)
+        if name == "eplusout.sql" and not (run_dir / "run").is_symlink():
             (run_dir / "run").rename(run_dir / "run_moved")
             (run_dir / "run").symlink_to(bob_run, target_is_directory=True)
         return fd
 
-    monkeypatch.setattr(confined_fs, "open_confined", open_then_swap)
+    monkeypatch.setattr(confined_fs.DirHandle, "open_file", open_then_swap)
     assert _names(sql_open.connect_sql_readonly(run_dir / "run" / "eplusout.sql")) == ["Alice Var"]
 
 

@@ -53,21 +53,23 @@ def connect_sql_readonly(path: Path) -> sqlite3.Connection:
 
 
 def _connect_private_copy(src: Path) -> sqlite3.Connection:
-    fd = confined_fs.open_confined(src, os.O_RDONLY)
-    try:
-        size = os.fstat(fd).st_size
-        if size > MAX_RESULT_SQL_BYTES:
-            raise ValueError(f"{src.name}: {size} bytes exceeds the {MAX_RESULT_SQL_BYTES}-byte limit")
+    # One walk to the file's directory: the -wal check and the file open use the same held
+    # descriptor, so they see the same directory whatever the path resolves to afterwards.
+    with confined_fs.DirHandle.open(src.parent) as parent:
         # A WAL-mode database keeps committed pages in <name>-wal until a checkpoint; a copy of
         # the main file alone would silently read stale data. EnergyPlus writes journal_mode=OFF,
         # so this only concerns files produced or post-processed by other tools.
-        with confined_fs.DirHandle.open(src.parent) as parent:
-            wal = parent.lstat(f"{src.name}-wal")
+        wal = parent.lstat(f"{src.name}-wal")
         if wal is not None and wal.st_size > 0:
             raise ValueError(
                 f"{src.name}: has uncheckpointed WAL data ({wal.st_size} bytes in {src.name}-wal); "
                 "close or checkpoint the writer first",
             )
+        fd = parent.open_file(src.name, os.O_RDONLY)
+    try:
+        size = os.fstat(fd).st_size
+        if size > MAX_RESULT_SQL_BYTES:
+            raise ValueError(f"{src.name}: {size} bytes exceeds the {MAX_RESULT_SQL_BYTES}-byte limit")
         tmp_fd, tmp_name = tempfile.mkstemp(prefix=_COPY_PREFIX, suffix=".sql")
         tmp = Path(tmp_name)
         try:
