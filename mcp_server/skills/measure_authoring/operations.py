@@ -24,8 +24,10 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
+from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES
 from mcp_server.resources import stage_model_resources
 from mcp_server.util import (
+    copy_regular_file_nofollow,
     create_run_dir,
     read_file_bounded,
     reject_escaping_symlinks,
@@ -50,6 +52,8 @@ _TEST_MODEL_CANDIDATES = [
 _MEASURE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,99}$")
 # measure.xml and tests/test_model.osm copied back from a private test copy
 _COPY_BACK_MAX_BYTES = 256 * 1024 * 1024
+# eplusout.sql of a timeseries run reaches gigabytes; this bounds a runaway copy, not a normal one.
+_MAX_SIM_ARTIFACT_BYTES = 8 * 1024 * 1024 * 1024
 # Argument names become bare Ruby/Python identifiers in generated code — they must
 # be plain identifiers, never arbitrary text (else code injection at generation).
 # Must start lowercase/underscore: an uppercase-leading name (e.g. "Foo") is a Ruby
@@ -995,20 +999,27 @@ def _test_reporting_measure_with_run(
     # Build temp run dir
     _test_run_id, run_dir = create_run_dir(user_run_root(), "measure_test", mdir.name)
 
-    # Stage simulation artifacts
+    # Stage simulation artifacts. Both run dirs are tenant-written: descriptor-
+    # walked no-follow copies (#190), never shutil through a path that may be a link.
     ep_run = run_dir / "run"
     ep_run.mkdir(exist_ok=True)
-    shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
-    for fname in ["in.osm", "in.idf"]:
+    for fname in ("eplusout.sql", "in.osm", "in.idf"):
         src = sim_dir / "run" / fname
-        if is_regular_file_inside(src, sim_dir):
-            shutil.copy2(str(src), str(ep_run / fname))
+        if fname != "eplusout.sql" and not is_regular_file_inside(src, sim_dir):
+            continue
+        try:
+            copy_regular_file_nofollow(src, ep_run / fname, _MAX_SIM_ARTIFACT_BYTES)
+        except (OSError, ValueError) as e:
+            return {"ok": False, "error": f"Could not stage {fname} from run {run_id}: {e}"}
 
     # Copy seed model for OSW
     osm_src = sim_dir / "run" / "in.osm"
     temp_osm = run_dir / "in.osm"
     if is_regular_file_inside(osm_src, sim_dir):
-        shutil.copy2(str(osm_src), str(temp_osm))
+        try:
+            copy_regular_file_nofollow(osm_src, temp_osm, _MAX_SIM_ARTIFACT_BYTES)
+        except (OSError, ValueError) as e:
+            return {"ok": False, "error": f"Could not stage in.osm from run {run_id}: {e}"}
     else:
         # Fallback: create empty model
         import openstudio as _os
@@ -1204,7 +1215,10 @@ def test_measure_op(
             if src.is_file():
                 explicit = src
         if explicit is not None:
-            shutil.copy2(str(explicit), str(test_model_dst))
+            try:
+                copy_regular_file_nofollow(explicit, test_model_dst, MAX_BUNDLE_OSM_BYTES)
+            except (OSError, ValueError) as e:
+                return {"ok": False, "error": f"model_path could not be copied: {e}"}
             stage_err = stage_model_resources(explicit, mdir / "files", overwrite=True)
         else:
             stage_err = _stage_session_or_asset_model(mdir, test_model_dst)
@@ -1365,7 +1379,12 @@ def _stage_session_or_asset_model(mdir: Path, test_model_dst: Path) -> str | Non
         src_model, resource_osm, pending, snapshot_generation = _find_test_model()
         if src_model is None:
             return None
-        shutil.copy2(str(src_model), str(test_model_dst))
+        try:
+            copy_regular_file_nofollow(src_model, test_model_dst, MAX_BUNDLE_OSM_BYTES)
+        except (OSError, ValueError) as e:
+            if snapshot_generation is not None:
+                src_model.unlink(missing_ok=True)
+            return f"Test model could not be staged: {e}"
         if snapshot_generation is not None:
             src_model.unlink(missing_ok=True)  # only the snapshot this call created
         err = stage_model_resources(
