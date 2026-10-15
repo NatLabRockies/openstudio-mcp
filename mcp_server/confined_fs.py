@@ -81,25 +81,32 @@ class DirHandle:
         self.fd = fd
 
     @classmethod
-    def open(cls, directory: str | os.PathLike[str], *, immediate: bool = False) -> DirHandle:
+    def open(cls, directory: str | os.PathLike[str], *, create: bool = False,
+             immediate: bool = False) -> DirHandle:
         """Handle on ``directory``, walked from its confinement root when it has one.
 
-        Without a root: ``immediate=True`` opens the directory itself by
-        pathname with ``O_NOFOLLOW`` (what ``write_text_in_dir_nofollow`` did
-        before #190, a link AT the directory refused); otherwise path mode.
+        ``create`` makes missing components on the way (each then opened
+        no-follow, so a link planted at a created name is refused). Without a
+        root: ``immediate=True`` opens the directory itself by pathname with
+        ``O_NOFOLLOW`` (what ``write_text_in_dir_nofollow`` did before #190, a
+        link AT the directory refused); otherwise path mode.
         """
         p = lexical_abspath(directory)
-        if not supported():
-            return cls(p, None)
-        root = confinement_root_for(p)
+        root = confinement_root_for(p) if supported() else None
         if root is None:
+            if create and not p.exists():
+                parent = cls.open(p.parent, create=True)
+                try:
+                    return parent.subdir(p.name, create=True)
+                finally:
+                    parent.close()
             return cls(p, os.open(p, _DIR_FLAGS)) if immediate else cls(p, None)
         root_handle = cls(root, os.open(root, _DIR_FLAGS))
         rel = p.relative_to(root)
         if not rel.parts:
             return root_handle
         try:
-            return root_handle.walk(rel)
+            return root_handle.walk(rel, create=create)
         finally:
             root_handle.close()
 
@@ -206,6 +213,16 @@ class DirHandle:
     def scandir(self):
         """``os.scandir`` of this directory; check entries with ``follow_symlinks=False``."""
         return os.scandir(self.fd if self.fd is not None else self.path)
+
+    def lstat(self, name: str) -> os.stat_result | None:
+        """``lstat`` of the entry ``name`` here, None when absent; never follows a link."""
+        check_name(name)
+        try:
+            if self.fd is None:
+                return os.lstat(self.path / name)
+            return os.stat(name, dir_fd=self.fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return None
 
     def unlink(self, name: str) -> None:
         check_name(name)

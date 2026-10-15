@@ -1740,7 +1740,7 @@ def _package_seed_resources(seed: Path, lib_dir: Path) -> dict[str, Any]:
             outcome = copy_resources(sources, lib_dir, overwrite=False)
         except ValueError as e:
             return {"error": f"Seed resources could not be packaged into lib/: {e}"}
-        failed = [f"{rel} ({why})" for rel, why in outcome["skipped"] if why != "not a regular file"]
+        failed = [f"lib/{rel} ({why})" for rel, why in outcome["skipped"] if why != "not a regular file"]
         if failed:
             return {"error": "Seed resources could not be packaged into lib/: " + "; ".join(failed)}
         for rel, expected in sorted(digest["files"].items()):
