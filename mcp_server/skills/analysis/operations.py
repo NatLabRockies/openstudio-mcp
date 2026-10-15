@@ -33,6 +33,17 @@ from jsonschema import Draft4Validator, SchemaError
 from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
+from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
+from mcp_server.resources import MAX_RESOURCE_FILE_BYTES, copy_resources, resource_dir_issue, resource_sources
+from mcp_server.util import (
+    copy_regular_file_nofollow,
+    is_regular_file_inside,
+    open_nofollow_for_write,
+    read_file_bounded,
+    resolve_run_dir,
+    sha256_regular_file_nofollow,
+)
+
 DOWNLOAD_FORMATS = ("csv", "rdata")  # the only formats OpenStudio Server's download_data serves
 DONE_STATUSES = {"completed", "complete", "succeeded", "success", "finished"}
 FAILED_STATUSES = {"failed", "error", "cancelled", "canceled"}
@@ -43,6 +54,12 @@ REQUIRED_ANALYSIS_PACKAGE_ROOTS = frozenset({"measures", "weather", "seeds", "sc
 SEED_SUFFIXES = frozenset({".osm", ".osw"})
 WEATHER_SUFFIXES = frozenset({".epw", ".ddy", ".stat"})
 SEED_QAQC_MANIFEST = "lib/seed_simulation_qaqc.json"
+MAX_MANIFEST_BYTES = 4 * 1024 * 1024
+# What identifies a seed simulation: the OSM, the effective EPW and the resource set
+# (see model_bundle.resources_digest). The preflight manifest and run_simulation's run
+# record both carry the three; a cached run or manifest is reused only on all three.
+IDENTITY_KEYS = ("seed_sha256", "weather_sha256", "resources_sha256")
+MAX_RUN_RECORD_BYTES = 64 * 1024
 FOUNDATIONAL_ANALYSIS_MEASURES: tuple[dict[str, Any], ...] = (
     {
         "measure_name": "view_model",
@@ -555,52 +572,35 @@ def _zip_member_sha256(archive: zipfile.ZipFile, name: str) -> str:
     return h.hexdigest()
 
 
-def _find_run_file(run_dir: Path, candidates: Iterable[str]) -> Path | None:
-    for candidate in candidates:
-        path = run_dir / candidate
-        if path.exists():
-            return path
-    return None
+def _identity_matches(record: dict[str, Any], identity: dict[str, str | None]) -> bool:
+    """All three identity keys are present in `record` (manifest or run record) and equal `identity`.
+
+    A record without the keys (written before resources were part of the
+    identity, or by a run that was not a plain seed simulation) never matches.
+    """
+    return all(key in record for key in IDENTITY_KEYS) and all(record[key] == identity[key] for key in IDENTITY_KEYS)
 
 
-def _run_seed_path(run_dir: Path, osw_path: Path) -> Path | None:
-    try:
-        osw = json.loads(osw_path.read_text(encoding="utf-8"))
-    except Exception:
+def _read_run_record(run_dir: Path, root: Path) -> dict[str, Any] | None:
+    """run_record.json of a run under the caller's root, read without following links, else None."""
+    meta = run_dir / "run_record.json"
+    if not is_regular_file_inside(meta, root):
         return None
-    seed_file = osw.get("seed_file")
-    if not seed_file:
-        return None
-    path = (osw_path.parent / seed_file).resolve()
-    return path if path.exists() else None
-
-
-def _run_weather_path(run_dir: Path, osw_path: Path, rec_epw_path: Path | None) -> Path | None:
-    if rec_epw_path and rec_epw_path.exists():
-        return rec_epw_path
     try:
-        osw = json.loads(osw_path.read_text(encoding="utf-8"))
-    except Exception:
-        osw = {}
-    weather_file = osw.get("weather_file")
-    if isinstance(weather_file, str) and weather_file:
-        path = (osw_path.parent / weather_file).resolve()
-        if path.exists():
-            return path
-    epws = sorted(run_dir.glob("files/*.epw"))
-    return epws[0] if epws else None
-
-
-def _load_run_record_json(meta_path: Path) -> dict[str, Any] | None:
-    try:
-        data = json.loads(meta_path.read_text(encoding="utf-8"))
-    except Exception:
+        data = json.loads(read_file_bounded(meta, MAX_RUN_RECORD_BYTES).decode("utf-8", errors="replace"))
+    except (ValueError, OSError):
         return None
     return data if isinstance(data, dict) else None
 
 
-def _find_completed_seed_run(seed_hash: str, epw_hash: str | None = None) -> dict[str, Any] | None:
-    """Return a completed simulation run whose staged seed/EPW hashes match."""
+def _find_completed_seed_run(identity: dict[str, str | None]) -> dict[str, Any] | None:
+    """The newest successful run whose recorded identity equals `identity`, else None.
+
+    Only the triple run_simulation wrote at launch is compared: nothing in the
+    run dir (written by the tenant's sandboxed process) is rehashed, the run
+    is the directory the record was found in (never the record's own run_dir
+    field), and eplusout.sql must be a regular file inside it.
+    """
     from mcp_server.config import user_run_root
 
     root = user_run_root()
@@ -608,31 +608,18 @@ def _find_completed_seed_run(seed_hash: str, epw_hash: str | None = None) -> dic
         return None
 
     matches: list[dict[str, Any]] = []
-    for meta_path in root.glob("run_*/run_record.json"):
-        data = _load_run_record_json(meta_path)
-        if not data or data.get("status") != "success":
+    for run_dir in sorted(root.glob("run_*")):
+        if run_dir.is_symlink() or not run_dir.is_dir():
             continue
-        run_dir = Path(data.get("run_dir") or meta_path.parent)
-        osw_path = Path(data.get("osw_path") or (run_dir / "workflow.osw"))
-        if not osw_path.exists():
+        data = _read_run_record(run_dir, root)
+        if not data or data.get("status") != "success" or not _identity_matches(data, identity):
             continue
-        seed_path = _run_seed_path(run_dir, osw_path)
-        if seed_path is None or _sha256_file(seed_path) != seed_hash:
-            continue
-        rec_epw = Path(data["epw_path"]) if data.get("epw_path") else None
-        weather_path = _run_weather_path(run_dir, osw_path, rec_epw)
-        if epw_hash is not None:
-            if weather_path is None or _sha256_file(weather_path) != epw_hash:
-                continue
-        if _find_run_file(run_dir, ["run/eplusout.sql", "eplusout.sql"]) is None:
+        if not any(is_regular_file_inside(run_dir / rel, run_dir) for rel in ("run/eplusout.sql", "eplusout.sql")):
             continue
         matches.append(
             {
-                "run_id": data.get("run_id") or meta_path.parent.name,
+                "run_id": run_dir.name,
                 "run_dir": str(run_dir),
-                "osw_path": str(osw_path),
-                "seed_path": str(seed_path),
-                "weather_path": str(weather_path) if weather_path else None,
                 "created_at": data.get("created_at") or 0,
                 "ended_at": data.get("ended_at") or 0,
             },
@@ -691,19 +678,15 @@ def _basic_seed_qaqc(run_id: str) -> dict[str, Any]:
     }
 
 
-def _manifest_is_valid(
-    manifest: dict[str, Any],
-    *,
-    seed_hash: str | None = None,
-    epw_hash: str | None = None,
-) -> bool:
+def _manifest_predates_resource_identity(manifest: dict[str, Any]) -> bool:
+    """A manifest written before the resource set was part of the seed identity."""
+    return any(key not in manifest for key in IDENTITY_KEYS)
+
+
+def _manifest_is_valid(manifest: dict[str, Any]) -> bool:
     if manifest.get("ok") is not True:
         return False
-    if not manifest.get("seed_sha256"):
-        return False
-    if manifest.get("seed_sha256") and seed_hash and manifest.get("seed_sha256") != seed_hash:
-        return False
-    if epw_hash is not None and manifest.get("weather_sha256") not in (epw_hash, None):
+    if not manifest.get("seed_sha256") or _manifest_predates_resource_identity(manifest):
         return False
     qaqc = manifest.get("basic_qaqc")
     if not isinstance(qaqc, dict) or qaqc.get("passed") is not True:
@@ -712,9 +695,10 @@ def _manifest_is_valid(
 
 
 def _read_manifest(path: Path) -> dict[str, Any] | None:
+    """The manifest as a dict, read without following a link at its name, else None."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        data = json.loads(read_file_bounded(path, MAX_MANIFEST_BYTES).decode("utf-8", errors="replace"))
+    except (ValueError, OSError):
         return None
     return data if isinstance(data, dict) else None
 
@@ -1450,6 +1434,14 @@ def add_measure_to_osa_json(
         return {"ok": False, "error": str(e)}
 
 
+def _effective_weather(seed: Path) -> Path | None:
+    """The EPW run_simulation would stage for `seed` with no override: the model's own, same gate."""
+    from mcp_server.skills.weather.operations import resolve_model_weather_epw
+
+    epw = resolve_model_weather_epw(seed)["epw"]
+    return Path(epw) if epw is not None else None
+
+
 def preflight_seed_for_analysis_package(
     seed_path: str,
     weather_file: str | None = None,
@@ -1462,20 +1454,37 @@ def preflight_seed_for_analysis_package(
 ) -> dict[str, Any]:
     """Ensure an OSAF seed has simulated and passed basic QA/QC.
 
-    Reuses an existing completed simulation when the staged seed and EPW hashes
-    match. If no completed run exists, starts one with run_simulation. The
-    manifest is written only when the simulation is successful and QA/QC passes.
+    The seed's identity is the OSM, the effective weather file (the one
+    passed, else the model's own, as run_simulation resolves it) and its
+    resource set (companion folder, see model_bundle.resources_digest). An
+    existing manifest or a completed run_simulation run is reused only when
+    its recorded identity equals all three. If no completed run exists,
+    starts one with run_simulation. The manifest is written only when the
+    simulation is successful and QA/QC passes.
     """
-    from mcp_server.config import is_path_allowed
+    from mcp_server.config import is_path_allowed, user_run_root
     from mcp_server.skills.simulation.operations import get_run_status, run_simulation
 
-    seed = Path(seed_path).expanduser().resolve()
+    seed = Path(seed_path).expanduser()
+    if seed.is_symlink():
+        return {"ok": False, "ready": False, "error": f"Seed path is a symlink (not allowed): {seed}"}
+    seed = seed.resolve()
     if not seed.exists():
         return {"ok": False, "ready": False, "error": f"Seed model not found: {seed}"}
     if seed.suffix.lower() != ".osm":
         return {"ok": False, "ready": False, "error": "Seed preflight currently requires an .osm seed model."}
     if not is_path_allowed(seed):
         return {"ok": False, "ready": False, "error": f"Seed path is not allowed: {seed}"}
+    manifest: Path | None = None
+    if manifest_path:
+        # The link check is on the path as given: resolve() would hand back the
+        # link's target, which is never itself a link.
+        manifest = Path(manifest_path).expanduser()
+        if manifest.is_symlink():
+            return {"ok": False, "ready": False, "error": f"Manifest path is a symlink (not allowed): {manifest}"}
+        manifest = manifest.resolve()
+        if not _is_analysis_path_allowed(manifest, write=True):
+            return {"ok": False, "ready": False, "error": f"Manifest path is not writable/allowed: {manifest}"}
 
     epw: Path | None = None
     if weather_file:
@@ -1486,18 +1495,24 @@ def preflight_seed_for_analysis_package(
             return {"ok": False, "ready": False, "error": "Seed preflight weather_file must be an .epw file."}
         if not is_path_allowed(epw):
             return {"ok": False, "ready": False, "error": f"Weather path is not allowed: {epw}"}
+    else:
+        epw = _effective_weather(seed)
 
     seed_hash = _sha256_file(seed)
     epw_hash = _sha256_file(epw) if epw else None
-    manifest = Path(manifest_path).expanduser().resolve() if manifest_path else None
-    if manifest and not _is_analysis_path_allowed(manifest, write=True):
-        return {"ok": False, "ready": False, "error": f"Manifest path is not writable/allowed: {manifest}"}
+    try:
+        resources = resources_digest(seed)
+    except ValueError as e:
+        return {"ok": False, "ready": False, "error": f"Seed resources could not be hashed: {e}"}
+    identity: dict[str, str | None] = {
+        "seed_sha256": seed_hash, "weather_sha256": epw_hash, "resources_sha256": resources["sha256"],
+    }
     if manifest and manifest.exists() and not force_rerun:
         existing_manifest = _read_manifest(manifest)
-        if existing_manifest and _manifest_is_valid(
-            existing_manifest,
-            seed_hash=seed_hash,
-            epw_hash=epw_hash,
+        if (
+            existing_manifest
+            and _manifest_is_valid(existing_manifest)
+            and _identity_matches(existing_manifest, identity)
         ):
             return {
                 "ok": True,
@@ -1508,7 +1523,7 @@ def preflight_seed_for_analysis_package(
                 "manifest": existing_manifest,
             }
 
-    cached_run = None if force_rerun else _find_completed_seed_run(seed_hash, epw_hash=epw_hash)
+    cached_run = None if force_rerun else _find_completed_seed_run(identity)
     run_id: str | None = None
     reused = False
     if cached_run:
@@ -1540,10 +1555,26 @@ def preflight_seed_for_analysis_package(
             return {
                 "ok": True,
                 "ready": False,
+                "reused": False,
                 "status": run.get("status"),
                 "run_id": run_id,
                 "simulation": started,
                 "message": "Seed simulation has started but is not complete; rerun this preflight after it finishes.",
+            }
+        # The run hashed its own staged snapshot; the identity above was taken
+        # from the source files before the copy. Different means the seed, its
+        # weather file or a resource changed in between: that run is not
+        # evidence for the seed as it is now.
+        root = user_run_root()
+        try:
+            record = _read_run_record(resolve_run_dir(root, run_id), root)
+        except FileNotFoundError:
+            record = None
+        if record is None or not _identity_matches(record, identity):
+            return {
+                "ok": False, "ready": False, "run_id": run_id,
+                "error": "The seed model, its weather file or its resources changed while the preflight "
+                         "simulation ran; run the preflight again.",
             }
 
     qaqc = _basic_seed_qaqc(run_id)
@@ -1556,6 +1587,8 @@ def preflight_seed_for_analysis_package(
         "seed_sha256": seed_hash,
         "weather_file": str(epw) if epw else None,
         "weather_sha256": epw_hash,
+        "resources_sha256": resources["sha256"],
+        "resource_files": sorted(resources["files"]),
         "template": template,
         "run_id": run_id,
         "simulation_reused": reused,
@@ -1563,7 +1596,8 @@ def preflight_seed_for_analysis_package(
     }
     if manifest:
         manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text(json.dumps(result_manifest, indent=2) + "\n", encoding="utf-8")
+        with open_nofollow_for_write(manifest) as fh:
+            fh.write(json.dumps(result_manifest, indent=2) + "\n")
 
     return {
         "ok": ready,
@@ -1577,11 +1611,123 @@ def preflight_seed_for_analysis_package(
     }
 
 
-def _resolve_package_seed(package_dir: Path, seed_path: str | None) -> Path | None:
+def _seed_entries(seeds_dir: Path) -> tuple[list[Path], list[Path]]:
+    """(seed models, every other file or link) under seeds/, recursively."""
+    seeds: list[Path] = []
+    others: list[Path] = []
+    if not seeds_dir.is_dir():
+        return seeds, others
+    for entry in sorted(seeds_dir.rglob("*")):
+        if entry.is_dir() and not entry.is_symlink():
+            continue
+        if not entry.is_symlink() and entry.suffix.lower() in SEED_SUFFIXES:
+            seeds.append(entry)
+        else:
+            others.append(entry)
+    return seeds, others
+
+
+def _stage_package_seed(pkg: Path, seed_path: str | None) -> dict[str, Any]:
+    """Put the seed under pkg/seeds/; {"seed": model to preflight, "seed_member": str} or {"error"}.
+
+    An external seed_path is copied no-follow into seeds/<name> (a copy
+    already there must hold the same bytes). The preflight then runs on the
+    external model, whose companion folder holds its resources; the packaged
+    copy is byte-identical, so the manifest's seed_sha256 is its hash too.
+    seeds/ must end up holding exactly one seed and nothing else: submission
+    takes the first member, the manifest vouches for one, and a companion
+    folder under seeds/ would be invisible to datapoints anyway (resources
+    are packaged flat into lib/, which every datapoint searches).
+    """
+    seeds_dir = pkg / "seeds"
+    seeds, others = _seed_entries(seeds_dir)
+    if others:
+        listed = ", ".join(p.relative_to(pkg).as_posix() for p in others)
+        return {"error": f"seeds/ may hold only the seed model (resources are packaged into lib/); remove: {listed}"}
     if seed_path:
-        return Path(seed_path).expanduser().resolve()
-    candidates = sorted((package_dir / "seeds").glob("*.osm"))
-    return candidates[0].resolve() if candidates else None
+        src = Path(seed_path).expanduser()
+        if src.is_symlink():
+            return {"error": f"Seed path is a symlink (not allowed): {src}"}
+        src = src.resolve()
+        if not src.is_file():
+            return {"error": f"Seed model not found: {src}"}
+        if src.suffix.lower() != ".osm":
+            return {"error": "Seed preflight currently requires an .osm seed model."}
+        if not _is_analysis_path_allowed(src):
+            return {"error": f"Seed path is not allowed: {src}"}
+        dest = seeds_dir / src.name
+        extra = [p for p in seeds if p != dest]
+        if extra:
+            listed = ", ".join(p.relative_to(pkg).as_posix() for p in extra)
+            return {"error": f"seeds/ must hold exactly one seed model; {listed} would be packaged beside "
+                             f"seeds/{src.name}. Remove it or use another package_dir."}
+        if src.parent != seeds_dir:
+            if dest.is_symlink() or (dest.exists() and not dest.is_file()):
+                return {"error": f"seeds/{src.name} is a link or not a regular file (not allowed)"}
+            try:
+                if dest.is_file():
+                    if sha256_regular_file_nofollow(dest, MAX_BUNDLE_OSM_BYTES) != _sha256_file(src):
+                        return {"error": f"seeds/{src.name} already exists with different content than {src}; "
+                                         "remove it or rename the seed"}
+                else:
+                    seeds_dir.mkdir(parents=True, exist_ok=True)
+                    copy_regular_file_nofollow(src, dest, MAX_BUNDLE_OSM_BYTES)
+            except (OSError, ValueError) as e:
+                return {"error": f"Seed model could not be copied into seeds/: {e}"}
+        return {"seed": src, "seed_member": f"seeds/{src.name}"}
+    if not seeds:
+        return {"error": "No .osm seed model found in package_dir/seeds; pass seed_path explicitly."}
+    if len(seeds) > 1:
+        listed = ", ".join(p.relative_to(pkg).as_posix() for p in seeds)
+        return {"error": f"seeds/ must hold exactly one seed model; found: {listed}. Remove the extra seeds."}
+    seed = seeds[0]
+    if seed.suffix.lower() != ".osm":
+        return {"error": "Seed preflight currently requires an .osm seed model."}
+    return {"seed": seed, "seed_member": seed.relative_to(pkg).as_posix()}
+
+
+def _package_seed_resources(seed: Path, lib_dir: Path) -> dict[str, Any]:
+    """Copy the seed's effective resources into lib/ and verify each by hash.
+
+    The datapoint OSW searches ../lib (the analysis gem adds it to every
+    workflow's file_paths), so the resources land there with their relative
+    subpaths. lib/ is shared by every packaging of this package_dir: a
+    same-named file already there is kept by the copy, so every packaged
+    resource is hashed afterwards and must be the seed's; anything else in
+    lib/ is reported, never deleted. Returns {"resource_files", "lib_files_not_from_seed"}
+    or {"error"}.
+    """
+    manifest_rel = Path(SEED_QAQC_MANIFEST).relative_to("lib").as_posix()
+    try:
+        digest = resources_digest(seed, allowed=_is_analysis_path_allowed)
+        sources = resource_sources(seed, allowed=_is_analysis_path_allowed)
+    except ValueError as e:
+        return {"error": f"Seed resources could not be packaged: {e}"}
+    if manifest_rel in digest["files"]:
+        return {"error": f"a seed resource is named {manifest_rel}, the package manifest's name; rename it"}
+    if digest["files"]:
+        try:
+            outcome = copy_resources(sources, lib_dir, overwrite=False)
+        except ValueError as e:
+            return {"error": f"Seed resources could not be packaged into lib/: {e}"}
+        failed = [f"{rel} ({why})" for rel, why in outcome["skipped"] if why != "not a regular file"]
+        if failed:
+            return {"error": "Seed resources could not be packaged into lib/: " + "; ".join(failed)}
+        for rel, expected in sorted(digest["files"].items()):
+            try:
+                actual = sha256_regular_file_nofollow(lib_dir / rel, MAX_RESOURCE_FILE_BYTES)
+            except (OSError, ValueError) as e:
+                return {"error": f"lib/{rel} could not be verified after packaging: {e}"}
+            if actual != expected:
+                return {"error": f"lib/{rel} already exists with different content than the seed's resource; "
+                                 "remove it from lib/ or rename the resource"}
+    extra: list[str] = []
+    if lib_dir.is_dir():
+        for entry in sorted(lib_dir.rglob("*")):
+            rel = entry.relative_to(lib_dir).as_posix()
+            if entry.is_file() and not entry.is_symlink() and rel not in digest["files"] and rel != manifest_rel:
+                extra.append(rel)
+    return {"resource_files": sorted(digest["files"]), "lib_files_not_from_seed": extra}
 
 
 def _resolve_package_weather(package_dir: Path, weather_file: str | None) -> Path | None:
@@ -1679,7 +1825,7 @@ def prepare_analysis_package(
     wait_timeout_seconds: int = 0,
     poll_interval_seconds: int = 30,
 ) -> dict[str, Any]:
-    """Run/reuse seed preflight, write manifest, then create an OSAF support ZIP."""
+    """Stage the seed and its resources, run/reuse the preflight, write the manifest, zip the package."""
     pkg = Path(package_dir).expanduser().resolve()
     if not pkg.exists() or not pkg.is_dir():
         return {"ok": False, "error": f"Package directory not found: {pkg}"}
@@ -1689,9 +1835,22 @@ def prepare_analysis_package(
     if not _is_analysis_path_allowed(out, write=True):
         return {"ok": False, "error": f"Output ZIP path is not writable/allowed: {out}"}
 
-    seed = _resolve_package_seed(pkg, seed_path)
-    if seed is None:
-        return {"ok": False, "error": "No .osm seed model found in package_dir/seeds; pass seed_path explicitly."}
+    # Both dirs receive copies below: neither may be a link, sit under one, or
+    # resolve outside the package (same check as a model's resource dir).
+    seeds_dir, lib_dir = pkg / "seeds", pkg / "lib"
+    for member in (seeds_dir, lib_dir):
+        issue = resource_dir_issue(member, write=True, allowed=_is_analysis_path_allowed)
+        if issue:
+            return {"ok": False, "error": f"package {member.name}/ is not usable: {issue}"}
+    staged = _stage_package_seed(pkg, seed_path)
+    if staged.get("error"):
+        return {"ok": False, "error": staged["error"]}
+    seed: Path = staged["seed"]
+    seed_member: str = staged["seed_member"]
+    packaged = _package_seed_resources(seed, lib_dir)
+    if packaged.get("error"):
+        return {"ok": False, "error": packaged["error"], "seed_member": seed_member}
+
     epw = _resolve_package_weather(pkg, weather_file)
     manifest_path = pkg / SEED_QAQC_MANIFEST
     preflight = preflight_seed_for_analysis_package(
@@ -1708,7 +1867,20 @@ def prepare_analysis_package(
             "ok": False,
             "error": "Seed model must complete simulation and pass basic QA/QC before packaging.",
             "preflight": preflight,
+            "seed_member": seed_member,
         }
+    # The manifest names the packaged member so validation and submission use
+    # the seed the preflight vouched for, whatever else sorts first in seeds/.
+    manifest_data = _read_manifest(manifest_path)
+    if manifest_data is None:
+        return {"ok": False, "error": f"Seed preflight left no readable {SEED_QAQC_MANIFEST}.", "preflight": preflight}
+    if manifest_data.get("seed_member") != seed_member:
+        manifest_data["seed_member"] = seed_member
+        try:
+            with open_nofollow_for_write(manifest_path) as fh:
+                fh.write(json.dumps(manifest_data, indent=2) + "\n")
+        except OSError as e:
+            return {"ok": False, "error": f"Could not write {SEED_QAQC_MANIFEST}: {e}", "preflight": preflight}
 
     foundational_measures = _ensure_foundational_measures_in_package(pkg)
     if not foundational_measures.get("ok"):
@@ -1732,6 +1904,9 @@ def prepare_analysis_package(
     return {
         "ok": validation.get("ok", False),
         "zip_path": str(out),
+        "seed_member": seed_member,
+        "resource_files": packaged["resource_files"],
+        "lib_files_not_from_seed": packaged["lib_files_not_from_seed"],
         "preflight": preflight,
         "foundational_measures": foundational_measures,
         "validation": validation,
@@ -1844,6 +2019,34 @@ def validate_osa_json(
     }
 
 
+def _lib_resource_issues(zip_path: Path, manifest: dict[str, Any], lib_files: list[str]) -> list[str]:
+    """The zip's lib/ members listed in the manifest must hash to its resources_sha256."""
+    expected = manifest.get("resources_sha256")
+    if expected is None:
+        return []
+    listed = manifest.get("resource_files")
+    if not isinstance(listed, list) or not all(isinstance(rel, str) and rel for rel in listed):
+        return [f"{SEED_QAQC_MANIFEST} resource_files must list the packaged resources."]
+    present = set(lib_files)
+    hashes: dict[str, str] = {}
+    missing: list[str] = []
+    with zipfile.ZipFile(zip_path) as archive:
+        for rel in listed:
+            name = f"lib/{rel}"
+            if name not in present:
+                missing.append(name)
+                continue
+            hashes[rel] = _zip_member_sha256(archive, name)
+    if missing:
+        return [f"lib/ is missing seed resources listed in {SEED_QAQC_MANIFEST}: {', '.join(missing)}"]
+    if combine_resource_hashes(hashes) != expected:
+        return [
+            f"lib/ resources do not match {SEED_QAQC_MANIFEST} resources_sha256. "
+            "Run openstudio_analysis_prepare_package again.",
+        ]
+    return []
+
+
 def validate_analysis_package(
     zip_path: str,
     require_seed_qaqc: bool = True,
@@ -1932,8 +2135,12 @@ def validate_analysis_package(
     lib_files = grouped_files["lib"]
     measure_files = grouped_files["measures"]
 
-    if not any(Path(name).suffix.lower() in SEED_SUFFIXES for name in seed_files):
+    seed_models = sorted(name for name in seed_files if Path(name).suffix.lower() in SEED_SUFFIXES)
+    non_seed = sorted(set(seed_files) - set(seed_models))
+    if not seed_models:
         issues.append("seeds/ must contain at least one .osm or .osw seed file.")
+    if non_seed:
+        issues.append(f"seeds/ must contain only .osm or .osw seed files (resources go to lib/): {', '.join(non_seed)}")
     if not any(Path(name).suffix.lower() == ".epw" for name in weather_files):
         issues.append("weather/ must contain at least one .epw weather file.")
     unexpected_weather = sorted(
@@ -1970,14 +2177,32 @@ def validate_analysis_package(
                 "Run openstudio_analysis_prepare_package first.",
             )
         else:
-            if not _manifest_is_valid(seed_qaqc_manifest):
+            if _manifest_predates_resource_identity(seed_qaqc_manifest):
+                issues.append(
+                    f"{SEED_QAQC_MANIFEST} predates the resource identity (no resources_sha256). "
+                    "Run openstudio_analysis_prepare_package again.",
+                )
+            elif not _manifest_is_valid(seed_qaqc_manifest):
                 issues.append(f"{SEED_QAQC_MANIFEST} does not show a passing seed simulation QA/QC result.")
+            # The manifest vouches for one seed, and submission takes one: the
+            # archive must hold exactly that one, hashing to seed_sha256.
+            if len(seed_models) > 1:
+                issues.append(
+                    "seeds/ must contain exactly one seed model when the QA/QC manifest is required; "
+                    f"found: {', '.join(seed_models)}",
+                )
+            member = seed_qaqc_manifest.get("seed_member")
+            if member is not None and member not in seed_models:
+                issues.append(f"{SEED_QAQC_MANIFEST} seed_member {member} is not a seed in seeds/.")
+                member = None
+            if member is None and len(seed_models) == 1:
+                member = seed_models[0]
             manifest_seed_hash = seed_qaqc_manifest.get("seed_sha256")
-            if manifest_seed_hash and seed_files:
+            if manifest_seed_hash and member:
                 with zipfile.ZipFile(path) as archive:
-                    seed_hashes = {_zip_member_sha256(archive, seed_file) for seed_file in seed_files}
-                if manifest_seed_hash not in seed_hashes:
-                    issues.append(f"{SEED_QAQC_MANIFEST} seed_sha256 does not match any seed in seeds/.")
+                    if _zip_member_sha256(archive, member) != manifest_seed_hash:
+                        issues.append(f"{SEED_QAQC_MANIFEST} seed_sha256 does not match {member}.")
+            issues.extend(_lib_resource_issues(path, seed_qaqc_manifest, lib_files))
 
     measures = _measure_dirs(measure_files)
     complete_measure_dirs = sorted(
@@ -2333,7 +2558,12 @@ def _wait_for_datapoint_completion(
 def _package_seed_weather_refs(package_validation: dict[str, Any]) -> tuple[dict[str, str] | None, dict[str, str] | None]:
     seed_files = package_validation.get("seed_files") if isinstance(package_validation.get("seed_files"), list) else []
     weather_files = package_validation.get("weather_files") if isinstance(package_validation.get("weather_files"), list) else []
-    seed = {"file_type": "OSM", "path": f"./{seed_files[0]}"} if seed_files else None
+    manifest = package_validation.get("seed_qaqc_manifest")
+    member = manifest.get("seed_member") if isinstance(manifest, dict) else None
+    if not (isinstance(member, str) and member in seed_files):
+        seed_models = [name for name in seed_files if Path(name).suffix.lower() in SEED_SUFFIXES]
+        member = seed_models[0] if seed_models else (seed_files[0] if seed_files else None)
+    seed = {"file_type": "OSM", "path": f"./{member}"} if member else None
     epw_files = [path for path in weather_files if str(path).lower().endswith(".epw")]
     weather_path = epw_files[0] if epw_files else (weather_files[0] if weather_files else None)
     weather = {"file_type": "EPW", "path": f"./{weather_path}"} if weather_path else None
