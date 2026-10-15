@@ -227,9 +227,10 @@ def safe_read_text(path: Path, max_bytes: int = 200_000) -> str:
 def copy_regular_file_nofollow(src: Path, dst: Path, max_bytes: int) -> int:
     """Copy one regular file without following a symlink at either end.
 
-    Both ends are opened with O_NOFOLLOW and the source is checked by fstat
+    Both ends are opened with O_NOFOLLOW | O_NONBLOCK and checked by fstat
     (so a link swapped in after a stat-based check is still refused: the open
-    fails on a link, and a non-regular file fails the fstat). The copy stops
+    fails on a link, a FIFO cannot block the open, and a non-regular file at
+    either end fails the fstat before anything is written). The copy stops
     with ValueError past ``max_bytes``. Returns the bytes copied. For
     server-side moves between tenant-writable dirs (measure output into the
     session workspace, workspace into the model's files/).
@@ -244,7 +245,13 @@ def copy_regular_file_nofollow(src: Path, dst: Path, max_bytes: int) -> int:
             raise ValueError(f"{src.name}: not a regular file")
         if st.st_size > max_bytes:
             raise ValueError(f"{src.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
-        dst_fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow, 0o644)
+        dst_fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow | getattr(os, "O_NONBLOCK", 0), 0o644)
+        try:
+            if not stat.S_ISREG(os.fstat(dst_fd).st_mode):
+                raise ValueError(f"{dst.name}: destination is not a regular file")
+        except BaseException:
+            os.close(dst_fd)
+            raise
         copied = 0
         with os.fdopen(dst_fd, "wb") as out:
             while True:

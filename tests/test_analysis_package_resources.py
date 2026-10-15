@@ -619,6 +619,39 @@ def test_validate_package_bounds_the_resources_it_decompresses(monkeypatch, tmp_
     assert validation["issues"] == ["lib/seed_simulation_qaqc.json resource_files lists a resource more than once."]
 
 
+def _corrupt_stored_member(zip_path: Path, name: str) -> None:
+    """Flip one byte of a stored (uncompressed) member's data so its CRC no longer matches."""
+    with zipfile.ZipFile(zip_path) as archive:
+        info = archive.getinfo(name)
+    # local file header: 30 fixed bytes, then the name, then the (empty) extra field
+    offset = info.header_offset + 30 + len(info.filename.encode("utf-8")) + len(info.extra)
+    with zip_path.open("r+b") as fh:
+        fh.seek(offset)
+        byte = fh.read(1)
+        fh.seek(offset)
+        fh.write(bytes([byte[0] ^ 0xFF]))
+
+
+def test_validate_package_reports_a_corrupt_resource_member_instead_of_raising(tmp_path):
+    # Regression: a listed lib/ resource whose CRC did not match raised zipfile.BadZipFile out of
+    # validate_analysis_package (and out of the MCP tool) instead of failing validation; the
+    # same for a corrupt seed member
+    manifest = _manifest(SEED, resources_sha256=TWO_RESOURCES_DIGEST, resource_files=["schedule.csv", "sub/plugin.py"])
+    _package_zip(tmp_path / "a.zip", manifest, seeds={"m.osm": SEED},
+                 lib={"schedule.csv": CSV, "sub/plugin.py": PLUGIN})
+    _corrupt_stored_member(tmp_path / "a.zip", "lib/sub/plugin.py")
+    validation = operations.validate_analysis_package(str(tmp_path / "a.zip"))
+    assert validation["ok"] is False
+    assert validation["issues"] == ["lib/ resource could not be verified: Bad CRC-32 for file 'lib/sub/plugin.py'"]
+
+    _package_zip(tmp_path / "b.zip", manifest, seeds={"m.osm": SEED},
+                 lib={"schedule.csv": CSV, "sub/plugin.py": PLUGIN})
+    _corrupt_stored_member(tmp_path / "b.zip", "seeds/m.osm")
+    validation = operations.validate_analysis_package(str(tmp_path / "b.zip"))
+    assert validation["ok"] is False
+    assert "seeds/m.osm could not be hashed: Bad CRC-32 for file 'seeds/m.osm'" in validation["issues"]
+
+
 def test_validate_package_requires_one_seed_that_hashes_to_the_manifest(tmp_path):
     # Regression: seed_sha256 was accepted when it matched ANY member under seeds/ while
     # submission used the first; the manifest now names its member and the archive holds one seed

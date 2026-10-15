@@ -11,6 +11,7 @@ import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from collections.abc import Iterable
 from http.client import HTTPException
 from pathlib import Path
@@ -570,6 +571,12 @@ def _sha256_file(path: str | Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+# What reading one member of a tenant-built zip can raise besides the budget ValueError:
+# a CRC mismatch (BadZipFile), a corrupt deflate stream (zlib.error), an encrypted member
+# (RuntimeError from zipfile). Each is a validation issue, never an exception through MCP.
+ZIP_MEMBER_ERRORS = (ValueError, zipfile.BadZipFile, zlib.error, RuntimeError)
 
 
 def _zip_member_sha256(archive: zipfile.ZipFile, name: str, max_bytes: int) -> str:
@@ -2087,7 +2094,7 @@ def _lib_resource_issues(zip_path: Path, manifest: dict[str, Any], lib_files: li
                 ]
             try:
                 hashes[rel] = _zip_member_sha256(archive, name, MAX_RESOURCE_FILE_BYTES)
-            except ValueError as e:
+            except ZIP_MEMBER_ERRORS as e:
                 return [f"lib/ resource could not be verified: {e}"]
     if missing:
         return [f"lib/ is missing seed resources listed in {SEED_QAQC_MANIFEST}: {', '.join(missing)}"]
@@ -2254,7 +2261,7 @@ def validate_analysis_package(
                 with zipfile.ZipFile(path) as archive:
                     try:
                         member_hash = _zip_member_sha256(archive, member, MAX_BUNDLE_OSM_BYTES)
-                    except ValueError as e:
+                    except ZIP_MEMBER_ERRORS as e:
                         member_hash = None
                         issues.append(f"{member} could not be hashed: {e}")
                 if member_hash is not None and member_hash != manifest_seed_hash:
