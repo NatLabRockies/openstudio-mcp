@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 RUN_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs"))).resolve()
@@ -256,6 +257,22 @@ _SHARED_READ_ROOTS += [
     for p in Path(OSCLI_GEM_PATH).glob(
         "ruby/*/gems/openstudio-standards-*/data/weather")
 ]
+
+
+def confinement_roots() -> list[Path]:
+    """Server-owned roots below which every path component is opened by descriptor.
+
+    Everything under these trees may also be written by a tenant's sandboxed
+    process (run dirs, the session workspace, model companion folders, OSAF
+    package dirs, measure dirs, the temp staging of ``openstudio measure -u``),
+    so ``mcp_server.confined_fs`` opens the root by pathname and walks each
+    component below it with O_NOFOLLOW (issue #190). The roots themselves and
+    their ancestors must not be tenant-writable, and the trees must have no
+    alias outside this list (docs/security-isolation.md). The temp dir is
+    listed unconditionally: it holds server-made staging in HTTP mode too;
+    whether a tenant may NAME a path there is a separate, per-skill decision.
+    """
+    return [RUN_ROOT, MEASURES_DIR, Path(tempfile.gettempdir()).resolve()]
 
 
 def user_run_root() -> Path:

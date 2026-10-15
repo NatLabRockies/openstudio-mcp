@@ -8,6 +8,8 @@ import stat
 import uuid
 from pathlib import Path
 
+from mcp_server.confined_fs import DirHandle, open_confined
+
 
 def reject_escaping_symlinks(root: Path) -> str | None:
     """Return an error string if the directory tree `root` contains a symlink
@@ -53,16 +55,16 @@ def read_file_bounded(path: Path, max_bytes: int) -> bytes:
     symlink guard degrades to the caller's own is_symlink() check (the sandbox
     targets Linux).
     """
-    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-             | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
     try:
-        fd = os.open(path, flags)
+        # Under a confinement root every directory component is opened by
+        # descriptor (confined_fs); elsewhere the final component is opened
+        # no-follow. ELOOP at any component surfaces as ValueError.
+        fd = open_confined(path, os.O_RDONLY)
     except OSError as e:
-        # ELOOP => final component is a symlink (O_NOFOLLOW); surface clearly.
         raise ValueError(f"cannot read {path} (symlink or unreadable): {e}") from e
+    except ValueError as e:
+        raise ValueError(f"not a regular file: {path}") from e
     try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise ValueError(f"not a regular file: {path}")
         chunks: list[bytes] = []
         remaining = max_bytes + 1
         while remaining > 0:
@@ -125,8 +127,11 @@ def open_nofollow_for_write(path: Path, mode: int = 0o644):
     """Open ``path`` for writing (create/truncate) without following a symlink at the
     final component; returns a text file object. Server-side writes into tenant-writable
     dirs (run logs, pin markers) must never be redirected by a planted link."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    return os.fdopen(os.open(path, flags, mode), "w", encoding="utf-8")
+    # Walked by descriptor under a confinement root; created exclusively or
+    # fstat-checked before truncation (confined_fs write policy), so a planted
+    # link, FIFO or directory at any component is refused untouched.
+    fd = open_confined(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    return os.fdopen(fd, "w", encoding="utf-8")
 
 
 def _open_in_dir_nofollow(directory: Path, name: str, flags: int, mode: int = 0o644) -> int:
@@ -141,17 +146,14 @@ def _open_in_dir_nofollow(directory: Path, name: str, flags: int, mode: int = 0o
     support (the sandbox targets Linux) fall back to the joined path with a
     no-follow open of the entry.
     """
-    if not name or os.sep in name or "/" in name or name in (".", ".."):
-        raise ValueError(f"not a plain file name: {name!r}")
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    flags |= nofollow | getattr(os, "O_NONBLOCK", 0)
-    if os.open not in os.supports_dir_fd:
-        return os.open(directory / name, flags, mode)
-    dfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow)
+    # Under a confinement root the directory is reached by walking from the
+    # root (issue #190); elsewhere it is opened by pathname with O_NOFOLLOW as
+    # before (`immediate`). Either way the entry is opened relative to it.
+    handle = DirHandle.open(directory, immediate=True)
     try:
-        return os.open(name, flags, mode, dir_fd=dfd)
+        return handle.open_file(name, flags, mode)
     finally:
-        os.close(dfd)
+        handle.close()
 
 
 def write_text_in_dir_nofollow(directory: Path, name: str, text: str, mode: int = 0o644) -> None:
@@ -195,16 +197,14 @@ def read_head_bounded(path: Path, max_bytes: int) -> bytes:
 
 
 def _read_bounded(path: Path, max_bytes: int, *, from_end: bool) -> bytes:
-    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-             | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
     try:
-        fd = os.open(path, flags)
+        fd = open_confined(path, os.O_RDONLY)
     except OSError as e:
         raise ValueError(f"cannot read {path} (symlink or unreadable): {e}") from e
+    except ValueError as e:
+        raise ValueError(f"not a regular file: {path}") from e
     try:
         st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
-            raise ValueError(f"not a regular file: {path}")
         if from_end and st.st_size > max_bytes:
             os.lseek(fd, st.st_size - max_bytes, os.SEEK_SET)
         chunks: list[bytes] = []
@@ -235,36 +235,35 @@ def copy_regular_file_nofollow(src: Path, dst: Path, max_bytes: int) -> int:
     server-side moves between tenant-writable dirs (measure output into the
     session workspace, workspace into the model's files/).
     """
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    # O_NONBLOCK: a FIFO planted at the name would otherwise block the open before
-    # fstat can reject it
-    src_fd = os.open(src, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
+    # Both ends walked by descriptor under a confinement root (confined_fs):
+    # a link at any component, a FIFO or a non-regular entry fails the open.
+    src_fd = open_confined(src, os.O_RDONLY)
     try:
         st = os.fstat(src_fd)
-        if not stat.S_ISREG(st.st_mode):
-            raise ValueError(f"{src.name}: not a regular file")
         if st.st_size > max_bytes:
             raise ValueError(f"{src.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
-        dst_fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow | getattr(os, "O_NONBLOCK", 0), 0o644)
         try:
-            if not stat.S_ISREG(os.fstat(dst_fd).st_mode):
-                raise ValueError(f"{dst.name}: destination is not a regular file")
-        except BaseException:
-            os.close(dst_fd)
-            raise
-        copied = 0
-        with os.fdopen(dst_fd, "wb") as out:
-            while True:
-                chunk = os.read(src_fd, 1 << 20)
-                if not chunk:
-                    break
-                copied += len(chunk)
-                if copied > max_bytes:
-                    raise ValueError(f"{src.name}: grew past the {max_bytes}-byte limit while copying")
-                out.write(chunk)
-        return copied
+            dst_fd = open_confined(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        except ValueError as e:
+            raise ValueError(f"{dst.name}: destination is not a regular file") from e
+        return copy_fd_bounded(src_fd, dst_fd, max_bytes, src.name)
     finally:
         os.close(src_fd)
+
+
+def copy_fd_bounded(src_fd: int, dst_fd: int, max_bytes: int, label: str) -> int:
+    """Stream ``src_fd`` into ``dst_fd`` (closed here), stopping with ValueError past ``max_bytes``."""
+    copied = 0
+    with os.fdopen(dst_fd, "wb") as out:
+        while True:
+            chunk = os.read(src_fd, 1 << 20)
+            if not chunk:
+                break
+            copied += len(chunk)
+            if copied > max_bytes:
+                raise ValueError(f"{label}: grew past the {max_bytes}-byte limit while copying")
+            out.write(chunk)
+    return copied
 
 
 def copy_into(src: Path, dst: Path) -> None:
@@ -333,14 +332,9 @@ def sha256_regular_file_nofollow(path: Path, max_bytes: int) -> str:
     dirs (a model's resources, a package's lib/) where the bytes, not a
     link's target, are the identity.
     """
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    # O_NONBLOCK: a FIFO planted at the name would otherwise block the open before
-    # fstat can reject it
-    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
+    fd = open_confined(path, os.O_RDONLY)  # by descriptor under a root; regular files only
     try:
         st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
-            raise ValueError(f"{path.name}: not a regular file")
         if st.st_size > max_bytes:
             raise ValueError(f"{path.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
         digest = hashlib.sha256()
