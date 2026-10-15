@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -255,3 +256,35 @@ def safe_read_bytes(path: Path, max_bytes: int = 2_000_000) -> bytes:
     # useful tables sit at the end); read_tail_bounded adds the no-follow +
     # never-slurp-the-whole-file hardening (PR #105).
     return read_tail_bounded(path, max_bytes)
+
+
+def sha256_regular_file_nofollow(path: Path, max_bytes: int) -> str:
+    """SHA-256 of one regular file, opened without following a final-component symlink.
+
+    Checked by fstat on the open descriptor, so a link swapped in after a
+    stat-based check is still refused; a file over ``max_bytes`` raises
+    ValueError before any of it is read. For hashing files in tenant-writable
+    dirs (a model's resources, a package's lib/) where the bytes, not a
+    link's target, are the identity.
+    """
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, os.O_RDONLY | nofollow)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError(f"{path.name}: not a regular file")
+        if st.st_size > max_bytes:
+            raise ValueError(f"{path.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
+        digest = hashlib.sha256()
+        total = 0
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(f"{path.name}: grew past the {max_bytes}-byte limit while hashing")
+            digest.update(chunk)
+        return digest.hexdigest()
+    finally:
+        os.close(fd)
