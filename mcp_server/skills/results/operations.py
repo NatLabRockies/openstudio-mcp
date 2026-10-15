@@ -475,7 +475,8 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
             # which run failed goes in the message.
             return {
                 "ok": False, "error": metrics.get("error", "extraction_failed"),
-                "message": f"{label} run {run_id}: {metrics.get('message') or metrics.get('error', 'extraction failed')}",
+                "message": f"{label} run {run_id}: "
+                           f"{metrics.get('message') or metrics.get('error', 'extraction failed')}",
             }
 
     b = base_metrics["metrics"]

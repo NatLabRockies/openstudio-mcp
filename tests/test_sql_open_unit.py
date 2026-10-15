@@ -241,7 +241,8 @@ def test_summary_copies_the_result_file_once_for_its_three_reads(tmp_path, monke
     db.parent.mkdir(parents=True)
     conn = sqlite3.connect(db)
     conn.execute(
-        "CREATE TABLE TabularDataWithStrings (ReportName, ReportForString, TableName, RowName, ColumnName, Units, Value)",
+        "CREATE TABLE TabularDataWithStrings "
+        "(ReportName, ReportForString, TableName, RowName, ColumnName, Units, Value)",
     )
     conn.commit()
     conn.close()
