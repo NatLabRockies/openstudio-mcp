@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
+from mcp_server.resources import stage_model_resources
 from mcp_server.util import (
     create_run_dir,
     read_file_bounded,
@@ -46,6 +48,8 @@ _TEST_MODEL_CANDIDATES = [
 ]
 
 _MEASURE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,99}$")
+# measure.xml and tests/test_model.osm copied back from a private test copy
+_COPY_BACK_MAX_BYTES = 256 * 1024 * 1024
 # Argument names become bare Ruby/Python identifiers in generated code — they must
 # be plain identifiers, never arbitrary text (else code injection at generation).
 # Must start lowercase/underscore: an uppercase-leading name (e.g. "Foo") is a Ruby
@@ -80,23 +84,38 @@ def _validate_measure_name(name: str) -> str | None:
     return None
 
 
-def _find_test_model() -> Path | None:
-    """Find the best available test model OSM for measure tests."""
+def _find_test_model() -> tuple[Path | None, Path | None, Path | None, int | None]:
+    """(OSM to copy into tests/, OSM whose resources to stage, pending workspace dir,
+    session generation when the first item is a snapshot this call created, else None).
+
+    The session model is snapshotted to a temp file, so its resources come
+    from the path it was loaded from or saved to (its companion folder) plus
+    the session's pending workspace, read together under the session lock;
+    the caller re-checks the generation after staging so a concurrent load
+    cannot pair one model with another's files.
+    """
     # 1. Currently loaded model — save to temp file
     try:
-        from mcp_server.model_manager import get_model
-        model = get_model()
-        tmp = custom_measures_dir() / "_test_model.osm"
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        model.save(openstudio.toPath(str(tmp)), True)
-        return tmp
-    except Exception:
-        pass
+        from mcp_server.model_manager import (
+            get_model_path,
+            get_model_with_generation,
+            pending_files_dir_if_exists,
+            session_io_lock,
+        )
+        with session_io_lock():
+            model, generation = get_model_with_generation()
+            # Unique per call: two tests in one session must not share a snapshot
+            tmp = custom_measures_dir() / f"_test_model_{uuid.uuid4().hex[:8]}.osm"
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            model.save(openstudio.toPath(str(tmp)), True)
+            return tmp, get_model_path(), pending_files_dir_if_exists(expected_generation=generation), generation
+    except RuntimeError:
+        pass  # no model loaded
     # 2. Search known locations for SystemD_baseline.osm
     for p in _TEST_MODEL_CANDIDATES:
         if p.is_file():
-            return p
-    return None
+            return p, p, None, None
+    return None, None, None, None
 
 
 def _to_class_name(snake: str) -> str:
@@ -996,6 +1015,17 @@ def _test_reporting_measure_with_run(
         m = _os.model.Model()
         m.save(str(temp_osm), True)
 
+    # The resources the simulation used (Schedule:File CSVs, plugin scripts,
+    # its EPW) were staged into <run>/files; the postprocess workflow's default
+    # search path is its own files/, so a measure that reads one finds it.
+    # Tenant-written, so it goes through the resource copy (regular files,
+    # no-follow, budgets, unreadable subtrees reported), not a bare copytree.
+    run_files = sim_dir / "files"
+    if run_files.is_dir() and not run_files.is_symlink():
+        stage_err = stage_model_resources(None, run_dir / "files", first=[run_files])
+        if stage_err:
+            return {"ok": False, "error": f"Run {run_id} resources: {stage_err}"}
+
     # Copy measure
     measures_dir = run_dir / "measures"
     measures_dir.mkdir(exist_ok=True)
@@ -1129,15 +1159,18 @@ def test_measure_op(
         if err:
             return {"ok": False, "error": err}
 
-        # If the measure isn't in the caller's OWN writable area (e.g. a bundled or
-        # otherwise shared read-only measure), copy it into a private run dir and test
-        # the copy. test_measure writes test_model.osm + chowns + Landlock-grants the
-        # dir, so it must never mutate shared/host content. Own-run-root measures are
-        # tested in place (the caller's to mutate; the measure.xml update persists).
-        if not is_path_allowed(mdir, write=True):
-            _private_copy = Path(tempfile.mkdtemp(prefix="measure_test_", dir=user_run_root()))
-            shutil.copytree(mdir, _private_copy, symlinks=True, dirs_exist_ok=True)
-            mdir = _private_copy
+        # Always test a private copy: test_measure stages the model's resources
+        # into <measure>/files, writes tests/test_model.osm, chowns and
+        # Landlock-grants the dir, so it must never mutate shared/host content
+        # and must not leave staged resources (or let two sessions testing one
+        # measure clobber each other) in the caller's own measure dir. For an
+        # own measure the two outputs that used to persist in place, the
+        # regenerated measure.xml and tests/test_model.osm, are copied back
+        # after a successful run.
+        own_dir = mdir if is_path_allowed(mdir, write=True) else None
+        _private_copy = Path(tempfile.mkdtemp(prefix="measure_test_", dir=user_run_root()))
+        shutil.copytree(mdir, _private_copy, symlinks=True, dirs_exist_ok=True)
+        mdir = _private_copy
 
         # Detect language
         if (mdir / "measure.py").is_file():
@@ -1157,19 +1190,26 @@ def test_measure_op(
         if not test_dir.is_dir():
             return {"ok": False, "error": "No tests/ directory found"}
 
-        # Copy test model into tests/ so the test template can load it
+        # Copy test model into tests/ so the test template can load it, and
+        # stage its resources where the template's pathless WorkflowJSON looks:
+        # ./files relative to the test's cwd, which is the measure dir. In the
+        # private copy the model under test wins over a same-named fixture the
+        # measure ships; the measure dir itself keeps its fixture.
         test_model_dst = test_dir / "test_model.osm"
-        src_model = None
+        explicit: Path | None = None
         if model_path:
             src = Path(model_path)
             if not is_path_allowed(src):
                 return {"ok": False, "error": f"model_path not allowed: {model_path}"}
             if src.is_file():
-                src_model = src
-        if not src_model:
-            src_model = _find_test_model()
-        if src_model:
-            shutil.copy2(str(src_model), str(test_model_dst))
+                explicit = src
+        if explicit is not None:
+            shutil.copy2(str(explicit), str(test_model_dst))
+            stage_err = stage_model_resources(explicit, mdir / "files", overwrite=True)
+        else:
+            stage_err = _stage_session_or_asset_model(mdir, test_model_dst)
+        if stage_err:
+            return {"ok": False, "error": stage_err}
 
         if language == "Python":
             test_cmd = ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"]
@@ -1272,10 +1312,25 @@ def test_measure_op(
         if proc.returncode != 0:
             result["error"] = f"Measure test failed ({describe_exit(proc.returncode)})"
             result["log_hint"] = "Full log: read_file(file_path=log_path)"
-        try:
-            _update_measure_xml(mdir, language)
-        except RuntimeError as e:
-            result["metadata_warning"] = str(e)
+        # measure.xml lists every file in the measure dir with a checksum, so
+        # it is regenerated against the dir that is kept: the caller's own
+        # measure dir after tests/test_model.osm came back (the private copy
+        # may hold files the test wrote, which do not come back). A private
+        # copy of a shared measure is discarded, so nothing is regenerated.
+        if own_dir is not None:
+            # Whatever the confined test left in its copy is discarded with it;
+            # a link pointing out of that copy is still reported to the caller.
+            leftover = reject_escaping_symlinks(mdir)
+            copy_back_err = _copy_back_test_outputs(mdir, own_dir)
+            if copy_back_err:
+                result["metadata_warning"] = copy_back_err
+            else:
+                try:
+                    _update_measure_xml(own_dir, language)
+                except RuntimeError as e:
+                    result["metadata_warning"] = str(e)
+            if leftover and "metadata_warning" not in result:
+                result["metadata_warning"] = f"The test left this in its private copy (discarded): {leftover}"
         return result
 
     except subprocess.TimeoutExpired:
@@ -1291,6 +1346,76 @@ def test_measure_op(
     finally:
         if _private_copy is not None:
             shutil.rmtree(_private_copy, ignore_errors=True)
+
+
+def _stage_session_or_asset_model(mdir: Path, test_model_dst: Path) -> str | None:
+    """Copy the session model (else the bundled asset) into tests/ and stage its resources.
+
+    Snapshot, path, pending workspace and the resource copy all happen under
+    the session lock: save_osm_model moves the pending files into a (possibly
+    new) companion folder under that lock without changing the generation,
+    so a generation check alone would not notice a save in between. The
+    generation is still re-checked afterwards for load_model, which does not
+    take the lock. Returns an error string when the resources could not be
+    staged; raises RuntimeError when the model was replaced.
+    """
+    from mcp_server.model_manager import ensure_generation_unchanged, session_io_lock
+
+    with session_io_lock():
+        src_model, resource_osm, pending, snapshot_generation = _find_test_model()
+        if src_model is None:
+            return None
+        shutil.copy2(str(src_model), str(test_model_dst))
+        if snapshot_generation is not None:
+            src_model.unlink(missing_ok=True)  # only the snapshot this call created
+        err = stage_model_resources(
+            resource_osm, mdir / "files", first=[pending] if pending is not None else [],
+            overwrite=True,
+        )
+        if err:
+            return err
+        if snapshot_generation is not None:
+            ensure_generation_unchanged(snapshot_generation)
+    return None
+
+
+def _copy_back_test_outputs(private_copy: Path, own_dir: Path) -> str | None:
+    """Return `tests/test_model.osm`, the one test output kept in an own measure dir.
+
+    Nothing else from the private copy, which held staged resources and
+    whatever the confined test wrote; measure.xml is regenerated in the own
+    dir afterwards. Both ends are opened no-follow: the private copy was
+    writable by the test, the own dir by the caller. Returns an error string
+    on failure.
+    """
+    from mcp_server.util import copy_regular_file_nofollow, is_regular_file_inside
+
+    for rel in (Path("tests") / "test_model.osm",):
+        src = private_copy / rel
+        if not src.exists() and not src.is_symlink():
+            continue
+        # Both trees are writable by others (the private copy by the test, the
+        # own dir by the caller): the source must be a regular file resolving
+        # inside the private copy, every destination component must be a real
+        # directory, and the first failure ends the copy-back.
+        if not is_regular_file_inside(src, private_copy):
+            return f"{rel} in the test copy is a link or resolves outside it; nothing further copied back"
+        here = own_dir
+        for part in Path(rel).parts[:-1]:
+            here = here / part
+            if here.is_symlink():
+                return f"{here} is a symlink; nothing further copied back"
+            if here.exists() and not here.is_dir():
+                return f"{here} is not a directory; nothing further copied back"
+        dst = own_dir / rel
+        if dst.is_symlink():
+            return f"{dst} is a symlink; nothing further copied back"
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            copy_regular_file_nofollow(src, dst, _COPY_BACK_MAX_BYTES)
+        except (OSError, ValueError) as e:
+            return f"could not copy {rel} back into the measure dir: {e}"
+    return None
 
 
 def edit_measure_op(

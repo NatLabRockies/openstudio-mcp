@@ -2,9 +2,11 @@
 
 `/path/to/model.osm` keeps its resources (ExternalFile targets: Python EMS plugin
 scripts, Schedule:File CSVs, custom EPWs) in its companion folder
-`/path/to/model/files/` (SDK `getCompanionFolder`, used as is). Every OSM owns
-its own folder, so two models in one directory never share or overwrite each
-other's resources. Only `files/` is created here; the Application's
+`/path/to/model/files/`. The folder is the SDK's `getCompanionFolder` rule
+(`<dir>/<name up to its last dot>`), computed here without the SDK so this
+module stays importable in the unit tier; an integration test pins parity
+with the SDK. Every OSM owns its own folder, so two models in one directory
+never share or overwrite each other's resources. Only `files/` is created here; the Application's
 `workflow.osw`, `run/` and `measures/` entries are not (it creates them itself
 when it opens a model).
 
@@ -14,14 +16,17 @@ writes go to the companion folder; a save copies the legacy resources forward.
 
 Both dirs are tenant-writable, so nothing here follows a symlink: not at the
 companion folder, not at `files/`, not at an entry.
+
+Path authorization defaults to the request's identity (`is_path_allowed`).
+The signed download route runs outside any request, so every reader here
+takes an `allowed` callable (`is_path_allowed_for` bound to the token's key)
+and passes it down; `copy_resources` itself never authorizes, its callers do.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
-
-import openstudio
+from typing import Any, Protocol
 
 from mcp_server.config import is_path_allowed
 from mcp_server.util import copy_regular_file_nofollow, open_nofollow_for_write
@@ -36,9 +41,23 @@ MAX_RESOURCE_TOTAL_BYTES = 1024 * 1024 * 1024
 MIGRATED_MARKER = ".resources-migrated"
 
 
+class PathAllowed(Protocol):
+    """`is_path_allowed` or `functools.partial(is_path_allowed_for, key)`."""
+
+    def __call__(self, p: Path, *, write: bool = False) -> bool: ...
+
+
 def companion_folder(osm_path: Path | str) -> Path:
-    """`<dir>/<stem>/` for an OSM, via the SDK (the Application's rule)."""
-    return Path(openstudio.getCompanionFolder(openstudio.path(str(Path(osm_path)))))
+    """`<dir>/<stem>/` for an OSM: the SDK's getCompanionFolder rule, computed locally.
+
+    The SDK (boost `stem()`) takes the name up to its LAST dot, so
+    `model.v2.osm` -> `model.v2`, `.osm` -> the parent dir, `model.` ->
+    `model`. pathlib's `stem` differs on the last two; this matches the SDK
+    (pinned by tests/test_model_bundle.py::test_companion_folder_rule_matches_the_sdk).
+    """
+    p = Path(osm_path)
+    stem = p.name.rpartition(".")[0] if "." in p.name else p.name
+    return p.parent / stem
 
 
 def companion_files_dir(osm_path: Path | str) -> Path:
@@ -51,15 +70,19 @@ def legacy_files_dir(osm_path: Path | str) -> Path:
     return Path(osm_path).parent / "files"
 
 
-def resource_dir_issue(files_dir: Path, *, write: bool) -> str | None:
+def resource_dir_issue(
+    files_dir: Path, *, write: bool, allowed: PathAllowed | None = None,
+) -> str | None:
     """Why `files_dir` must not be used as a resource dir, or None when it may be.
 
     The dir need not exist yet. It must not be a symlink, nor sit under a
     symlinked parent (a link planted at the companion folder would make
     `<stem>/files` look like an ordinary directory), must not exist as a
     non-directory, and its resolved location must be inside the caller's
-    allowed roots (writable ones when `write`).
+    allowed roots (writable ones when `write`), per `allowed` (default: the
+    request identity's `is_path_allowed`).
     """
+    check = allowed if allowed is not None else is_path_allowed
     parent = files_dir.parent
     if parent.is_symlink():
         return f"{parent} is a symlink"
@@ -69,7 +92,7 @@ def resource_dir_issue(files_dir: Path, *, write: bool) -> str | None:
         return f"{files_dir} is a symlink"
     if files_dir.exists() and not files_dir.is_dir():
         return f"{files_dir} exists and is not a directory"
-    if not is_path_allowed(files_dir, write=write):
+    if not check(files_dir, write=write):
         kind = "writable for this session" if write else "inside the allowed roots"
         return f"{files_dir} is not {kind}"
     return None
@@ -98,7 +121,7 @@ def mark_legacy_migrated(osm_path: Path | str) -> None:
         fh.write("legacy sibling files/ copied into files/ by save_osm_model\n")
 
 
-def resource_sources(osm_path: Path | str) -> list[Path]:
+def resource_sources(osm_path: Path | str, *, allowed: PathAllowed | None = None) -> list[Path]:
     """Existing resource dirs of a model, highest precedence first.
 
     Companion folder, then the legacy sibling until a save has migrated it
@@ -115,14 +138,17 @@ def resource_sources(osm_path: Path | str) -> list[Path]:
     for candidate in candidates:
         if not candidate.exists() and not candidate.is_symlink():
             continue
-        issue = resource_dir_issue(candidate, write=False)
+        issue = resource_dir_issue(candidate, write=False, allowed=allowed)
         if issue:
             raise ValueError(f"resource dir not usable: {issue}")
         out.append(candidate)
     return out
 
 
-def find_resource(osm_path: Path | str | None, name: str, *, first: list[Path] = ()) -> Path | None:
+def find_resource(
+    osm_path: Path | str | None, name: str, *,
+    first: list[Path] = (), allowed: PathAllowed | None = None,
+) -> Path | None:
     """The regular, non-link file `name` from the first source that has it.
 
     `first` are dirs searched before the model's own (the session's pending
@@ -133,12 +159,12 @@ def find_resource(osm_path: Path | str | None, name: str, *, first: list[Path] =
         return None
     sources: list[Path] = []
     for extra in first:
-        issue = resource_dir_issue(extra, write=False)
+        issue = resource_dir_issue(extra, write=False, allowed=allowed)
         if issue:
             raise ValueError(f"resource dir not usable: {issue}")
         sources.append(extra)
     if osm_path is not None:
-        sources += resource_sources(osm_path)
+        sources += resource_sources(osm_path, allowed=allowed)
     for src in sources:
         candidate = src / safe
         if candidate.is_file() and not candidate.is_symlink():
@@ -261,7 +287,8 @@ def copy_resources(
 
 
 def stage_model_resources(
-    osm_path: Path | str | None, dst: Path, *, first: list[Path] = (),
+    osm_path: Path | str | None, dst: Path, *,
+    first: list[Path] = (), allowed: PathAllowed | None = None, overwrite: bool = False,
 ) -> str | None:
     """Copy a model's resources (and `first` dirs, which win) into a run's `files/`.
 
@@ -269,19 +296,20 @@ def stage_model_resources(
     for ExternalFile names, so the resources travel with the seed without any
     path in the model or OSW being rewritten; the copy, rather than a search
     path pointing at the model dir, is what the sandbox tier needs (the
-    confined subprocess reads only its run dir). Returns an error string when
-    a source dir is not usable (a planted link), else None.
+    confined subprocess reads only its run dir). A file already in `dst` is
+    kept unless `overwrite`. Returns an error string when a source dir is
+    not usable (a planted link), else None.
     """
     sources = list(first)
     if osm_path is not None:
         try:
-            sources += resource_sources(osm_path)
+            sources += resource_sources(osm_path, allowed=allowed)
         except ValueError as e:
             return f"Model resources were not staged: {e}"
     if not sources:
         return None
     try:
-        outcome = copy_resources(sources, dst)
+        outcome = copy_resources(sources, dst, overwrite=overwrite)
     except ValueError as e:
         return f"Model resources were not staged: {e}"
     # A link is skipped on purpose; a regular resource that could not be

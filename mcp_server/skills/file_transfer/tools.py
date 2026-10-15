@@ -6,7 +6,10 @@ LLM context), landing in the caller's isolated, sandboxed RUN_ROOT/<user>/upload
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from mcp_server.skills.file_transfer.operations import (
+    UNSAVED_EDITS_WARNING,
     delete_upload_op,
     get_upload_op,
     list_uploads_op,
@@ -83,13 +86,31 @@ def register(mcp):
         text, read_file is simpler. GET the returned download_url, e.g.
         curl -O -J "<download_url>".
 
+        A model is more than its .osm: Schedule:File CSVs, Python EMS plugin
+        scripts and custom EPWs live in its companion folder <model>/files/.
+        To take a model elsewhere, pass path=<model.osm> with bundle=True: the
+        zip holds <stem>.osm and <stem>/files/ (the OpenStudio Application
+        layout, so it opens there after unzipping). The bundle is the saved
+        file; save_osm_model first, a warning says when the session has edits
+        the file does not.
+
         Args:
             path: Absolute server path to a single file (your run dir, or the
                 shared read-only roots e.g. bundled measures)
             run_id: With bundle=True, zip this run's reports/ for download
-            bundle: If True, bundle a run's reports into one .zip (requires run_id)
+            bundle: If True, zip a run's reports (with run_id) or a model with
+                its companion folder (with path=<model.osm>)
         """
-        return request_download_op(path=path, run_id=run_id, bundle=bundle)
+        result = request_download_op(path=path, run_id=run_id, bundle=bundle)
+        target = result.pop("target", None)
+        if target is not None:
+            # Tool boundary only: model_manager imports the SDK, and the
+            # operation stays importable in the unit tier.
+            from mcp_server.model_manager import unsaved_edits_for
+
+            if unsaved_edits_for(Path(target)):
+                result["warnings"] = [UNSAVED_EDITS_WARNING]
+        return result
 
     # Out-of-band byte channel on the same app/port. Authorization is the signed
     # URL (these routes are NOT behind the MCP auth verifier). Guarded so skill

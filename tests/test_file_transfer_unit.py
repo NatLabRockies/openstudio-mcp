@@ -462,3 +462,24 @@ def test_finalize_enforces_quota_post_extraction(monkeypatch, tmp_path):
     assert "quota" in res["error"].lower()
     assert not operations._entry_dir("local", fid).exists(), \
         "over-quota upload must roll back the whole entry"
+
+
+def test_bundle_mint_does_not_import_the_sdk(monkeypatch):
+    # Regression: request_download(path=<osm>, bundle=True) imported model_manager (and
+    # with it openstudio) for the unsaved-edits warning, so the operation was no longer
+    # importable or callable in the unit tier; the warning is added at the tool boundary
+    import sys
+
+    monkeypatch.setitem(sys.modules, "openstudio", None)
+    monkeypatch.setitem(sys.modules, "mcp_server.model_manager", None)
+    osm = operations._uploads_dir("local") / "mint_probe.osm"
+    osm.write_text("OS:Version,3.11.0;\n", encoding="utf-8")
+    try:
+        res = operations.request_download_op(path=str(osm), bundle=True)
+    finally:
+        osm.unlink(missing_ok=True)
+    assert res["ok"] is True, res
+    assert res["bundle"] is True
+    assert res["members"] == ["mint_probe.osm", "mint_probe/.resources-migrated"], res
+    assert res["target"] == str(osm.resolve()), res
+    assert "warnings" not in res

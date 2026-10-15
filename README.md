@@ -591,7 +591,7 @@ Move files between your machine and a remote server over signed, one-time URLs. 
 | `get_upload` | Check an upload's status and get its server-side path |
 | `list_uploads` | List your uploaded files |
 | `delete_upload` | Delete an uploaded file and free its quota |
-| `request_download` | Get a one-time URL to download a server file to your machine |
+| `request_download` | Get a one-time URL to download a server file, or a model with its companion folder, to your machine |
 
 </details>
 
@@ -647,7 +647,7 @@ one-variable payload but later fails during analysis startup.
 | `list_output_variables` | Output variables from a completed run |
 | `compare_runs` | Compare two runs: EUI delta + end-use breakdown |
 | `read_file` | Read any file by absolute path (mounts only) |
-| `copy_file` | Copy a file to a host-mounted path |
+| `copy_file` | Copy a file (a model with its companion folder) to a host-mounted path |
 
 </details>
 

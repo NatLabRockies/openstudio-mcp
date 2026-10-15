@@ -60,6 +60,9 @@ def register(mcp):
         Use to export files to the host. To read file contents, use read_file instead.
 
         Supports both individual files and entire directories (e.g. measure dirs).
+        A .osm is copied with its companion folder (<model>/files/: Schedule:File
+        CSVs, plugin scripts, custom EPWs), so the copy loads and simulates like
+        the original; saved resources only, so save_osm_model first.
 
         Args:
             file_path: Absolute path to the source file or directory

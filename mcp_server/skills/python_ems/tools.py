@@ -135,6 +135,7 @@ def register(mcp):
         model — what a Python plugin can control. Runs a hidden sizing-only simulation
         (a few seconds) and parses the EnergyPlus actuator dictionary (.edd).
         Filters are case-insensitive substrings. Requires design days in the model.
+        The model's resources (companion <model>/files/) are staged for the run.
 
         Args:
             component_type: filter, e.g. "Schedule:Constant", "System Node Setpoint"

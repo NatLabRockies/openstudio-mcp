@@ -190,6 +190,10 @@ def register(mcp):
 
         Model priority: explicit model_path > currently loaded model >
         built-in SystemD_baseline.osm (44 zones, DOAS, CHW/HW/SWH loops).
+        The model's resources (companion <model>/files/: Schedule:File CSVs,
+        plugin scripts) are staged so runner.workflow.findFile sees them.
+        Tests run on a private copy; for your own measure tests/test_model.osm
+        is copied back and measure.xml is regenerated in your measure dir.
 
         For ReportingMeasures, provide run_id of a completed simulation.
         The measure will be tested via `openstudio run --postprocess_only`
