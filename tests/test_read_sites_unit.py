@@ -280,4 +280,5 @@ def test_read_file_closes_the_descriptor_when_the_type_check_fails(tmp_path, mon
         assert res["ok"] is False and res["error"] == "read_failed", res
         assert opened and sorted(closed) == sorted(opened), "every descriptor opened by read_file is closed"
     finally:
+        monkeypatch.undo()  # the cleanup below must see the real os functions
         shutil.rmtree(shared, ignore_errors=True)
