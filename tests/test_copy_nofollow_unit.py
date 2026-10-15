@@ -52,6 +52,22 @@ def test_refuses_a_symlinked_destination(tmp_path):
     assert target.read_text(encoding="utf-8") == "untouched\n"
 
 
+@posix_only
+def test_refuses_a_fifo_at_the_destination_without_blocking(tmp_path):
+    # Regression: the destination was opened O_WRONLY without O_NONBLOCK and never fstat-checked,
+    # so a FIFO planted at the destination name (between the caller's check and the copy) hung
+    # the server on open, or, with a reader attached, took the copy as a stream
+    import os
+
+    src = tmp_path / "a.csv"
+    src.write_text("1\n", encoding="utf-8")
+    dst = tmp_path / "a_fifo.csv"
+    os.mkfifo(dst)
+    with pytest.raises((OSError, ValueError)):  # ENXIO (no reader) or "not a regular file"
+        copy_regular_file_nofollow(src, dst, max_bytes=10_000)
+    assert src.read_text(encoding="utf-8") == "1\n"
+
+
 def test_refuses_a_file_over_the_budget_before_copying(tmp_path):
     # Validates: the size check runs on the opened file, so an over-budget file is refused
     # without being copied (the copy runs in the server, outside subprocess rlimits)

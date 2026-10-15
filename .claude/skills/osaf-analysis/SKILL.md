@@ -82,6 +82,12 @@ openstudio_analysis_prepare_package
 openstudio_analysis_validate_package
 ```
 
+Pass `seed_path` as the model where it was saved (`save_osm_model`): the OSM goes
+into `seeds/` and the resources in its companion folder (`<seed>/files/`:
+Schedule:File CSVs, plugin scripts) go flat into `lib/`, which every datapoint
+searches. Nothing else may sit under `seeds/`. The seed QA/QC run is reused only
+while the seed, its effective weather file and its resources are unchanged.
+
 Submit and upload:
 
 ```

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -128,6 +129,63 @@ def open_nofollow_for_write(path: Path, mode: int = 0o644):
     return os.fdopen(os.open(path, flags, mode), "w", encoding="utf-8")
 
 
+def _open_in_dir_nofollow(directory: Path, name: str, flags: int, mode: int = 0o644) -> int:
+    """os.open of ``directory/name`` relative to a descriptor of ``directory`` itself.
+
+    A no-follow open refuses a link at the final component only: a directory
+    on the path swapped for a link after the caller checked it would still
+    redirect the open. Here the directory is opened first, without following
+    a link at its name, and the entry is opened relative to that descriptor
+    (``dir_fd``), so the entry is the one in the directory that was opened
+    whatever the path resolves to afterwards. Platforms without ``dir_fd``
+    support (the sandbox targets Linux) fall back to the joined path with a
+    no-follow open of the entry.
+    """
+    if not name or os.sep in name or "/" in name or name in (".", ".."):
+        raise ValueError(f"not a plain file name: {name!r}")
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    flags |= nofollow | getattr(os, "O_NONBLOCK", 0)
+    if os.open not in os.supports_dir_fd:
+        return os.open(directory / name, flags, mode)
+    dfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow)
+    try:
+        return os.open(name, flags, mode, dir_fd=dfd)
+    finally:
+        os.close(dfd)
+
+
+def write_text_in_dir_nofollow(directory: Path, name: str, text: str, mode: int = 0o644) -> None:
+    """Create or replace ``directory/name`` through a descriptor of ``directory`` (see _open_in_dir_nofollow)."""
+    fd = _open_in_dir_nofollow(directory, name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def read_file_in_dir_nofollow(directory: Path, name: str, max_bytes: int) -> bytes:
+    """``directory/name`` read through a descriptor of ``directory`` (see _open_in_dir_nofollow).
+
+    Regular files only (ValueError otherwise), at most ``max_bytes`` read.
+    """
+    fd = _open_in_dir_nofollow(directory, name, os.O_RDONLY)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError(f"not a regular file: {name}")
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining > 0:
+            chunk = os.read(fd, min(remaining, 1 << 20))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+    finally:
+        os.close(fd)
+    if len(data) > max_bytes:
+        raise ValueError(f"{name}: exceeds the {max_bytes}-byte limit")
+    return data
+
+
 def read_head_bounded(path: Path, max_bytes: int) -> bytes:
     """Read the FIRST ``max_bytes`` of a regular file with the same no-follow
     guarantees as read_tail_bounded. Pairs with it when the interesting part
@@ -169,22 +227,31 @@ def safe_read_text(path: Path, max_bytes: int = 200_000) -> str:
 def copy_regular_file_nofollow(src: Path, dst: Path, max_bytes: int) -> int:
     """Copy one regular file without following a symlink at either end.
 
-    Both ends are opened with O_NOFOLLOW and the source is checked by fstat
+    Both ends are opened with O_NOFOLLOW | O_NONBLOCK and checked by fstat
     (so a link swapped in after a stat-based check is still refused: the open
-    fails on a link, and a non-regular file fails the fstat). The copy stops
+    fails on a link, a FIFO cannot block the open, and a non-regular file at
+    either end fails the fstat before anything is written). The copy stops
     with ValueError past ``max_bytes``. Returns the bytes copied. For
     server-side moves between tenant-writable dirs (measure output into the
     session workspace, workspace into the model's files/).
     """
     nofollow = getattr(os, "O_NOFOLLOW", 0)
-    src_fd = os.open(src, os.O_RDONLY | nofollow)
+    # O_NONBLOCK: a FIFO planted at the name would otherwise block the open before
+    # fstat can reject it
+    src_fd = os.open(src, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
     try:
         st = os.fstat(src_fd)
         if not stat.S_ISREG(st.st_mode):
             raise ValueError(f"{src.name}: not a regular file")
         if st.st_size > max_bytes:
             raise ValueError(f"{src.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
-        dst_fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow, 0o644)
+        dst_fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow | getattr(os, "O_NONBLOCK", 0), 0o644)
+        try:
+            if not stat.S_ISREG(os.fstat(dst_fd).st_mode):
+                raise ValueError(f"{dst.name}: destination is not a regular file")
+        except BaseException:
+            os.close(dst_fd)
+            raise
         copied = 0
         with os.fdopen(dst_fd, "wb") as out:
             while True:
@@ -255,3 +322,37 @@ def safe_read_bytes(path: Path, max_bytes: int = 2_000_000) -> bytes:
     # useful tables sit at the end); read_tail_bounded adds the no-follow +
     # never-slurp-the-whole-file hardening (PR #105).
     return read_tail_bounded(path, max_bytes)
+
+
+def sha256_regular_file_nofollow(path: Path, max_bytes: int) -> str:
+    """SHA-256 of one regular file, opened without following a final-component symlink.
+
+    Checked by fstat on the open descriptor, so a link swapped in after a
+    stat-based check is still refused; a file over ``max_bytes`` raises
+    ValueError before any of it is read. For hashing files in tenant-writable
+    dirs (a model's resources, a package's lib/) where the bytes, not a
+    link's target, are the identity.
+    """
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    # O_NONBLOCK: a FIFO planted at the name would otherwise block the open before
+    # fstat can reject it
+    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError(f"{path.name}: not a regular file")
+        if st.st_size > max_bytes:
+            raise ValueError(f"{path.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
+        digest = hashlib.sha256()
+        total = 0
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(f"{path.name}: grew past the {max_bytes}-byte limit while hashing")
+            digest.update(chunk)
+        return digest.hexdigest()
+    finally:
+        os.close(fd)

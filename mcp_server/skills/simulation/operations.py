@@ -32,6 +32,7 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.identity import user_key
+from mcp_server.model_bundle import digest_resource_dirs
 from mcp_server.resources import stage_model_resources
 from mcp_server.util import (
     create_run_dir,
@@ -42,12 +43,15 @@ from mcp_server.util import (
     reject_escaping_symlinks,
     resolve_run_dir,
     safe_name,
+    sha256_regular_file_nofollow,
 )
 
 MAX_LOG_READ_BYTES = 4 * 1024 * 1024
 MAX_ERR_READ_BYTES = 16 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024  # run_record.json is small; anything bigger is hostile
 MAX_OUT_OSW_BYTES = 16 * 1024 * 1024  # out.osw carries step results/messages and can be large
+MAX_IDENTITY_FILE_BYTES = 1024 * 1024 * 1024  # a staged seed OSM or EPW, hashed for the run record
+_SHA256_LEN = 64
 _STATUSES = frozenset({"queued", "running", "success", "failed", "cancelled"})
 
 # Where the MCP server stores runs inside the container
@@ -71,6 +75,15 @@ class RunRecord:
     epw_path: Path | None
     exit_code: int | None
     error: str | None
+    # What run_simulation simulated, hashed from its own staged snapshot before the
+    # run was queued: the OSM, the effective EPW and the resource set (files/ before
+    # the weather override). The OSAF seed preflight reuses a run only when all three
+    # equal the seed's current identity; a record without them (an older run, or any
+    # other run_osw caller) never matches. Never recomputed from the run dir, which
+    # the tenant's sandboxed process writes.
+    seed_sha256: str | None = None
+    weather_sha256: str | None = None
+    resources_sha256: str | None = None
 
 
 # In-memory registry (good enough for one-container dev right now)
@@ -144,6 +157,13 @@ def _coerce_number(value: Any) -> float | None:
         return None
 
 
+def _coerce_sha256(value: Any) -> str | None:
+    """A 64-hex-digit string from a tenant-written record, else None (never matches)."""
+    if isinstance(value, str) and len(value) == _SHA256_LEN and all(c in "0123456789abcdef" for c in value):
+        return value
+    return None
+
+
 def _coerce_int(value: Any) -> int | None:
     try:
         return int(value) if value is not None and not isinstance(value, bool) else None
@@ -169,6 +189,9 @@ def _persist_run_record(rec: RunRecord) -> None:
             "epw_path": str(rec.epw_path) if rec.epw_path else None,
             "exit_code": rec.exit_code,
             "error": rec.error,
+            "seed_sha256": rec.seed_sha256,
+            "weather_sha256": rec.weather_sha256,
+            "resources_sha256": rec.resources_sha256,
         }
         # Temp file + os.replace: a symlink planted at run_record.json is replaced, never
         # followed (write_text as root would have overwritten the link's target).
@@ -237,6 +260,9 @@ def _load_run_record_from_disk(run_id: str) -> RunRecord | None:
             epw_path=Path(str(epw)) if isinstance(epw, str) and epw else None,
             exit_code=_coerce_int(data.get("exit_code")),
             error=error,
+            seed_sha256=_coerce_sha256(data.get("seed_sha256")),
+            weather_sha256=_coerce_sha256(data.get("weather_sha256")),
+            resources_sha256=_coerce_sha256(data.get("resources_sha256")),
         )
     except Exception:
         return None
@@ -622,7 +648,8 @@ def _enqueue(run_id: str) -> None:
 
 
 def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
-            *, _internal: bool = False) -> dict[str, Any]:
+            *, _internal: bool = False,
+            _identity: dict[str, str | None] | None = None) -> dict[str, Any]:
     """
     Stage the OSW + referenced files into /runs/<descriptive_name>_<short_id>/ and execute:
       openstudio run -w <staged_osw>
@@ -638,6 +665,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     read root (is_path_allowed). `_internal=True` is the trusted path for
     run_simulation, whose server-built temp OSW lives in a private staging dir and
     whose inputs it has already validated; it is NOT exposed via the MCP tool.
+    `_identity` (run_simulation only) carries the seed and resources hashes of that
+    staged snapshot; the weather hash is taken here from the staged EPW copy, and the
+    three are written into the run record (see RunRecord).
     """
     src_osw = Path(osw_path).resolve()
     if not src_osw.exists():
@@ -777,6 +807,11 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         shutil.copy2(epw_src, staged_epw)
         osw["weather_file"] = f"files/{epw_src.name}"
         _dump_json(staged_osw, osw)
+        if _identity is not None:
+            try:
+                _identity["weather_sha256"] = sha256_regular_file_nofollow(staged_epw, MAX_IDENTITY_FILE_BYTES)
+            except (OSError, ValueError) as e:
+                return {"ok": False, "error": f"Could not hash the staged weather file: {e}"}
 
     # The seed's own resources (its companion folder <seed>/files/, or an older
     # sibling files/) travel into the run's files/ behind everything the OSW
@@ -807,6 +842,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         epw_path=staged_epw,
         exit_code=None,
         error=None,
+        seed_sha256=_identity.get("seed_sha256") if _identity else None,
+        weather_sha256=_identity.get("weather_sha256") if _identity else None,
+        resources_sha256=_identity.get("resources_sha256") if _identity else None,
     )
     with _sim_lock:
         _RUNS[run_id] = rec
@@ -1239,6 +1277,20 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
         if stage_err:
             return {"ok": False, "error": stage_err}
 
+        # The run's identity for the OSAF seed preflight cache, hashed from
+        # this staged snapshot (not the source files, which may change
+        # between the copy and the hash) before anything is queued. The
+        # staged files/ is exactly the model's effective resource set, so its
+        # digest equals resources_digest(osm) computed by the preflight.
+        try:
+            identity: dict[str, str | None] = {
+                "seed_sha256": sha256_regular_file_nofollow(staged_osm, MAX_IDENTITY_FILE_BYTES),
+                "weather_sha256": None,
+                "resources_sha256": digest_resource_dirs([stage / "files"])["sha256"],
+            }
+        except (OSError, ValueError) as e:
+            return {"ok": False, "error": f"Could not hash the staged model: {e}"}
+
         osw: dict[str, Any] = {
             "seed_file": osm.name,
             "file_paths": [],
@@ -1256,6 +1308,7 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
             epw_path=epw_abs,
             name=name or osm.stem,
             _internal=True,
+            _identity=identity,
         )
     if unsaved_warning and result.get("ok"):
         result.setdefault("warnings", []).append(unsaved_warning)

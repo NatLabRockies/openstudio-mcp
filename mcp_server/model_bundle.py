@@ -16,11 +16,17 @@ no-follow opens, links skipped, the per-file and aggregate budgets, and a
 could not be copied fails the bundle; a model with a resource silently
 missing is worse than no bundle.
 
+`resources_digest` is the same unit as an identity: the OSAF seed preflight
+and `run_simulation` both hash the effective resource set with it, so a
+cached seed run is reused only when the resources it simulated are the
+ones the package carries.
+
 SDK-free on purpose (see resources.py): the signed download route and the
 unit tier both import it.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import tempfile
@@ -30,6 +36,9 @@ from typing import Any
 
 from mcp_server.config import run_root_for, user_run_root
 from mcp_server.resources import (
+    MAX_RESOURCE_FILE_BYTES,
+    MAX_RESOURCE_FILES,
+    MAX_RESOURCE_TOTAL_BYTES,
     MIGRATED_MARKER,
     PathAllowed,
     companion_folder,
@@ -37,7 +46,11 @@ from mcp_server.resources import (
     resource_dir_issue,
     resource_sources,
 )
-from mcp_server.util import copy_regular_file_nofollow, open_nofollow_for_write
+from mcp_server.util import (
+    copy_regular_file_nofollow,
+    open_nofollow_for_write,
+    sha256_regular_file_nofollow,
+)
 
 # An OSM is one regular file; this bounds the no-follow copy into the staging dir.
 MAX_BUNDLE_OSM_BYTES = 1024 * 1024 * 1024
@@ -112,6 +125,77 @@ def list_bundle_members(
                 members.append(f"{stem}/files/{Path(rel).as_posix()}")
     members.append(f"{stem}/{MIGRATED_MARKER}")
     return members
+
+
+def combine_resource_hashes(files: dict[str, str]) -> str | None:
+    """One sha256 over `{rel: sha256}`, independent of walk order; None for no files.
+
+    The manifest and the run record store this value; `validate_analysis_package`
+    recomputes it from the zip's lib/ members with the same function.
+    """
+    if not files:
+        return None
+    digest = hashlib.sha256()
+    for rel in sorted(files):
+        digest.update(f"{rel}\0{files[rel]}\n".encode())
+    return digest.hexdigest()
+
+
+def digest_resource_dirs(sources: list[Path]) -> dict[str, Any]:
+    """{"files": {rel: sha256}, "sha256": str | None} of the effective resource set in `sources`.
+
+    The walk is `copy_resources`' walk: first dir wins per relative path,
+    links and non-regular entries are left out, the migration marker is
+    never a resource, the per-file and aggregate budgets apply, and a dir
+    that does not exist contributes nothing. Hashing a regular file that
+    cannot be read (over the budget, unreadable) raises ValueError: a
+    resource that could not be staged must not be part of an identity.
+    Relative paths are POSIX, so the same set hashes the same in a run's
+    files/, a companion folder and a package's lib/.
+    """
+    files: dict[str, str] = {}
+    seen: set[str] = set()
+    total = 0
+    for src in sources:
+        if not src.is_dir() or src.is_symlink():
+            continue
+        walk_errors: list[OSError] = []
+        for dirpath, dirnames, filenames in os.walk(src, followlinks=False, onerror=walk_errors.append):
+            here = Path(dirpath)
+            dirnames[:] = sorted(d for d in dirnames if not (here / d).is_symlink())
+            rel_dir = here.relative_to(src)
+            for fname in sorted(filenames):
+                rel = (rel_dir / fname).as_posix() if rel_dir.parts else fname
+                if rel in seen or fname == MIGRATED_MARKER:
+                    continue
+                seen.add(rel)
+                entry = here / fname
+                if entry.is_symlink() or not entry.is_file():
+                    continue
+                if len(files) + 1 > MAX_RESOURCE_FILES:
+                    raise ValueError(f"more than {MAX_RESOURCE_FILES} resource files; refusing to hash")
+                total += entry.stat().st_size
+                if total > MAX_RESOURCE_TOTAL_BYTES:
+                    raise ValueError(f"resources exceed {MAX_RESOURCE_TOTAL_BYTES} bytes in total; refusing to hash")
+                try:
+                    files[rel] = sha256_regular_file_nofollow(entry, MAX_RESOURCE_FILE_BYTES)
+                except (OSError, ValueError) as e:
+                    raise ValueError(f"resource {rel} could not be hashed: {e}") from e
+        if walk_errors:
+            err = walk_errors[0]
+            raise ValueError(f"resources under {src} are unreadable: {err.strerror or err}")
+    return {"files": files, "sha256": combine_resource_hashes(files)}
+
+
+def resources_digest(
+    osm_path: Path | str, *, first: list[Path] = (), allowed: PathAllowed | None = None,
+) -> dict[str, Any]:
+    """`digest_resource_dirs` over a model's effective resource dirs (`first`, companion, legacy).
+
+    Raises ValueError like `stage_bundle` when a resource dir is a planted
+    link. A model with no resources digests to {"files": {}, "sha256": None}.
+    """
+    return digest_resource_dirs(_resource_dirs(Path(osm_path), list(first), allowed))
 
 
 def stage_bundle(

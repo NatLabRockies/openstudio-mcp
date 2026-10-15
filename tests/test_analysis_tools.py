@@ -728,6 +728,8 @@ def test_server_config_single_run_checks_health_and_runs_datapoint(monkeypatch, 
     manifest = {
         "ok": True,
         "seed_sha256": hashlib.sha256(seed).hexdigest(),
+        "weather_sha256": None,
+        "resources_sha256": None,
         "run_id": "run_seed_preflight_123",
         "basic_qaqc": {"passed": True, "issues": []},
     }
@@ -908,6 +910,8 @@ def test_validate_analysis_package_accepts_seed_qaqc_manifest(tmp_path):
     manifest = {
         "ok": True,
         "seed_sha256": hashlib.sha256(seed).hexdigest(),
+        "weather_sha256": None,
+        "resources_sha256": None,
         "run_id": "run_seed_preflight_123",
         "basic_qaqc": {"passed": True, "issues": []},
     }
@@ -958,6 +962,8 @@ def test_prepare_analysis_package_always_adds_foundational_measures(monkeypatch,
             "ok": True,
             "ready": True,
             "seed_sha256": hashlib.sha256(seed).hexdigest(),
+            "weather_sha256": None,
+            "resources_sha256": None,
             "run_id": "run_seed_preflight_123",
             "basic_qaqc": {"passed": True, "issues": []},
         }
@@ -1583,6 +1589,7 @@ def _fake_ready_preflight(monkeypatch) -> None:
         manifest = {
             "ok": True, "ready": True, "run_id": "run_seed_preflight_123",
             "seed_sha256": hashlib.sha256(b"OSM seed contents").hexdigest(),
+            "weather_sha256": None, "resources_sha256": None,
             "basic_qaqc": {"passed": True, "issues": []},
         }
         Path(kwargs["manifest_path"]).write_text(json.dumps(manifest), encoding="utf-8")

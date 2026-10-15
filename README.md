@@ -612,8 +612,8 @@ one-variable payload but later fails during analysis startup.
 | `openstudio_analysis_validate_osa_json` | Validate an OSA JSON file locally |
 | `openstudio_analysis_default_output_variables` | Return the foundational output variables used by generated OSA JSON |
 | `openstudio_analysis_foundational_measures` | Return the common measures appended to generated OSA workflows |
-| `openstudio_analysis_preflight_seed` | Simulate/reuse a seed run and write seed QA/QC evidence before packaging |
-| `openstudio_analysis_prepare_package` | Create an OSAF support ZIP only after seed simulation QA/QC passes |
+| `openstudio_analysis_preflight_seed` | Simulate/reuse a seed run (keyed on the seed, its effective weather file and its resources) and write seed QA/QC evidence before packaging |
+| `openstudio_analysis_prepare_package` | Copy the seed and its companion resources into the package (seeds/, lib/) and create the OSAF support ZIP only after seed simulation QA/QC passes |
 | `openstudio_analysis_create_osa_json_from_measures` | Create OSA JSON from measure directories, static arguments, and variable parameters |
 | `openstudio_analysis_add_measure_to_osa_json` | Add a measure step and optional algorithm variables to an existing OSA JSON workflow |
 | `openstudio_analysis_create_project` | Create an OpenStudio Server project |
