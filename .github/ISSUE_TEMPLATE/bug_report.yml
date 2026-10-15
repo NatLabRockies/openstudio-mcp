@@ -1,0 +1,43 @@
+name: Bug report
+description: Something is broken or gives wrong results
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Title: plain description of the problem. No `[Critical]` / `[High]` / `[Bug]` prefixes;
+        severity is set below and applied as a label by a maintainer.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - critical (security hole, data loss, wrong energy results reported as success)
+        - high (major feature broken, no workaround)
+        - medium (broken with a workaround)
+        - low (cosmetic, docs, minor)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Observed vs expected behavior. Include tool name, arguments and the exact error text.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal sequence of tool calls or commands.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: openstudio-mcp version or commit, transport (stdio / HTTP), Docker image tag, OS.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Suggested fix / notes
