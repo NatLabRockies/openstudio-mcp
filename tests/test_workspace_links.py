@@ -106,8 +106,8 @@ def test_collect_refuses_over_budget_output(run_dir, monkeypatch):
 
 
 def _persist(pending: Path, dst: Path):
-    from mcp_server.skills.model_management.operations import _persist_pending_files
-    return _persist_pending_files(pending, dst)
+    from mcp_server.workspace_files import persist_pending_files
+    return persist_pending_files(pending, dst)
 
 
 @posix_only

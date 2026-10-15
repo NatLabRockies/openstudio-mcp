@@ -242,10 +242,9 @@ def copy_regular_file_nofollow(src: Path, dst: Path, max_bytes: int) -> int:
         st = os.fstat(src_fd)
         if st.st_size > max_bytes:
             raise ValueError(f"{src.name}: {st.st_size} bytes exceeds the {max_bytes}-byte limit")
-        try:
-            dst_fd = open_confined(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
-        except ValueError as e:
-            raise ValueError(f"{dst.name}: destination is not a regular file") from e
+        # The destination is opened through the same walk; one that is the source
+        # itself (same path, a hard link) is refused before any truncation.
+        dst_fd = open_confined(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, not_same_as=(st.st_dev, st.st_ino))
         return copy_fd_bounded(src_fd, dst_fd, max_bytes, src.name)
     finally:
         os.close(src_fd)

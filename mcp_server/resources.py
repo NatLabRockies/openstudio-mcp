@@ -305,7 +305,8 @@ def copy_resources(
                     skipped.append((rel, str(e)))
                     continue
                 try:
-                    size = os.fstat(src_fd).st_size
+                    st = os.fstat(src_fd)
+                    size = st.st_size
                     total += size
                     if total > MAX_RESOURCE_TOTAL_BYTES:
                         raise ValueError(
@@ -315,11 +316,15 @@ def copy_resources(
                             (rel, f"{entry.name}: {size} bytes exceeds the {MAX_RESOURCE_FILE_BYTES}-byte limit"))
                         continue
                     try:
-                        dst_fd, existed = target_dir.create_file(entry.name, overwrite=overwrite)
+                        dst_fd, existed = target_dir.create_file(
+                            entry.name, overwrite=overwrite, not_same_as=(st.st_dev, st.st_ino))
                     except FileExistsError:
                         continue  # appeared since the lstat; not overwriting
-                    except (OSError, ValueError):
+                    except OSError:
                         skipped.append((rel, "destination is a link or directory"))
+                        continue
+                    except ValueError as e:  # not regular after all, or the source itself (a hard link)
+                        skipped.append((rel, str(e)))
                         continue
                     try:
                         copy_fd_bounded(src_fd, dst_fd, MAX_RESOURCE_FILE_BYTES, entry.name)

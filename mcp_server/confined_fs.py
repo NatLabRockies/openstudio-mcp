@@ -100,7 +100,9 @@ class DirHandle:
                     return parent.subdir(p.name, create=True)
                 finally:
                     parent.close()
-            return cls(p, os.open(p, _DIR_FLAGS)) if immediate else cls(p, None)
+            if immediate and supported():
+                return cls(p, os.open(p, _DIR_FLAGS))
+            return cls(p, None)
         root_handle = cls(root, os.open(root, _DIR_FLAGS))
         rel = p.relative_to(root)
         if not rel.parts:
@@ -160,15 +162,18 @@ class DirHandle:
             return os.open(self.path / name, flags, mode)
         return os.open(name, flags, mode, dir_fd=self.fd)
 
-    def open_file(self, name: str, flags: int, mode: int = 0o644) -> int:
+    def open_file(self, name: str, flags: int, mode: int = 0o644, *,
+                  not_same_as: tuple[int, int] | None = None) -> int:
         """Open ``name`` here as a regular file (ValueError otherwise), never following a link.
 
         ``O_NOFOLLOW | O_NONBLOCK`` are always added (a FIFO cannot block the
         open before ``fstat`` rejects it). ``O_CREAT | O_TRUNC`` is carried
-        out as create-exclusive, else open-existing, ``fstat``, ``ftruncate``.
+        out as create-exclusive, else open-existing, ``fstat``, ``ftruncate``;
+        ``not_same_as`` (a source's ``(st_dev, st_ino)``) refuses that
+        truncation when the existing entry is the source itself.
         """
         if flags & os.O_CREAT and flags & os.O_TRUNC:
-            fd, _existed = self.create_file(name, mode, overwrite=True, flags=flags)
+            fd, _existed = self.create_file(name, mode, overwrite=True, flags=flags, not_same_as=not_same_as)
             return fd
         check_name(name)
         fd = self._open(name, flags | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC | O_BINARY, mode)
@@ -181,13 +186,15 @@ class DirHandle:
         return fd
 
     def create_file(self, name: str, mode: int = 0o644, *, overwrite: bool,
-                    flags: int = os.O_WRONLY) -> tuple[int, bool]:
+                    flags: int = os.O_WRONLY, not_same_as: tuple[int, int] | None = None) -> tuple[int, bool]:
         """Create ``name`` for writing; returns (fd, existed).
 
         Created exclusively when absent. When present: ``FileExistsError``
         unless ``overwrite``; then it is opened without truncation, must be
-        a regular file (ValueError, nothing touched) and is truncated through
-        the descriptor. ``flags`` may add O_RDWR / O_APPEND; CREAT, EXCL and
+        a regular file (ValueError, nothing touched) and must not be the
+        file ``not_same_as`` identifies (a copy's source: same path or a hard
+        link; ValueError, nothing touched), and is then truncated through the
+        descriptor. ``flags`` may add O_RDWR / O_APPEND; CREAT, EXCL and
         TRUNC are managed here.
         """
         check_name(name)
@@ -201,8 +208,11 @@ class DirHandle:
             fd = self._open(name, base, mode)
             existed = True
         try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
                 raise ValueError(f"{name}: not a regular file")
+            if existed and not_same_as is not None and (st.st_dev, st.st_ino) == not_same_as:
+                raise ValueError(f"{name}: destination is the source file")
             if existed:
                 os.ftruncate(fd, 0)
         except BaseException:
@@ -248,7 +258,8 @@ class DirHandle:
         self.close()
 
 
-def open_confined(path: str | os.PathLike[str], flags: int, mode: int = 0o644) -> int:
+def open_confined(path: str | os.PathLike[str], flags: int, mode: int = 0o644, *,
+                  not_same_as: tuple[int, int] | None = None) -> int:
     """``os.open`` for a file under a tenant-writable tree, walked from its confinement root.
 
     Links at any component fail (OSError), a non-regular file fails
@@ -259,6 +270,6 @@ def open_confined(path: str | os.PathLike[str], flags: int, mode: int = 0o644) -
     p = lexical_abspath(path)
     handle = DirHandle.open(p.parent)
     try:
-        return handle.open_file(p.name, flags, mode)
+        return handle.open_file(p.name, flags, mode, not_same_as=not_same_as)
     finally:
         handle.close()

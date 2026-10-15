@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.config import user_run_root
+from mcp_server.confined_fs import DirHandle
 from mcp_server.util import (
     copy_regular_file_nofollow,
     read_file_bounded,
@@ -599,7 +600,15 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
             "ok": False, "error": "invalid_destination",
             "message": f"Destination not in allowed roots: {destination}",
         }
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    # Created through directory descriptors from the tenant root (#190): a component of the
+    # destination swapped for a link after the check above must not be created through.
+    try:
+        DirHandle.open(dest_dir, create=True).close()
+    except OSError as e:
+        return {
+            "ok": False, "error": "invalid_destination",
+            "message": f"Destination could not be created: {e}",
+        }
 
     if full.is_dir():
         # Run dirs are tenant-written: a planted link would make copytree copy its target

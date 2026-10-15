@@ -195,3 +195,43 @@ def test_dir_handle_creates_subdirs_by_descriptor_and_refuses_a_link_at_a_create
         with pytest.raises(ValueError, match="plain file name"):
             h.subdir("a/b")
     assert _snapshot(other) == {"b/f.txt": DECOY}
+
+
+@posix_only
+@pytest.mark.parametrize("confined", [True, False])
+def test_copying_a_file_onto_itself_or_its_hard_link_is_refused_untouched(tmp_path, monkeypatch, confined):
+    # Regression: copy_regular_file_nofollow truncated the destination before reading the
+    # source, so copying a file onto its own path (copy_file(file, file.parent)) or onto a hard
+    # link of itself left zero bytes; the destination's identity is now compared with the
+    # source's before any truncation
+    root, _other = _tree(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "confinement_roots", lambda: [root] if confined else [], raising=False)
+    f = root / "keep.txt"
+    f.write_bytes(b"precious\n")
+    with pytest.raises(ValueError, match="source file"):
+        copy_regular_file_nofollow(f, f, 4096)
+    assert f.read_bytes() == b"precious\n"
+    g = root / "hard.txt"
+    os.link(f, g)
+    with pytest.raises(ValueError, match="source file"):
+        copy_regular_file_nofollow(f, g, 4096)
+    assert f.read_bytes() == b"precious\n"
+
+
+@posix_only
+def test_without_descriptor_support_the_dir_fd_reader_and_writer_use_pathname_mode(tmp_path, monkeypatch):
+    # Regression: with the descriptor walk unsupported (Windows) the dir-fd reader still opened
+    # the directory itself with os.open, which fails there (PermissionError on a directory);
+    # the fallback is pathname mode with a no-follow open of the entry
+    from mcp_server import confined_fs
+
+    root, _other = _tree(tmp_path, monkeypatch)
+    monkeypatch.setattr(confined_fs, "supported", lambda: False)
+    (root / "d").mkdir()
+    (root / "d" / "f.txt").write_bytes(b"plain\n")
+    assert read_file_in_dir_nofollow(root / "d", "f.txt", 4096) == b"plain\n"
+    write_text_in_dir_nofollow(root / "d", "g.txt", "written\n")
+    assert (root / "d" / "g.txt").read_bytes() == b"written\n"
+    (root / "d" / "leaf_link.txt").symlink_to(root / "d" / "f.txt")
+    with pytest.raises(OSError, match="symbolic link"):
+        read_file_in_dir_nofollow(root / "d", "leaf_link.txt", 4096)

@@ -51,11 +51,12 @@ def persist_pending_files(pending: Path, dst_files: Path) -> tuple[list[str], li
                     skipped.append(name)
                     continue
                 try:
-                    if os.fstat(src_fd).st_size > MAX_PERSISTED_FILE_BYTES:
+                    st = os.fstat(src_fd)
+                    if st.st_size > MAX_PERSISTED_FILE_BYTES:
                         skipped.append(name)
                         continue
                     try:
-                        dst_fd, existed = dst.create_file(name, overwrite=True)
+                        dst_fd, existed = dst.create_file(name, overwrite=True, not_same_as=(st.st_dev, st.st_ino))
                     except (OSError, ValueError):
                         skipped.append(name)
                         continue
