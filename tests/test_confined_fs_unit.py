@@ -256,3 +256,14 @@ def test_a_dotdot_component_is_refused_by_every_primitive(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="'\\.\\.'"):
         copy_regular_file_nofollow(root / "a" / "f.txt", root / "a" / ".." / "copy.txt", 4096)
     assert not (root / "new.txt").exists() and not (root / "copy.txt").exists()
+
+
+@posix_only
+def test_a_leading_double_slash_does_not_escape_the_root(tmp_path, monkeypatch):
+    # Regression: "//root/alpha/b/f.txt" kept its two leading slashes through abspath, missed
+    # the root match and was read by pathname through the alpha link
+    root, _other = _tree(tmp_path, monkeypatch)
+    doubled = Path("/" + str(root / "alpha" / "b" / "f.txt"))
+    assert str(doubled).startswith("//")
+    with pytest.raises(ValueError, match="symlink"):
+        read_file_bounded(doubled, 4096)

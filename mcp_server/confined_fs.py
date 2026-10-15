@@ -52,7 +52,12 @@ def lexical_abspath(path: str | os.PathLike[str]) -> Path:
     raw = os.fspath(path)
     if ".." in Path(raw).parts:
         raise ValueError(f"path contains a '..' component: {raw!r}")
-    return Path(os.path.abspath(raw))  # noqa: PTH100 - resolve() would follow links
+    text = os.path.abspath(raw)  # noqa: PTH100 - resolve() would follow links
+    # POSIX keeps a leading "//" (implementation-defined meaning); on Linux it is the
+    # root, so "//runs/alice" is "/runs/alice" and must match that root.
+    if os.name == "posix" and text.startswith("//"):
+        text = "/" + text.lstrip("/")
+    return Path(text)
 
 
 def confinement_root_for(path: str | os.PathLike[str]) -> Path | None:

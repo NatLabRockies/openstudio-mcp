@@ -71,3 +71,29 @@ def test_a_dotdot_destination_through_a_link_cannot_reach_a_sibling_tenant(tmp_p
     res = results.copy_file(str(src), str(root / "link" / ".." / ".." / "bob"))
     assert res["ok"] is False and res["error"] == "invalid_destination", res
     assert (bob / "a.csv").read_bytes() == b"bobs\n", "the other tenant's file must be untouched"
+
+
+@posix_only
+def test_a_double_slash_destination_is_confined_like_any_other(tmp_path, monkeypatch):
+    # Regression: os.path.abspath keeps a leading "//" on POSIX, so "//runs/alice/exports" did
+    # not match the "/runs" root and was opened by pathname: the exports/ swap after
+    # authorization then wrote into bob's tree; a leading "//" now normalizes to "/"
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "a.csv").write_bytes(b"bobs\n")
+    src = root / "a.csv"
+    src.write_bytes(b"alices\n")
+    (root / "exports").mkdir()
+    real_allowed = config.is_path_allowed
+
+    def allow_then_swap(p, *, write=False):
+        out = real_allowed(p, write=write)
+        if write and not (root / "exports").is_symlink():
+            (root / "exports").rename(root / "exports_moved")
+            (root / "exports").symlink_to(bob, target_is_directory=True)
+        return out
+
+    monkeypatch.setattr(config, "is_path_allowed", allow_then_swap)
+    res = results.copy_file(str(src), "/" + str(root / "exports"))
+    assert res["ok"] is False, res
+    assert (bob / "a.csv").read_bytes() == b"bobs\n", "the other tenant's file must be untouched"
