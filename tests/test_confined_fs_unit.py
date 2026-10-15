@@ -25,6 +25,9 @@ pytestmark = pytest.mark.unit
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks and dir_fd")
 
 DECOY = b"decoy bytes that must never be read or overwritten\n"
+# A link at a directory component fails its O_NOFOLLOW|O_DIRECTORY open with ELOOP, or with
+# ENOTDIR on Linux, which checks O_DIRECTORY first.
+LINK_AT_COMPONENT = r"symbolic link|Not a directory"
 
 
 def _tree(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
@@ -57,9 +60,9 @@ def test_reads_refuse_a_link_at_an_ancestor_component(tmp_path, monkeypatch):
     for reader in (read_file_bounded, read_tail_bounded, read_head_bounded):
         with pytest.raises(ValueError, match="symlink"):
             reader(target, 4096)
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):  # ELOOP or, with O_DIRECTORY on Linux, ENOTDIR at alpha
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         sha256_regular_file_nofollow(target, 4096)
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         read_file_in_dir_nofollow(target.parent, "f.txt", 4096)
 
 
@@ -70,15 +73,15 @@ def test_writes_refuse_a_link_at_an_ancestor_component_and_leave_the_target_tree
     # directory only, not above it)
     root, other = _tree(tmp_path, monkeypatch)
     before = _snapshot(other)
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         with open_nofollow_for_write(root / "alpha" / "b" / "new.txt") as fh:
             fh.write("x")
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         with open_nofollow_for_write(root / "alpha" / "b" / "f.txt") as fh:
             fh.write("x")
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         write_text_in_dir_nofollow(root / "alpha" / "b", "f.txt", "x")
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         write_text_in_dir_nofollow(root / "alpha" / "b", "new.txt", "x")
     assert _snapshot(other) == before, "nothing may be created or changed behind the link"
 
@@ -92,10 +95,10 @@ def test_copy_refuses_a_link_at_an_ancestor_of_either_end(tmp_path, monkeypatch)
     src = root / "own" / "src.txt"
     src.write_bytes(b"own bytes\n")
     before = _snapshot(other)
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         copy_regular_file_nofollow(root / "alpha" / "b" / "f.txt", root / "own" / "copy.txt", 4096)
     assert not (root / "own" / "copy.txt").exists(), "the decoy must not be copied"
-    with pytest.raises(OSError, match="symbolic link|Not a directory"):
+    with pytest.raises(OSError, match=LINK_AT_COMPONENT):
         copy_regular_file_nofollow(src, root / "alpha" / "b" / "src.txt", 4096)
     assert _snapshot(other) == before
 
@@ -184,7 +187,7 @@ def test_dir_handle_creates_subdirs_by_descriptor_and_refuses_a_link_at_a_create
             os.close(fd)
             assert existed is True and (root / "x" / "y" / "f.txt").read_bytes() == b""
             assert leaf.identity() == (os.lstat(root / "x" / "y").st_dev, os.lstat(root / "x" / "y").st_ino)
-        with pytest.raises(OSError, match="symbolic link|Not a directory"):
+        with pytest.raises(OSError, match=LINK_AT_COMPONENT):
             h.walk(Path("alpha") / "b", create=True)
         (root / "file").write_bytes(b"")
         with pytest.raises(NotADirectoryError):
