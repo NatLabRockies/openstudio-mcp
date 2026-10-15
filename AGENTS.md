@@ -34,6 +34,12 @@ More rules for specific tasks (read when relevant):
 - `.claude/rules/component-types.md` — adding HVAC component / setpoint manager types
 - `.claude/rules/api-reference.md` — OpenStudio SDK, CLI, external resources
 
+## Filing Issues and PRs
+- Titles are a plain description of the problem or change. No bracketed prefixes like `[Critical]`, `[High]`, `[Bug]`, `[Security]`
+- Severity goes in a label: `severity:critical`, `severity:high`, `severity:medium` or `severity:low` (e.g. `gh issue create --label bug --label severity:high`). Type goes in `bug` / `enhancement` / `documentation`
+- One problem per issue. A multi-finding audit becomes separate issues, or one tracking issue with a checklist
+- Prefer the issue forms in `.github/ISSUE_TEMPLATE/` (`gh issue create --template "Bug report"`)
+
 ## Architecture
 - Each skill lives in `mcp_server/skills/<name>/`
 - `tools.py` exports `register(mcp)` — MCP tool definitions only
