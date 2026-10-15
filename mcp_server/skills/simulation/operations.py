@@ -316,6 +316,15 @@ def _copy_tree(src_dir: Path, dst_dir: Path) -> None:
     copy_tree_confined(src_dir, dst_dir, exclude_names={"run", "generated_files"})
 
 
+def _stage_file(src: Path, dst: Path) -> str | None:
+    """Copy one input file into the run dir by descriptor at both ends; an error string instead of raising."""
+    try:
+        copy_regular_file_nofollow(src, dst, MAX_STAGED_FILE_BYTES)
+    except (OSError, ValueError) as e:
+        return f"Could not stage {src.name}: {e}"
+    return None
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     """Parse a JSON file and return its contents as a dict."""
     return json.loads(path.read_text(encoding="utf-8"))
@@ -701,8 +710,10 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     # Create caller-scoped run directory
     run_id, run_dir = create_run_dir(user_run_root(), "run", run_name)
 
-    # Stage OSW directory contents
-    src_dir = src_osw.parent.resolve()
+    # Stage OSW directory contents. src_osw was resolved once, before the checks above; it is
+    # not resolved again here (a resolve after the check would follow a link swapped in since
+    # and hand the descriptor walk another tree's real path, which has no link to refuse).
+    src_dir = src_osw.parent
     try:
         _copy_tree(src_dir, run_dir)
     except (OSError, ValueError) as e:
@@ -711,7 +722,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     staged_osw = run_dir / src_osw.name
     if not staged_osw.exists():
         # In case OSW lived outside src_dir copy (unlikely), copy explicitly
-        copy_regular_file_nofollow(src_osw, staged_osw, MAX_STAGED_FILE_BYTES)
+        err = _stage_file(src_osw, staged_osw)
+        if err:
+            return {"ok": False, "error": err, "run_dir": str(run_dir)}
 
     # Load staged OSW and ensure referenced seed file is present.
     # Always stage the seed directly into run_dir (flatten any ../ refs)
@@ -720,13 +733,16 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     seed_rel = osw.get("seed_file")
     seed_resource_src: Path | None = None  # the seed as found, for its companion resources
     if seed_rel:
-        seed_src = (src_dir / seed_rel).resolve()
+        # Lexical join (".." collapsed, no link followed): the walk opens exactly this path
+        seed_src = Path(os.path.normpath(src_dir / seed_rel))
         if seed_src.exists():
             seed_resource_src = seed_src
             # Flatten: use just the filename, always inside run_dir
             seed_dst = run_dir / Path(seed_rel).name
             if not seed_dst.exists():
-                copy_regular_file_nofollow(seed_src, seed_dst, MAX_STAGED_FILE_BYTES)
+                err = _stage_file(seed_src, seed_dst)
+                if err:
+                    return {"ok": False, "error": err, "run_dir": str(run_dir)}
             # Rewrite OSW to point at the flattened location
             if seed_rel != Path(seed_rel).name:
                 osw["seed_file"] = Path(seed_rel).name
@@ -744,7 +760,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                 seed_resource_src = found
                 seed_dst = run_dir / found.name
                 if not seed_dst.exists():
-                    copy_regular_file_nofollow(found, seed_dst, MAX_STAGED_FILE_BYTES)
+                    err = _stage_file(found, seed_dst)
+                    if err:
+                        return {"ok": False, "error": err, "run_dir": str(run_dir)}
                 osw["seed_file"] = str(seed_dst)
                 _dump_json(staged_osw, osw)
 
@@ -777,7 +795,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                     if mirrored.is_symlink() or mirrored.is_dir():
                         return {"ok": False,
                                 "error": f"{mirrored} is a link or directory; refusing to stage weather there"}
-                    shutil.copy2(w_direct, mirrored)
+                    err = _stage_file(w_direct, mirrored)
+                    if err:
+                        return {"ok": False, "error": err, "run_dir": str(run_dir)}
                 osw["weather_file"] = str(mirrored)
                 _dump_json(staged_osw, osw)
         else:
@@ -793,7 +813,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             # through.
             if weather_dst.is_symlink() or weather_dst.is_dir():
                 return {"ok": False, "error": f"{weather_dst} is a link or directory; refusing to stage weather there"}
-            shutil.copy2(found, weather_dst)
+            err = _stage_file(found, weather_dst)
+            if err:
+                return {"ok": False, "error": err, "run_dir": str(run_dir)}
             osw["weather_file"] = str(weather_dst)
             _dump_json(staged_osw, osw)
 
@@ -803,7 +825,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         files_dir = run_dir / "files"
         files_dir.mkdir(parents=True, exist_ok=True)
         staged_epw = files_dir / epw_src.name
-        shutil.copy2(epw_src, staged_epw)
+        err = _stage_file(epw_src, staged_epw)
+        if err:
+            return {"ok": False, "error": err, "run_dir": str(run_dir)}
         osw["weather_file"] = f"files/{epw_src.name}"
         _dump_json(staged_osw, osw)
         if _identity is not None:

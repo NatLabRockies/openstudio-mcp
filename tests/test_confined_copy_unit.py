@@ -3,6 +3,7 @@ shutil.copytree: measure staging, copy_file's directory copies, the OSAF package
 measures and the OSW staging copy. Both trees are walked by directory descriptor, so a component
 swapped for a link after the caller's check fails the copy instead of redirecting it into or out of
 another tenant's tree (issue #190, part 2)."""
+import json
 import os
 import stat
 import sys
@@ -62,14 +63,16 @@ def test_copies_nested_tree_bytes_modes_and_counts(tmp_path, monkeypatch):
 @posix_only
 @pytest.mark.parametrize(("target", "outcome"), [
     ("resources/data.csv", "kept"),
-    ("../m/measure.xml", "refused"),  # re-enters by the tree's own name: lexically it still leaves
+    ("resources/../measure.xml", "refused"),  # stays inside lexically, but ".." is never kept
+    ("../m/measure.xml", "refused"),  # re-enters by the tree's own name: still leaves
     ("../../bob/secret.txt", "refused"),
     ("/etc/hostname", "refused"),
 ])
-def test_links_are_recreated_only_when_they_stay_inside_the_tree(tmp_path, monkeypatch, target, outcome):
+def test_links_are_recreated_only_when_relative_and_descending(tmp_path, monkeypatch, target, outcome):
     # Validates: copytree(symlinks=True) recreated every link as written; the descriptor copy keeps a
-    # relative link whose lexical target stays under the copied tree (a measure's own file) and
-    # refuses an absolute or escaping one even though the pathname pre-check passed (a swap)
+    # link only when it is relative and has no ".." component (such links can only resolve to a
+    # descendant of their own directory, however they chain) and refuses every other one even
+    # though the pathname pre-check passed (a swap)
     root = _http_tenant(monkeypatch, tmp_path)
     (root.parent / "bob" / "secret.txt").write_bytes(SECRET)
     src = _tree(root / "m")
@@ -85,6 +88,48 @@ def test_links_are_recreated_only_when_they_stay_inside_the_tree(tmp_path, monke
             confined_copy.copy_tree_confined(src, dst)
         assert not (dst / "link").exists() and not (dst / "link").is_symlink()
         assert not _contains_bytes(root / "run", SECRET)
+
+
+@posix_only
+def test_chained_links_cannot_compose_an_escape(tmp_path, monkeypatch):
+    # Regression: a tree with a/up -> .. and link -> a/up/../x passed a per-link lexical check
+    # (each target stays inside on paper) while the chain resolved outside the tree; the copy
+    # now refuses the ".." link itself, so no kept link can resolve above the copied tree
+    root = _http_tenant(monkeypatch, tmp_path)
+    src = _tree(root / "m")
+    (src / "a").mkdir()
+    (src / "a" / "up").symlink_to("..")
+    (src / "link").symlink_to("a/up/../measure.xml")
+    dst = root / "run" / "m"
+    with pytest.raises(ValueError, match="link"):
+        confined_copy.copy_tree_confined(src, dst)
+    for p in dst.rglob("*") if dst.exists() else []:
+        if p.is_symlink():
+            assert ".." not in str(p.readlink()), f"kept link {p} could climb out of the copied tree"
+
+
+@posix_only
+def test_directory_permission_bits_are_preserved(tmp_path, monkeypatch):
+    # Regression: only regular files kept their mode; a private 0o700 export dir and a 0o750
+    # sub-directory came out 0o755 (wider than the source), where copytree preserved them
+    root = _http_tenant(monkeypatch, tmp_path)
+    src = _tree(root / "m")
+    (src / "resources").chmod(0o750)
+    src.chmod(0o700)
+    dst = root / "run" / "m"
+    confined_copy.copy_tree_confined(src, dst)
+    assert stat.S_IMODE(dst.stat().st_mode) == 0o700
+    assert stat.S_IMODE((dst / "resources").stat().st_mode) == 0o750
+
+
+def test_replace_with_a_missing_parent_creates_the_destination(tmp_path, monkeypatch):
+    # Regression: replace=True raised FileNotFoundError while looking for a stale destination
+    # under a parent that did not exist yet, although the API promises to create missing parents
+    root = _http_tenant(monkeypatch, tmp_path)
+    src = _tree(root / "m")
+    dst = root / "new" / "deeper" / "m"
+    counts = confined_copy.copy_tree_confined(src, dst, replace=True)
+    assert counts["files"] == 3 and _snapshot(dst) == _snapshot(src)
 
 
 @posix_only
@@ -176,23 +221,34 @@ def test_merge_never_writes_through_a_link_or_directory_at_a_file_name(tmp_path,
     with pytest.raises((OSError, ValueError)):
         confined_copy.copy_tree_confined(src, dst)
     assert (bob / "target.xml").read_bytes() == SECRET
+    (dst / "measure.xml").unlink()
+    (dst / "measure.xml").mkdir()
+    (dst / "measure.xml" / "inner").write_bytes(b"inner\n")
+    with pytest.raises((OSError, ValueError)):
+        confined_copy.copy_tree_confined(src, dst)
+    assert (dst / "measure.xml" / "inner").read_bytes() == b"inner\n"
 
 
-def test_excluded_and_ignored_names_are_not_copied(tmp_path, monkeypatch):
-    # Validates: the OSW staging copy skips run/ and generated_files/, the package copy skips
-    # .git, __pycache__ and *.pyc; neither appears in the destination
+def test_excluded_names_apply_at_the_top_only_and_ignored_names_everywhere(tmp_path, monkeypatch):
+    # Regression: exclude_names was applied at every depth, so an OSW dir's resources/run/needed
+    # vanished from the staged run; the OSW copy skips run/ and generated_files/ at the top level
+    # only (as the iterdir loop it replaced did), while ignore() still prunes caches everywhere
     root = _http_tenant(monkeypatch, tmp_path)
     src = _tree(root / "m")
     (src / "run").mkdir()
     (src / "run" / "eplusout.err").write_bytes(b"x")
-    (src / "__pycache__").mkdir()
-    (src / "__pycache__" / "m.pyc").write_bytes(b"x")
+    (src / "resources" / "run").mkdir()
+    (src / "resources" / "run" / "needed.csv").write_bytes(b"needed\n")
+    (src / "resources" / "__pycache__").mkdir()
+    (src / "resources" / "__pycache__" / "m.pyc").write_bytes(b"x")
     (src / "m.pyc").write_bytes(b"x")
     dst = root / "run" / "m"
     counts = confined_copy.copy_tree_confined(
-        src, dst, exclude_names={"run", "__pycache__"}, ignore=lambda name: name.endswith(".pyc"))
-    assert counts["files"] == 3
+        src, dst, exclude_names={"run"}, ignore=lambda name: name == "__pycache__" or name.endswith(".pyc"))
+    assert counts["files"] == 4
     assert sorted(p.name for p in dst.iterdir()) == ["measure.rb", "measure.xml", "resources"]
+    assert (dst / "resources" / "run" / "needed.csv").read_bytes() == b"needed\n"
+    assert not (dst / "resources" / "__pycache__").exists()
 
 
 @posix_only
@@ -338,8 +394,12 @@ def test_package_foundational_measure_is_copied_without_caches(tmp_path, monkeyp
     root = _http_tenant(monkeypatch, tmp_path)
     name = str(analysis.FOUNDATIONAL_ANALYSIS_MEASURES[0]["measure_name"])
     source = _tree(tmp_path / "common" / name)
+    (source / ".git").mkdir()
+    (source / ".git" / "HEAD").write_bytes(b"ref\n")
     (source / "__pycache__").mkdir()
     (source / "__pycache__" / "x.pyc").write_bytes(b"x")
+    (source / "resources" / "__pycache__").mkdir()
+    (source / "resources" / "__pycache__" / "y.pyc").write_bytes(b"x")
     (source / "measure.pyc").write_bytes(b"x")
     monkeypatch.setattr(analysis, "_foundational_measure_path", lambda n: tmp_path / "common" / n)
     others = [str(s["measure_name"]) for s in analysis.FOUNDATIONAL_ANALYSIS_MEASURES[1:]]
@@ -348,6 +408,34 @@ def test_package_foundational_measure_is_copied_without_caches(tmp_path, monkeyp
     res = analysis._ensure_foundational_measures_in_package(pkg)
     assert res["copied"] == [name] and res["missing"] == others
     assert sorted(p.name for p in (pkg / "measures" / name).iterdir()) == ["measure.rb", "measure.xml", "resources"]
+    assert sorted(p.name for p in (pkg / "measures" / name / "resources").iterdir()) == ["data.csv"]
+
+
+@posix_only
+def test_package_dir_swapped_before_measures_is_created_makes_nothing_in_the_other_tenant(tmp_path, monkeypatch):
+    # Regression: after checking that <package>/measures was not a link, the package copy created
+    # it with mkdir(parents=True) by pathname; the package dir replaced by a link to bob's package
+    # in between created bob/pkg/measures before the containment check refused the copy
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "pkg").mkdir()
+    pkg = root / "pkg"
+    pkg.mkdir()
+    monkeypatch.setattr(analysis, "_foundational_measure_path", lambda n: tmp_path / "common" / n)
+    real_is_symlink = Path.is_symlink
+
+    def is_symlink_then_swap(self):
+        out = real_is_symlink(self)
+        if self == pkg / "measures" and not real_is_symlink(pkg):
+            pkg.rename(root / "pkg_moved")
+            pkg.symlink_to(bob / "pkg", target_is_directory=True)
+        return out
+
+    monkeypatch.setattr(Path, "is_symlink", is_symlink_then_swap)
+    before = _snapshot(bob)
+    res = analysis._ensure_foundational_measures_in_package(pkg)
+    assert res["ok"] is False and res["copied"] == [], res
+    assert _snapshot(bob) == before, "no directory may be created in bob's package"
 
 
 @posix_only
@@ -383,3 +471,59 @@ def test_osw_staging_copy_skips_generated_dirs(tmp_path, monkeypatch):
     run_dir = root / "run_osw"
     sim_ops._copy_tree(src, run_dir)
     assert sorted(str(p.relative_to(run_dir)) for p in run_dir.rglob("*")) == ["files", "files/w.epw", "workflow.osw"]
+
+
+def _osw_run_setup(monkeypatch):
+    """run_osw up to staging: validation stubbed, nothing enqueued, so staging decides the outcome."""
+    monkeypatch.setattr(sim_ops, "validate_osw", lambda *_a, **_k: {"ok": True, "osw": {}})
+    monkeypatch.setattr(sim_ops, "_enqueue", lambda *_a: None)
+
+
+@posix_only
+def test_run_osw_does_not_resolve_the_osw_dir_again_after_the_check(tmp_path, monkeypatch):
+    # Regression: run_osw authorized the resolved OSW path, then resolved its parent a second time
+    # before staging; alice's OSW dir replaced by a link to bob's dir in between resolved to bob's
+    # real path, which the descriptor walk then copied without seeing a link
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "osw_dir").mkdir()
+    (bob / "osw_dir" / "workflow.osw").write_text("{}", encoding="utf-8")
+    (bob / "osw_dir" / "secret.txt").write_bytes(SECRET)
+    src = root / "osw_dir"
+    src.mkdir()
+    (src / "workflow.osw").write_text("{}", encoding="utf-8")
+    _osw_run_setup(monkeypatch)
+    real_check = sim_ops.reject_escaping_symlinks
+
+    def check_then_swap(path):
+        out = real_check(path)
+        if Path(path) == src and not src.is_symlink():
+            src.rename(root / "osw_dir_moved")
+            src.symlink_to(bob / "osw_dir", target_is_directory=True)
+        return out
+
+    monkeypatch.setattr(sim_ops, "reject_escaping_symlinks", check_then_swap)
+    res = sim_ops.run_osw(str(src / "workflow.osw"), _internal=True)
+    assert res["ok"] is False and "stage" in res["error"], res
+    assert not _contains_bytes(root, SECRET), "bob's file must not be staged into alice's run dir"
+
+
+def test_run_osw_seed_outside_the_osw_dir_over_budget_is_a_tool_error(tmp_path, monkeypatch):
+    # Regression: the seed and OSW fallback copies sat outside run_osw's staging error handling, so
+    # an over-budget (or swapped) seed raised through the tool; a ../ seed reference is staged
+    # lexically (no resolve after the check) and a failure is {"ok": False}
+    root = _http_tenant(monkeypatch, tmp_path)
+    src = root / "osw_dir"
+    src.mkdir()
+    (root / "seed.osm").write_bytes(b"OS:Version,\n" * 4)
+    (src / "workflow.osw").write_text(json.dumps({"seed_file": "../seed.osm"}), encoding="utf-8")
+    _osw_run_setup(monkeypatch)
+    monkeypatch.setattr(sim_ops, "MAX_STAGED_FILE_BYTES", 8)
+    res = sim_ops.run_osw(str(src / "workflow.osw"), _internal=True)
+    assert res["ok"] is False and "seed.osm" in res["error"] and "exceeds" in res["error"], res
+    monkeypatch.setattr(sim_ops, "MAX_STAGED_FILE_BYTES", 1 << 20)
+    res = sim_ops.run_osw(str(src / "workflow.osw"), _internal=True)
+    assert res["ok"] is True, res
+    staged = Path(res["run_dir"])
+    assert (staged / "seed.osm").read_bytes() == b"OS:Version,\n" * 4
+    assert json.loads((staged / "workflow.osw").read_text(encoding="utf-8"))["seed_file"] == "seed.osm"

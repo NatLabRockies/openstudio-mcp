@@ -17,12 +17,15 @@ Policy, chosen for trees the sandbox will execute (a silently partial measure
 is worse than a failed call): anything that cannot be copied faithfully raises
 (``OSError`` for a link or missing component, ``ValueError`` for a non-regular
 entry, a budget breach, a nesting of the two trees or a link that leaves the
-tree). Regular files keep their permission bits (the CLI needs the executable
-bit on measure scripts); modification times are not preserved. A symbolic link
-is recreated as a link only when it is relative and its lexical target stays
-inside the copied tree (a measure's own file); any other link raises, since
-the pathname pre-filter (``util.reject_escaping_symlinks``) already passed
-and an escaping link at copy time is a swap. Entries that are neither regular
+tree). A symbolic link
+is recreated as a link only when it is relative and has no ``..`` component:
+such a link can only resolve to a descendant of its own directory, however
+links chain (a per-link lexical check is not enough: ``a/up -> ..`` and
+``link -> a/up/../x`` each look contained and together escape). Any other link
+raises, since the pathname pre-filter (``util.reject_escaping_symlinks``)
+already passed and an escaping link at copy time is a swap. Directory and
+regular-file permission bits are kept (the sandbox relies on them);
+modification times are not. Entries that are neither regular
 files, directories nor links (FIFOs, sockets, devices) raise.
 """
 from __future__ import annotations
@@ -50,7 +53,11 @@ def remove_tree_confined(path: str | os.PathLike[str]) -> bool:
     pathname. Links at the parent's components fail the open (OSError).
     """
     p = lexical_abspath(path)
-    with DirHandle.open(p.parent) as parent:
+    try:
+        parent = DirHandle.open(p.parent)
+    except FileNotFoundError:
+        return False  # no parent, so nothing at the path; a link on the way is a different error
+    with parent:
         st = parent.lstat(p.name)
         if st is None:
             return False
@@ -64,19 +71,11 @@ def remove_tree_confined(path: str | os.PathLike[str]) -> bool:
     return True
 
 
-def _link_stays_inside(rel_dir: PurePath, target: str) -> bool:
-    """Whether a link's lexical target, joined to the link's directory, stays under the tree root."""
+def _link_is_descending(target: str) -> bool:
+    """Whether a link target is relative with no ``..``: it can then only name a descendant of the link's dir."""
     if not target or PurePath(target).is_absolute() or target.startswith(("/", "\\")):
         return False
-    depth = len(rel_dir.parts)
-    for part in PurePosixPath(target.replace(os.sep, "/")).parts:
-        if part == "..":
-            depth -= 1
-            if depth < 0:
-                return False
-        elif part not in ("", "."):
-            depth += 1
-    return True
+    return ".." not in PurePosixPath(target.replace(os.sep, "/")).parts
 
 
 class _TreeCopy:
@@ -104,9 +103,10 @@ class _TreeCopy:
         self._note(dst, self.dst_ids, self.src_ids)
         with src.scandir() as it:
             entries = sorted(it, key=lambda e: e.name)
+        top = not rel_dir.parts
         for entry in entries:
             name = entry.name
-            if name in self.exclude or (self.ignore is not None and self.ignore(name)):
+            if (top and name in self.exclude) or (self.ignore is not None and self.ignore(name)):
                 continue
             rel = rel_dir / name
             if entry.is_symlink():
@@ -126,12 +126,19 @@ class _TreeCopy:
                 self.copy_file(src, dst, name, rel)
             else:
                 raise ValueError(f"{rel}: not a regular file")
+        # The directory's own permission bits, after its children (a read-only dir must still
+        # receive them); copytree did the same through copystat.
+        mode = stat.S_IMODE((os.fstat(src.fd) if src.fd is not None else os.lstat(src.path)).st_mode)
+        if dst.fd is not None and hasattr(os, "fchmod"):
+            os.fchmod(dst.fd, mode)
+        else:
+            dst.path.chmod(mode)
 
     def copy_link(self, src: DirHandle, dst: DirHandle, name: str, rel_dir: PurePath) -> None:
         # os.readlink, not Path.readlink: relative to the directory descriptor; one API for both modes
         target = os.readlink(name, dir_fd=src.fd) if src.fd is not None else os.readlink(src.path / name)  # noqa: PTH115
-        if not _link_stays_inside(rel_dir, target):
-            raise ValueError(f"{rel_dir / name}: link leaves the copied tree ({target!r}); refusing to copy")
+        if not _link_is_descending(target):
+            raise ValueError(f"{rel_dir / name}: link may leave the copied tree ({target!r}); refusing to copy")
         existing = dst.lstat(name)
         if existing is not None:
             if stat.S_ISDIR(existing.st_mode):
@@ -182,10 +189,11 @@ def copy_tree_confined(
     ``replace`` an existing entry at ``dst`` is removed first (through its
     parent's descriptor); without it the trees are merged, an existing regular
     file at a file name replaced, a link or directory there never written
-    through (OSError / ValueError). ``exclude_names`` skips entries by exact
-    name at any depth; ``ignore(name)`` skips those it returns True for. The
-    budgets bound the copy (ValueError). Returns ``{"dirs", "files", "bytes",
-    "links"}`` counts.
+    through (OSError / ValueError). ``exclude_names`` skips top-level entries
+    by exact name (a ``run/`` beside the OSW, not one nested in a resource
+    dir); ``ignore(name)`` skips entries it returns True for at every depth
+    (caches). The budgets bound the copy (ValueError). Returns ``{"dirs",
+    "files", "bytes", "links"}`` counts.
     """
     src_path = lexical_abspath(src)
     dst_path = lexical_abspath(dst)

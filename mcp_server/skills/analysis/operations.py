@@ -35,6 +35,7 @@ from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
 from mcp_server.confined_copy import copy_tree_confined
+from mcp_server.confined_fs import DirHandle
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
 from mcp_server.resources import (
     MAX_RESOURCE_FILE_BYTES,
@@ -1815,7 +1816,12 @@ def _ensure_foundational_measures_in_package(package_dir: Path) -> dict[str, Any
 
     if target_root.is_symlink():
         return _refused(target_root)
-    target_root.mkdir(parents=True, exist_ok=True)
+    # Created from the confinement root by descriptor (#190): the package dir swapped for a link
+    # after the check above must not have measures/ created through it.
+    try:
+        DirHandle.open(target_root, create=True).close()
+    except (OSError, ValueError) as e:
+        return _refused(f"{target_root} ({e})")
 
     for spec in FOUNDATIONAL_ANALYSIS_MEASURES:
         measure_name = str(spec["measure_name"])
@@ -1834,8 +1840,8 @@ def _ensure_foundational_measures_in_package(package_dir: Path) -> dict[str, Any
         # swapped for a link after the check above fails here instead of clearing or writing
         # another tree.
         try:
-            copy_tree_confined(source, target, replace=True, exclude_names={".git", ".bundle", "__pycache__"},
-                               ignore=lambda name: name.endswith(".pyc"))
+            copy_tree_confined(source, target, replace=True,
+                               ignore=lambda name: name in (".git", ".bundle", "__pycache__") or name.endswith(".pyc"))
         except (OSError, ValueError) as e:
             return _refused(f"{target} ({e})")
         copied.append(measure_name)
