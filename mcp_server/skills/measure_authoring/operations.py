@@ -29,6 +29,7 @@ from mcp_server.resources import stage_model_resources
 from mcp_server.util import (
     copy_regular_file_nofollow,
     create_run_dir,
+    open_nofollow_for_write,
     read_file_bounded,
     reject_escaping_symlinks,
 )
@@ -54,6 +55,7 @@ _MEASURE_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,99}$")
 _COPY_BACK_MAX_BYTES = 256 * 1024 * 1024
 # eplusout.sql of a timeseries run reaches gigabytes; this bounds a runaway copy, not a normal one.
 _MAX_SIM_ARTIFACT_BYTES = 8 * 1024 * 1024 * 1024
+_MAX_SCRIPT_BYTES = 16 * 1024 * 1024  # a measure script the server reads
 # Argument names become bare Ruby/Python identifiers in generated code — they must
 # be plain identifiers, never arbitrary text (else code injection at generation).
 # Must start lowercase/underscore: an uppercase-leading name (e.g. "Foo") is a Ruby
@@ -518,7 +520,10 @@ def _syntax_check(script_path: Path, language: str) -> dict | None:
                 capture_output=True, text=True, timeout=10, check=False,
             )
         else:
-            code = script_path.read_text(encoding="utf-8")
+            try:
+                code = read_file_bounded(script_path, _MAX_SCRIPT_BYTES).decode("utf-8")
+            except (ValueError, UnicodeDecodeError) as e:
+                return {"syntax_ok": False, "syntax_error": f"Could not read {script_path.name}: {e}"}
             proc = subprocess.run(
                 ["python3", "-c", f"compile({code!r}, {str(script_path)!r}, 'exec')"],
                 capture_output=True, text=True, timeout=10, check=False,
@@ -1079,7 +1084,7 @@ def _test_reporting_measure_with_run(
     run_env = sandbox.build_env(run_dir)
     sandbox.prepare_workdir(run_dir)
     try:
-        with log_path.open("w", encoding="utf-8") as log_f:
+        with open_nofollow_for_write(log_path) as log_f:  # created through the run dir's descriptor (#190)
             proc = subprocess.run(
                 sandbox.wrap_cmd(cmd, run_dir), cwd=str(run_dir),
                 stdout=log_f, stderr=subprocess.STDOUT,
@@ -1139,7 +1144,8 @@ def _detect_measure_type(mdir: Path) -> str:
     """Detect measure type from script content."""
     for script in [mdir / "measure.rb", mdir / "measure.py"]:
         if script.is_file():
-            content = script.read_text(encoding="utf-8", errors="replace")
+            # The measure dir may be tenant-written: opened by descriptor from its root (#190)
+            content = read_file_bounded(script, _MAX_SCRIPT_BYTES).decode("utf-8", errors="replace")
             if "ReportingMeasure" in content:
                 return "ReportingMeasure"
     return "ModelMeasure"
@@ -1264,7 +1270,7 @@ def test_measure_op(
             env["TMPDIR"] = str(tmp_dir)           # off the bind mount, Landlock-granted below
             sandbox.prepare_workdir(mdir)
             sandbox.prepare_workdir(tmp_dir)
-            with log_path.open("w", encoding="utf-8") as log_f:
+            with open_nofollow_for_write(log_path) as log_f:  # created through the run dir's descriptor (#190)
                 proc = subprocess.run(
                     sandbox.wrap_cmd(test_cmd, mdir, extra_rw=(str(tmp_dir),)),
                     cwd=str(mdir),
@@ -1476,7 +1482,7 @@ def edit_measure_op(
         else:
             return {"ok": False, "error": "No measure script found"}
 
-        content = script_path.read_text(encoding="utf-8")
+        content = read_file_bounded(script_path, _MAX_SCRIPT_BYTES).decode("utf-8")
         detected_type = _detect_measure_type(measure_dir)
         is_reporting = detected_type == "ReportingMeasure"
         changes = []

@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- The OSAF package zip (`openstudio_analysis_prepare_package`) is written through directory
+  descriptors at both ends: the output zip is created from the tenant root and every member is
+  enumerated and opened relative to its directory's descriptor, so a package component swapped
+  for a symlink after the check is an error instead of another tenant's file under the caller's
+  arcname; members are bounded (1 GiB each, 8 GiB in total). The analysis skill's JSON reads and
+  writes (OSA JSON, results, a caller-supplied schema), the seed and weather hashes in the
+  preflight manifest and the package upload read are anchored the same way, as are the measure
+  script reads in measure authoring, the test log files, the actuator discovery outputs and a
+  plugin's source returned by `get_python_plugin`. (#190)
 - `read_file` opens a file under a tenant-writable tree by descriptor from the tenant root and
   `get_run_artifacts` lists a run dir the same way, so a directory component swapped for a
   symlink after the server's check is a tool error (`read_failed`) or an empty listing instead

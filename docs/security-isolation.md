@@ -104,12 +104,14 @@ every access (issue #190):
   open; platforms without `dir_fd` (Windows) do too.
 
 Use those primitives (or `confined_fs.DirHandle` directly for a directory walk) for
-any server-side read, write or copy under a tenant-writable tree, and
+any server-side read, write or copy under a tenant-writable tree (the analysis skill's
+JSON, hash and zip helpers and the measure-authoring script reads are examples), and
 `confined_copy.copy_tree_confined` / `remove_tree_confined` for a directory tree (never
 `shutil.copytree` or `shutil.rmtree(path)` there: a tree copy keeps regular files and
-in-tree relative links only, and raises on anything else). Pathname APIs that cannot take
-a descriptor (`model.save()`, `zipfile` writes from a tree) remain on their pathname
-checks; the open items are listed on issue #190.
+in-tree relative links only, and raises on anything else). A `zipfile` archive is
+built from descriptors too (`analysis/operations.py::_write_support_zip`: the output opened
+through the walk, each member streamed from an fd opened relative to its directory). The one
+pathname API left, `model.save()`, is listed on issue #190.
 
 **Anchor assumption.** A confinement root and every directory above it must not be
 writable by any tenant process, and a tenant-writable tree must have no alias outside

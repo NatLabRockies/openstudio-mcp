@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import mimetypes
 import os
 import re
+import shutil
+import stat
 import tempfile
 import time
 import uuid
@@ -13,7 +16,7 @@ import zipfile
 import zlib
 from collections.abc import Iterable
 from http.client import HTTPException
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
@@ -33,7 +36,7 @@ from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
 from mcp_server.confined_copy import copy_tree_confined, remove_tree_confined
-from mcp_server.confined_fs import DirHandle
+from mcp_server.confined_fs import DirHandle, open_confined
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
 from mcp_server.resources import (
     MAX_RESOURCE_FILE_BYTES,
@@ -46,6 +49,7 @@ from mcp_server.resources import (
 from mcp_server.util import (
     copy_regular_file_nofollow,
     is_regular_file_inside,
+    open_nofollow_for_write,
     read_file_bounded,
     read_file_in_dir_nofollow,
     resolve_run_dir,
@@ -64,6 +68,10 @@ SEED_SUFFIXES = frozenset({".osm", ".osw"})
 WEATHER_SUFFIXES = frozenset({".epw", ".ddy", ".stat"})
 SEED_QAQC_MANIFEST = "lib/seed_simulation_qaqc.json"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
+MAX_JSON_BYTES = 64 * 1024 * 1024  # an OSA JSON, schema or results document read by the server
+MAX_PACKAGE_FILE_BYTES = 1024 * 1024 * 1024  # one member of the support zip
+MAX_PACKAGE_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # a package zip posted to OpenStudio Server
 # What identifies a seed simulation: the OSM, the effective EPW and the resource set
 # (see model_bundle.resources_digest). The preflight manifest and run_simulation's run
 # record both carry the three; a cached run or manifest is reused only on all three.
@@ -544,11 +552,15 @@ def _read_json(path: str | Path) -> dict[str, Any]:
     p = Path(path).expanduser().resolve()
     if not _is_analysis_path_allowed(p):
         raise ValueError(f"JSON path is not allowed: {p}")
+    # Opened by descriptor from the tenant root (#190): a component swapped for a link after
+    # the check above fails the read instead of serving another tree's file.
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raise ValueError(f"JSON file not found: {p}") from None
-    except json.JSONDecodeError as e:
+        raw = read_file_bounded(p, MAX_JSON_BYTES)
+    except ValueError as e:
+        raise ValueError(f"JSON file not found or not readable: {p} ({e})") from None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise ValueError(f"Invalid JSON in {p}: {e}") from None
     if not isinstance(data, dict):
         raise ValueError(f"Expected JSON object in {p}")
@@ -559,18 +571,20 @@ def _write_json(path: str | Path, data: dict[str, Any]) -> str:
     p = Path(path).expanduser().resolve()
     if not _is_analysis_path_allowed(p, write=True):
         raise ValueError(f"Output path is not writable/allowed: {p}")
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # Parents created and the file written through the descriptor walk (#190): a component
+    # swapped for a link after the check above is refused, nothing is created through it.
+    try:
+        DirHandle.open(p.parent, create=True).close()
+        with open_nofollow_for_write(p) as fh:
+            fh.write(json.dumps(data, indent=2) + "\n")
+    except (OSError, ValueError) as e:
+        raise ValueError(f"Output path is not writable: {p} ({e})") from None
     return str(p)
 
 
 def _sha256_file(path: str | Path) -> str:
-    p = Path(path).expanduser().resolve()
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    """Hash of a seed or weather file; opened by descriptor, never through a link (#190)."""
+    return sha256_regular_file_nofollow(Path(path).expanduser(), MAX_PACKAGE_FILE_BYTES)
 
 
 # What reading one member of a tenant-built zip can raise besides the budget ValueError:
@@ -747,9 +761,16 @@ def _read_osa_schema(schema_path: str | Path | None = None) -> tuple[Path, dict[
     if schema_path is not None and not _is_analysis_path_allowed(path):
         raise ValueError(f"Schema path is not allowed: {path}")
     try:
-        schema = json.loads(path.read_text(encoding="utf-8"))
+        if schema_path is not None:  # tenant input: opened by descriptor from its root (#190)
+            schema = json.loads(read_file_bounded(path, MAX_JSON_BYTES).decode("utf-8"))
+        else:
+            schema = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ValueError(f"OSA JSON schema not found: {path}") from None
+    except (ValueError, UnicodeDecodeError) as e:
+        if isinstance(e, json.JSONDecodeError):
+            raise
+        raise ValueError(f"OSA JSON schema not readable: {path} ({e})") from None
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid OSA JSON schema in {path}: {e}") from None
     if not isinstance(schema, dict):
@@ -1294,6 +1315,10 @@ def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, time
         return {"ok": False, "error": f"Upload file path is not allowed: {p}"}
     if not p.exists():
         return {"ok": False, "error": f"Upload file not found: {p}"}
+    try:
+        payload = read_file_bounded(p, MAX_UPLOAD_BYTES)  # by descriptor from the tenant root (#190)
+    except ValueError as e:
+        return {"ok": False, "error": f"Upload file could not be read: {e}"}
     boundary = f"----openstudio-mcp-{uuid.uuid4().hex}"
     content_type = mimetypes.guess_type(str(p))[0] or "application/zip"
     parts = [
@@ -1302,7 +1327,7 @@ def _multipart_upload(server_url: str, path: str, file_path: str | Path, *, time
             f'Content-Disposition: form-data; name="file"; filename="{p.name}"\r\n'
             f"Content-Type: {content_type}\r\n\r\n"
         ).encode(),
-        p.read_bytes(),
+        payload,
         f"\r\n--{boundary}--\r\n".encode(),
     ]
     body = b"".join(parts)
@@ -1775,25 +1800,76 @@ def _inside(path: Path, root: Path) -> bool:
 def _write_support_zip(package_dir: Path, output_zip_path: Path) -> str | None:
     """Zip the package roots. Returns an error string instead of following a symlink.
 
-    archive.write() follows symlinks, so a member planted as a link into another tenant's
-    root would be copied into the zip as a regular file (and pass every later zip check).
+    The package dir is tenant-writable, so both ends are anchored by descriptor (#190): the
+    output zip's directory is created and the zip opened through the walk from the tenant
+    root, and every member is enumerated and opened relative to its directory's descriptor
+    (``archive.write(path)`` would open by pathname and follow a link planted after the
+    check). A link anywhere under a package root, a non-regular file, or a member over the
+    budgets is an error naming it.
     """
-    package_root = package_dir.resolve()
-    output_zip_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for root in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
-            root_dir = package_dir / root
-            if not root_dir.exists():
-                continue
-            if root_dir.is_symlink():
-                return f"package member is a symlink (not allowed): {root}"
-            for path in sorted(root_dir.rglob("*")):
-                arcname = path.relative_to(package_dir).as_posix()
-                if path.is_symlink() or not _inside(path, package_root):
-                    return f"package member is a symlink (not allowed): {arcname}"
-                if path.is_dir():
+    try:
+        DirHandle.open(output_zip_path.parent, create=True).close()
+        out_fd = open_confined(output_zip_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+    except (OSError, ValueError) as e:
+        return f"output zip path is not writable (not allowed): {output_zip_path} ({e})"
+    totals = {"bytes": 0}
+    try:
+        with os.fdopen(out_fd, "wb") as out_f, \
+                zipfile.ZipFile(out_f, "w", compression=zipfile.ZIP_DEFLATED) as archive, \
+                DirHandle.open(package_dir) as pkg:
+            for root in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
+                st = pkg.lstat(root)
+                if st is None:
                     continue
-                archive.write(path, arcname)
+                if stat.S_ISLNK(st.st_mode):
+                    return f"package member is a symlink (not allowed): {root}"
+                if not stat.S_ISDIR(st.st_mode):
+                    return f"package member is not a directory: {root}"
+                with pkg.subdir(root) as handle:
+                    err = _zip_tree(archive, handle, PurePosixPath(root), totals)
+                if err:
+                    return err
+    except (OSError, ValueError) as e:
+        return f"could not write the package zip: {e}"
+    return None
+
+
+def _zip_tree(archive: zipfile.ZipFile, handle: DirHandle, rel: PurePosixPath, totals: dict[str, int]) -> str | None:
+    """Archive every regular file under ``handle`` (opened relative to it); an error string on anything else."""
+    with handle.scandir() as it:
+        entries = sorted(it, key=lambda e: e.name)
+    for entry in entries:
+        arcname = (rel / entry.name).as_posix()
+        if entry.is_symlink():
+            return f"package member is a symlink (not allowed): {arcname}"
+        if entry.is_dir(follow_symlinks=False):
+            with handle.subdir(entry.name) as child:
+                err = _zip_tree(archive, child, rel / entry.name, totals)
+            if err:
+                return err
+            continue
+        if not entry.is_file(follow_symlinks=False):
+            return f"package member is not a regular file (not allowed): {arcname}"
+        fd = handle.open_file(entry.name, os.O_RDONLY)
+        try:
+            st = os.fstat(fd)
+            if st.st_size > MAX_PACKAGE_FILE_BYTES:
+                return f"package member {arcname}: {st.st_size} bytes exceeds the {MAX_PACKAGE_FILE_BYTES}-byte limit"
+            totals["bytes"] += st.st_size
+            if totals["bytes"] > MAX_PACKAGE_TOTAL_BYTES:
+                return f"package exceeds {MAX_PACKAGE_TOTAL_BYTES} bytes in total"
+            info = zipfile.ZipInfo(arcname, date_time=max(time.localtime(st.st_mtime)[:6], (1980, 1, 1, 0, 0, 0)))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = (stat.S_IFREG | stat.S_IMODE(st.st_mode)) << 16
+            written = 0
+            with archive.open(info, "w") as member:
+                while chunk := os.read(fd, 1 << 20):
+                    written += len(chunk)
+                    if written > st.st_size or written > MAX_PACKAGE_FILE_BYTES:
+                        return f"package member {arcname} grew while being archived"
+                    member.write(chunk)
+        finally:
+            os.close(fd)
     return None
 
 
@@ -1937,7 +2013,8 @@ def prepare_analysis_package(
 
     zip_error = _write_support_zip(pkg, out)
     if zip_error:
-        out.unlink(missing_ok=True)
+        with contextlib.suppress(OSError, ValueError):
+            remove_tree_confined(out)  # a partial zip, removed through the parent descriptor
         return {
             "ok": False,
             "error": zip_error,
