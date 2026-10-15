@@ -1,13 +1,16 @@
 """read_file, get_run_artifacts and the tree removals under tenant-writable trees open the path they
 authorized by directory descriptor, so a component swapped for a link after the check is refused
 instead of followed (issue #190, part 3)."""
+import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 from test_analysis_tools import _http_tenant
 
-from mcp_server import config, confined_copy
+from mcp_server import config, confined_copy, confined_fs
 from mcp_server.skills.results import operations as results
 from mcp_server.skills.simulation import operations as sim_ops
 
@@ -65,15 +68,71 @@ def test_read_file_reads_with_offset_and_reports_truncation(tmp_path, monkeypatc
 def test_read_file_under_a_shared_read_root_still_follows_the_servers_own_links(tmp_path, monkeypatch):
     # Validates: the shared read-only roots (repo assets, bundled measures) are server-owned and
     # lie under no confinement root; a link the server itself placed there stays readable, so
-    # agents reading repo assets through a link are not broken by the tenant-tree hardening
+    # agents reading repo assets through a link are not broken by the tenant-tree hardening.
+    # The shared dir is made under the repo's runs/ (tmp_path lies under the temp confinement
+    # root and would take the descriptor branch instead).
     _http_tenant(monkeypatch, tmp_path)
-    shared = tmp_path / "shared"
-    shared.mkdir()
-    (shared / "real.txt").write_bytes(b"asset\n")
-    (shared / "link.txt").symlink_to(shared / "real.txt")
-    monkeypatch.setattr(config, "_SHARED_READ_ROOTS", [*config._SHARED_READ_ROOTS, shared.resolve()])
-    res = results.read_file(str(shared / "link.txt"))
-    assert res["ok"] is True and res["text"] == "asset\n", res
+    shared = Path(tempfile.mkdtemp(prefix="shared_root_", dir=Path.cwd() / "runs"))
+    try:
+        assert confined_fs.confinement_root_for(shared) is None, "precondition: outside every confinement root"
+        (shared / "real.txt").write_bytes(b"asset\n")
+        (shared / "link.txt").symlink_to(shared / "real.txt")
+        monkeypatch.setattr(config, "_SHARED_READ_ROOTS", [*config._SHARED_READ_ROOTS, shared.resolve()])
+        res = results.read_file(str(shared / "link.txt"))
+        assert res["ok"] is True and res["text"] == "asset\n", res
+    finally:
+        shutil.rmtree(shared, ignore_errors=True)
+
+
+@posix_only
+@pytest.mark.parametrize("target_exists", [True, False])
+def test_read_file_swapped_dir_gives_the_same_refusal_whether_the_other_tenants_file_exists(
+        tmp_path, monkeypatch, target_exists):
+    # Regression: after authorization, read_file still ran exists()/is_file() by pathname before the
+    # descriptor open; through a swapped directory those answered about bob's tree, so not_found
+    # versus read_failed told alice whether a guessed file existed in bob's run. Both cases now
+    # fail identically at the descriptor walk
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "output").mkdir()
+    if target_exists:
+        (bob / "output" / "guess.txt").write_bytes(SECRET)
+    src = root / "run_x" / "output"
+    src.mkdir(parents=True)
+    (src / "guess.txt").write_bytes(b"mine\n")
+    real_allowed = config.is_path_allowed
+
+    def allow_then_swap(p, *, write=False):
+        out = real_allowed(p, write=write)
+        if Path(p) == src / "guess.txt" and not src.is_symlink():
+            src.rename(root / "run_x" / "output_moved")
+            src.symlink_to(bob / "output", target_is_directory=True)
+        return out
+
+    monkeypatch.setattr(config, "is_path_allowed", allow_then_swap)
+    res = results.read_file(str(src / "guess.txt"))
+    assert res["ok"] is False and res["error"] == "read_failed", res
+    assert "guess.txt" not in res["message"].split(":")[-1] or SECRET.decode() not in repr(res)
+
+
+def test_read_file_missing_file_and_directory_are_not_found(tmp_path, monkeypatch):
+    # Validates: within the caller's own tree the pre-#190 answers hold: a missing file and a
+    # directory are not_found, not read_failed
+    root = _http_tenant(monkeypatch, tmp_path)
+    (root / "run_y").mkdir()
+    assert results.read_file(str(root / "run_y" / "absent.txt"))["error"] == "not_found"
+    assert results.read_file(str(root / "run_y"))["error"] == "not_found"
+
+
+def test_read_file_maps_read_errors_and_absurd_offsets_to_a_tool_error(tmp_path, monkeypatch):
+    # Regression: a failure after the open (a seek past what the platform accepts, an I/O error)
+    # raised through the tool; every failure is now read_failed
+    root = _http_tenant(monkeypatch, tmp_path)
+    f = root / "run_y" / "log.txt"
+    f.parent.mkdir()
+    f.write_bytes(b"0123456789")
+    res = results.read_file(str(f), offset=2**63)
+    assert res["ok"] is False and res["error"] == "read_failed", res
 
 
 @posix_only
@@ -139,3 +198,27 @@ def test_remove_tree_confined_refuses_a_link_at_the_parent_and_keeps_the_target(
     assert confined_copy.remove_tree_confined(root / "work" / "d", ignore_errors=True) is False
     assert (bob / "work" / "d" / "keep.txt").read_bytes() == SECRET
     assert str((root / "work").readlink()) == str(bob / "work")
+
+
+def test_remove_tree_confined_with_ignore_errors_keeps_removing_after_a_failed_entry(tmp_path, monkeypatch):
+    # Regression: ignore_errors swallowed the first error around the whole removal, so one entry
+    # that could not be unlinked left every sibling behind (shutil.rmtree(ignore_errors=True) kept
+    # going); the removal now continues past the failure and reports the tree as not fully removed
+    root = _http_tenant(monkeypatch, tmp_path)
+    d = root / "stale"
+    (d / "sub").mkdir(parents=True)
+    (d / "sub" / "b.txt").write_bytes(b"b")
+    (d / "a.txt").write_bytes(b"a")
+    (d / "c.txt").write_bytes(b"c")
+    real_unlink = os.unlink
+
+    def unlink_refusing_a(name, *args, **kwargs):
+        if Path(name).name == "a.txt":
+            raise PermissionError(1, "Operation not permitted", str(name))
+        return real_unlink(name, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", unlink_refusing_a)
+    assert confined_copy.remove_tree_confined(d, ignore_errors=True) is False
+    assert sorted(str(p.relative_to(d)) for p in d.rglob("*")) == ["a.txt"], "every removable entry is gone"
+    monkeypatch.undo()
+    assert confined_copy.remove_tree_confined(d) is True and not d.exists()

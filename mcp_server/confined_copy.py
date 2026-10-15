@@ -51,19 +51,20 @@ def remove_tree_confined(path: str | os.PathLike[str], *, ignore_errors: bool = 
     followed; a directory is removed with ``shutil.rmtree`` anchored on the
     parent descriptor (``dir_fd``), so nothing above it is resolved again by
     pathname. Links at the parent's components fail the open (OSError), a
-    ``..`` component is a ValueError; ``ignore_errors`` swallows both (and any
-    error inside the tree, as ``shutil.rmtree(ignore_errors=True)`` did) and
-    returns False.
+    ``..`` component is a ValueError; ``ignore_errors`` swallows both, and
+    inside the tree keeps removing past an entry that fails (as
+    ``shutil.rmtree(ignore_errors=True)`` did), returning False when anything
+    is left.
     """
     try:
-        return _remove_tree(lexical_abspath(path))
+        return _remove_tree(lexical_abspath(path), ignore_errors)
     except (OSError, ValueError):
         if ignore_errors:
             return False
         raise
 
 
-def _remove_tree(p: Path) -> bool:
+def _remove_tree(p: Path, ignore_errors: bool) -> bool:
     try:
         parent = DirHandle.open(p.parent)
     except FileNotFoundError:
@@ -74,9 +75,11 @@ def _remove_tree(p: Path) -> bool:
             return False
         if stat.S_ISDIR(st.st_mode):
             if parent.fd is None:
-                shutil.rmtree(p)
+                shutil.rmtree(p, ignore_errors=ignore_errors)
             else:
-                shutil.rmtree(p.name, dir_fd=parent.fd)
+                shutil.rmtree(p.name, dir_fd=parent.fd, ignore_errors=ignore_errors)
+            if ignore_errors and parent.lstat(p.name) is not None:
+                return False  # something inside could not be removed; the rest is gone
         else:
             parent.unlink(p.name)
     return True
