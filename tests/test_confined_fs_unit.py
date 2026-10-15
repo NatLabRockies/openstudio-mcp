@@ -235,3 +235,24 @@ def test_without_descriptor_support_the_dir_fd_reader_and_writer_use_pathname_mo
     (root / "d" / "leaf_link.txt").symlink_to(root / "d" / "f.txt")
     with pytest.raises(OSError, match="symbolic link"):
         read_file_in_dir_nofollow(root / "d", "leaf_link.txt", 4096)
+
+
+@posix_only
+def test_a_dotdot_component_is_refused_by_every_primitive(tmp_path, monkeypatch):
+    # Regression: '..' was collapsed lexically before the walk, which disagrees with a
+    # resolve-based authorization whenever a link precedes it; the primitives refuse it
+    root, _other = _tree(tmp_path, monkeypatch)
+    (root / "a").mkdir()
+    (root / "a" / "f.txt").write_bytes(b"x")
+    dotted = root / "a" / ".." / "a" / "f.txt"
+    for reader in (read_file_bounded, read_tail_bounded, read_head_bounded):
+        with pytest.raises(ValueError, match=r"not a regular file|'\\.\\.'"):
+            reader(dotted, 4096)
+    with pytest.raises(ValueError, match="'\\.\\.'"):
+        sha256_regular_file_nofollow(dotted, 4096)
+    with pytest.raises(ValueError, match="'\\.\\.'"):
+        with open_nofollow_for_write(root / "a" / ".." / "new.txt") as fh:
+            fh.write("x")
+    with pytest.raises(ValueError, match="'\\.\\.'"):
+        copy_regular_file_nofollow(root / "a" / "f.txt", root / "a" / ".." / "copy.txt", 4096)
+    assert not (root / "new.txt").exists() and not (root / "copy.txt").exists()

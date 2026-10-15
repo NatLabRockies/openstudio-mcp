@@ -54,3 +54,20 @@ def test_copying_a_file_onto_its_own_directory_keeps_the_file(tmp_path, monkeypa
     assert res["ok"] is False and res["error"] == "copy_failed", res
     assert "source file" in res["message"]
     assert src.read_bytes() == b"1,2,3\n"
+
+
+@posix_only
+def test_a_dotdot_destination_through_a_link_cannot_reach_a_sibling_tenant(tmp_path, monkeypatch):
+    # Regression: the destination was authorized after resolving links (alice/link/../../bob
+    # resolves inside alice when link -> alice/deep/nested) but the descriptor walk collapsed
+    # the '..' lexically and wrote into the real sibling bob; '..' components are now refused
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "a.csv").write_bytes(b"bobs\n")
+    (root / "deep" / "nested").mkdir(parents=True)
+    (root / "link").symlink_to(root / "deep" / "nested", target_is_directory=True)
+    src = root / "a.csv"
+    src.write_bytes(b"alices\n")
+    res = results.copy_file(str(src), str(root / "link" / ".." / ".." / "bob"))
+    assert res["ok"] is False and res["error"] == "invalid_destination", res
+    assert (bob / "a.csv").read_bytes() == b"bobs\n", "the other tenant's file must be untouched"

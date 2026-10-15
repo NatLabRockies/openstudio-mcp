@@ -335,7 +335,7 @@ def pin_run(run_id: str) -> dict[str, Any]:
     try:  # the run dir is tenant-writable: never write through a planted .pinned symlink
         with open_nofollow_for_write(run_dir / PIN_MARKER) as fh:
             fh.write("pinned\n")
-    except OSError as e:
+    except (OSError, ValueError) as e:  # ValueError: a non-regular entry at the marker's name
         return {"ok": False, "run_id": run_id, "error": f"could not write pin marker: {e}"}
     audit("run_pinned", run_id=run_id, user=user_key())
     return {"ok": True, "run_id": run_id, "pinned": True}

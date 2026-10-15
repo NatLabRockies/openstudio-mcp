@@ -604,7 +604,7 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
     # destination swapped for a link after the check above must not be created through.
     try:
         DirHandle.open(dest_dir, create=True).close()
-    except OSError as e:
+    except (OSError, ValueError) as e:  # ValueError: a '..' component or a non-directory on the way
         return {
             "ok": False, "error": "invalid_destination",
             "message": f"Destination could not be created: {e}",

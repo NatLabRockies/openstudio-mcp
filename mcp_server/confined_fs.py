@@ -42,8 +42,17 @@ def supported() -> bool:
 
 
 def lexical_abspath(path: str | os.PathLike[str]) -> Path:
-    """Absolute, ``..``-free path WITHOUT resolving links: the walk decides what each component is."""
-    return Path(os.path.abspath(os.fspath(path)))  # noqa: PTH100 - resolve() would follow links
+    """Absolute path WITHOUT resolving links: the walk decides what each component is.
+
+    A ``..`` component is refused (ValueError): collapsing it lexically would
+    not match what a resolve-based authorization saw when a link sits before
+    it (``alice/link/../../bob`` resolves inside alice but collapses to bob),
+    and the descriptor walk cannot step out of the directory it holds.
+    """
+    raw = os.fspath(path)
+    if ".." in Path(raw).parts:
+        raise ValueError(f"path contains a '..' component: {raw!r}")
+    return Path(os.path.abspath(raw))  # noqa: PTH100 - resolve() would follow links
 
 
 def confinement_root_for(path: str | os.PathLike[str]) -> Path | None:
