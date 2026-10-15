@@ -16,6 +16,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import sandbox
+from mcp_server.model_save import save_model_confined
 from mcp_server.config import (
     INPUT_ROOT,
     is_path_allowed,
@@ -112,8 +113,7 @@ def _find_test_model() -> tuple[Path | None, Path | None, Path | None, int | Non
             model, generation = get_model_with_generation()
             # Unique per call: two tests in one session must not share a snapshot
             tmp = custom_measures_dir() / f"_test_model_{uuid.uuid4().hex[:8]}.osm"
-            tmp.parent.mkdir(parents=True, exist_ok=True)
-            model.save(openstudio.toPath(str(tmp)), True)
+            save_model_confined(model, tmp)  # staged, then copied by descriptor (#190)
             return tmp, get_model_path(), pending_files_dir_if_exists(expected_generation=generation), generation
     except RuntimeError:
         pass  # no model loaded
@@ -1034,7 +1034,10 @@ def _test_reporting_measure_with_run(
         # Fallback: create empty model
         import openstudio as _os
         m = _os.model.Model()
-        m.save(str(temp_osm), True)
+        try:
+            save_model_confined(m, temp_osm)  # staged, then copied by descriptor (#190)
+        except (OSError, ValueError, RuntimeError) as e:
+            return {"ok": False, "error": f"Could not stage an empty seed into {run_dir}: {e}"}
 
     # The resources the simulation used (Schedule:File CSVs, plugin scripts,
     # its EPW) were staged into <run>/files; the postprocess workflow's default

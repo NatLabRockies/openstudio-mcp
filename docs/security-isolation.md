@@ -111,8 +111,10 @@ JSON, hash and zip helpers and the measure-authoring script reads are examples),
 in-tree relative links only, and raises on anything else). A `zipfile` archive is
 built and read from descriptors too (`analysis/operations.py`: `_write_support_zip` opens the
 output through the walk and streams each member from an fd opened relative to its directory;
-`_zip_for_read` opens a tenant-chosen package the same way). The one pathname API left,
-`model.save()`, is listed on issue #190.
+`_zip_for_read` opens a tenant-chosen package the same way). `model.save()` is pathname-only
+in the SDK, so `model_save.save_model_confined` saves to a private temp file under the temp
+root and copies it to the destination with the same primitives; use it for every model
+written into a tenant tree.
 
 **Anchor assumption.** A confinement root and every directory above it must not be
 writable by any tenant process, and a tenant-writable tree must have no alias outside

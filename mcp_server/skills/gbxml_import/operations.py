@@ -22,6 +22,7 @@ import openstudio
 
 from mcp_server import model_manager, sandbox
 from mcp_server.confined_copy import copy_tree_confined
+from mcp_server.model_save import save_model_confined
 from mcp_server.config import (
     GBXML_IMPORT_TIMEOUT_SECONDS,
     GBXML_MEASURES_DIR,
@@ -325,9 +326,13 @@ def import_gbxml_op(
         )
 
         final_osm_path = osm_out if osm_out is not None else (run_dir / f"{gbxml_src.stem}.osm")
-        final_osm_path.parent.mkdir(parents=True, exist_ok=True)
-        if not model.save(_os_path(final_osm_path), True):
-            return {"ok": False, "error": f"Failed to save model to {final_osm_path}", "run_dir": str(run_dir)}
+        # The run dir was just written by the sandboxed measure chain: the model is staged to a
+        # private temp file and copied by descriptor (#190), so a link it left at this name or
+        # above it is refused instead of written through.
+        try:
+            save_model_confined(model, final_osm_path)
+        except (OSError, ValueError, RuntimeError) as e:
+            return {"ok": False, "error": f"Failed to save model to {final_osm_path}: {e}", "run_dir": str(run_dir)}
 
         _loaded, generation = model_manager.load_model_with_generation(final_osm_path)
         # Stash the staged copy the translator actually consumed (run_dir/gbxmls/),

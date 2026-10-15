@@ -29,6 +29,7 @@ import openstudio
 from mcp_server.config import user_run_root
 from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.identity import session_key
+from mcp_server.model_save import save_model_confined
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 # Hard RAM backstop: heavy OSM models must not accumulate unbounded across
@@ -407,8 +408,13 @@ def save_model(save_path: Path | None = None) -> Path:
         # side). Digesting after the save could record an edit that never
         # reached disk and hide a real warning.
         digest = _digest(model)
-        saved = model.save(str(path), True)
-        if saved:
+        # Staged to a private temp file and copied by descriptor (#190): a link planted at the
+        # destination name or at a component above it is refused, never written through.
+        try:
+            save_model_confined(model, Path(path))
+        except (OSError, ValueError, RuntimeError) as e:
+            raise RuntimeError(f"OpenStudio could not write the model to {path}: {e}") from e
+        if True:
             with _lock:
                 st = _sessions.get(key)
                 # Recorded even when a concurrent load_model replaced the
@@ -419,8 +425,6 @@ def save_model(save_path: Path | None = None) -> Path:
                 # other save on this session can write between the two steps.
                 if st is not None:
                     st.clean[Path(path).resolve()] = digest
-        else:
-            raise RuntimeError(f"OpenStudio could not write the model to {path}")
     return path
 
 

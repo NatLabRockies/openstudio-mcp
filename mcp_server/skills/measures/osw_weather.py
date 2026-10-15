@@ -21,6 +21,7 @@ from typing import Any
 import openstudio
 
 from mcp_server.config import is_path_allowed
+from mcp_server.model_save import save_model_confined
 from mcp_server.skills.weather.operations import find_epw_by_name
 
 
@@ -117,5 +118,8 @@ def strip_weather_from_seed(temp_osm: Path) -> Any | None:
         return None
     snapshot = wf.get().idfObject()
     wf.get().remove()
-    seed.save(openstudio.toPath(str(temp_osm)), True)
+    try:
+        save_model_confined(seed, temp_osm)  # staged, then copied by descriptor (#190)
+    except (OSError, ValueError, RuntimeError):
+        return None  # the staged seed keeps its weather file; nothing was stripped
     return snapshot

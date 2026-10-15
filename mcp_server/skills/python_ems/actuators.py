@@ -17,6 +17,7 @@ import openstudio
 from mcp_server import model_manager, sandbox
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
 from mcp_server.confined_copy import remove_tree_confined
+from mcp_server.model_save import save_model_confined
 from mcp_server.resources import stage_model_resources
 from mcp_server.util import read_file_bounded
 from mcp_server.skills.python_ems.edd_parser import parse_edd
@@ -53,7 +54,7 @@ def list_ems_actuators_op(
         work.mkdir(parents=True, exist_ok=True)
         osm_path = work / "in.osm"
         # Snapshot the session model; all mutations below happen on a fresh copy.
-        model.save(str(osm_path), True)
+        save_model_confined(model, osm_path)  # staged, then copied by descriptor (#190)
         loaded = openstudio.model.Model.load(str(osm_path))
         if not loaded.is_initialized():
             return {"ok": False, "error": "Failed to reload model snapshot for discovery."}
@@ -69,7 +70,7 @@ def list_ems_actuators_op(
         # abort the run before the .edd is complete.
         for instance in copy.getPythonPluginInstances():
             instance.remove()
-        copy.save(str(osm_path), True)
+        save_model_confined(copy, osm_path)
 
         # The model's resources (Schedule:File CSVs, its own EPW) go where the
         # CLI's default search path looks, <work>/files, like run_simulation
