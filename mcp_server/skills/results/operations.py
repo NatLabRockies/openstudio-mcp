@@ -11,7 +11,7 @@ from typing import Any
 
 from mcp_server.config import user_run_root
 from mcp_server.confined_copy import copy_tree_confined
-from mcp_server.confined_fs import DirHandle
+from mcp_server.confined_fs import DirHandle, confinement_root_for, open_confined
 from mcp_server.skills.results.sql_open import _find_first_existing, connect_sql_readonly, connection_for
 from mcp_server.util import (
     copy_regular_file_nofollow,
@@ -292,10 +292,20 @@ def read_file(
     if not full.exists() or not full.is_file():
         return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
 
-    file_size = full.stat().st_size
-
-    # Read with optional offset for chunked reading
-    with full.open("rb") as f:
+    # Under a tenant-writable tree (a confinement root) the file is opened by descriptor from
+    # that root (#190): a component swapped for a link after the check above fails the open
+    # instead of redirecting the read. The shared read-only roots are server-owned and lie
+    # under no confinement root; a link the server placed there stays readable.
+    try:
+        if confinement_root_for(full) is not None:
+            fd = open_confined(full, os.O_RDONLY)
+        else:
+            fd = os.open(full, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": "read_failed", "message": f"Could not read {file_path}: {e}"}
+    with os.fdopen(fd, "rb") as f:
+        file_size = os.fstat(f.fileno()).st_size
+        # Read with optional offset for chunked reading
         if offset > 0:
             f.seek(offset)
         data = f.read(max_bytes)

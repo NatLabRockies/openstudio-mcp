@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 from html.parser import HTMLParser
@@ -21,7 +20,6 @@ from urllib.request import Request, urlopen
 import openstudio
 
 from mcp_server import sandbox
-from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.config import (
     COMMON_MEASURES_DIR,
     COMSTOCK_MEASURES_DIR,
@@ -34,6 +32,7 @@ from mcp_server.config import (
     user_measures_root,
     user_run_root,
 )
+from mcp_server.confined_copy import copy_tree_confined, remove_tree_confined
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
 from mcp_server.model_manager import (
     get_model,
@@ -621,9 +620,9 @@ def download_measure_archive(
             archive_path.unlink(missing_ok=True)
             raise
         finally:
-            shutil.rmtree(staging, ignore_errors=True)  # no-op after a successful rename
+            remove_tree_confined(staging, ignore_errors=True)  # no-op after a successful rename
             if replaced is not None:
-                shutil.rmtree(replaced.parent, ignore_errors=True)
+                remove_tree_confined(replaced.parent, ignore_errors=True)
 
         measures = list_local_measures(root_dir=str(extract_root), max_depth=4)
         if not measures.get("ok"):

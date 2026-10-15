@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -19,7 +20,6 @@ import psutil
 
 from mcp_server import sandbox
 from mcp_server.audit import audit
-from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.config import (
     LOG_TAIL_DEFAULT,
     MAX_CONCURRENCY,
@@ -32,6 +32,8 @@ from mcp_server.config import (
     pkgs_root_for,
     user_run_root,
 )
+from mcp_server.confined_copy import copy_tree_confined
+from mcp_server.confined_fs import DirHandle
 from mcp_server.identity import user_key
 from mcp_server.model_bundle import digest_resource_dirs
 from mcp_server.resources import stage_model_resources
@@ -1066,37 +1068,38 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
             run_dir = resolve_run_dir(user_run_root(), run_id)
         except FileNotFoundError:
             return {"ok": False, "error": f"Unknown run_id: {run_id}"}
-    candidates = [
-        run_dir / "out.osw",
-        run_dir / "openstudio.log",
-        run_dir / "run",
-        run_dir / "generated_files",
-    ]
-
     artifacts: list[dict[str, Any]] = []
-    for p in candidates:
-        if p.is_symlink() or not p.exists():  # a planted link would enumerate outside the run
-            continue
-        if p.is_dir():
-            # shallow listing
-            children = []
-            for c in sorted(p.iterdir()):
-                if c.is_symlink():
+    # The run dir is tenant-written: it is walked by descriptor from the tenant root (#190), so
+    # a component swapped for a link after the lookup above fails instead of listing another
+    # tree; a link at a candidate or child name is skipped, never followed.
+    try:
+        with DirHandle.open(run_dir) as top:
+            for name in ("out.osw", "openstudio.log", "run", "generated_files"):
+                st = top.lstat(name)
+                if st is None or stat.S_ISLNK(st.st_mode):
                     continue
-                try:
-                    children.append(
-                        {
-                            "path": str(c),
+                p = run_dir / name
+                if not stat.S_ISDIR(st.st_mode):
+                    artifacts.append({"path": str(p), "name": name, "is_dir": False, "size": st.st_size})
+                    continue
+                children = []  # shallow listing
+                with top.subdir(name) as sub, sub.scandir() as it:
+                    for c in sorted(it, key=lambda e: e.name):
+                        if c.is_symlink():
+                            continue
+                        try:
+                            cst = c.stat(follow_symlinks=False)
+                        except OSError:
+                            continue
+                        children.append({
+                            "path": str(p / c.name),
                             "name": c.name,
-                            "is_dir": c.is_dir(),
-                            "size": c.stat().st_size if c.is_file() else None,
-                        },
-                    )
-                except Exception:
-                    continue
-            artifacts.append({"path": str(p), "name": p.name, "is_dir": True, "children": children})
-        else:
-            artifacts.append({"path": str(p), "name": p.name, "is_dir": False, "size": p.stat().st_size})
+                            "is_dir": stat.S_ISDIR(cst.st_mode),
+                            "size": cst.st_size if stat.S_ISREG(cst.st_mode) else None,
+                        })
+                artifacts.append({"path": str(p), "name": name, "is_dir": True, "children": children})
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not list run {run_id}: {e}"}
 
     return {"ok": True, "run_id": run_id, "artifacts": artifacts}
 

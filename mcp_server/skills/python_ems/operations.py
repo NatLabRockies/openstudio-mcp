@@ -8,7 +8,6 @@ executes inside EnergyPlus under the simulation sandbox.
 """
 from __future__ import annotations
 
-import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ import openstudio
 
 from mcp_server import model_manager
 from mcp_server.config import user_pkgs_root
+from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.resources import companion_files_dir, resource_dir_issue
 from mcp_server.skills.python_ems import templates
@@ -304,7 +304,7 @@ def create_python_plugin_op(
                 raise _EmsError("ExternalFile creation failed for the plugin script.")
             external_file = external_opt.get()
         finally:
-            shutil.rmtree(staging, ignore_errors=True)
+            remove_tree_confined(staging, ignore_errors=True)
         if not script_path.exists():
             external_file.remove()
             raise _EmsError(f"Plugin script was not copied to {script_path}.")

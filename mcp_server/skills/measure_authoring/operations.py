@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import contextlib
 import re
-import shutil
 import subprocess
 import tempfile
 import uuid
@@ -17,13 +16,13 @@ from typing import Any
 import openstudio
 
 from mcp_server import sandbox
-from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.config import (
     INPUT_ROOT,
     is_path_allowed,
     user_custom_measures_dir,
     user_run_root,
 )
+from mcp_server.confined_copy import copy_tree_confined, remove_tree_confined
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES
 from mcp_server.resources import stage_model_resources
@@ -900,9 +899,9 @@ def create_measure_op(
         args = arguments or []
         class_name = _to_class_name(name)
         measure_dir = custom_measures_dir() / name
-        # Clean existing dir for idempotent re-creation (safe: name is validated)
-        if measure_dir.exists():
-            shutil.rmtree(measure_dir)
+        # Clean existing dir for idempotent re-creation (safe: name is validated); removed
+        # through the parent's descriptor, so nothing above it is resolved again (#190)
+        remove_tree_confined(measure_dir)
         measure_dir.mkdir(parents=True)
 
         # SDK scaffold
@@ -1274,7 +1273,7 @@ def test_measure_op(
                     timeout=60, check=False,
                 )
         finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            remove_tree_confined(tmp_dir, ignore_errors=True)
 
         # Symlink-refusing, bounded read (PR #105). `output` is the tail (holds the
         # minitest/pytest summary); `excerpt`/`crash_marker` come from a crash
@@ -1374,7 +1373,7 @@ def test_measure_op(
         return {"ok": False, "error": f"Failed to test measure: {e}"}
     finally:
         if _private_copy is not None:
-            shutil.rmtree(_private_copy, ignore_errors=True)
+            remove_tree_confined(_private_copy, ignore_errors=True)
 
 
 def _stage_session_or_asset_model(mdir: Path, test_model_dst: Path) -> str | None:

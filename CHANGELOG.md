@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- `read_file` opens a file under a tenant-writable tree by descriptor from the tenant root and
+  `get_run_artifacts` lists a run dir the same way, so a directory component swapped for a
+  symlink after the server's check is a tool error (`read_failed`) or an empty listing instead
+  of another tenant's file or artifact names; files under the shared read-only roots are read
+  as before. Every server-side `shutil.rmtree` of a directory under a tenant root (run and
+  upload deletion, retention sweeps, measure re-creation, staging cleanups, the session
+  workspace) removes it through the parent directory's descriptor; `delete_run` and
+  `delete_upload` report a removal that fails instead of claiming success. (#190)
 - Directory copies into and out of tenant-writable trees (`apply_measure` and `test_measure`
   staging a measure into a run dir, the ReportingMeasure test, `measure -u` staging, the OSAF
   package's foundational measures, `run_osw`'s staging of the OSW directory and seed, gbXML

@@ -44,15 +44,26 @@ MAX_TREE_FILE_BYTES = 1024 * 1024 * 1024
 MAX_TREE_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 
 
-def remove_tree_confined(path: str | os.PathLike[str]) -> bool:
+def remove_tree_confined(path: str | os.PathLike[str], *, ignore_errors: bool = False) -> bool:
     """Remove the entry at ``path`` (a directory tree, a file or a link) through its parent's descriptor.
 
-    Returns whether anything was there. A link at ``path`` is unlinked, never
+    Returns whether anything was removed. A link at ``path`` is unlinked, never
     followed; a directory is removed with ``shutil.rmtree`` anchored on the
     parent descriptor (``dir_fd``), so nothing above it is resolved again by
-    pathname. Links at the parent's components fail the open (OSError).
+    pathname. Links at the parent's components fail the open (OSError), a
+    ``..`` component is a ValueError; ``ignore_errors`` swallows both (and any
+    error inside the tree, as ``shutil.rmtree(ignore_errors=True)`` did) and
+    returns False.
     """
-    p = lexical_abspath(path)
+    try:
+        return _remove_tree(lexical_abspath(path))
+    except (OSError, ValueError):
+        if ignore_errors:
+            return False
+        raise
+
+
+def _remove_tree(p: Path) -> bool:
     try:
         parent = DirHandle.open(p.parent)
     except FileNotFoundError:

@@ -8,7 +8,6 @@ never appears in the run list and is deleted after parsing.
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import uuid
 from typing import Any
@@ -17,6 +16,7 @@ import openstudio
 
 from mcp_server import model_manager, sandbox
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
+from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.resources import stage_model_resources
 from mcp_server.skills.python_ems.edd_parser import parse_edd
 
@@ -130,7 +130,7 @@ def list_ems_actuators_op(
     except Exception as e:
         return {"ok": False, "error": f"Actuator discovery failed: {e}"}
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        remove_tree_confined(work, ignore_errors=True)
 
     actuators = [
         a for a in parsed["actuators"]
