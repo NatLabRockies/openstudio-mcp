@@ -12,6 +12,7 @@ from typing import Any
 
 from mcp_server.config import user_run_root
 from mcp_server.confined_fs import DirHandle
+from mcp_server.skills.results.sql_open import _find_first_existing, connect_sql_readonly
 from mcp_server.util import (
     copy_regular_file_nofollow,
     read_file_bounded,
@@ -40,33 +41,9 @@ def _run_status_from_record(run_dir: Path) -> str | None:
         return None
 
 
-def _find_first_existing(run_dir: Path, rel_candidates: list[str]) -> Path | None:
-    """First result file from the candidates: a regular file inside run_dir, never a symlink.
-
-    Result files are written by the tenant's sandboxed run, so a planted symlink (or a
-    symlinked directory the rglob fallback would descend) must not lead sqlite3.connect or
-    the HTML reader outside the run.
-    """
-    root = run_dir.resolve()
-
-    def _regular_inside(p: Path) -> bool:
-        return not p.is_symlink() and p.is_file() and str(p.resolve()).startswith(str(root) + os.sep)
-
-    for rel in rel_candidates:
-        p = run_dir / rel
-        if _regular_inside(p):
-            return p
-    # fallback: search a little
-    for pat in ["eplusout.sql", "eplustbl.htm", "eplustbl.html"]:
-        for hit in run_dir.rglob(pat):
-            if _regular_inside(hit):
-                return hit
-    return None
-
-
 def _extract_total_site_energy_from_sql(sql_path: Path) -> dict[str, Any]:
     """Extract Total Site Energy (GJ) from EnergyPlus SQL via precise query."""
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     conn.row_factory = sqlite3.Row
     try:
         # TabularDataWithStrings may be a VIEW — don't filter by type='table'
@@ -182,8 +159,18 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
     total_site = None
     total_site_src = None
     if sql_path and sql_path.suffix.lower() == ".sql":
-        total_site = _extract_total_site_energy_from_sql(sql_path)
+        total_site = _extract(_extract_total_site_energy_from_sql, sql_path)
         total_site_src = "sql"
+        if total_site.get("error") in ("sql_unreadable", "sql_error"):
+            # The run has an eplusout.sql that cannot be opened or read: that is a
+            # failure of this extraction, not "no results"; never report success
+            # with null metrics over it.
+            return {
+                "ok": False, "run_id": run_id, "error": total_site["error"], "message": total_site["message"],
+                "paths": {
+                    "run_dir": str(run_dir), "sql": str(sql_path), "html": str(html_path) if html_path else None,
+                },
+            }
         if not total_site.get("ok"):
             total_site = None
     if total_site is None and html_path:
@@ -201,11 +188,19 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
                 extract_unmet_hours,
             )
 
-            unmet = extract_unmet_hours(sql_path)
-            eui = extract_eui(sql_path)
+            unmet = _extract(extract_unmet_hours, sql_path)
+            eui = _extract(extract_eui, sql_path)
         except Exception:
             unmet = None
             eui = None
+        for part in (unmet, eui):
+            if isinstance(part, dict) and part.get("error") in ("sql_unreadable", "sql_error"):
+                return {
+                    "ok": False, "run_id": run_id, "error": part["error"], "message": part["message"],
+                    "paths": {
+                    "run_dir": str(run_dir), "sql": str(sql_path), "html": str(html_path) if html_path else None,
+                },
+                }
 
     total_site_kbtu = None
     total_site_units = None
@@ -338,6 +333,16 @@ def read_file(
 # Tier 1 + Tier 2: SQL extraction wrappers
 # ---------------------------------------------------------------------------
 
+def _extract(fn, sql_path: Path, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Run an extractor on sql_path; a file that cannot be opened or read is a tool error, not an exception."""
+    try:
+        return fn(sql_path, *args, **kwargs)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": "sql_unreadable", "message": f"eplusout.sql could not be opened: {e}"}
+    except sqlite3.Error as e:
+        return {"ok": False, "error": "sql_error", "message": f"eplusout.sql could not be read: {e}"}
+
+
 def _resolve_sql(run_id: str) -> tuple[Path | None, dict | None]:
     """Resolve run_dir and find eplusout.sql. Returns (sql_path, error_dict)."""
     try:
@@ -356,7 +361,7 @@ def extract_end_use_breakdown_op(run_id: str, units: str = "IP") -> dict[str, An
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return extract_end_use_breakdown(sql_path, units)
+    return _extract(extract_end_use_breakdown, sql_path, units)
 
 
 def extract_envelope_summary_op(run_id: str) -> dict[str, Any]:
@@ -365,7 +370,7 @@ def extract_envelope_summary_op(run_id: str) -> dict[str, Any]:
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return extract_envelope_summary(sql_path)
+    return _extract(extract_envelope_summary, sql_path)
 
 
 def extract_hvac_sizing_op(run_id: str) -> dict[str, Any]:
@@ -374,7 +379,7 @@ def extract_hvac_sizing_op(run_id: str) -> dict[str, Any]:
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return extract_hvac_sizing(sql_path)
+    return _extract(extract_hvac_sizing, sql_path)
 
 
 def extract_zone_summary_op(run_id: str) -> dict[str, Any]:
@@ -383,7 +388,7 @@ def extract_zone_summary_op(run_id: str) -> dict[str, Any]:
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return extract_zone_summary(sql_path)
+    return _extract(extract_zone_summary, sql_path)
 
 
 def extract_component_sizing_op(
@@ -394,7 +399,7 @@ def extract_component_sizing_op(
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return extract_component_sizing(sql_path, component_type, max_results=max_results)
+    return _extract(extract_component_sizing, sql_path, component_type, max_results=max_results)
 
 
 def query_timeseries_op(
@@ -414,8 +419,8 @@ def query_timeseries_op(
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return query_timeseries(
-        sql_path, variable_name, key_value,
+    return _extract(
+        query_timeseries, sql_path, variable_name, key_value,
         start_month, start_day, end_month, end_day,
         frequency, max_points, environment=environment,
     )
@@ -453,7 +458,7 @@ def list_output_variables_op(run_id: str) -> dict[str, Any]:
     sql_path, err = _resolve_sql(run_id)
     if err:
         return err
-    return list_output_variables(sql_path)
+    return _extract(list_output_variables, sql_path)
 
 
 def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any]:
@@ -487,8 +492,15 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
     water_use: list[dict[str, Any]] = []
     energy_grand_total = {"baseline": 0.0, "retrofit": 0.0}
     if b_sql and r_sql:
-        b_eu = extract_end_use_breakdown(b_sql, units="IP")
-        r_eu = extract_end_use_breakdown(r_sql, units="IP")
+        b_eu = _extract(extract_end_use_breakdown, b_sql, units="IP")
+        r_eu = _extract(extract_end_use_breakdown, r_sql, units="IP")
+        for label, eu in (("baseline", b_eu), ("retrofit", r_eu)):
+            if eu.get("error") in ("sql_unreadable", "sql_error"):
+                return {
+                    "ok": False, "error": eu["error"],
+                    "message": f"{label} run {baseline_run_id if label == 'baseline' else retrofit_run_id}: "
+                               f"{eu['message']}",
+                }
         if b_eu.get("ok") and r_eu.get("ok"):
             b_map = {e["name"]: e for e in b_eu["end_uses"]}
             r_map = {e["name"]: e for e in r_eu["end_uses"]}

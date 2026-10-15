@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from mcp_server.skills.results.sql_open import connect_sql_readonly
+
 
 def _q(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
@@ -19,7 +21,7 @@ def _try_float(s: Any) -> float | None:
         return None
 
 def extract_unmet_hours(sql_path: Path) -> dict:
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         # Exact-match queries against SystemSummary / Time Setpoint Not Met
         # (matches openstudio_results reference measure)
@@ -59,7 +61,7 @@ _AREA_TO_M2 = {"m2": 1.0, "ft2": 0.09290304}
 
 
 def extract_eui(sql_path: Path) -> dict:
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         # Get building area from the "Building Area" table (units: m2)
         # ColumnName='Area' required — without it LIMIT 1 may pick a wrong col
@@ -125,7 +127,7 @@ def extract_eui(sql_path: Path) -> dict:
 
 def list_output_variables(sql_path: Path) -> dict:
     """Query ReportDataDictionary for available variables and meters."""
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         rows = _q(conn, """
             SELECT Name, KeyValue, ReportingFrequency, Units, IsMeter
@@ -178,7 +180,7 @@ def list_output_variables(sql_path: Path) -> dict:
 
 def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
     """Extract end-use energy breakdown by fuel type from AnnualBuildingUtilityPerformanceSummary."""
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
@@ -261,7 +263,7 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
 
 def extract_envelope_summary(sql_path: Path) -> dict:
     """Extract opaque exterior and fenestration data from EnvelopeSummary."""
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         # Opaque exterior surfaces
         opaque_rows = _q(conn, """
@@ -293,7 +295,7 @@ def extract_envelope_summary(sql_path: Path) -> dict:
 
 def extract_hvac_sizing(sql_path: Path) -> dict:
     """Extract zone and system sizing from HVACSizingSummary."""
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         # Zone sensible cooling
         zone_cool = _q(conn, """
@@ -345,7 +347,7 @@ def extract_hvac_sizing(sql_path: Path) -> dict:
 
 def extract_zone_summary(sql_path: Path) -> dict:
     """Extract per-zone area/conditions from InputVerificationandResultsSummary."""
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
@@ -374,7 +376,7 @@ def extract_component_sizing(
         component_type: Filter by type (e.g. "Coil", "Fan", "Pump", "Chiller")
         max_results: Cap on returned components (default 50, 0=unlimited)
     """
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         if component_type:
             rows = _q(conn, """
@@ -469,7 +471,7 @@ def query_timeseries(
             "error": (f"Invalid environment '{environment}'. "
                       "Use 'run_period' (default), 'design_day', or 'all'."),
         }
-    conn = sqlite3.connect(str(sql_path))
+    conn = connect_sql_readonly(sql_path)
     try:
         # Check if ReportData has any rows
         cnt = _q(conn, "SELECT COUNT(*) as c FROM ReportData")[0]["c"]

@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- Result extraction (`extract_summary_metrics`, `extract_end_use_breakdown`, `query_timeseries`
+  and the other `eplusout.sql` readers) no longer lets SQLite open a file in the tenant's run
+  dir: the file is opened by descriptor from the tenant root and copied into a private
+  temporary file that SQLite reads read-only and that is unlinked at once, so a run-dir
+  component swapped for a symlink at any moment cannot serve another tenant's database (one
+  copy per extraction call). The result-file search walks the run dir by descriptor. A result
+  file that cannot be opened or read is a tool error (`sql_unreadable` / `sql_error`) on every
+  extraction path, including `extract_summary_metrics` and `compare_runs`, instead of an
+  exception or a success with null metrics. (#190)
 - Server-side reads, writes and copies under tenant-writable trees (run dirs, the session
   workspace, model companion folders, OSAF package dirs, measure dirs, temp staging) open
   every directory component by descriptor from a server-owned root instead of resolving
