@@ -21,6 +21,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager, sandbox
+from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.config import (
     GBXML_IMPORT_TIMEOUT_SECONDS,
     GBXML_MEASURES_DIR,
@@ -185,7 +186,11 @@ def import_gbxml_op(
             err = reject_escaping_symlinks(src)
             if err:
                 return {"ok": False, "error": err}
-            shutil.copytree(str(src), str(measures_dir / measure_name), dirs_exist_ok=True, symlinks=True)
+            # Walked by descriptor at both ends (#190): the run dir is tenant-writable
+            try:
+                copy_tree_confined(src, measures_dir / measure_name)
+            except (OSError, ValueError) as e:
+                return {"ok": False, "error": f"Could not stage gbXML measure {measure_name}: {e}"}
 
         steps: list[dict[str, Any]] = [{
             "measure_dir_name": "ChangeBuildingLocation",

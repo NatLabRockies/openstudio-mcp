@@ -34,6 +34,7 @@ from jsonschema import Draft4Validator, SchemaError
 from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
+from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
 from mcp_server.resources import (
     MAX_RESOURCE_FILE_BYTES,
@@ -1828,10 +1829,15 @@ def _ensure_foundational_measures_in_package(package_dir: Path) -> dict[str, Any
         if not source.is_dir():
             missing.append(measure_name)
             continue
-        if target.exists():
-            shutil.rmtree(target)
-        ignore = shutil.ignore_patterns(".git", ".bundle", "__pycache__", "*.pyc")
-        shutil.copytree(source, target, ignore=ignore)
+        # The package dir is tenant-writable: both trees are walked by descriptor (#190) and a
+        # stale target is removed through its parent's descriptor, so a measures/ component
+        # swapped for a link after the check above fails here instead of clearing or writing
+        # another tree.
+        try:
+            copy_tree_confined(source, target, replace=True, exclude_names={".git", ".bundle", "__pycache__"},
+                               ignore=lambda name: name.endswith(".pyc"))
+        except (OSError, ValueError) as e:
+            return _refused(f"{target} ({e})")
         copied.append(measure_name)
 
     return {

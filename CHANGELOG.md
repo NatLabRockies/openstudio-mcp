@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Fixed
+- Directory copies into and out of tenant-writable trees (`apply_measure` and `test_measure`
+  staging a measure into a run dir, the ReportingMeasure test, `measure -u` staging, the OSAF
+  package's foundational measures, `run_osw`'s staging of the OSW directory and seed, gbXML
+  measure staging and `copy_file` of a directory) no longer use `shutil.copytree` /
+  `shutil.rmtree` by pathname: `confined_copy.copy_tree_confined` walks both trees by directory
+  descriptor from a server-owned root, copies regular files only (permission bits kept,
+  modification times not), keeps a link only when its relative target stays inside the copied
+  tree, refuses FIFOs and other special files, bounds the copy, and removes a stale destination
+  through its parent's descriptor. A directory component swapped for a symlink after the
+  server's check now fails the copy instead of copying another tenant's tree or writing into
+  it; each site reports that as a tool error. (#190)
 - Result extraction (`extract_summary_metrics`, `extract_end_use_breakdown`, `query_timeseries`
   and the other `eplusout.sql` readers) no longer lets SQLite open a file in the tenant's run
   dir: the file is opened by descriptor from the tenant root and copied into a private

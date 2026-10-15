@@ -19,6 +19,7 @@ import psutil
 
 from mcp_server import sandbox
 from mcp_server.audit import audit
+from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.config import (
     LOG_TAIL_DEFAULT,
     MAX_CONCURRENCY,
@@ -35,6 +36,7 @@ from mcp_server.identity import user_key
 from mcp_server.model_bundle import digest_resource_dirs
 from mcp_server.resources import stage_model_resources
 from mcp_server.util import (
+    copy_regular_file_nofollow,
     create_run_dir,
     open_nofollow_for_write,
     read_file_bounded,
@@ -47,6 +49,7 @@ from mcp_server.util import (
 )
 
 MAX_LOG_READ_BYTES = 4 * 1024 * 1024
+MAX_STAGED_FILE_BYTES = 8 * 1024 * 1024 * 1024  # one OSW, seed or weather file staged into a run dir
 MAX_ERR_READ_BYTES = 16 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024  # run_record.json is small; anything bigger is hostile
 MAX_OUT_OSW_BYTES = 16 * 1024 * 1024  # out.osw carries step results/messages and can be large
@@ -304,20 +307,13 @@ def _tail_text(path: Path, tail_lines: int) -> str | None:
 
 
 def _copy_tree(src_dir: Path, dst_dir: Path) -> None:
+    """Copy the contents of src_dir into dst_dir (created if missing), skipping 'run/' and
+    'generated_files/' (OpenStudio outputs present in a repo asset dir).
+
+    Both trees are walked by descriptor (#190): a link anywhere in the OSW's directory, or at
+    a component of either path, fails the copy (OSError / ValueError) instead of being followed.
     """
-    Copy contents of src_dir into dst_dir (dst_dir exists).
-    We do NOT copy 'run/' or typical OpenStudio outputs if present in the asset dir.
-    """
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    for item in src_dir.iterdir():
-        # Skip common generated dirs in repo assets
-        if item.name in ("run", "generated_files"):
-            continue
-        target = dst_dir / item.name
-        if item.is_dir():
-            shutil.copytree(item, target, dirs_exist_ok=True)
-        else:
-            shutil.copy2(item, target)
+    copy_tree_confined(src_dir, dst_dir, exclude_names={"run", "generated_files"})
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -707,12 +703,15 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
 
     # Stage OSW directory contents
     src_dir = src_osw.parent.resolve()
-    _copy_tree(src_dir, run_dir)
+    try:
+        _copy_tree(src_dir, run_dir)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not stage the OSW directory {src_dir}: {e}", "run_dir": str(run_dir)}
 
     staged_osw = run_dir / src_osw.name
     if not staged_osw.exists():
         # In case OSW lived outside src_dir copy (unlikely), copy explicitly
-        shutil.copy2(src_osw, staged_osw)
+        copy_regular_file_nofollow(src_osw, staged_osw, MAX_STAGED_FILE_BYTES)
 
     # Load staged OSW and ensure referenced seed file is present.
     # Always stage the seed directly into run_dir (flatten any ../ refs)
@@ -727,7 +726,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             # Flatten: use just the filename, always inside run_dir
             seed_dst = run_dir / Path(seed_rel).name
             if not seed_dst.exists():
-                shutil.copy2(seed_src, seed_dst)
+                copy_regular_file_nofollow(seed_src, seed_dst, MAX_STAGED_FILE_BYTES)
             # Rewrite OSW to point at the flattened location
             if seed_rel != Path(seed_rel).name:
                 osw["seed_file"] = Path(seed_rel).name
@@ -745,7 +744,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                 seed_resource_src = found
                 seed_dst = run_dir / found.name
                 if not seed_dst.exists():
-                    shutil.copy2(found, seed_dst)
+                    copy_regular_file_nofollow(found, seed_dst, MAX_STAGED_FILE_BYTES)
                 osw["seed_file"] = str(seed_dst)
                 _dump_json(staged_osw, osw)
 

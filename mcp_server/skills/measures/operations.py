@@ -21,6 +21,7 @@ from urllib.request import Request, urlopen
 import openstudio
 
 from mcp_server import sandbox
+from mcp_server.confined_copy import copy_tree_confined
 from mcp_server.config import (
     COMMON_MEASURES_DIR,
     COMSTOCK_MEASURES_DIR,
@@ -791,11 +792,15 @@ def apply_measure(
 
         # Copy measure into run dir so OSW can reference it by relative path
         measures_dir = run_dir / "measures"
-        measures_dir.mkdir(exist_ok=True)
         local_measure = measures_dir / measure_path.name
-        # symlinks=True: copy links AS links (don't follow → no host-file content
-        # inlined into the run dir); escaping links already rejected above.
-        shutil.copytree(str(measure_path), str(local_measure), dirs_exist_ok=True, symlinks=True)
+        # Both trees walked by descriptor (#190): a link planted at any component of the
+        # measure dir or the run dir after the checks above fails the copy. Links inside the
+        # measure are kept as links; any other link is refused (escaping ones rejected above).
+        try:
+            copy_tree_confined(measure_path, local_measure)
+        except (OSError, ValueError) as e:
+            return {"ok": False, "error": f"Could not stage measure {measure_path.name}: {e}",
+                    "run_dir": str(run_dir)}
 
         # Build measure step arguments
         measure_args = {}
