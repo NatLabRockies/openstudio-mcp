@@ -543,4 +543,3 @@ def test_test_measure_keeps_an_explicit_model_path_named_like_a_snapshot():
                 assert test["ok"] is True, test
                 assert own_model.is_file(), "an explicit model_path is the caller's file; never removed"
     asyncio.run(_run())
-

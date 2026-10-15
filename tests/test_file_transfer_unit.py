@@ -483,4 +483,3 @@ def test_bundle_mint_does_not_import_the_sdk(monkeypatch):
     assert res["members"] == ["mint_probe.osm", "mint_probe/.resources-migrated"], res
     assert res["target"] == str(osm.resolve()), res
     assert "warnings" not in res
-
