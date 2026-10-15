@@ -80,9 +80,10 @@ def _link_is_descending(target: str) -> bool:
 
 class _TreeCopy:
     def __init__(self, src: Path, dst: Path, *, exclude_names: Iterable[str], ignore: Callable[[str], bool] | None,
-                 max_files: int, max_file_bytes: int, max_total_bytes: int):
+                 max_files: int, max_file_bytes: int, max_total_bytes: int, root_mode: bool):
         self.src = src
         self.dst = dst
+        self.root_mode = root_mode
         self.exclude = set(exclude_names)
         self.ignore = ignore
         self.max_files = max_files
@@ -127,7 +128,10 @@ class _TreeCopy:
             else:
                 raise ValueError(f"{rel}: not a regular file")
         # The directory's own permission bits, after its children (a read-only dir must still
-        # receive them); copytree did the same through copystat.
+        # receive them); copytree did the same through copystat. The destination root keeps its
+        # own mode when the caller merges into a directory it goes on writing (root_mode=False).
+        if top and not self.root_mode:
+            return
         mode = stat.S_IMODE((os.fstat(src.fd) if src.fd is not None else os.lstat(src.path)).st_mode)
         if dst.fd is not None and hasattr(os, "fchmod"):
             os.fchmod(dst.fd, mode)
@@ -181,7 +185,7 @@ def copy_tree_confined(
     src: str | os.PathLike[str], dst: str | os.PathLike[str], *,
     replace: bool = False, exclude_names: Iterable[str] = (), ignore: Callable[[str], bool] | None = None,
     max_files: int = MAX_TREE_FILES, max_file_bytes: int = MAX_TREE_FILE_BYTES,
-    max_total_bytes: int = MAX_TREE_TOTAL_BYTES,
+    max_total_bytes: int = MAX_TREE_TOTAL_BYTES, root_mode: bool = True,
 ) -> dict[str, int]:
     """Copy the directory ``src`` to ``dst`` through directory descriptors; see the module docstring.
 
@@ -192,8 +196,10 @@ def copy_tree_confined(
     through (OSError / ValueError). ``exclude_names`` skips top-level entries
     by exact name (a ``run/`` beside the OSW, not one nested in a resource
     dir); ``ignore(name)`` skips entries it returns True for at every depth
-    (caches). The budgets bound the copy (ValueError). Returns ``{"dirs",
-    "files", "bytes", "links"}`` counts.
+    (caches). The budgets bound the copy (ValueError). Directory modes follow
+    the source; ``root_mode=False`` leaves the destination root's own mode
+    alone (a run dir the server and the sandbox keep writing into). Returns
+    ``{"dirs", "files", "bytes", "links"}`` counts.
     """
     src_path = lexical_abspath(src)
     dst_path = lexical_abspath(dst)
@@ -205,7 +211,7 @@ def copy_tree_confined(
     if replace:
         remove_tree_confined(dst_path)
     job = _TreeCopy(src_path, dst_path, exclude_names=exclude_names, ignore=ignore, max_files=max_files,
-                    max_file_bytes=max_file_bytes, max_total_bytes=max_total_bytes)
+                    max_file_bytes=max_file_bytes, max_total_bytes=max_total_bytes, root_mode=root_mode)
     with DirHandle.open(src_path) as src_handle, DirHandle.open(dst_path, create=True) as dst_handle:
         job.copy_dir(src_handle, dst_handle, PurePath())
     return job.counts

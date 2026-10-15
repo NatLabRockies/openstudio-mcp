@@ -312,8 +312,9 @@ def _copy_tree(src_dir: Path, dst_dir: Path) -> None:
 
     Both trees are walked by descriptor (#190): a link anywhere in the OSW's directory, or at
     a component of either path, fails the copy (OSError / ValueError) instead of being followed.
+    The run dir keeps its own mode (the server and the sandboxed run go on writing into it).
     """
-    copy_tree_confined(src_dir, dst_dir, exclude_names={"run", "generated_files"})
+    copy_tree_confined(src_dir, dst_dir, exclude_names={"run", "generated_files"}, root_mode=False)
 
 
 def _stage_file(src: Path, dst: Path) -> str | None:
@@ -733,8 +734,13 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     seed_rel = osw.get("seed_file")
     seed_resource_src: Path | None = None  # the seed as found, for its companion resources
     if seed_rel:
-        # Lexical join (".." collapsed, no link followed): the walk opens exactly this path
+        # Lexical join (".." collapsed, no link followed): the walk opens exactly this path, so
+        # this exact path is what gets authorized. Validation authorized the resolved reference,
+        # which a link inside the OSW dir can make a different file ("../link/../../x" resolves
+        # through the link but collapses lexically to a sibling tenant's path).
         seed_src = Path(os.path.normpath(src_dir / seed_rel))
+        if not _internal and seed_src.exists() and not is_path_allowed(seed_src):
+            return {"ok": False, "error": f"Seed path not allowed: {seed_rel}", "run_dir": str(run_dir)}
         if seed_src.exists():
             seed_resource_src = seed_src
             # Flatten: use just the filename, always inside run_dir

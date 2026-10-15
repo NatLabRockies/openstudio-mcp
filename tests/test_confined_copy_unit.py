@@ -527,3 +527,46 @@ def test_run_osw_seed_outside_the_osw_dir_over_budget_is_a_tool_error(tmp_path, 
     staged = Path(res["run_dir"])
     assert (staged / "seed.osm").read_bytes() == b"OS:Version,\n" * 4
     assert json.loads((staged / "workflow.osw").read_text(encoding="utf-8"))["seed_file"] == "seed.osm"
+
+
+@posix_only
+def test_run_osw_seed_candidate_is_authorized_as_the_path_staging_opens(tmp_path, monkeypatch):
+    # Regression: the seed reference was joined lexically for staging but authorized (by
+    # validation) on its resolved form; "../link/../../bob/seed.osm" with alice/link -> alice/deep
+    # resolved inside alice and collapsed to bob's file, which staging then copied. The exact
+    # lexical candidate staging opens is authorized first
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "seed.osm").write_bytes(SECRET)
+    (root / "deep" / "nested").mkdir(parents=True)
+    (root / "link").symlink_to(root / "deep" / "nested", target_is_directory=True)
+    src = root / "workflow"
+    src.mkdir()
+    (src / "workflow.osw").write_text(json.dumps({"seed_file": "../link/../../bob/seed.osm"}), encoding="utf-8")
+    _osw_run_setup(monkeypatch)
+    res = sim_ops.run_osw(str(src / "workflow.osw"))
+    assert res["ok"] is False and "not allowed" in res["error"], res
+    assert not _contains_bytes(root, SECRET), "bob's seed must not be staged into alice's run dir"
+
+
+def test_osw_staging_keeps_the_run_dirs_own_mode(tmp_path, monkeypatch):
+    # Regression: the directory copy applied the source root's mode to the destination root, so an
+    # OSW directory of mode 0o555 left the freshly created run dir read-only and the later
+    # files/ creation and the sandboxed run's own writes failed; the staging copy keeps the run
+    # dir's mode and still copies the contents
+    root = _http_tenant(monkeypatch, tmp_path)
+    src = root / "osw_dir"
+    src.mkdir()
+    (src / "workflow.osw").write_bytes(b"{}")
+    (src / "sub").mkdir()
+    (src / "sub" / "a.txt").write_bytes(b"a")
+    src.chmod(0o555)
+    run_dir = root / "run_osw"
+    run_dir.mkdir(mode=0o700)
+    try:
+        sim_ops._copy_tree(src, run_dir)
+    finally:
+        src.chmod(0o755)
+    assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
+    assert (run_dir / "sub" / "a.txt").read_bytes() == b"a"
+    (run_dir / "files").mkdir()
