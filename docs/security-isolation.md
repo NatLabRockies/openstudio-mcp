@@ -74,6 +74,43 @@ measures) here — that re-exposes every tenant's data. There is a unit guard fo
 > (create/list/edit/download/read) is guarded **only** by `is_path_allowed`. Get the
 > path scoping right; don't lean on the sandbox to cover it.
 
+## Opening files under tenant-writable trees (`mcp_server/confined_fs.py`)
+
+`is_path_allowed` decides whether a path may be used; it does not decide what the
+path *is* at the moment the server opens it. Everything under a tenant's run root is
+also written by that tenant's sandboxed processes, so between the server's check and
+its open a directory component can be replaced by a symlink into another tenant's
+tree. The `util.py` file primitives (`read_file_bounded`, the head/tail readers,
+`open_nofollow_for_write`, the dir-fd reader and writer, `copy_regular_file_nofollow`,
+`sha256_regular_file_nofollow`), `resources.copy_resources` and
+`workspace_files.persist_pending_files` therefore anchor every access (issue #190):
+
+- the path is made absolute lexically (no `resolve()`), and the **confinement root**
+  it lies under is found: `config.confinement_roots()` = `RUN_ROOT`, `MEASURES_DIR`
+  and the canonical system temp dir (server-made staging lives there in HTTP mode too);
+- the root is opened by pathname; every component below it is opened relative to the
+  previous directory's descriptor with `O_NOFOLLOW | O_DIRECTORY`, and the leaf relative
+  to the last one, non-blocking and `fstat`-checked. A link planted at any component,
+  at any time, fails that component's open instead of redirecting the access;
+- writes create exclusively or open the existing entry without `O_TRUNC`, check it is a
+  regular file and truncate through the descriptor, so nothing non-regular is truncated;
+- paths under no root (the shared read-only roots) keep the final-component no-follow
+  open; platforms without `dir_fd` (Windows) do too.
+
+Use those primitives (or `confined_fs.DirHandle` directly for a directory walk) for
+any server-side read, write or copy under a tenant-writable tree. Pathname APIs that
+cannot take a descriptor (`sqlite3.connect`, `shutil.copytree`, `model.save()`,
+`zipfile` writes from a tree) remain on their pathname checks; the open items are
+listed on issue #190.
+
+**Anchor assumption.** A confinement root and every directory above it must not be
+writable by any tenant process, and a tenant-writable tree must have no alias outside
+the registered roots: the walk trusts the root it opened by pathname. The sandbox
+grants a tenant's subprocess `rw` on its own work dir only, and `_tenant_dir` refuses
+a link at `RUN_ROOT/<key>`. A deployment that bind-mounts the same host directory at
+two paths (the CI workflow mounts the checkout's `runs/` at both `/repo/runs` and
+`/runs` for the test container) is outside this guarantee.
+
 ## Checklist — adding a new user-data location
 
 1. Store under an identity-scoped helper (`user_*_root()` / a new keyed root), never
@@ -91,13 +128,18 @@ measures) here — that re-exposes every tenant's data. There is a unit guard fo
 6. Validate user-supplied path args with `is_path_allowed(..., write=…)`; for
    internal default roots, *skip* a disallowed root rather than erroring (an error
    leaks that another tenant's dir exists).
+7. If the new tree is not under `RUN_ROOT` or `MEASURES_DIR`, add its server-owned
+   root to `config.confinement_roots()` so the file primitives walk it by descriptor,
+   and keep its ancestors tenant-immutable (see the section above).
 
 ## Deployment
 
 Mount the per-user trees (`/runs`, `/measures`) as writable volumes the server owns
 (or can chown within). Read-only or foreign-owned mounts break create + in-place
 test. One shared volume ≠ shared access — per-user subdirs + per-tenant sandbox uids
-keep tenants apart at both the app and OS levels.
+keep tenants apart at both the app and OS levels. Mount each tree at one path only
+and keep the mount points and their parents owned by the server: the descriptor walk
+in `confined_fs` trusts the roots it opens by pathname.
 
 ## Principal keys (issue #170)
 

@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- Server-side reads, writes and copies under tenant-writable trees (run dirs, the session
+  workspace, model companion folders, OSAF package dirs, measure dirs, temp staging) open
+  every directory component by descriptor from a server-owned root instead of resolving
+  the path at open time, so a directory replaced by a symlink after the server's check can
+  no longer redirect the access into another tenant's tree. The shared file primitives in
+  `util.py`, `copy_resources` and the workspace move into a saved model's `files/` are
+  covered; `copy_file`, the ReportingMeasure test paths and `test_measure`'s model copies
+  use the same copier (file metadata is no longer preserved on those copies). Remaining
+  pathname sites are listed on the issue. (#190)
 - A model's resources (its companion folder `<model>/files/`: Schedule:File CSVs, Python
   EMS plugin scripts, custom EPWs) now travel with it wherever the server moves or
   snapshots the OSM: `request_download(path=<model.osm>, bundle=True)` zips the model

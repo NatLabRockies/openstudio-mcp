@@ -12,11 +12,11 @@ import shutil
 import subprocess
 import tempfile
 from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
-from pathlib import Path
-from typing import Any
 
 import openstudio
 
@@ -49,13 +49,12 @@ from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_ep
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
 from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
 from mcp_server.util import (
-    create_run_dir,
     copy_regular_file_nofollow,
+    create_run_dir,
     is_regular_file_inside,
     reject_escaping_symlinks,
     resolve_run_dir,
 )
-
 
 MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 MAX_EXTRACT_BYTES = 500 * 1024 * 1024
@@ -887,16 +886,19 @@ def apply_measure(
                     "error": f"eplusout.sql in run {run_id} is a symlink or outside the run (not allowed)",
                 }
             # Stage simulation artifacts so the reporting measure can find them.
-            # The OSW runner expects run/eplusout.sql, run/in.osm, run/in.idf
+            # The OSW runner expects run/eplusout.sql, run/in.osm, run/in.idf.
+            # Both run dirs are tenant-written: descriptor-walked no-follow
+            # copies (#190), never shutil through a path that may be a link.
             ep_run = run_dir / "run"
             ep_run.mkdir(exist_ok=True)
-            shutil.copy2(str(sql_src), str(ep_run / "eplusout.sql"))
-            osm_src = sim_dir / "run" / "in.osm"
-            if is_regular_file_inside(osm_src, sim_dir):
-                shutil.copy2(str(osm_src), str(ep_run / "in.osm"))
-            idf_src = sim_dir / "run" / "in.idf"
-            if is_regular_file_inside(idf_src, sim_dir):
-                shutil.copy2(str(idf_src), str(ep_run / "in.idf"))
+            for fname in ("eplusout.sql", "in.osm", "in.idf"):
+                src = sim_dir / "run" / fname
+                if fname != "eplusout.sql" and not is_regular_file_inside(src, sim_dir):
+                    continue
+                try:
+                    copy_regular_file_nofollow(src, ep_run / fname, MAX_SIM_ARTIFACT_BYTES)
+                except (OSError, ValueError) as e:
+                    return {"ok": False, "error": f"Could not stage {fname} from run {run_id}: {e}"}
             postprocess = True
 
         run_flag = "--postprocess_only" if postprocess else "--measures_only"
@@ -1045,6 +1047,8 @@ def apply_measure(
 # runs in the server (outside the subprocess rlimits), so it is bounded here.
 MAX_GENERATED_FILES = 100
 MAX_GENERATED_FILE_BYTES = 64 * 1024 * 1024
+# eplusout.sql of a timeseries run reaches gigabytes; this bounds a runaway copy, not a normal one.
+MAX_SIM_ARTIFACT_BYTES = 8 * 1024 * 1024 * 1024
 MAX_GENERATED_TOTAL_BYTES = 256 * 1024 * 1024
 
 

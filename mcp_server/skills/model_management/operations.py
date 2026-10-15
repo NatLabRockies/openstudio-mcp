@@ -19,7 +19,7 @@ from mcp_server.resources import (
     resource_sources,
 )
 from mcp_server.skills.model_management.baseline_model import create_baseline_model
-from mcp_server.util import copy_regular_file_nofollow
+from mcp_server.workspace_files import persist_pending_files
 
 
 def _safe_name(s: str) -> str:
@@ -360,7 +360,7 @@ def save_osm_model(
             #    to a model loaded meanwhile is left alone.
             pending = model_manager.pending_files_dir_if_exists(expected_generation=generation)
             if pending is not None:
-                persisted, replaced, skipped = _persist_pending_files(pending, dst_files)
+                persisted, replaced, skipped = persist_pending_files(pending, dst_files)
                 if persisted:
                     result["persisted_files"] = persisted
                 if replaced:
@@ -381,46 +381,6 @@ def save_osm_model(
             return result
     except Exception as e:
         return {"ok": False, "error": f"Failed to save model: {e}", "osm_path": str(p)}
-
-
-def _persist_pending_files(
-    pending: Path, dst_files: Path,
-) -> tuple[list[str], list[str], list[str]]:
-    """Move the session workspace's files into the saved model's files/ dir.
-
-    Returns (persisted, replaced, skipped) names. Regular files only, copied
-    through no-follow opens at both ends. A same-named regular file in files/
-    is replaced (reported in `replaced`): the generated file is the model's
-    newest truth, which is what the Application's copy-back does. A link or
-    directory already at the destination name is never written through; that
-    file is skipped and reported.
-    """
-    persisted: list[str] = []
-    replaced: list[str] = []
-    skipped: list[str] = []
-    for src in sorted(pending.iterdir()):
-        if src.is_symlink() or not src.is_file():
-            continue
-        dst_files.mkdir(parents=True, exist_ok=True)
-        dst = dst_files / src.name
-        if dst.is_symlink() or dst.is_dir():
-            skipped.append(src.name)
-            continue
-        existed = dst.exists()
-        try:
-            copy_regular_file_nofollow(src, dst, _MAX_PERSISTED_FILE_BYTES)
-        except (OSError, ValueError):
-            skipped.append(src.name)
-            continue
-        src.unlink()
-        persisted.append(src.name)
-        if existed:
-            replaced.append(src.name)
-    return persisted, replaced, skipped
-
-
-# Matches the measure-output budget in measures/operations.py.
-_MAX_PERSISTED_FILE_BYTES = 64 * 1024 * 1024
 
 
 def list_files(

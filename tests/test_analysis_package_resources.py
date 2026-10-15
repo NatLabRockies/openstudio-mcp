@@ -295,6 +295,41 @@ def test_prepare_package_never_writes_the_manifest_through_a_swapped_lib_dir(mon
     assert not (root / "a.zip").exists()
 
 
+def test_prepare_package_refuses_a_package_dir_swapped_for_a_link_after_the_preflight(monkeypatch, tmp_path):
+    # Regression: after the preflight, prepare read the manifest back and rewrote it through a
+    # descriptor of pkg/lib that was itself opened by pathname, so package/ swapped for a link
+    # to another tenant's package handed it that package's manifest (and the zip step would
+    # have archived that package); lib/ is now reached by walking from the tenant root (#190)
+    root = _http_tenant(monkeypatch, tmp_path)
+    _common_measures(monkeypatch, tmp_path)
+    osm = _model_with_resources(root)
+    pkg = _empty_seed_package(root)
+    bobs = root.parent / "bob" / "package"
+    (bobs / "lib").mkdir(parents=True)
+    decoy = json.dumps(_manifest(SEED, ready=True))
+    (bobs / "lib" / "seed_simulation_qaqc.json").write_text(decoy, encoding="utf-8")
+
+    def preflight(**kwargs):
+        manifest = _manifest(SEED, ready=True)
+        Path(kwargs["manifest_path"]).write_text(json.dumps(manifest), encoding="utf-8")
+        shutil.move(pkg, root / "package_moved")
+        pkg.symlink_to(bobs, target_is_directory=True)
+        return {"ok": True, "ready": True, "manifest": manifest}
+
+    monkeypatch.setattr(operations, "preflight_seed_for_analysis_package", preflight)
+
+    res = operations.prepare_analysis_package(
+        package_dir=str(pkg), output_zip_path=str(root / "a.zip"), seed_path=str(osm),
+    )
+
+    assert (bobs / "lib" / "seed_simulation_qaqc.json").read_text(encoding="utf-8") == decoy, \
+        "nothing written into the other package"
+    assert sorted(p.name for p in bobs.rglob("*") if p.is_file()) == ["seed_simulation_qaqc.json"]
+    assert res["ok"] is False, res
+    assert "seed_simulation_qaqc.json" in res["error"], res
+    assert not (root / "a.zip").exists()
+
+
 @pytest.mark.skipif(not hasattr(__import__("os"), "mkfifo"), reason="POSIX FIFO")
 @pytest.mark.timeout(30)
 def test_prepare_package_rejects_a_fifo_at_a_resource_name_without_blocking(monkeypatch, tmp_path):
@@ -421,6 +456,40 @@ def test_preflight_manifest_is_reused_only_on_the_full_identity(monkeypatch, tmp
     assert len(calls) == 3
     rewritten = json.loads(manifest.read_text(encoding="utf-8"))
     assert rewritten["resources_sha256"] != written["resources_sha256"]
+
+
+def test_preflight_never_reuses_a_manifest_reached_through_a_swapped_package_dir(monkeypatch, tmp_path):
+    # Regression: the preflight checked the manifest path for a link, hashed the seed and its
+    # resources, then read the manifest by pathname; package/ swapped for a link to another
+    # tenant's package in between handed it that package's passing manifest, which matched
+    # the identity and was reused as this seed's evidence (#190)
+    root = _http_tenant(monkeypatch, tmp_path)
+    osm, epw = _seed_and_weather(root)
+    calls = _fake_simulation(monkeypatch, root, complete=True)
+    pkg = root / "package"
+    (pkg / "lib").mkdir(parents=True)
+    bobs = root.parent / "bob" / "package"
+    (bobs / "lib").mkdir(parents=True)
+    decoy = json.dumps(_manifest(SEED, ready=True, **_identity_of(osm, epw)))
+    (bobs / "lib" / "seed_simulation_qaqc.json").write_text(decoy, encoding="utf-8")
+    real_digest = operations.resources_digest
+
+    def digest_then_swap(*args, **kwargs):
+        out = real_digest(*args, **kwargs)
+        if not pkg.is_symlink():
+            shutil.move(pkg, root / "package_moved")
+            pkg.symlink_to(bobs, target_is_directory=True)
+        return out
+
+    monkeypatch.setattr(operations, "resources_digest", digest_then_swap)
+
+    res = operations.preflight_seed_for_analysis_package(
+        str(osm), weather_file=str(epw), manifest_path=str(pkg / "lib" / "seed_simulation_qaqc.json"),
+    )
+
+    assert res.get("reused") is not True, res
+    assert len(calls) == 1, "the seed is simulated, not vouched for by the other package's manifest"
+    assert (bobs / "lib" / "seed_simulation_qaqc.json").read_text(encoding="utf-8") == decoy
 
 
 def test_preflight_matches_a_completed_run_on_its_recorded_identity_only(monkeypatch, tmp_path):

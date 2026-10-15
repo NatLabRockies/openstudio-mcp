@@ -25,11 +25,13 @@ and passes it down; `copy_resources` itself never authorizes, its callers do.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import stat
+from pathlib import Path, PurePath
 from typing import Any, Protocol
 
 from mcp_server.config import is_path_allowed
-from mcp_server.util import copy_regular_file_nofollow, open_nofollow_for_write
+from mcp_server.confined_fs import DirHandle
+from mcp_server.util import copy_fd_bounded, open_nofollow_for_write
 
 # Per-file budget matches the measure-output budget in measures/operations.py;
 # the aggregate caps bound one copy (a save, a run staging) as a whole.
@@ -182,20 +184,13 @@ def _related(a: Path, b: Path) -> str | None:
     return None
 
 
-def _components_are_real_dirs(base: Path, rel_dir: Path) -> bool:
-    """True when every directory from `base` down to `base/rel_dir` exists as a real dir or not yet.
-
-    A link at any intermediate component would redirect a write below it, so
-    each component is checked, not only the immediate parent.
-    """
-    here = base
-    for part in rel_dir.parts:
-        here = here / part
-        if here.is_symlink():
-            return False
-        if here.exists() and not here.is_dir():
-            return False
-    return True
+def _note_identity(handle: DirHandle, own: set[tuple[int, int]], other: set[tuple[int, int]],
+                   src: Path, dst: Path) -> None:
+    """Record a directory's (dev, inode); a directory seen on the other side means src and dst nest."""
+    ident = handle.identity()
+    if ident in other:
+        raise ValueError(f"{src} and {dst} nest inside each other; refusing to copy resources")
+    own.add(ident)
 
 
 def copy_resources(
@@ -203,19 +198,23 @@ def copy_resources(
 ) -> dict[str, Any]:
     """Copy resource files from `sources` into `dst`, first source wins per relative path.
 
-    Regular files only, through no-follow opens with the size budget, keeping
-    relative subpaths (a plugin may import a sibling package). Links are
-    never followed: the walk does not descend into linked dirs, a linked
-    entry is skipped, and on the destination every directory component down
-    to the target is checked (`dst` and its parent, the companion folder,
-    included). An entry already present in `dst` is left alone unless
-    `overwrite` (then reported in "replaced"); a link or directory at a
-    destination file name is never written through and is reported as
-    skipped. A source that IS `dst` is ignored; a source that nests with
-    `dst` (a `files.osm` whose companion sits inside the legacy `files/`)
-    raises ValueError, as does exceeding the aggregate budget. Creates `dst`
-    only when there is something to copy. Returns {"copied": [(rel,
-    source_index)], "replaced": [rel], "skipped": [(rel, why)]}.
+    Regular files only, with the size budgets, keeping relative subpaths (a
+    plugin may import a sibling package). Both trees are walked by directory
+    descriptor (confined_fs, issue #190): every component of a source and of
+    the destination under a confinement root is opened no-follow relative to
+    its parent, so a link planted at any level, before or during the copy,
+    is refused rather than followed; outside the roots the same walk runs by
+    pathname with no-follow opens of each entry. The walk does not descend
+    into linked dirs, a linked entry is skipped, and a link or directory at
+    a destination file name is never written through (reported as skipped).
+    An entry already present in `dst` is left alone unless `overwrite` (then
+    reported in "replaced"); an existing destination is truncated only after
+    it is confirmed to be a regular file. A source that IS `dst` is ignored;
+    a source that nests with `dst` (a `files.osm` whose companion sits inside
+    the legacy `files/`, or a destination that appears inside a source while
+    walking) raises ValueError, as does exceeding the aggregate budget.
+    Creates `dst` only when there is something to copy. Returns {"copied":
+    [(rel, source_index)], "replaced": [rel], "skipped": [(rel, why)]}.
     """
     if dst.is_symlink() or dst.parent.is_symlink():
         raise ValueError(f"{dst} or its parent is a symlink; refusing to write resources there")
@@ -224,65 +223,144 @@ def copy_resources(
     skipped: list[tuple[str, str]] = []
     seen: set[str] = set()
     total = 0
-    for index, src in enumerate(sources):
-        if not src.is_dir() or src.is_symlink():
-            continue
-        relation = _related(src, dst)
-        if relation == "same":
-            continue
-        if relation == "inside":
-            raise ValueError(f"{src} and {dst} nest inside each other; refusing to copy resources")
-        walk_errors: list[OSError] = []
-        for dirpath, dirnames, filenames in os.walk(src, followlinks=False, onerror=walk_errors.append):
-            here = Path(dirpath)
-            linked_dirs = [d for d in dirnames if (here / d).is_symlink()]
-            for d in linked_dirs:
-                skipped.append((str((here / d).relative_to(src)), "not a regular file"))
-            dirnames[:] = sorted(d for d in dirnames if d not in linked_dirs)
-            rel_dir = here.relative_to(src)
-            for fname in sorted(filenames):
-                rel = str(rel_dir / fname) if rel_dir.parts else fname
-                if rel in seen or fname == MIGRATED_MARKER:
+    dst_handle: DirHandle | None = None
+    src_ids: set[tuple[int, int]] = set()
+    dst_ids: set[tuple[int, int]] = set()
+
+    def destination(rel_dir: PurePath, src: Path) -> DirHandle:
+        """Handle on dst/rel_dir, created on first use; a failure at dst itself is an error."""
+        nonlocal dst_handle
+        if dst_handle is None:
+            try:
+                dst_handle = DirHandle.open(dst, create=True)
+            except OSError as e:
+                raise ValueError(f"{dst} is not usable as a resource dir: {e}") from e
+            _note_identity(dst_handle, dst_ids, src_ids, src, dst)
+        if not rel_dir.parts:
+            return dst_handle
+        sub = dst_handle.walk(rel_dir, create=True)
+        try:
+            _note_identity(sub, dst_ids, src_ids, src, dst)
+        except BaseException:
+            sub.close()
+            raise
+        return sub
+
+    def copy_tree(handle: DirHandle, rel_dir: PurePath, index: int, src: Path) -> None:
+        nonlocal total
+        _note_identity(handle, src_ids, dst_ids, src, dst)
+        here = str(rel_dir) if rel_dir.parts else "."
+        try:
+            with handle.scandir() as it:
+                entries = sorted(it, key=lambda e: e.name)
+        except OSError as e:
+            # A subtree the walk could not read must not vanish silently: it is
+            # reported as a failed (non-link) entry, so staging errors and a
+            # migration is not declared complete.
+            skipped.append((here, f"unreadable: {e.strerror or e}"))
+            return
+        for entry in entries:
+            rel = str(rel_dir / entry.name) if rel_dir.parts else entry.name
+            if entry.is_dir(follow_symlinks=False):
+                try:
+                    child = handle.subdir(entry.name)
+                except OSError as e:
+                    skipped.append((rel, f"unreadable: {e.strerror or e}"))
                     continue
-                seen.add(rel)
-                entry = here / fname
-                if entry.is_symlink() or not entry.is_file():
-                    skipped.append((rel, "not a regular file"))
-                    continue
-                target = dst / rel
-                if not _components_are_real_dirs(dst, rel_dir):
-                    skipped.append((rel, "destination parent is a link"))
-                    continue
-                if target.is_symlink() or target.is_dir():
-                    skipped.append((rel, "destination is a link or directory"))
-                    continue
-                existed = target.exists()
-                if existed and not overwrite:
-                    continue
+                try:
+                    copy_tree(child, rel_dir / entry.name, index, src)
+                finally:
+                    child.close()
+                continue
+            if entry.is_symlink() and entry.is_dir():
+                skipped.append((rel, "not a regular file"))  # a linked dir is not descended
+                continue
+            if rel in seen or entry.name == MIGRATED_MARKER:
+                continue
+            seen.add(rel)
+            if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                skipped.append((rel, "not a regular file"))
+                continue
+            try:
+                target_dir = destination(rel_dir, src)
+            except OSError as e:
+                skipped.append((rel, f"destination parent is a link ({e.strerror or e})"))
+                continue
+            try:
+                existing = target_dir.lstat(entry.name)
+                if existing is not None:
+                    if stat.S_ISLNK(existing.st_mode) or stat.S_ISDIR(existing.st_mode):
+                        skipped.append((rel, "destination is a link or directory"))
+                        continue
+                    if not stat.S_ISREG(existing.st_mode):
+                        skipped.append((rel, "destination is not a regular file"))
+                        continue
+                    if not overwrite:
+                        continue
                 if len(copied) + 1 > MAX_RESOURCE_FILES:
                     raise ValueError(f"more than {MAX_RESOURCE_FILES} resource files; refusing to copy")
-                total += entry.stat().st_size
-                if total > MAX_RESOURCE_TOTAL_BYTES:
-                    raise ValueError(f"resources exceed {MAX_RESOURCE_TOTAL_BYTES} bytes in total; refusing to copy")
-                target.parent.mkdir(parents=True, exist_ok=True)
                 try:
-                    copy_regular_file_nofollow(entry, target, MAX_RESOURCE_FILE_BYTES)
+                    src_fd = handle.open_file(entry.name, os.O_RDONLY)
                 except (OSError, ValueError) as e:
                     skipped.append((rel, str(e)))
                     continue
+                try:
+                    st = os.fstat(src_fd)
+                    size = st.st_size
+                    total += size
+                    if total > MAX_RESOURCE_TOTAL_BYTES:
+                        raise ValueError(
+                            f"resources exceed {MAX_RESOURCE_TOTAL_BYTES} bytes in total; refusing to copy")
+                    if size > MAX_RESOURCE_FILE_BYTES:
+                        skipped.append(
+                            (rel, f"{entry.name}: {size} bytes exceeds the {MAX_RESOURCE_FILE_BYTES}-byte limit"))
+                        continue
+                    try:
+                        dst_fd, existed = target_dir.create_file(
+                            entry.name, overwrite=overwrite, not_same_as=(st.st_dev, st.st_ino))
+                    except FileExistsError:
+                        continue  # appeared since the lstat; not overwriting
+                    except OSError:
+                        skipped.append((rel, "destination is a link or directory"))
+                        continue
+                    except ValueError as e:  # not regular after all, or the source itself (a hard link)
+                        skipped.append((rel, str(e)))
+                        continue
+                    try:
+                        copy_fd_bounded(src_fd, dst_fd, MAX_RESOURCE_FILE_BYTES, entry.name)
+                    except (OSError, ValueError) as e:
+                        skipped.append((rel, str(e)))
+                        continue
+                finally:
+                    os.close(src_fd)
                 copied.append((rel, index))
                 if existed:
                     replaced.append(rel)
-        # A subtree the walk could not read must not vanish silently: it is
-        # reported as a failed (non-link) entry, so staging errors and a
-        # migration is not declared complete.
-        for err in walk_errors:
-            where = Path(err.filename) if err.filename else src
+            finally:
+                if target_dir is not dst_handle:
+                    target_dir.close()
+
+    try:
+        for index, src in enumerate(sources):
+            if not src.is_dir() or src.is_symlink():
+                continue
+            relation = _related(src, dst)
+            if relation == "same":
+                continue
+            if relation == "inside":
+                raise ValueError(f"{src} and {dst} nest inside each other; refusing to copy resources")
             try:
-                rel = str(where.relative_to(src)) or "."
-            except ValueError:
-                rel = str(where)
-            skipped.append((rel, f"unreadable: {err.strerror or err}"))
+                handle = DirHandle.open(src)
+            except OSError as e:
+                skipped.append((".", f"unreadable: {e.strerror or e}"))
+                continue
+            try:
+                copy_tree(handle, PurePath(), index, src)
+            finally:
+                handle.close()
+    finally:
+        if dst_handle is not None:
+            dst_handle.close()
     return {"copied": copied, "replaced": replaced, "skipped": skipped}
 
 

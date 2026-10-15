@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from mcp_server.config import user_run_root
+from mcp_server.confined_fs import DirHandle
 from mcp_server.util import (
+    copy_regular_file_nofollow,
     read_file_bounded,
     read_text_capped,
     reject_escaping_symlinks,
@@ -21,6 +23,8 @@ from mcp_server.util import (
 
 MAX_ERR_READ_BYTES = 16 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
+# copy_file moves simulation outputs (eplusout.sql reaches gigabytes); this bounds a runaway copy.
+MAX_COPY_FILE_BYTES = 8 * 1024 * 1024 * 1024
 
 
 def _run_status_from_record(run_dir: Path) -> str | None:
@@ -596,7 +600,15 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
             "ok": False, "error": "invalid_destination",
             "message": f"Destination not in allowed roots: {destination}",
         }
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    # Created through directory descriptors from the tenant root (#190): a component of the
+    # destination swapped for a link after the check above must not be created through.
+    try:
+        DirHandle.open(dest_dir, create=True).close()
+    except (OSError, ValueError) as e:  # ValueError: a '..' component or a non-directory on the way
+        return {
+            "ok": False, "error": "invalid_destination",
+            "message": f"Destination could not be created: {e}",
+        }
 
     if full.is_dir():
         # Run dirs are tenant-written: a planted link would make copytree copy its target
@@ -621,7 +633,12 @@ def copy_file(file_path: str, destination: str | None = None) -> dict[str, Any]:
     dest_file = dest_dir / full.name
     if full.is_symlink() or dest_file.is_symlink():
         return {"ok": False, "error": "symlink_refused", "message": "Source or destination is a symlink"}
-    shutil.copy2(str(full), str(dest_file))
+    # Descriptor-walked no-follow copy (#190): run dirs are tenant-written, so a link
+    # planted above either end after the check above must not redirect the copy.
+    try:
+        copy_regular_file_nofollow(full, dest_file, MAX_COPY_FILE_BYTES)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": "copy_failed", "message": f"Could not copy {full.name}: {e}"}
     result = {
         "ok": True,
         "source": str(full),
