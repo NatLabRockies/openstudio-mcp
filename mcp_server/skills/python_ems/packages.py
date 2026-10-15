@@ -10,7 +10,6 @@ it clears the dir and errors.
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +17,7 @@ from typing import Any
 
 from mcp_server import model_manager
 from mcp_server.config import OSMCP_PKGS_QUOTA_MB, is_path_allowed, user_pkgs_root
+from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.python_ems.operations import ensure_pkgs_search_path
 from mcp_server.skills.python_ems.templates import validate_package_specs
@@ -85,7 +85,7 @@ def install_plugin_packages_op(packages: list[str] | str | None) -> dict[str, An
     size = _dir_size_bytes(target)
     quota_bytes = OSMCP_PKGS_QUOTA_MB * 1024 * 1024
     if quota_bytes > 0 and size > quota_bytes:
-        shutil.rmtree(target, ignore_errors=True)
+        remove_tree_confined(target, ignore_errors=True)
         return {
             "ok": False,
             "error": f"Installed packages total {size / 1048576:.0f} MB, over the "

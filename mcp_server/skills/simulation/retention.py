@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import shutil
 import threading
 import time
 from pathlib import Path
@@ -30,6 +29,7 @@ from mcp_server.config import (
     RUN_ROOT,
     user_run_root,
 )
+from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.identity import user_key
 from mcp_server.skills.simulation.operations import (
     _RUNS,
@@ -211,7 +211,7 @@ def _sweep_user_root(
         rec = {"run_id": d.name, "user": user,
                "age_days": round(age / 86400.0, 2), "freed_mb": round(size / 1e6, 1)}
         if not dry_run:
-            shutil.rmtree(d, ignore_errors=True)
+            remove_tree_confined(d, ignore_errors=True)  # anchored on the tenant root (#190)
             _forget(d.name)
             audit("run_evicted", reason=reason, **rec)
         out.append(rec)
@@ -320,7 +320,10 @@ def delete_run(run_id: str) -> dict[str, Any]:
     if not _is_real_child(run_dir, user_run_root()):  # never delete via a symlink/escape
         return {"ok": False, "error": f"Refusing to delete {run_id}: not a real run dir."}
     freed = round(_dir_size_bytes(run_dir) / 1e6, 1)
-    shutil.rmtree(run_dir, ignore_errors=True)
+    try:
+        remove_tree_confined(run_dir)  # anchored on the tenant root (#190); a failure is reported
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not delete run {run_id}: {e}"}
     _forget(run_id)
     audit("run_deleted", run_id=run_id, user=user_key(), freed_mb=freed)
     return {"ok": True, "run_id": run_id, "deleted": True, "freed_mb": freed}

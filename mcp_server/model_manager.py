@@ -17,7 +17,6 @@ import atexit
 import hashlib
 import itertools
 import os
-import shutil
 import threading
 import time
 import uuid
@@ -28,6 +27,7 @@ from typing import Any
 import openstudio
 
 from mcp_server.config import user_run_root
+from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.identity import session_key
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
@@ -114,7 +114,7 @@ def _discard_workspace(state: _SessionState | None) -> threading.Thread | None:
         return None
     ws, state.workspace = state.workspace, None
     t = threading.Thread(
-        target=shutil.rmtree, args=(ws,), kwargs={"ignore_errors": True}, daemon=True,
+        target=remove_tree_confined, args=(ws,), kwargs={"ignore_errors": True}, daemon=True,
     )
     t.start()
     return t

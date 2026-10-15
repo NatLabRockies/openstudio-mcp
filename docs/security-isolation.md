@@ -87,7 +87,9 @@ tree. The `util.py` file primitives (`read_file_bounded`, the head/tail readers,
 (what the server uses instead of `shutil.copytree` / `shutil.rmtree` for measure staging,
 OSW staging, OSAF package measures and `copy_file` of a directory) and the SQLite result
 readers (`results/sql_open.py`, which copy the file through the walk into a private temp
-file for SQLite) therefore anchor every access (issue #190):
+file for SQLite), `read_file`, `get_run_artifacts` and every tree removal
+(`confined_copy.remove_tree_confined`, in place of `shutil.rmtree(path)`) therefore anchor
+every access (issue #190):
 
 - the path is made absolute lexically (no `resolve()`), and the **confinement root**
   it lies under is found: `config.confinement_roots()` = `RUN_ROOT`, `MEASURES_DIR`

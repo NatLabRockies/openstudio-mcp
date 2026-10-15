@@ -6,12 +6,13 @@ import mimetypes
 import os
 import re
 import sqlite3
+import stat
 from pathlib import Path
 from typing import Any
 
 from mcp_server.config import user_run_root
 from mcp_server.confined_copy import copy_tree_confined
-from mcp_server.confined_fs import DirHandle
+from mcp_server.confined_fs import DirHandle, confinement_root_for, open_confined
 from mcp_server.skills.results.sql_open import _find_first_existing, connect_sql_readonly, connection_for
 from mcp_server.util import (
     copy_regular_file_nofollow,
@@ -289,16 +290,43 @@ def read_file(
             "message": f"Path not in allowed roots: {file_path}",
         }
 
-    if not full.exists() or not full.is_file():
+    # Under a tenant-writable tree (a confinement root) the file is opened by descriptor from
+    # that root (#190), with no pathname existence or type check in between: a component
+    # swapped for a link after the check above fails the open the same way whether or not the
+    # other tree holds a file of that name. The shared read-only roots are server-owned and lie
+    # under no confinement root; a link the server placed there stays readable.
+    try:
+        if confinement_root_for(full) is not None:
+            fd = open_confined(full, os.O_RDONLY)
+        else:
+            # Non-blocking so a FIFO cannot stall the open before fstat rejects it; a regular
+            # file reads the same with the flag set.
+            fd = os.open(full, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+            try:
+                regular = stat.S_ISREG(os.fstat(fd).st_mode)
+            except OSError:
+                os.close(fd)
+                raise
+            if not regular:
+                os.close(fd)
+                return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
+    except FileNotFoundError:
         return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
-
-    file_size = full.stat().st_size
-
-    # Read with optional offset for chunked reading
-    with full.open("rb") as f:
-        if offset > 0:
-            f.seek(offset)
-        data = f.read(max_bytes)
+    except ValueError as e:  # the entry is not a regular file (a directory, a FIFO)
+        if "not a regular file" in str(e):
+            return {"ok": False, "error": "not_found", "message": f"File not found: {file_path}"}
+        return {"ok": False, "error": "read_failed", "message": f"Could not read {file_path}: {e}"}
+    except OSError as e:
+        return {"ok": False, "error": "read_failed", "message": f"Could not read {file_path}: {e}"}
+    try:
+        with os.fdopen(fd, "rb") as f:
+            file_size = os.fstat(f.fileno()).st_size
+            # Read with optional offset for chunked reading
+            if offset > 0:
+                f.seek(offset)
+            data = f.read(max_bytes)
+    except (OSError, ValueError, OverflowError) as e:
+        return {"ok": False, "error": "read_failed", "message": f"Could not read {file_path}: {e}"}
 
     # Try decode as utf-8 text
     try:

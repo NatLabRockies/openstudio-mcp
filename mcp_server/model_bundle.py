@@ -28,13 +28,13 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
 
 from mcp_server.config import run_root_for, user_run_root
+from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.resources import (
     MAX_RESOURCE_FILE_BYTES,
     MAX_RESOURCE_FILES,
@@ -252,5 +252,5 @@ def write_bundle_zip(
                 if src.is_file() and not src.is_symlink():
                     zf.write(src, member)
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        remove_tree_confined(staging, ignore_errors=True)
     return result

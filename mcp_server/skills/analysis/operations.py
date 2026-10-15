@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
 import re
-import hashlib
-import shutil
-import time
 import tempfile
+import time
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
@@ -17,8 +16,7 @@ from http.client import HTTPException
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import (
     HTTPDefaultErrorHandler,
     HTTPErrorProcessor,
@@ -34,7 +32,7 @@ from jsonschema import Draft4Validator, SchemaError
 from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
-from mcp_server.confined_copy import copy_tree_confined
+from mcp_server.confined_copy import copy_tree_confined, remove_tree_confined
 from mcp_server.confined_fs import DirHandle
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
 from mcp_server.resources import (
@@ -2683,7 +2681,7 @@ def _build_static_workflow_from_package(zip_path: str, package_validation: dict[
             for measure_name in measure_names
         ]
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        remove_tree_confined(tmpdir, ignore_errors=True)
 
     for index, step in enumerate(workflow):
         step["workflow_index"] = index
