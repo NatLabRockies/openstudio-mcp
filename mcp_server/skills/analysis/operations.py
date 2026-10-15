@@ -34,14 +34,21 @@ from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
-from mcp_server.resources import MAX_RESOURCE_FILE_BYTES, copy_resources, resource_dir_issue, resource_sources
+from mcp_server.resources import (
+    MAX_RESOURCE_FILE_BYTES,
+    MAX_RESOURCE_FILES,
+    MAX_RESOURCE_TOTAL_BYTES,
+    copy_resources,
+    resource_dir_issue,
+    resource_sources,
+)
 from mcp_server.util import (
     copy_regular_file_nofollow,
     is_regular_file_inside,
-    open_nofollow_for_write,
     read_file_bounded,
     resolve_run_dir,
     sha256_regular_file_nofollow,
+    write_text_in_dir_nofollow,
 )
 
 DOWNLOAD_FORMATS = ("csv", "rdata")  # the only formats OpenStudio Server's download_data serves
@@ -564,10 +571,23 @@ def _sha256_file(path: str | Path) -> str:
     return h.hexdigest()
 
 
-def _zip_member_sha256(archive: zipfile.ZipFile, name: str) -> str:
+def _zip_member_sha256(archive: zipfile.ZipFile, name: str, max_bytes: int) -> str:
+    """sha256 of a member, refusing (ValueError) one that declares or decompresses past max_bytes.
+
+    The declared size is checked first and the stream is counted as it is
+    read: a member whose header lies about its size cannot be used to
+    decompress without bound.
+    """
+    info = archive.getinfo(name)
+    if info.file_size > max_bytes:
+        raise ValueError(f"{name}: {info.file_size} bytes exceeds the {max_bytes}-byte limit")
     h = hashlib.sha256()
+    total = 0
     with archive.open(name) as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(f"{name}: decompresses past the {max_bytes}-byte limit")
             h.update(chunk)
     return h.hexdigest()
 
@@ -1595,9 +1615,11 @@ def preflight_seed_for_analysis_package(
         "basic_qaqc": qaqc,
     }
     if manifest:
-        manifest.parent.mkdir(parents=True, exist_ok=True)
-        with open_nofollow_for_write(manifest) as fh:
-            fh.write(json.dumps(result_manifest, indent=2) + "\n")
+        try:
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            write_text_in_dir_nofollow(manifest.parent, manifest.name, json.dumps(result_manifest, indent=2) + "\n")
+        except (OSError, ValueError) as e:
+            return {"ok": False, "ready": False, "run_id": run_id, "error": f"Could not write the manifest: {e}"}
 
     return {
         "ok": ready,
@@ -1877,9 +1899,10 @@ def prepare_analysis_package(
     if manifest_data.get("seed_member") != seed_member:
         manifest_data["seed_member"] = seed_member
         try:
-            with open_nofollow_for_write(manifest_path) as fh:
-                fh.write(json.dumps(manifest_data, indent=2) + "\n")
-        except OSError as e:
+            # Through a descriptor of lib/ itself: the check at the top does not
+            # cover a lib/ swapped for a link while the preflight ran.
+            write_text_in_dir_nofollow(lib_dir, manifest_path.name, json.dumps(manifest_data, indent=2) + "\n")
+        except (OSError, ValueError) as e:
             return {"ok": False, "error": f"Could not write {SEED_QAQC_MANIFEST}: {e}", "preflight": preflight}
 
     foundational_measures = _ensure_foundational_measures_in_package(pkg)
@@ -1901,7 +1924,7 @@ def prepare_analysis_package(
             "foundational_measures": foundational_measures,
         }
     validation = validate_analysis_package(str(out), require_seed_qaqc=True, require_foundational_measures=True)
-    return {
+    result = {
         "ok": validation.get("ok", False),
         "zip_path": str(out),
         "seed_member": seed_member,
@@ -1912,6 +1935,16 @@ def prepare_analysis_package(
         "validation": validation,
         "error": None if validation.get("ok") else "Created ZIP failed package validation.",
     }
+    if not seed_path and packaged["lib_files_not_from_seed"]:
+        # A seed taken from seeds/ has no companion folder there (nothing else may
+        # sit under seeds/), so the preflight simulated it without resources and
+        # the manifest records none, whatever an earlier packaging left in lib/.
+        result["warnings"] = [
+            "The seed was taken from seeds/ and has no resources there; the preflight ran it without "
+            f"the files in lib/ ({', '.join(packaged['lib_files_not_from_seed'])}). Pass seed_path as the "
+            "model where it was saved to package and simulate its companion resources.",
+        ]
+    return result
 
 
 def _analysis_variable_count(problem: dict[str, Any]) -> int:
@@ -2027,16 +2060,31 @@ def _lib_resource_issues(zip_path: Path, manifest: dict[str, Any], lib_files: li
     listed = manifest.get("resource_files")
     if not isinstance(listed, list) or not all(isinstance(rel, str) and rel for rel in listed):
         return [f"{SEED_QAQC_MANIFEST} resource_files must list the packaged resources."]
+    if len(set(listed)) != len(listed):
+        return [f"{SEED_QAQC_MANIFEST} resource_files lists a resource more than once."]
+    if len(listed) > MAX_RESOURCE_FILES:
+        return [f"{SEED_QAQC_MANIFEST} lists more than {MAX_RESOURCE_FILES} resources."]
     present = set(lib_files)
     hashes: dict[str, str] = {}
     missing: list[str] = []
+    total = 0
+    # The same budgets staging applies: the zip is tenant-built, so each member's
+    # declared and actual size is bounded before it is decompressed and hashed.
     with zipfile.ZipFile(zip_path) as archive:
         for rel in listed:
             name = f"lib/{rel}"
             if name not in present:
                 missing.append(name)
                 continue
-            hashes[rel] = _zip_member_sha256(archive, name)
+            total += archive.getinfo(name).file_size
+            if total > MAX_RESOURCE_TOTAL_BYTES:
+                return [
+                    f"lib/ resources listed in {SEED_QAQC_MANIFEST} exceed {MAX_RESOURCE_TOTAL_BYTES} bytes in total.",
+                ]
+            try:
+                hashes[rel] = _zip_member_sha256(archive, name, MAX_RESOURCE_FILE_BYTES)
+            except ValueError as e:
+                return [f"lib/ resource could not be verified: {e}"]
     if missing:
         return [f"lib/ is missing seed resources listed in {SEED_QAQC_MANIFEST}: {', '.join(missing)}"]
     if combine_resource_hashes(hashes) != expected:
@@ -2200,8 +2248,13 @@ def validate_analysis_package(
             manifest_seed_hash = seed_qaqc_manifest.get("seed_sha256")
             if manifest_seed_hash and member:
                 with zipfile.ZipFile(path) as archive:
-                    if _zip_member_sha256(archive, member) != manifest_seed_hash:
-                        issues.append(f"{SEED_QAQC_MANIFEST} seed_sha256 does not match {member}.")
+                    try:
+                        member_hash = _zip_member_sha256(archive, member, MAX_BUNDLE_OSM_BYTES)
+                    except ValueError as e:
+                        member_hash = None
+                        issues.append(f"{member} could not be hashed: {e}")
+                if member_hash is not None and member_hash != manifest_seed_hash:
+                    issues.append(f"{SEED_QAQC_MANIFEST} seed_sha256 does not match {member}.")
             issues.extend(_lib_resource_issues(path, seed_qaqc_manifest, lib_files))
 
     measures = _measure_dirs(measure_files)

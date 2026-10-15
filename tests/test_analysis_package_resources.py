@@ -68,13 +68,36 @@ def _recording_preflight(monkeypatch) -> list[dict]:
     return calls
 
 
-def _combined(files: dict[str, str]) -> str:
-    # The manifest's resources_sha256 format, pinned here independently of the implementation:
-    # sha256 over "rel NUL sha NEWLINE" for every resource, sorted by relative path.
-    h = hashlib.sha256()
-    for rel in sorted(files):
-        h.update(f"{rel}\0{files[rel]}\n".encode())
-    return h.hexdigest()
+# Fixed vectors for the two-resource set above (CSV, PLUGIN): the per-file sha256 values and
+# the combined resources_sha256 the manifest and run record carry. Computed once and pinned,
+# so a change to the digest format (which would orphan every recorded identity) fails here.
+CSV_SHA256 = "7a8988e95e356e2b5b8fecf5e31f7c2e7e8fb44a5cd9d89ebb0d1e60b1f5c689"
+PLUGIN_SHA256 = "caf026f25d7140209f98072605307a438914b9ce6f3c14b23d15d9667241de52"
+TWO_RESOURCES_DIGEST = "17f28dfebda5f63cf6e83ed3d80450ad7b539dc4992e927d2eccdd732fb85fbf"
+
+
+def test_resources_digest_vectors(tmp_path):
+    # Validates: the digest is a function of (relative POSIX path, bytes) only, independent of
+    # enumeration order and of which dir a file came from, None for no resources
+    from mcp_server.model_bundle import combine_resource_hashes, digest_resource_dirs
+
+    assert hashlib.sha256(CSV).hexdigest() == CSV_SHA256
+    assert combine_resource_hashes({"sub/plugin.py": PLUGIN_SHA256, "schedule.csv": CSV_SHA256}) == TWO_RESOURCES_DIGEST
+    assert combine_resource_hashes({"schedule.csv": CSV_SHA256, "sub/plugin.py": PLUGIN_SHA256}) == TWO_RESOURCES_DIGEST
+    assert combine_resource_hashes({}) is None
+    first, second = tmp_path / "first", tmp_path / "second"
+    (first / "sub").mkdir(parents=True)
+    second.mkdir()
+    (first / "sub" / "plugin.py").write_bytes(PLUGIN)
+    (second / "schedule.csv").write_bytes(CSV)
+    (second / "sub").mkdir()
+    (second / "sub" / "plugin.py").write_bytes(b"shadowed: the first dir wins")
+    digest = digest_resource_dirs([first, second])
+    assert digest == {
+        "files": {"schedule.csv": CSV_SHA256, "sub/plugin.py": PLUGIN_SHA256},
+        "sha256": TWO_RESOURCES_DIGEST,
+    }
+    assert digest_resource_dirs([tmp_path / "absent"]) == {"files": {}, "sha256": None}
 
 
 def test_prepare_package_copies_the_seed_and_its_resources_into_the_package(monkeypatch, tmp_path):
@@ -109,10 +132,7 @@ def test_prepare_package_copies_the_seed_and_its_resources_into_the_package(monk
     assert [n for n in names if n.startswith("seeds/")] == ["seeds/m.osm"], "nothing but the seed under seeds/"
     assert manifest["seed_member"] == "seeds/m.osm"
     assert manifest["resource_files"] == ["schedule.csv", "sub/plugin.py"]
-    assert manifest["resources_sha256"] == _combined({
-        "schedule.csv": hashlib.sha256(CSV).hexdigest(),
-        "sub/plugin.py": hashlib.sha256(PLUGIN).hexdigest(),
-    })
+    assert manifest["resources_sha256"] == TWO_RESOURCES_DIGEST
 
 
 def test_prepare_package_refuses_a_second_seed_before_copying(monkeypatch, tmp_path):
@@ -238,6 +258,57 @@ def test_prepare_package_refuses_planted_links_before_writing(monkeypatch, tmp_p
     assert calls == []
 
 
+def test_prepare_package_never_writes_the_manifest_through_a_swapped_lib_dir(monkeypatch, tmp_path):
+    # Regression: the manifest rewrite opened pkg/lib/seed_simulation_qaqc.json no-follow at the
+    # last component only, so lib/ swapped for a link while the preflight ran redirected the
+    # write into the link's target; the write now goes through a descriptor of lib/ itself
+    root = _http_tenant(monkeypatch, tmp_path)
+    _common_measures(monkeypatch, tmp_path)
+    osm = _model_with_resources(root)
+    pkg = _empty_seed_package(root)
+    elsewhere = root.parent / "bob" / "elsewhere"
+    elsewhere.mkdir()
+
+    def preflight(**kwargs):
+        manifest = _manifest(SEED, ready=True)
+        Path(kwargs["manifest_path"]).write_text(json.dumps(manifest), encoding="utf-8")
+        shutil.move(pkg / "lib", pkg / "lib_moved")
+        (pkg / "lib").symlink_to(elsewhere, target_is_directory=True)
+        return {"ok": True, "ready": True, "manifest": manifest}
+
+    monkeypatch.setattr(operations, "preflight_seed_for_analysis_package", preflight)
+
+    res = operations.prepare_analysis_package(
+        package_dir=str(pkg), output_zip_path=str(root / "a.zip"), seed_path=str(osm),
+    )
+
+    assert res["ok"] is False, res
+    assert list(elsewhere.iterdir()) == [], "nothing written through the swapped lib/"
+    assert not (root / "a.zip").exists()
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "mkfifo"), reason="POSIX FIFO")
+@pytest.mark.timeout(30)
+def test_prepare_package_rejects_a_fifo_at_a_resource_name_without_blocking(monkeypatch, tmp_path):
+    # Regression: the verification hash opened lib/<rel> O_RDONLY, which blocks on a FIFO
+    # before fstat can reject it; a FIFO planted at a resource name hung packaging
+    import os
+
+    root = _http_tenant(monkeypatch, tmp_path)
+    calls = _recording_preflight(monkeypatch)
+    osm = _model_with_resources(root)
+    pkg = _empty_seed_package(root)
+    os.mkfifo(pkg / "lib" / "schedule.csv")
+
+    res = operations.prepare_analysis_package(
+        package_dir=str(pkg), output_zip_path=str(root / "a.zip"), seed_path=str(osm),
+    )
+
+    assert res["ok"] is False
+    assert "lib/schedule.csv" in res["error"] and "not a regular file" in res["error"], res
+    assert calls == []
+
+
 # ---- preflight identity -----------------------------------------------------------------
 
 
@@ -314,10 +385,7 @@ def test_preflight_manifest_is_reused_only_on_the_full_identity(monkeypatch, tmp
     assert written["seed_sha256"] == hashlib.sha256(SEED).hexdigest()
     assert written["weather_sha256"] == hashlib.sha256(b"weather bytes").hexdigest()
     assert written["resource_files"] == ["schedule.csv", "sub/plugin.py"]
-    assert written["resources_sha256"] == _combined({
-        "schedule.csv": hashlib.sha256(CSV).hexdigest(),
-        "sub/plugin.py": hashlib.sha256(PLUGIN).hexdigest(),
-    })
+    assert written["resources_sha256"] == TWO_RESOURCES_DIGEST
 
     second = operations.preflight_seed_for_analysis_package(
         str(osm), weather_file=str(epw), manifest_path=str(manifest),
@@ -500,8 +568,7 @@ def test_validate_package_rejects_a_manifest_without_the_resource_identity(tmp_p
 def test_validate_package_checks_lib_resources_against_the_manifest(tmp_path):
     # Validates: the zip's lib/ members listed in the manifest must hash to resources_sha256,
     # so a package whose resource was edited after packaging, or lost a member, is rejected
-    files = {"schedule.csv": hashlib.sha256(CSV).hexdigest(), "sub/plugin.py": hashlib.sha256(PLUGIN).hexdigest()}
-    manifest = _manifest(SEED, resources_sha256=_combined(files), resource_files=sorted(files))
+    manifest = _manifest(SEED, resources_sha256=TWO_RESOURCES_DIGEST, resource_files=["schedule.csv", "sub/plugin.py"])
 
     _package_zip(tmp_path / "ok.zip", manifest, seeds={"m.osm": SEED},
                  lib={"schedule.csv": CSV, "sub/plugin.py": PLUGIN})
@@ -523,6 +590,25 @@ def test_validate_package_checks_lib_resources_against_the_manifest(tmp_path):
     assert missing["issues"] == [
         "lib/ is missing seed resources listed in lib/seed_simulation_qaqc.json: lib/sub/plugin.py",
     ]
+
+
+def test_validate_package_bounds_the_resources_it_decompresses(monkeypatch, tmp_path):
+    # Validates: the zip is tenant-built, so a listed resource declaring more than the per-file
+    # budget, or listed twice, is refused before anything is decompressed and hashed
+    manifest = _manifest(SEED, resources_sha256=TWO_RESOURCES_DIGEST, resource_files=["schedule.csv", "sub/plugin.py"])
+    _package_zip(tmp_path / "a.zip", manifest, seeds={"m.osm": SEED},
+                 lib={"schedule.csv": CSV, "sub/plugin.py": PLUGIN})
+    monkeypatch.setattr(operations, "MAX_RESOURCE_FILE_BYTES", len(CSV))
+    validation = operations.validate_analysis_package(str(tmp_path / "a.zip"))
+    assert validation["issues"] == [
+        "lib/ resource could not be verified: lib/sub/plugin.py: "
+        f"{len(PLUGIN)} bytes exceeds the {len(CSV)}-byte limit",
+    ]
+
+    twice = _manifest(SEED, resources_sha256=TWO_RESOURCES_DIGEST, resource_files=["schedule.csv", "schedule.csv"])
+    _package_zip(tmp_path / "twice.zip", twice, seeds={"m.osm": SEED}, lib={"schedule.csv": CSV})
+    validation = operations.validate_analysis_package(str(tmp_path / "twice.zip"))
+    assert validation["issues"] == ["lib/seed_simulation_qaqc.json resource_files lists a resource more than once."]
 
 
 def test_validate_package_requires_one_seed_that_hashes_to_the_manifest(tmp_path):

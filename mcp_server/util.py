@@ -129,6 +129,34 @@ def open_nofollow_for_write(path: Path, mode: int = 0o644):
     return os.fdopen(os.open(path, flags, mode), "w", encoding="utf-8")
 
 
+def write_text_in_dir_nofollow(directory: Path, name: str, text: str, mode: int = 0o644) -> None:
+    """Create or replace ``directory/name`` through a descriptor of ``directory`` itself.
+
+    ``open_nofollow_for_write`` refuses a link at the final component only: a
+    directory on the path swapped for a link after the caller checked it would
+    still redirect the write. Here the directory is opened first, without
+    following a link at its name, and the entry is created relative to that
+    descriptor (``dir_fd``), so the write lands in the directory that was
+    opened whatever the path resolves to afterwards. Platforms without
+    ``dir_fd`` support (the sandbox targets Linux) fall back to the joined
+    path with a no-follow open of the entry.
+    """
+    if not name or os.sep in name or "/" in name or name in (".", ".."):
+        raise ValueError(f"not a plain file name: {name!r}")
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow
+    if os.open in os.supports_dir_fd:
+        dfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow)
+        try:
+            fd = os.open(name, flags, mode, dir_fd=dfd)
+        finally:
+            os.close(dfd)
+    else:
+        fd = os.open(directory / name, flags, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
 def read_head_bounded(path: Path, max_bytes: int) -> bytes:
     """Read the FIRST ``max_bytes`` of a regular file with the same no-follow
     guarantees as read_tail_bounded. Pairs with it when the interesting part
@@ -178,7 +206,9 @@ def copy_regular_file_nofollow(src: Path, dst: Path, max_bytes: int) -> int:
     session workspace, workspace into the model's files/).
     """
     nofollow = getattr(os, "O_NOFOLLOW", 0)
-    src_fd = os.open(src, os.O_RDONLY | nofollow)
+    # O_NONBLOCK: a FIFO planted at the name would otherwise block the open before
+    # fstat can reject it
+    src_fd = os.open(src, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
     try:
         st = os.fstat(src_fd)
         if not stat.S_ISREG(st.st_mode):
@@ -268,7 +298,9 @@ def sha256_regular_file_nofollow(path: Path, max_bytes: int) -> str:
     link's target, are the identity.
     """
     nofollow = getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, os.O_RDONLY | nofollow)
+    # O_NONBLOCK: a FIFO planted at the name would otherwise block the open before
+    # fstat can reject it
+    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
     try:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
