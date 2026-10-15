@@ -6,7 +6,6 @@ import json
 import mimetypes
 import os
 import re
-import shutil
 import stat
 import tempfile
 import time
@@ -35,7 +34,7 @@ from jsonschema import Draft4Validator, SchemaError
 from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
-from mcp_server.confined_copy import copy_tree_confined
+from mcp_server.confined_copy import copy_tree_confined, remove_tree_confined
 from mcp_server.confined_fs import DirHandle, open_confined
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
 from mcp_server.resources import (
