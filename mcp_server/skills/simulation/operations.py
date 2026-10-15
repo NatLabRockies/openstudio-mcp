@@ -383,11 +383,15 @@ def _resolve_osw_file(name: str, base: Path, osw: dict,
     for c in candidates:
         if not c.exists():
             continue
-        if gated and not is_path_allowed(c):
+        # The hit is the lexical candidate (".." collapsed, no link followed): it is what gets
+        # authorized here and what staging opens by descriptor. A resolve() after the gate would
+        # follow a link swapped in since and hand staging another tree's real path (#190).
+        hit = Path(os.path.normpath(c))
+        if gated and not is_path_allowed(hit):
             if denied is None:
                 denied = c.resolve()
             continue
-        return c.resolve(), None
+        return hit, None
     return None, denied
 
 
@@ -740,10 +744,10 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         # through the link but collapses lexically to a sibling tenant's path).
         seed_src = Path(os.path.normpath(src_dir / seed_rel))
         # Authorized whether or not it exists yet (a file another tenant publishes after an
-        # existence check must not slip past), in the one branch that stages it.
-        if not _internal and not is_path_allowed(seed_src):
-            return {"ok": False, "error": f"Seed path not allowed: {seed_rel}", "run_dir": str(run_dir)}
-        if seed_src.exists():
+        # existence check must not slip past). An unauthorized direct join is not staged, but
+        # the OSW file_paths search below (gated itself) may still find the seed elsewhere.
+        direct_allowed = _internal or is_path_allowed(seed_src)
+        if direct_allowed and seed_src.exists():
             seed_resource_src = seed_src
             # Flatten: use just the filename, always inside run_dir
             seed_dst = run_dir / Path(seed_rel).name
@@ -773,6 +777,8 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                         return {"ok": False, "error": err, "run_dir": str(run_dir)}
                 osw["seed_file"] = str(seed_dst)
                 _dump_json(staged_osw, osw)
+            elif not direct_allowed:
+                return {"ok": False, "error": f"Seed path not allowed: {seed_rel}", "run_dir": str(run_dir)}
 
     # Stage a weather_file the sandboxed child couldn't read in place: refs
     # resolving OUTSIDE the OSW dir (absolute path or ../ escape — _copy_tree

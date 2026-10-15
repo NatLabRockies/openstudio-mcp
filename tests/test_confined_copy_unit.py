@@ -600,3 +600,55 @@ def test_run_osw_seed_candidate_appearing_after_the_existence_check_is_still_ref
     res = sim_ops.run_osw(str(src / "workflow.osw"))
     assert res["ok"] is False and "not allowed" in res["error"], res
     assert not _contains_bytes(root, SECRET), "bob's seed must not be staged into alice's run dir"
+
+
+def test_run_osw_seed_found_through_file_paths_when_the_direct_candidate_is_outside_roots(tmp_path, monkeypatch):
+    # Regression: authorizing the direct seed candidate rejected the workflow before the OSW
+    # file_paths search ran, so a seed_file whose literal join lands outside the allowed roots
+    # but which the gated search finds under the caller's root (the CLI's own lookup order) was
+    # refused; the search now runs first and only an unresolvable, unauthorized reference fails
+    root = _http_tenant(monkeypatch, tmp_path)
+    src = root / "workflow"
+    (src / "models" / "nested").mkdir(parents=True)
+    (root / "outside").mkdir()
+    (root / "outside" / "seed.osm").write_bytes(b"OS:Version,\n")
+    # direct join: runs/alice/workflow/../../../outside -> <tmp>/outside (not allowed); via
+    # file_paths "models/nested": runs/alice/workflow/models/nested/../../../outside -> alice/outside
+    (src / "workflow.osw").write_text(
+        json.dumps({"seed_file": "../../../outside/seed.osm", "file_paths": ["models/nested"]}), encoding="utf-8")
+    _osw_run_setup(monkeypatch)
+    res = sim_ops.run_osw(str(src / "workflow.osw"))
+    assert res["ok"] is True, res
+    staged = Path(res["run_dir"])
+    assert (staged / "seed.osm").read_bytes() == b"OS:Version,\n"
+    assert json.loads((staged / "workflow.osw").read_text(encoding="utf-8"))["seed_file"] == str(staged / "seed.osm")
+
+
+@posix_only
+def test_run_osw_file_paths_hit_is_staged_from_the_authorized_path_not_a_re_resolved_one(tmp_path, monkeypatch):
+    # Regression: the OSW file_paths search authorized a candidate and then returned
+    # candidate.resolve(); a directory on the candidate's path replaced by a link to bob's tree in
+    # between resolved to bob's real file, which staging copied. The search returns the lexical
+    # candidate it authorized, so the descriptor walk meets the link and refuses it
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "models").mkdir()
+    (bob / "models" / "seed.osm").write_bytes(SECRET)
+    src = root / "workflow"
+    (src / "models").mkdir(parents=True)
+    (src / "models" / "seed.osm").write_bytes(b"mine\n")
+    (src / "workflow.osw").write_text(json.dumps({"seed_file": "seed.osm", "file_paths": ["models"]}), encoding="utf-8")
+    _osw_run_setup(monkeypatch)
+    real_allowed = sim_ops.is_path_allowed
+
+    def allow_then_swap(p, *, write=False):
+        out = real_allowed(p, write=write)
+        if Path(p) == src / "models" / "seed.osm" and not (src / "models").is_symlink():
+            (src / "models").rename(src / "models_moved")
+            (src / "models").symlink_to(bob / "models", target_is_directory=True)
+        return out
+
+    monkeypatch.setattr(sim_ops, "is_path_allowed", allow_then_swap)
+    res = sim_ops.run_osw(str(src / "workflow.osw"))
+    assert res["ok"] is False and "stage" in res["error"], res
+    assert not _contains_bytes(root, SECRET), "bob's seed must not be staged into alice's run dir"
