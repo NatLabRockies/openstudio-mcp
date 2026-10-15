@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from mcp_server.skills.results.sql_open import connect_sql_readonly
+from mcp_server.skills.results.sql_open import connection_for
 
 
 def _q(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
@@ -20,8 +20,8 @@ def _try_float(s: Any) -> float | None:
     except Exception:
         return None
 
-def extract_unmet_hours(sql_path: Path) -> dict:
-    conn = connect_sql_readonly(sql_path)
+def extract_unmet_hours(sql_path: Path | sqlite3.Connection) -> dict:
+    conn, owned = connection_for(sql_path)
     try:
         # Exact-match queries against SystemSummary / Time Setpoint Not Met
         # (matches openstudio_results reference measure)
@@ -50,7 +50,8 @@ def extract_unmet_hours(sql_path: Path) -> dict:
             "source": "TabularDataWithStrings/SystemSummary/Time Setpoint Not Met",
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 # E+ writes tabular values in the report's requested unit system — SI sqls
 # carry GJ + m2, InchPound sqls carry kBtu + ft2 (JtoKWH/JtoMJ give kWh/MJ).
@@ -60,8 +61,8 @@ _ENERGY_TO_GJ = {"GJ": 1.0, "MJ": 0.001, "kWh": 0.0036, "kBtu": 0.001055056}
 _AREA_TO_M2 = {"m2": 1.0, "ft2": 0.09290304}
 
 
-def extract_eui(sql_path: Path) -> dict:
-    conn = connect_sql_readonly(sql_path)
+def extract_eui(sql_path: Path | sqlite3.Connection) -> dict:
+    conn, owned = connection_for(sql_path)
     try:
         # Get building area from the "Building Area" table (units: m2)
         # ColumnName='Area' required — without it LIMIT 1 may pick a wrong col
@@ -118,16 +119,17 @@ def extract_eui(sql_path: Path) -> dict:
             "source": "TabularDataWithStrings/AnnualBuildingUtilityPerformanceSummary",
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Output variable discovery
 # ---------------------------------------------------------------------------
 
-def list_output_variables(sql_path: Path) -> dict:
+def list_output_variables(sql_path: Path | sqlite3.Connection) -> dict:
     """Query ReportDataDictionary for available variables and meters."""
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     try:
         rows = _q(conn, """
             SELECT Name, KeyValue, ReportingFrequency, Units, IsMeter
@@ -171,16 +173,17 @@ def list_output_variables(sql_path: Path) -> dict:
             "meter_count": sum(len(v) for v in meters.values()),
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Tier 1: Tabular report extractors
 # ---------------------------------------------------------------------------
 
-def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
+def extract_end_use_breakdown(sql_path: Path | sqlite3.Connection, units: str = "IP") -> dict:
     """Extract end-use energy breakdown by fuel type from AnnualBuildingUtilityPerformanceSummary."""
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     try:
         rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
@@ -258,12 +261,13 @@ def extract_end_use_breakdown(sql_path: Path, units: str = "IP") -> dict:
             "source": "AnnualBuildingUtilityPerformanceSummary/End Uses",
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
-def extract_envelope_summary(sql_path: Path) -> dict:
+def extract_envelope_summary(sql_path: Path | sqlite3.Connection) -> dict:
     """Extract opaque exterior and fenestration data from EnvelopeSummary."""
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     try:
         # Opaque exterior surfaces
         opaque_rows = _q(conn, """
@@ -290,12 +294,13 @@ def extract_envelope_summary(sql_path: Path) -> dict:
             "source": "EnvelopeSummary",
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
-def extract_hvac_sizing(sql_path: Path) -> dict:
+def extract_hvac_sizing(sql_path: Path | sqlite3.Connection) -> dict:
     """Extract zone and system sizing from HVACSizingSummary."""
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     try:
         # Zone sensible cooling
         zone_cool = _q(conn, """
@@ -342,12 +347,13 @@ def extract_hvac_sizing(sql_path: Path) -> dict:
             "source": "HVACSizingSummary",
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
-def extract_zone_summary(sql_path: Path) -> dict:
+def extract_zone_summary(sql_path: Path | sqlite3.Connection) -> dict:
     """Extract per-zone area/conditions from InputVerificationandResultsSummary."""
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     try:
         rows = _q(conn, """
             SELECT RowName, ColumnName, Value, Units
@@ -363,11 +369,12 @@ def extract_zone_summary(sql_path: Path) -> dict:
             "source": "InputVerificationandResultsSummary/Zone Summary",
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 def extract_component_sizing(
-    sql_path: Path, component_type: str | None = None, max_results: int = 50,
+    sql_path: Path | sqlite3.Connection, component_type: str | None = None, max_results: int = 50,
 ) -> dict:
     """Extract autosized component values from ComponentSizingSummary.
 
@@ -376,7 +383,7 @@ def extract_component_sizing(
         component_type: Filter by type (e.g. "Coil", "Fan", "Pump", "Chiller")
         max_results: Cap on returned components (default 50, 0=unlimited)
     """
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     try:
         if component_type:
             rows = _q(conn, """
@@ -435,7 +442,8 @@ def extract_component_sizing(
             result["truncated"] = True
         return result
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -453,7 +461,7 @@ _ENVIRONMENT_TYPES: dict[str, tuple[int, ...] | None] = {
 
 
 def query_timeseries(
-    sql_path: Path,
+    sql_path: Path | sqlite3.Connection,
     variable_name: str,
     key_value: str = "*",
     start_month: int | None = None,
@@ -471,7 +479,7 @@ def query_timeseries(
             "error": (f"Invalid environment '{environment}'. "
                       "Use 'run_period' (default), 'design_day', or 'all'."),
         }
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     try:
         # Check if ReportData has any rows
         cnt = _q(conn, "SELECT COUNT(*) as c FROM ReportData")[0]["c"]
@@ -618,7 +626,8 @@ def query_timeseries(
             out["warning"] = warning
         return out
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------

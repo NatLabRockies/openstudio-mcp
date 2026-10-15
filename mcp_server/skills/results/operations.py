@@ -12,7 +12,7 @@ from typing import Any
 
 from mcp_server.config import user_run_root
 from mcp_server.confined_fs import DirHandle
-from mcp_server.skills.results.sql_open import _find_first_existing, connect_sql_readonly
+from mcp_server.skills.results.sql_open import _find_first_existing, connect_sql_readonly, connection_for
 from mcp_server.util import (
     copy_regular_file_nofollow,
     read_file_bounded,
@@ -41,9 +41,9 @@ def _run_status_from_record(run_dir: Path) -> str | None:
         return None
 
 
-def _extract_total_site_energy_from_sql(sql_path: Path) -> dict[str, Any]:
+def _extract_total_site_energy_from_sql(sql_path: Path | sqlite3.Connection) -> dict[str, Any]:
     """Extract Total Site Energy (GJ) from EnergyPlus SQL via precise query."""
-    conn = connect_sql_readonly(sql_path)
+    conn, owned = connection_for(sql_path)
     conn.row_factory = sqlite3.Row
     try:
         # TabularDataWithStrings may be a VIEW — don't filter by type='table'
@@ -82,7 +82,8 @@ def _extract_total_site_energy_from_sql(sql_path: Path) -> dict[str, Any]:
             "column_name": row["ColumnName"],
         }
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 def _extract_total_site_energy_from_html(html_path: Path) -> dict[str, Any]:
@@ -156,21 +157,42 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
         ["run/eplustbl.htm", "run/eplustbl.html", "eplustbl.htm", "eplustbl.html"],
     )
 
+    def _sql_failure(code: str, message: str) -> dict[str, Any]:
+        # The run has an eplusout.sql that cannot be opened or read: that is a failure
+        # of this extraction, not "no results"; never report success with null
+        # metrics over it.
+        return {
+            "ok": False, "run_id": run_id, "error": code, "message": message,
+            "paths": {"run_dir": str(run_dir), "sql": str(sql_path), "html": str(html_path) if html_path else None},
+        }
+
     total_site = None
     total_site_src = None
+    unmet = None
+    eui = None
     if sql_path and sql_path.suffix.lower() == ".sql":
-        total_site = _extract(_extract_total_site_energy_from_sql, sql_path)
+        from mcp_server.skills.results.sql_extract import (  # type: ignore[import-not-found]
+            extract_eui,
+            extract_unmet_hours,
+        )
+
+        # One private copy of eplusout.sql serves the three reads below.
+        try:
+            conn = connect_sql_readonly(sql_path)
+        except (OSError, ValueError) as e:
+            return _sql_failure("sql_unreadable", f"eplusout.sql could not be opened: {e}")
+        except sqlite3.Error as e:
+            return _sql_failure("sql_error", f"eplusout.sql could not be read: {e}")
+        try:
+            total_site = _extract(_extract_total_site_energy_from_sql, conn)
+            unmet = _extract(extract_unmet_hours, conn)
+            eui = _extract(extract_eui, conn)
+        finally:
+            conn.close()
         total_site_src = "sql"
-        if total_site.get("error") in ("sql_unreadable", "sql_error"):
-            # The run has an eplusout.sql that cannot be opened or read: that is a
-            # failure of this extraction, not "no results"; never report success
-            # with null metrics over it.
-            return {
-                "ok": False, "run_id": run_id, "error": total_site["error"], "message": total_site["message"],
-                "paths": {
-                    "run_dir": str(run_dir), "sql": str(sql_path), "html": str(html_path) if html_path else None,
-                },
-            }
+        for part in (total_site, unmet, eui):
+            if part.get("error") in ("sql_unreadable", "sql_error"):
+                return _sql_failure(part["error"], part["message"])
         if not total_site.get("ok"):
             total_site = None
     if total_site is None and html_path:
@@ -178,29 +200,6 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
         total_site_src = "html"
         if not total_site.get("ok"):
             total_site = None
-
-    unmet = None
-    eui = None
-    if sql_path and sql_path.suffix.lower() == ".sql":
-        try:
-            from mcp_server.skills.results.sql_extract import (  # type: ignore[import-not-found]
-                extract_eui,
-                extract_unmet_hours,
-            )
-
-            unmet = _extract(extract_unmet_hours, sql_path)
-            eui = _extract(extract_eui, sql_path)
-        except Exception:
-            unmet = None
-            eui = None
-        for part in (unmet, eui):
-            if isinstance(part, dict) and part.get("error") in ("sql_unreadable", "sql_error"):
-                return {
-                    "ok": False, "run_id": run_id, "error": part["error"], "message": part["message"],
-                    "paths": {
-                    "run_dir": str(run_dir), "sql": str(sql_path), "html": str(html_path) if html_path else None,
-                },
-                }
 
     total_site_kbtu = None
     total_site_units = None
@@ -333,7 +332,7 @@ def read_file(
 # Tier 1 + Tier 2: SQL extraction wrappers
 # ---------------------------------------------------------------------------
 
-def _extract(fn, sql_path: Path, *args: Any, **kwargs: Any) -> dict[str, Any]:
+def _extract(fn, sql_path: Path | sqlite3.Connection, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """Run an extractor on sql_path; a file that cannot be opened or read is a tool error, not an exception."""
     try:
         return fn(sql_path, *args, **kwargs)
@@ -468,10 +467,16 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
     base_metrics = extract_summary_metrics(baseline_run_id)
     retro_metrics = extract_summary_metrics(retrofit_run_id)
 
-    if not base_metrics.get("ok"):
-        return {"ok": False, "error": f"baseline: {base_metrics.get('error', 'extraction failed')}"}
-    if not retro_metrics.get("ok"):
-        return {"ok": False, "error": f"retrofit: {retro_metrics.get('error', 'extraction failed')}"}
+    for label, run_id, metrics in (
+        ("baseline", baseline_run_id, base_metrics), ("retrofit", retrofit_run_id, retro_metrics),
+    ):
+        if not metrics.get("ok"):
+            # Keep the error code (sql_error, sql_unreadable, ...) so callers can act on it;
+            # which run failed goes in the message.
+            return {
+                "ok": False, "error": metrics.get("error", "extraction_failed"),
+                "message": f"{label} run {run_id}: {metrics.get('message') or metrics.get('error', 'extraction failed')}",
+            }
 
     b = base_metrics["metrics"]
     r = retro_metrics["metrics"]

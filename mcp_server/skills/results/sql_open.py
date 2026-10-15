@@ -62,7 +62,10 @@ def _connect_private_copy(src: Path) -> sqlite3.Connection:
         tmp = Path(tmp_name)
         try:
             copy_fd_bounded(fd, tmp_fd, MAX_RESULT_SQL_BYTES, src.name)  # closes tmp_fd
-            conn = sqlite3.connect(f"{tmp.as_uri()}?mode=ro", uri=True)
+            # immutable: the copy is private and final, so SQLite needs no locks and no
+            # journal / WAL / shm lookups beside a name that is about to disappear (a
+            # checkpointed WAL source would otherwise fail its first read after the unlink).
+            conn = sqlite3.connect(f"{tmp.as_uri()}?mode=ro&immutable=1", uri=True)
         finally:
             # SQLite holds its own descriptor from the open above; the name can go. On a
             # failure the file goes too.
@@ -70,6 +73,18 @@ def _connect_private_copy(src: Path) -> sqlite3.Connection:
         return conn
     finally:
         os.close(fd)
+
+
+def connection_for(source: Path | sqlite3.Connection) -> tuple[sqlite3.Connection, bool]:
+    """An open connection for an extractor and whether the extractor owns (must close) it.
+
+    A Path is opened through connect_sql_readonly (one private copy); an
+    already open connection is reused, so a request that runs several
+    extractors over one result file copies it once.
+    """
+    if isinstance(source, sqlite3.Connection):
+        return source, False
+    return connect_sql_readonly(source), True
 
 
 _RESULT_FILE_NAMES = ("eplusout.sql", "eplustbl.htm", "eplustbl.html")

@@ -160,7 +160,8 @@ def test_a_corrupt_result_file_fails_summary_and_comparison_instead_of_reporting
     assert summary["ok"] is False and summary["error"] == "sql_error", summary
     assert "not a database" in summary["message"]
     compared = results.compare_runs_op("run_j", "run_k")
-    assert compared["ok"] is False, compared
+    assert compared["ok"] is False and compared["error"] == "sql_error", compared
+    assert "baseline run run_j" in compared["message"] and "not a database" in compared["message"]
 
 
 def test_summary_fails_when_a_later_read_of_the_result_file_fails(tmp_path, monkeypatch):
@@ -172,15 +173,16 @@ def test_summary_fails_when_a_later_read_of_the_result_file_fails(tmp_path, monk
     db = root / "run_m" / "run" / "eplusout.sql"
     _result_db(db, "Zone Air Temperature")
 
-    def broken(path):
+    def broken(source):
         raise sqlite3.DatabaseError("file is not a database")
 
-    monkeypatch.setattr(sql_extract, "connect_sql_readonly", broken)
+    monkeypatch.setattr(sql_extract, "connection_for", broken)  # the unmet-hours / EUI reads
     summary = results.extract_summary_metrics("run_m")
     assert summary["ok"] is False and summary["error"] == "sql_error", summary
     assert "not a database" in summary["message"]
 
 
+@posix_only
 def test_an_oversize_result_file_is_refused_before_copying(tmp_path, monkeypatch):
     # Validates: the budget is checked on the opened descriptor, so a file over it is a
     # tool error and no copy is started
@@ -209,3 +211,48 @@ def test_fallback_search_does_not_descend_a_linked_directory(tmp_path, monkeypat
     assert results._find_first_existing(run_dir, ["run/eplusout.sql", "eplusout.sql"]) is None
     _result_db(run_dir / "deeper" / "eplusout.sql", "Alice Var")
     assert results._find_first_existing(run_dir, ["run/eplusout.sql"]) == run_dir / "deeper" / "eplusout.sql"
+
+
+@posix_only
+def test_a_checkpointed_wal_source_reads_through_the_private_copy(tmp_path, monkeypatch):
+    # Regression: the private copy was opened without immutable=1, so SQLite looked for the
+    # copy's -wal/-shm files beside a name already unlinked and the first read of a WAL-mode
+    # source (cleanly checkpointed) failed with an I/O error; EnergyPlus writes journal_mode=OFF,
+    # so this covers result files produced or post-processed by other tools
+    root = _http_tenant(monkeypatch, tmp_path)
+    db = root / "run_w" / "run" / "eplusout.sql"
+    db.parent.mkdir(parents=True)
+    conn = sqlite3.connect(db)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE ReportDataDictionary (Name, KeyValue, ReportingFrequency, Units, IsMeter)")
+    conn.execute("INSERT INTO ReportDataDictionary VALUES ('Wal Var', 'Env', 'Hourly', 'C', 0)")
+    conn.commit()
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.close()
+    assert _names(sql_open.connect_sql_readonly(db)) == ["Wal Var"]
+
+
+@posix_only
+def test_summary_copies_the_result_file_once_for_its_three_reads(tmp_path, monkeypatch):
+    # Validates: extract_summary_metrics opens one private copy and hands the connection to the
+    # total-site, unmet-hours and EUI extractors instead of copying the file for each
+    root = _http_tenant(monkeypatch, tmp_path)
+    db = root / "run_s" / "run" / "eplusout.sql"
+    db.parent.mkdir(parents=True)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE TabularDataWithStrings (ReportName, ReportForString, TableName, RowName, ColumnName, Units, Value)",
+    )
+    conn.commit()
+    conn.close()
+    copies: list[int] = []
+    real = sql_open.copy_fd_bounded
+
+    def counted(*args, **kwargs):
+        copies.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(sql_open, "copy_fd_bounded", counted)
+    summary = results.extract_summary_metrics("run_s")
+    assert summary["ok"] is True, summary
+    assert len(copies) == 1, "one copy serves total site energy, unmet hours and EUI"
