@@ -570,3 +570,33 @@ def test_osw_staging_keeps_the_run_dirs_own_mode(tmp_path, monkeypatch):
     assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
     assert (run_dir / "sub" / "a.txt").read_bytes() == b"a"
     (run_dir / "files").mkdir()
+
+
+@posix_only
+def test_run_osw_seed_candidate_appearing_after_the_existence_check_is_still_refused(tmp_path, monkeypatch):
+    # Regression: the seed candidate was authorized only when it existed, then checked for
+    # existence again before the copy; a candidate collapsing to another tenant's path that the
+    # other tenant created between the two checks was copied unauthorized. The candidate is
+    # authorized whether or not it exists, in the one branch that stages it
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (root / "deep" / "nested").mkdir(parents=True)
+    (root / "link").symlink_to(root / "deep" / "nested", target_is_directory=True)
+    src = root / "workflow"
+    src.mkdir()
+    (src / "workflow.osw").write_text(json.dumps({"seed_file": "../link/../../bob/seed.osm"}), encoding="utf-8")
+    _osw_run_setup(monkeypatch)
+    real_exists = Path.exists
+    asked: list[bool] = []
+
+    def absent_then_published(self):
+        if self == bob / "seed.osm" and not asked:
+            asked.append(True)
+            (bob / "seed.osm").write_bytes(SECRET)  # bob publishes it right after alice's first look
+            return False
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", absent_then_published)
+    res = sim_ops.run_osw(str(src / "workflow.osw"))
+    assert res["ok"] is False and "not allowed" in res["error"], res
+    assert not _contains_bytes(root, SECRET), "bob's seed must not be staged into alice's run dir"

@@ -739,7 +739,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         # which a link inside the OSW dir can make a different file ("../link/../../x" resolves
         # through the link but collapses lexically to a sibling tenant's path).
         seed_src = Path(os.path.normpath(src_dir / seed_rel))
-        if not _internal and seed_src.exists() and not is_path_allowed(seed_src):
+        # Authorized whether or not it exists yet (a file another tenant publishes after an
+        # existence check must not slip past), in the one branch that stages it.
+        if not _internal and not is_path_allowed(seed_src):
             return {"ok": False, "error": f"Seed path not allowed: {seed_rel}", "run_dir": str(run_dir)}
         if seed_src.exists():
             seed_resource_src = seed_src
