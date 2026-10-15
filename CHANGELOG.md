@@ -13,7 +13,9 @@
   tree, refuses FIFOs and other special files, bounds the copy, and removes a stale destination
   through its parent's descriptor. A directory component swapped for a symlink after the
   server's check now fails the copy instead of copying another tenant's tree or writing into
-  it; each site reports that as a tool error. (#190)
+  it; each site reports that as a tool error. `run_osw` no longer resolves the OSW's directory
+  again after authorizing it, authorizes the seed path it actually stages, and reports a seed,
+  weather or EPW that cannot be staged as a tool error instead of raising. (#190)
 - Result extraction (`extract_summary_metrics`, `extract_end_use_breakdown`, `query_timeseries`
   and the other `eplusout.sql` readers) no longer lets SQLite open a file in the tenant's run
   dir: the file is opened by descriptor from the tenant root and copied into a private
