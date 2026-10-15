@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from test_analysis_tools import _http_tenant
 
+from mcp_server import confined_fs
 from mcp_server.skills.analysis import operations as analysis
 
 pytestmark = pytest.mark.unit
@@ -195,3 +196,127 @@ def test_sha256_file_does_not_follow_a_link(tmp_path, monkeypatch):
     assert analysis._sha256_file(real) == hashlib.sha256(b"OS:Version,\n").hexdigest()
     with pytest.raises((OSError, ValueError)):
         analysis._sha256_file(link)
+
+
+@posix_only
+def test_zip_member_dir_swapped_right_after_the_walker_descends_still_archives_alices_bytes(tmp_path, monkeypatch):
+    # Validates: members are opened relative to the directory descriptor the walker holds. The
+    # package's measures/ is replaced by a link to bob's package the moment the walker has
+    # opened it; a pathname open of <pkg>/measures/m/measure.rb would now read bob's file, the
+    # descriptor-relative open still reads alice's, so the archive holds her bytes and the swap
+    # is proven to have happened
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    (bob / "pkg" / "measures" / "m" / "resources").mkdir(parents=True)
+    (bob / "pkg" / "measures" / "m" / "measure.rb").write_bytes(SECRET)
+    (bob / "pkg" / "measures" / "m" / "resources" / "data.csv").write_bytes(SECRET)
+    pkg = _package(root)
+    real_subdir = confined_fs.DirHandle.subdir
+    swapped: list[str] = []
+
+    def subdir_then_swap(self, name, *, create=False):
+        handle = real_subdir(self, name, create=create)
+        if name == "measures" and self.path == pkg and not swapped:
+            swapped.append(name)
+            (pkg / "measures").rename(pkg / "measures_moved")
+            (pkg / "measures").symlink_to(bob / "pkg" / "measures", target_is_directory=True)
+        return handle
+
+    monkeypatch.setattr(confined_fs.DirHandle, "subdir", subdir_then_swap)
+    out = root / "out" / "analysis.zip"
+    err = analysis._write_support_zip(pkg, out)
+    assert swapped, "the swap must have happened right after the walker opened measures/"
+    assert err is None, err
+    members = _members(out)
+    assert SECRET not in members.values(), "bob's bytes were archived under alice's arcname"
+    assert members["measures/m/measure.rb"] == b"class M; end\n"
+
+
+def test_zip_output_path_that_is_a_directory_is_an_error_and_the_directory_survives(tmp_path, monkeypatch):
+    # Regression: every zip error removed the output path with a recursive tree removal, so an
+    # output path naming an existing directory (the open fails) deleted that directory and
+    # everything under it; only an archive this call opened is discarded, and as a file
+    root = _http_tenant(monkeypatch, tmp_path)
+    pkg = _package(root)
+    out = root / "out" / "existing_dir"
+    (out / "keep").mkdir(parents=True)
+    (out / "keep" / "important.txt").write_bytes(b"keep me\n")
+    err = analysis._write_support_zip(pkg, out)
+    assert err is not None and "existing_dir" in err, err
+    assert (out / "keep" / "important.txt").read_bytes() == b"keep me\n"
+
+
+def test_zip_partial_output_is_discarded_on_a_member_error(tmp_path, monkeypatch):
+    # Validates: when a member fails after the archive was opened, the half-written zip this call
+    # created is removed (through the parent's descriptor), so no truncated package is left
+    root = _http_tenant(monkeypatch, tmp_path)
+    pkg = _package(root)
+    monkeypatch.setattr(analysis, "MAX_PACKAGE_FILE_BYTES", 8)
+    out = root / "out" / "analysis.zip"
+    err = analysis._write_support_zip(pkg, out)
+    assert err is not None and "exceeds" in err, err
+    assert not out.exists()
+
+
+def test_preflight_reports_a_seed_that_cannot_be_hashed_instead_of_raising(tmp_path, monkeypatch):
+    # Regression: the seed and weather hashes raised for an oversize file or a swapped directory
+    # and the exception escaped the preflight tool; both are a tool error now
+    root = _http_tenant(monkeypatch, tmp_path)
+    seed = root / "seed.osm"
+    seed.write_bytes(b"OS:Version,\n  {00000000-0000-0000-0000-000000000000},\n  3.11.0;\n")
+    monkeypatch.setattr(analysis, "MAX_PACKAGE_FILE_BYTES", 8)
+    res = analysis.preflight_seed_for_analysis_package(seed_path=str(seed))
+    assert res["ok"] is False and res["ready"] is False, res
+    assert "hashed" in res["error"] and "seed.osm" in res["error"], res
+
+
+def test_malformed_caller_schema_keeps_its_diagnostic(tmp_path, monkeypatch):
+    # Regression: a caller-supplied schema with invalid JSON lost the "Invalid OSA JSON schema in
+    # <path>" message (the JSONDecodeError was caught by its ValueError superclass first)
+    root = _http_tenant(monkeypatch, tmp_path)
+    schema = root / "schema.json"
+    schema.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid OSA JSON schema in"):
+        analysis._read_osa_schema(str(schema))
+
+
+def _manifest_zip(path: Path, owner: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("measures/m/measure.rb", "class M; end\n")
+        zf.writestr("seeds/seed.osm", "OS:Version,\n")
+        zf.writestr(analysis.SEED_QAQC_MANIFEST, json.dumps({"owner": owner}))
+
+
+@posix_only
+def test_validate_package_zip_dir_swapped_after_the_allow_check_does_not_read_the_other_tenant(tmp_path, monkeypatch):
+    # Regression: validate_analysis_package authorized the zip path and then opened it by pathname;
+    # alice's output dir replaced by a link to bob's in between returned bob's manifest as
+    # seed_qaqc_manifest
+    root = _http_tenant(monkeypatch, tmp_path)
+    bob = root.parent / "bob"
+    _manifest_zip(bob / "out" / "analysis.zip", "bob")
+    out = root / "out"
+    _manifest_zip(out / "analysis.zip", "alice")
+    real_allowed = analysis._is_analysis_path_allowed
+
+    def allow_then_swap(p, *args, **kwargs):
+        res = real_allowed(p, *args, **kwargs)
+        if Path(p) == out / "analysis.zip" and not out.is_symlink():
+            out.rename(root / "out_moved")
+            out.symlink_to(bob / "out", target_is_directory=True)
+        return res
+
+    monkeypatch.setattr(analysis, "_is_analysis_path_allowed", allow_then_swap)
+    res = analysis.validate_analysis_package(str(out / "analysis.zip"))
+    assert res["ok"] is False, res
+    assert "bob" not in repr(res), res
+
+
+def test_validate_package_reads_its_own_manifest(tmp_path, monkeypatch):
+    # Validates: the descriptor-opened archive still yields the package's own manifest and
+    # layout findings for an ordinary package
+    root = _http_tenant(monkeypatch, tmp_path)
+    _manifest_zip(root / "out" / "analysis.zip", "alice")
+    res = analysis.validate_analysis_package(str(root / "out" / "analysis.zip"))
+    assert res["seed_qaqc_manifest"] == {"owner": "alice"}

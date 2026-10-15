@@ -767,12 +767,10 @@ def _read_osa_schema(schema_path: str | Path | None = None) -> tuple[Path, dict[
             schema = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ValueError(f"OSA JSON schema not found: {path}") from None
-    except (ValueError, UnicodeDecodeError) as e:
-        if isinstance(e, json.JSONDecodeError):
-            raise
-        raise ValueError(f"OSA JSON schema not readable: {path} ({e})") from None
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid OSA JSON schema in {path}: {e}") from None
+    except (ValueError, UnicodeDecodeError) as e:
+        raise ValueError(f"OSA JSON schema not readable: {path} ({e})") from None
     if not isinstance(schema, dict):
         raise ValueError(f"Expected OSA JSON schema object in {path}")
     try:
@@ -1551,8 +1549,11 @@ def preflight_seed_for_analysis_package(
     else:
         epw = _effective_weather(seed)
 
-    seed_hash = _sha256_file(seed)
-    epw_hash = _sha256_file(epw) if epw else None
+    try:
+        seed_hash = _sha256_file(seed)
+        epw_hash = _sha256_file(epw) if epw else None
+    except (OSError, ValueError) as e:
+        return {"ok": False, "ready": False, "error": f"Seed or weather file could not be hashed: {e}"}
     try:
         resources = resources_digest(seed)
     except ValueError as e:
@@ -1797,6 +1798,19 @@ def _inside(path: Path, root: Path) -> bool:
     return resolved == root or str(resolved).startswith(str(root) + os.sep)
 
 
+@contextlib.contextmanager
+def _zip_for_read(path: Path):
+    """A tenant-chosen zip opened for reading by descriptor from its root (#190).
+
+    Raises what ``zipfile.ZipFile(path)`` would (FileNotFoundError, OSError,
+    BadZipFile) plus ValueError for an entry that is not a regular file; a
+    component swapped for a link after the caller's check fails the open.
+    """
+    fd = open_confined(path, os.O_RDONLY)
+    with os.fdopen(fd, "rb") as fh, zipfile.ZipFile(fh) as archive:
+        yield archive
+
+
 def _write_support_zip(package_dir: Path, output_zip_path: Path) -> str | None:
     """Zip the package roots. Returns an error string instead of following a symlink.
 
@@ -1812,25 +1826,37 @@ def _write_support_zip(package_dir: Path, output_zip_path: Path) -> str | None:
         out_fd = open_confined(output_zip_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
     except (OSError, ValueError) as e:
         return f"output zip path is not writable (not allowed): {output_zip_path} ({e})"
-    totals = {"bytes": 0}
     try:
         with os.fdopen(out_fd, "wb") as out_f, \
                 zipfile.ZipFile(out_f, "w", compression=zipfile.ZIP_DEFLATED) as archive, \
                 DirHandle.open(package_dir) as pkg:
-            for root in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
-                st = pkg.lstat(root)
-                if st is None:
-                    continue
-                if stat.S_ISLNK(st.st_mode):
-                    return f"package member is a symlink (not allowed): {root}"
-                if not stat.S_ISDIR(st.st_mode):
-                    return f"package member is not a directory: {root}"
-                with pkg.subdir(root) as handle:
-                    err = _zip_tree(archive, handle, PurePosixPath(root), totals)
-                if err:
-                    return err
+            err = _zip_package_roots(archive, pkg)
     except (OSError, ValueError) as e:
-        return f"could not write the package zip: {e}"
+        err = f"could not write the package zip: {e}"
+    if err:
+        # Only the archive this call created is discarded, as a file through its parent's
+        # descriptor: a path the caller gave that was never opened here is left alone.
+        with contextlib.suppress(OSError, ValueError), DirHandle.open(output_zip_path.parent) as parent:
+            st = parent.lstat(output_zip_path.name)
+            if st is not None and stat.S_ISREG(st.st_mode):
+                parent.unlink(output_zip_path.name)
+    return err
+
+
+def _zip_package_roots(archive: zipfile.ZipFile, pkg: DirHandle) -> str | None:
+    totals = {"bytes": 0}
+    for root in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
+        st = pkg.lstat(root)
+        if st is None:
+            continue
+        if stat.S_ISLNK(st.st_mode):
+            return f"package member is a symlink (not allowed): {root}"
+        if not stat.S_ISDIR(st.st_mode):
+            return f"package member is not a directory: {root}"
+        with pkg.subdir(root) as handle:
+            err = _zip_tree(archive, handle, PurePosixPath(root), totals)
+        if err:
+            return err
     return None
 
 
@@ -2012,9 +2038,7 @@ def prepare_analysis_package(
         }
 
     zip_error = _write_support_zip(pkg, out)
-    if zip_error:
-        with contextlib.suppress(OSError, ValueError):
-            remove_tree_confined(out)  # a partial zip, removed through the parent descriptor
+    if zip_error:  # the writer has discarded any archive it created
         return {
             "ok": False,
             "error": zip_error,
@@ -2168,7 +2192,7 @@ def _lib_resource_issues(zip_path: Path, manifest: dict[str, Any], lib_files: li
     total = 0
     # The same budgets staging applies: the zip is tenant-built, so each member's
     # declared and actual size is bounded before it is decompressed and hashed.
-    with zipfile.ZipFile(zip_path) as archive:
+    with _zip_for_read(zip_path) as archive:
         for rel in listed:
             name = f"lib/{rel}"
             if name not in present:
@@ -2212,7 +2236,7 @@ def validate_analysis_package(
     issues: list[str] = []
     seed_qaqc_manifest: dict[str, Any] | None = None
     try:
-        with zipfile.ZipFile(path) as archive:
+        with _zip_for_read(path) as archive:
             infos = archive.infolist()
             if SEED_QAQC_MANIFEST in archive.namelist():
                 try:
@@ -2227,7 +2251,7 @@ def validate_analysis_package(
         return {"ok": False, "error": f"Analysis package ZIP not found: {path}", "issues": [f"File not found: {path}"]}
     except zipfile.BadZipFile:
         return {"ok": False, "error": f"Invalid analysis package ZIP: {path}", "issues": ["Not a valid ZIP archive."]}
-    except OSError as e:
+    except (OSError, ValueError) as e:
         return {"ok": False, "error": f"Could not read analysis package ZIP {path}: {e}", "issues": [str(e)]}
 
     if not infos:
@@ -2345,15 +2369,18 @@ def validate_analysis_package(
                 member = seed_models[0]
             manifest_seed_hash = seed_qaqc_manifest.get("seed_sha256")
             if manifest_seed_hash and member:
-                with zipfile.ZipFile(path) as archive:
-                    try:
+                member_hash = None
+                try:
+                    with _zip_for_read(path) as archive:
                         member_hash = _zip_member_sha256(archive, member, MAX_BUNDLE_OSM_BYTES)
-                    except ZIP_MEMBER_ERRORS as e:
-                        member_hash = None
-                        issues.append(f"{member} could not be hashed: {e}")
+                except (*ZIP_MEMBER_ERRORS, OSError) as e:
+                    issues.append(f"{member} could not be hashed: {e}")
                 if member_hash is not None and member_hash != manifest_seed_hash:
                     issues.append(f"{SEED_QAQC_MANIFEST} seed_sha256 does not match {member}.")
-            issues.extend(_lib_resource_issues(path, seed_qaqc_manifest, lib_files))
+            try:
+                issues.extend(_lib_resource_issues(path, seed_qaqc_manifest, lib_files))
+            except (OSError, ValueError) as e:
+                issues.append(f"lib/ resources could not be read from the package: {e}")
 
     measures = _measure_dirs(measure_files)
     complete_measure_dirs = sorted(
@@ -2747,7 +2774,7 @@ def _build_static_workflow_from_package(zip_path: str, package_validation: dict[
     tmpdir = tempfile.mkdtemp(prefix="openstudio_smoke_measures_", dir=base_dir)
     try:
         tmp = Path(tmpdir)
-        with zipfile.ZipFile(Path(zip_path).expanduser().resolve()) as archive:
+        with _zip_for_read(Path(zip_path).expanduser().resolve()) as archive:
             for info in archive.infolist():
                 parts = _zip_member_parts(info.filename)
                 if len(parts) >= 2 and parts[0] == "measures":

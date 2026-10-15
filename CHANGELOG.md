@@ -7,7 +7,8 @@
   descriptors at both ends: the output zip is created from the tenant root and every member is
   enumerated and opened relative to its directory's descriptor, so a package component swapped
   for a symlink after the check is an error instead of another tenant's file under the caller's
-  arcname; members are bounded (1 GiB each, 8 GiB in total). The analysis skill's JSON reads and
+  arcname; members are bounded (1 GiB each, 8 GiB in total), and a package zip the server reads
+  (validation, the measure smoke test) is opened the same way. The analysis skill's JSON reads and
   writes (OSA JSON, results, a caller-supplied schema), the seed and weather hashes in the
   preflight manifest and the package upload read are anchored the same way, as are the measure
   script reads in measure authoring, the test log files, the actuator discovery outputs and a
