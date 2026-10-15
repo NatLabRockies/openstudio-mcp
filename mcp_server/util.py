@@ -129,32 +129,61 @@ def open_nofollow_for_write(path: Path, mode: int = 0o644):
     return os.fdopen(os.open(path, flags, mode), "w", encoding="utf-8")
 
 
-def write_text_in_dir_nofollow(directory: Path, name: str, text: str, mode: int = 0o644) -> None:
-    """Create or replace ``directory/name`` through a descriptor of ``directory`` itself.
+def _open_in_dir_nofollow(directory: Path, name: str, flags: int, mode: int = 0o644) -> int:
+    """os.open of ``directory/name`` relative to a descriptor of ``directory`` itself.
 
-    ``open_nofollow_for_write`` refuses a link at the final component only: a
-    directory on the path swapped for a link after the caller checked it would
-    still redirect the write. Here the directory is opened first, without
-    following a link at its name, and the entry is created relative to that
-    descriptor (``dir_fd``), so the write lands in the directory that was
-    opened whatever the path resolves to afterwards. Platforms without
-    ``dir_fd`` support (the sandbox targets Linux) fall back to the joined
-    path with a no-follow open of the entry.
+    A no-follow open refuses a link at the final component only: a directory
+    on the path swapped for a link after the caller checked it would still
+    redirect the open. Here the directory is opened first, without following
+    a link at its name, and the entry is opened relative to that descriptor
+    (``dir_fd``), so the entry is the one in the directory that was opened
+    whatever the path resolves to afterwards. Platforms without ``dir_fd``
+    support (the sandbox targets Linux) fall back to the joined path with a
+    no-follow open of the entry.
     """
     if not name or os.sep in name or "/" in name or name in (".", ".."):
         raise ValueError(f"not a plain file name: {name!r}")
     nofollow = getattr(os, "O_NOFOLLOW", 0)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow
-    if os.open in os.supports_dir_fd:
-        dfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow)
-        try:
-            fd = os.open(name, flags, mode, dir_fd=dfd)
-        finally:
-            os.close(dfd)
-    else:
-        fd = os.open(directory / name, flags, mode)
+    flags |= nofollow | getattr(os, "O_NONBLOCK", 0)
+    if os.open not in os.supports_dir_fd:
+        return os.open(directory / name, flags, mode)
+    dfd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow)
+    try:
+        return os.open(name, flags, mode, dir_fd=dfd)
+    finally:
+        os.close(dfd)
+
+
+def write_text_in_dir_nofollow(directory: Path, name: str, text: str, mode: int = 0o644) -> None:
+    """Create or replace ``directory/name`` through a descriptor of ``directory`` (see _open_in_dir_nofollow)."""
+    fd = _open_in_dir_nofollow(directory, name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
+
+
+def read_file_in_dir_nofollow(directory: Path, name: str, max_bytes: int) -> bytes:
+    """``directory/name`` read through a descriptor of ``directory`` (see _open_in_dir_nofollow).
+
+    Regular files only (ValueError otherwise), at most ``max_bytes`` read.
+    """
+    fd = _open_in_dir_nofollow(directory, name, os.O_RDONLY)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError(f"not a regular file: {name}")
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining > 0:
+            chunk = os.read(fd, min(remaining, 1 << 20))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+    finally:
+        os.close(fd)
+    if len(data) > max_bytes:
+        raise ValueError(f"{name}: exceeds the {max_bytes}-byte limit")
+    return data
 
 
 def read_head_bounded(path: Path, max_bytes: int) -> bytes:

@@ -261,13 +261,18 @@ def test_prepare_package_refuses_planted_links_before_writing(monkeypatch, tmp_p
 def test_prepare_package_never_writes_the_manifest_through_a_swapped_lib_dir(monkeypatch, tmp_path):
     # Regression: the manifest rewrite opened pkg/lib/seed_simulation_qaqc.json no-follow at the
     # last component only, so lib/ swapped for a link while the preflight ran redirected the
-    # write into the link's target; the write now goes through a descriptor of lib/ itself
+    # write into the link's target. The rewrite now goes through a descriptor of lib/ itself,
+    # which refuses the link; the read-back goes through the same descriptor (defense in depth:
+    # on its own the by-path read was not exploitable, the zip writer refuses a linked lib/, so
+    # the decoy here guards the read as well without a separate red)
     root = _http_tenant(monkeypatch, tmp_path)
     _common_measures(monkeypatch, tmp_path)
     osm = _model_with_resources(root)
     pkg = _empty_seed_package(root)
     elsewhere = root.parent / "bob" / "elsewhere"
     elsewhere.mkdir()
+    decoy = json.dumps(_manifest(SEED, ready=True))
+    (elsewhere / "seed_simulation_qaqc.json").write_text(decoy, encoding="utf-8")
 
     def preflight(**kwargs):
         manifest = _manifest(SEED, ready=True)
@@ -282,8 +287,11 @@ def test_prepare_package_never_writes_the_manifest_through_a_swapped_lib_dir(mon
         package_dir=str(pkg), output_zip_path=str(root / "a.zip"), seed_path=str(osm),
     )
 
+    assert (elsewhere / "seed_simulation_qaqc.json").read_text(encoding="utf-8") == decoy, \
+        "nothing written through the swapped lib/"
+    assert [p.name for p in elsewhere.iterdir()] == ["seed_simulation_qaqc.json"]
     assert res["ok"] is False, res
-    assert list(elsewhere.iterdir()) == [], "nothing written through the swapped lib/"
+    assert "seed_simulation_qaqc.json" in res["error"], res
     assert not (root / "a.zip").exists()
 
 

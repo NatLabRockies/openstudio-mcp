@@ -46,6 +46,7 @@ from mcp_server.util import (
     copy_regular_file_nofollow,
     is_regular_file_inside,
     read_file_bounded,
+    read_file_in_dir_nofollow,
     resolve_run_dir,
     sha256_regular_file_nofollow,
     write_text_in_dir_nofollow,
@@ -1893,14 +1894,17 @@ def prepare_analysis_package(
         }
     # The manifest names the packaged member so validation and submission use
     # the seed the preflight vouched for, whatever else sorts first in seeds/.
-    manifest_data = _read_manifest(manifest_path)
-    if manifest_data is None:
-        return {"ok": False, "error": f"Seed preflight left no readable {SEED_QAQC_MANIFEST}.", "preflight": preflight}
+    # Read and written through a descriptor of lib/ itself: the check at the top
+    # does not cover a lib/ swapped for a link while the preflight ran.
+    try:
+        manifest_data = json.loads(read_file_in_dir_nofollow(lib_dir, manifest_path.name, MAX_MANIFEST_BYTES))
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not read {SEED_QAQC_MANIFEST} back: {e}", "preflight": preflight}
+    if not isinstance(manifest_data, dict):
+        return {"ok": False, "error": f"{SEED_QAQC_MANIFEST} is not a JSON object.", "preflight": preflight}
     if manifest_data.get("seed_member") != seed_member:
         manifest_data["seed_member"] = seed_member
         try:
-            # Through a descriptor of lib/ itself: the check at the top does not
-            # cover a lib/ swapped for a link while the preflight ran.
             write_text_in_dir_nofollow(lib_dir, manifest_path.name, json.dumps(manifest_data, indent=2) + "\n")
         except (OSError, ValueError) as e:
             return {"ok": False, "error": f"Could not write {SEED_QAQC_MANIFEST}: {e}", "preflight": preflight}
