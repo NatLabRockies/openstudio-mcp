@@ -11,6 +11,17 @@
   always tests a private copy, copying `tests/test_model.osm` back and regenerating
   `measure.xml` in your own measure dir), the ReportingMeasure test gets the run's `files/`, and actuator
   discovery stages them for its sizing run. (#198)
+- OSAF packaging carries the seed's resources: `openstudio_analysis_prepare_package` copies an
+  external `seed_path` into `seeds/` (refusing a second seed or anything else under `seeds/`)
+  and its companion resources flat into `lib/`, where every datapoint searches; a same-named
+  `lib/` file with different bytes is an error. The seed preflight cache is keyed on the seed,
+  its effective weather file (the model's own when none is passed, as `run_simulation` stages
+  it) and a digest of its resources: `run_simulation` records the three hashes of what it
+  staged in `run_record.json` at launch and the preflight reuses a run or manifest only on all
+  three, so an edited Schedule:File CSV reruns the seed instead of reusing stale QA/QC
+  evidence; nothing in the run dir is rehashed. `openstudio_analysis_validate_package` checks
+  the zip's `lib/` resources against the manifest and requires exactly the one seed the
+  manifest names. Manifests from before this change are rerun once. (#198)
 
 ### Security
 - **Breaking (`MCP_AUTH=jwt`):** `MCP_JWT_ISSUER` and `MCP_JWT_AUDIENCE` are now required; the

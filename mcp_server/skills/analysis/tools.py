@@ -141,7 +141,11 @@ def register(mcp):
         by default a lib/seed_simulation_qaqc.json manifest showing the seed
         already simulated successfully and passed basic QA/QC plus the
         foundational analysis measures view_model, openstudio_results, and
-        generic_qaqc.
+        generic_qaqc. With the manifest required, seeds/ must hold exactly the
+        one seed model the manifest names (hashing to its seed_sha256) and the
+        seed's resources listed in the manifest must be present in lib/ with
+        the recorded digest; a manifest from before resources were part of
+        the identity is rejected (rerun openstudio_analysis_prepare_package).
         """
         return validate_analysis_package(
             zip_path,
@@ -161,10 +165,14 @@ def register(mcp):
     ):
         """Simulate an OSAF seed model and run basic QA/QC before packaging.
 
-        Reuses an existing completed simulation when the staged seed and weather
-        file hashes match, so repeated packaging does not rerun the seed model.
-        Writes lib/seed_simulation_qaqc.json when manifest_path is supplied and
-        the seed passes.
+        The seed's identity is the OSM, the effective weather file (weather_file,
+        else the model's own EPW as run_simulation would stage it) and its
+        resource set (the companion folder <seed>/files/: Schedule:File CSVs,
+        plugin scripts). A completed run_simulation run is reused only when the
+        identity it recorded at launch equals all three, so an edited resource
+        reruns the seed. Pass the seed where it was saved (next to its
+        companion folder), not a bare copy. Writes lib/seed_simulation_qaqc.json
+        when manifest_path is supplied and the seed passes.
         """
         return preflight_seed_for_analysis_package(
             seed_path=seed_path,
@@ -190,11 +198,18 @@ def register(mcp):
     ):
         """Create an OSAF support ZIP only after seed simulation QA/QC passes.
 
-        The tool writes lib/seed_simulation_qaqc.json into package_dir, reusing a
-        previous successful matching seed simulation when available. If no
-        completed run exists, it starts one and only writes the ZIP once the run
-        has completed and passed basic QA/QC. By default it also copies the
-        foundational analysis measures into measures/.
+        Pass seed_path as the model where it was saved: the OSM is copied into
+        seeds/ and its companion resources (<seed>/files/) are copied flat into
+        lib/, the directory every datapoint workflow searches. seeds/ must then
+        hold only that one seed; a lib/ file of the same name with different
+        bytes is an error (lib/ is shared by every packaging of package_dir),
+        and other lib/ files are reported in lib_files_not_from_seed, never
+        deleted. The tool writes lib/seed_simulation_qaqc.json into package_dir,
+        reusing a previous successful seed simulation whose recorded seed,
+        weather and resources identity matches. If no completed run exists, it
+        starts one and only writes the ZIP once the run has completed and
+        passed basic QA/QC. By default it also copies the foundational analysis
+        measures into measures/.
         """
         return prepare_analysis_package(
             package_dir=package_dir,
