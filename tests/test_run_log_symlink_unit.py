@@ -232,8 +232,8 @@ def test_uninspectable_live_pid_is_kept_but_never_signalled(run_root, monkeypatc
     alive = _sleeper(run_root / "run_other")
     try:
         time.sleep(0.2)
-        monkeypatch.setattr(sim_ops, "_pid_is_runs_child", lambda *_a: None)
-        monkeypatch.setattr(retention, "_pid_is_runs_child", lambda *_a: None)
+        monkeypatch.setattr(sim_ops, "_pid_is_runs_child", lambda *_a, **_kw: None)
+        monkeypatch.setattr(retention, "_pid_is_runs_child", lambda *_a, **_kw: None)
         _write_record(run_dir, status="running", pid=alive.pid)
         assert sim_ops._load_run_record_from_disk("run_a").pid == alive.pid
         assert sim_ops.get_run_status("run_a")["run"]["status"] == "running"
@@ -296,7 +296,7 @@ def test_timeout_enforcement_never_signals_unverified_pid(run_root, monkeypatch,
     try:
         time.sleep(0.2)
         if identity is None:
-            monkeypatch.setattr(sim_ops, "_pid_is_runs_child", lambda *_a: None)
+            monkeypatch.setattr(sim_ops, "_pid_is_runs_child", lambda *_a, **_kw: None)
         monkeypatch.setattr(sim_ops, "SIM_TIMEOUT_SECONDS", 1)
         rec = sim_ops.RunRecord(
             run_id="run_a", user_key="local", name="x", status="running", created_at=1.0,
