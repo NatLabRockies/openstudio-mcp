@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- Every `model.save()` into a run dir, a model dir or a measure test snapshot (`save_osm_model`,
+  `create_example_osm`, `create_baseline_osm`, `import_gbxml`, `import_floorspacejs`,
+  `apply_measure`, `test_measure`, the ReportingMeasure test, EMS actuator discovery and the
+  weather strip of a staged seed) goes through `model_save.save_model_confined`: the SDK writes
+  the model to a private temp file and the server copies it to the destination through directory
+  descriptors, so a symlink planted at the destination name or at a component above it is
+  refused instead of written through, and a save the SDK refuses is a tool error. Each save now
+  writes the model twice. (#190)
 - The OSAF package zip (`openstudio_analysis_prepare_package`) is written through directory
   descriptors at both ends: the output zip is created from the tenant root and every member is
   enumerated and opened relative to its directory's descriptor, so a package component swapped

@@ -20,6 +20,7 @@ from urllib.request import Request, urlopen
 import openstudio
 
 from mcp_server import sandbox
+from mcp_server.model_save import save_model_confined
 from mcp_server.config import (
     COMMON_MEASURES_DIR,
     COMSTOCK_MEASURES_DIR,
@@ -785,9 +786,12 @@ def apply_measure(
         # Create temp directory for the run
         _measure_run_id, run_dir = create_run_dir(user_run_root(), "measure", measure_path.name)
 
-        # Save current model to temp OSM
+        # Save current model to temp OSM (staged, then copied by descriptor; #190)
         temp_osm = run_dir / "in.osm"
-        model.save(str(temp_osm), True)
+        try:
+            save_model_confined(model, temp_osm)
+        except (OSError, ValueError, RuntimeError) as e:
+            return {"ok": False, "error": f"Could not stage the model into {run_dir}: {e}", "run_dir": str(run_dir)}
 
         # Copy measure into run dir so OSW can reference it by relative path
         measures_dir = run_dir / "measures"

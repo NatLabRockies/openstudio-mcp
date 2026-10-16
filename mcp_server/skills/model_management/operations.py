@@ -9,6 +9,7 @@ import openstudio
 
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
+from mcp_server.model_save import save_model_confined
 from mcp_server.resources import (
     companion_files_dir,
     copy_resources,
@@ -47,15 +48,11 @@ def create_example_osm(name: str | None = None, out_dir: str | None = None) -> d
     osm_path = model_dir / "example_model.osm"
 
     try:
-        model_dir.mkdir(parents=True, exist_ok=True)
-
         model = openstudio.model.exampleModel()
-        ok = model.save(_os_path(osm_path), True)
-
-        if ok is False:
-            return {"ok": False, "error": "model.save(...) returned False."}
-        if not osm_path.exists():
-            return {"ok": False, "error": f"model.save(...) did not create expected file: {osm_path}"}
+        try:
+            save_model_confined(model, osm_path)  # staged, then copied by descriptor (#190)
+        except (OSError, ValueError, RuntimeError) as e:
+            return {"ok": False, "error": f"Could not save the example model to {osm_path}: {e}"}
 
         # Auto-load so query tools work immediately
         model_manager.load_model(osm_path)
@@ -498,12 +495,10 @@ def create_baseline_osm(
             ashrae_sys_num=ashrae_sys_num,
             wwr=wwr,
         )
-        ok = model.save(str(osm_path), True)
-
-        if ok is False:
-            return {"ok": False, "error": "model.save() returned False."}
-        if not osm_path.exists():
-            return {"ok": False, "error": f"model.save() did not create file: {osm_path}"}
+        try:
+            save_model_confined(model, osm_path)  # staged, then copied by descriptor (#190)
+        except (OSError, ValueError, RuntimeError) as e:
+            return {"ok": False, "error": f"Could not save the baseline model to {osm_path}: {e}"}
 
         # Auto-load so query tools work immediately
         model_manager.load_model(osm_path)

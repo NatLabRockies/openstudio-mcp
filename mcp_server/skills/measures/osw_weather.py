@@ -14,14 +14,18 @@ resolve without help. Resolution tiers:
 """
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
 import openstudio
 
 from mcp_server.config import is_path_allowed
+from mcp_server.confined_fs import DirHandle
+from mcp_server.model_save import save_model_confined
 from mcp_server.skills.weather.operations import find_epw_by_name
+from mcp_server.util import copy_regular_file_nofollow
+
+MAX_STAGED_WEATHER_BYTES = 1024 * 1024 * 1024  # an EPW with its .ddy/.stat companions
 
 
 def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, Any]:
@@ -66,8 +70,8 @@ def resolve_osw_weather(model: Any, run_dir: Path, temp_osm: Path) -> dict[str, 
     found = find_epw_by_name(epw.name)
     if found is not None:
         files_dir = run_dir / "files"
-        files_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(found), str(files_dir / found.name))
+        DirHandle.open(files_dir, create=True).close()  # created from the tenant root (#190)
+        copy_regular_file_nofollow(found, files_dir / found.name, MAX_STAGED_WEATHER_BYTES)
         out["weather_file"] = f"files/{found.name}"
         return out
 
@@ -89,8 +93,8 @@ def stage_epw_into_run(epw_src: Path, run_dir: Path) -> str:
     Returns the OSW-relative reference ('files/<name>').
     """
     files_dir = run_dir / "files"
-    files_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(epw_src), str(files_dir / epw_src.name))
+    DirHandle.open(files_dir, create=True).close()  # created from the tenant root (#190)
+    copy_regular_file_nofollow(epw_src, files_dir / epw_src.name, MAX_STAGED_WEATHER_BYTES)
     for ext in (".ddy", ".stat"):
         companion = epw_src.with_suffix(ext)
         # Companions are derived paths that never went through is_path_allowed
@@ -99,7 +103,7 @@ def stage_epw_into_run(epw_src: Path, run_dir: Path) -> str:
         # server copy the target into the tenant-readable run dir — skip links.
         if companion.is_symlink() or not companion.is_file():
             continue
-        shutil.copy2(str(companion), str(files_dir / companion.name))
+        copy_regular_file_nofollow(companion, files_dir / companion.name, MAX_STAGED_WEATHER_BYTES)
     return f"files/{epw_src.name}"
 
 
@@ -117,5 +121,8 @@ def strip_weather_from_seed(temp_osm: Path) -> Any | None:
         return None
     snapshot = wf.get().idfObject()
     wf.get().remove()
-    seed.save(openstudio.toPath(str(temp_osm)), True)
+    # Staged, then copied by descriptor (#190). A failure raises to apply_measure, which returns
+    # ok: False before the CLI runs: the copy is not atomic, so the staged seed may be
+    # truncated, and continuing as if nothing was stripped would run a damaged seed.
+    save_model_confined(seed, temp_osm)
     return snapshot

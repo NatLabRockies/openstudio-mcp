@@ -16,6 +16,7 @@ import openstudio
 from mcp_server import model_manager
 from mcp_server.config import is_path_allowed, path_denied_hint, user_run_root
 from mcp_server.model_manager import get_model
+from mcp_server.model_save import save_model_confined
 from mcp_server.osm_helpers import (
     build_list_response,
     fetch_object,
@@ -616,10 +617,11 @@ def import_floorspacejs(
                     matched += 1
 
         # Save model and load into model_manager
-        run_dir = user_run_root() / "examples" / "floorspacejs"
-        run_dir.mkdir(parents=True, exist_ok=True)
-        osm_path = run_dir / "imported.osm"
-        model.save(str(osm_path), True)
+        osm_path = user_run_root() / "examples" / "floorspacejs" / "imported.osm"
+        try:
+            save_model_confined(model, osm_path)  # staged, then copied by descriptor (#190)
+        except (OSError, ValueError, RuntimeError) as e:
+            return {"ok": False, "error": f"Failed to save the imported model to {osm_path}: {e}"}
         model_manager.load_model(osm_path)
 
         # Build summary
