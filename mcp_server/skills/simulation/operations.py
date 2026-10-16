@@ -141,30 +141,38 @@ _EXEC_WINDOW_RETRIES = 5  # re-reads of an empty argv on a live process (issue #
 _EXEC_WINDOW_SLEEP = 0.05  # seconds between them; the execve window is far shorter
 
 
-def _pid_is_runs_child(pid: int, run_dir: Path) -> bool | None:
+def _pid_is_runs_child(pid: int, run_dir: Path, *, wait_for_exec: bool = False) -> bool | None:
     """Is `pid` this run's own subprocess? True / False / None (could not inspect).
 
     Every launch passes the staged OSW path, which lives inside run_dir, on the command
     line (also behind the sandbox exec shim), so the argv names the run dir. A tenant can
     only forge that on a process it already owns. /proc/<pid>/cmdline is world-readable;
     cwd is not for a privilege-dropped child (needs CAP_SYS_PTRACE, which Docker drops).
+
+    /proc/<pid>/cmdline reads empty for an instant during execve (the shim drops
+    privileges, then execs the CLI). ``wait_for_exec`` re-reads a live, non-zombie process
+    with an empty argv up to ``_EXEC_WINDOW_RETRIES`` times before it counts as
+    uninspectable: for a one-shot caller outside ``_sim_lock`` (``cancel_run``) that needs a
+    verdict now. The periodic callers (the timeout sweep, which holds the lock; status
+    refresh; retention) must never sleep, because a tenant can keep a pid of its own
+    argv-less and plant it in many records; they take the immediate None and see the
+    process again on their next pass.
     """
     try:
         proc = psutil.Process(pid)
         argv = proc.cmdline()
-        # /proc/<pid>/cmdline reads empty for an instant during execve (the shim drops
-        # privileges, then execs the CLI), so a live process with no argv is re-read a few
-        # times before it counts as uninspectable. A zombie raises ZombieProcess (None at
-        # once); a kernel thread stays empty and is None after the retries.
-        for _ in range(_EXEC_WINDOW_RETRIES):
-            if argv or proc.status() == psutil.STATUS_ZOMBIE:
-                break
-            time.sleep(_EXEC_WINDOW_SLEEP)
-            argv = proc.cmdline()
+        if wait_for_exec:
+            # A zombie raises ZombieProcess (None at once); a kernel thread stays empty and
+            # is None after the retries.
+            for _ in range(_EXEC_WINDOW_RETRIES):
+                if argv or proc.status() == psutil.STATUS_ZOMBIE:
+                    break
+                time.sleep(_EXEC_WINDOW_SLEEP)
+                argv = proc.cmdline()
     except psutil.Error:
         return None
     if not argv:
-        return None  # kernel thread, or still in the exec window after the retries
+        return None  # zombie / kernel thread / the exec window: nothing to judge by
     prefix = str(run_dir.resolve())
     return any(arg == prefix or arg.startswith(prefix + os.sep) for arg in argv)
 
@@ -1165,8 +1173,9 @@ def cancel_run(run_id: str) -> dict[str, Any]:
             rec = _refresh_status(rec)
             _RUNS[run_id] = rec
         return {"ok": True, "run_id": run_id, "cancelled": False, "status": rec.status}
-    if _pid_is_runs_child(pid, rec.run_dir) is not True:
+    if _pid_is_runs_child(pid, rec.run_dir, wait_for_exec=True) is not True:
         # pid reuse, or a record field we could not verify: never signal a stranger as root
+        # (wait_for_exec: a cancel issued while the child is still inside execve is honoured)
         return {"ok": False, "run_id": run_id, "error": f"pid {pid} is not this run's process; not signalled"}
     try:
         _kill_process_group(pid)  # whole group (EnergyPlus + helpers), not just the leader
