@@ -20,7 +20,9 @@ from mcp_server.skills.python_ems.operations import (
     _EmsError,
     _files_context,
 )
-from mcp_server.util import open_nofollow_for_write
+from mcp_server.util import open_nofollow_for_write, read_file_bounded
+
+_MAX_SOURCE_BYTES = 8 * 1024 * 1024  # a plugin script returned to the caller
 
 
 def _script_path_for(file_name: str) -> Path | None:
@@ -114,8 +116,12 @@ def get_python_plugin_op(name: str | None = None) -> dict[str, Any]:
                         "error": f"Python plugin '{name}' not found. Available: {available}"}
             result["plugin"] = match
             if match["script_path"]:
-                source = Path(match["script_path"]).read_text(
-                    encoding="utf-8", errors="replace")
+                # Under the model's companion folder, a tenant-writable tree: read by descriptor (#190)
+                try:
+                    source = read_file_bounded(Path(match["script_path"]), _MAX_SOURCE_BYTES).decode(
+                        "utf-8", errors="replace")
+                except ValueError as e:
+                    raise _EmsError(f"Plugin script could not be read: {e}") from None
                 if len(source) > _MAX_SOURCE_CHARS:
                     source = source[:_MAX_SOURCE_CHARS] + "\n# ... truncated ..."
                 result["source"] = source

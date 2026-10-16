@@ -18,8 +18,10 @@ from mcp_server import model_manager, sandbox
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
 from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.resources import stage_model_resources
+from mcp_server.util import read_file_bounded
 from mcp_server.skills.python_ems.edd_parser import parse_edd
 
+_MAX_OUTPUT_BYTES = 64 * 1024 * 1024  # eplusout.edd / eplusout.err of the discovery run
 _DISCOVERY_TIMEOUT_SECONDS = 300
 
 
@@ -113,7 +115,8 @@ def list_ems_actuators_op(
         edd_path = work / "run" / "eplusout.edd"
         if not edd_path.exists():
             err_path = work / "run" / "eplusout.err"
-            tail = (err_path.read_text(errors="replace")[-1500:]
+            # Written by the sandboxed run: read by descriptor from the tenant root (#190)
+            tail = (read_file_bounded(err_path, _MAX_OUTPUT_BYTES).decode(errors="replace")[-1500:]
                     if err_path.exists() else (proc.stdout or "")[-1500:])
             return {
                 "ok": False,
@@ -121,7 +124,7 @@ def list_ems_actuators_op(
                 "exit_code": proc.returncode,
                 "log_tail": tail,
             }
-        parsed = parse_edd(edd_path.read_text(errors="replace"))
+        parsed = parse_edd(read_file_bounded(edd_path, _MAX_OUTPUT_BYTES).decode(errors="replace"))
     except subprocess.TimeoutExpired:
         return {"ok": False,
                 "error": f"Discovery run timed out after {_DISCOVERY_TIMEOUT_SECONDS}s"}
