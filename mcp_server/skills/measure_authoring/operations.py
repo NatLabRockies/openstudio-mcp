@@ -1077,7 +1077,11 @@ def _test_reporting_measure_with_run(
         }],
     }
     osw_path = run_dir / "workflow.osw"
-    osw_path.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+    try:
+        with open_nofollow_for_write(osw_path) as fh:  # walked from the tenant root (#190)
+            fh.write(json.dumps(osw, indent=2))
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not write the test workflow into {run_dir}: {e}"}
 
     # Run postprocess
     cmd = [

@@ -9,7 +9,7 @@ import openstudio
 
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
-from mcp_server.model_save import save_model_confined
+from mcp_server.model_save import save_model_confined, staged_for_sdk_load
 from mcp_server.resources import (
     companion_files_dir,
     copy_resources,
@@ -89,7 +89,8 @@ def inspect_osm_summary(osm_path: str) -> dict[str, Any]:
 
     try:
         vt = openstudio.osversion.VersionTranslator()
-        loaded = vt.loadModel(_os_path(p))
+        with staged_for_sdk_load(p) as sdk_path:  # private copy by descriptor under a tenant root (#190)
+            loaded = vt.loadModel(_os_path(sdk_path))
 
         if not loaded.is_initialized():
             return {"ok": False, "error": f"Failed to load OSM: {p}", "osm_path": str(p)}

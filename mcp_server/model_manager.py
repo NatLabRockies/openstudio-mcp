@@ -29,7 +29,7 @@ import openstudio
 from mcp_server.config import user_run_root
 from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.identity import session_key
-from mcp_server.model_save import save_model_confined
+from mcp_server.model_save import save_model_confined, staged_for_sdk_load
 from mcp_server.stdout_suppression import suppress_openstudio_warnings
 
 # Hard RAM backstop: heavy OSM models must not accumulate unbounded across
@@ -225,17 +225,23 @@ def _load_into_session(
     expected_generation: int | None = None,
 ) -> tuple[openstudio.model.Model, int]:
     abs_path = str(Path(osm_path).resolve())
-    with suppress_openstudio_warnings():
-        if version_translate:
-            loaded = openstudio.osversion.VersionTranslator().loadModel(abs_path)
-        else:
-            loaded = openstudio.model.Model.load(abs_path)
-        if not loaded.is_initialized():
-            raise ValueError(f"Failed to load OSM: {osm_path}")
-        model = loaded.get()
-        # Taken before the model is published to the session, so no concurrent
-        # tool call on this session can edit it between load and digest.
-        digest = _digest(model)
+    # A file under a tenant-writable tree is copied by descriptor into a private temp file and
+    # the SDK loads that copy (#190): a link planted at the path or at a component above it is
+    # refused instead of followed. The session still records the caller's resolved path.
+    try:
+        with staged_for_sdk_load(osm_path) as sdk_path, suppress_openstudio_warnings():
+            if version_translate:
+                loaded = openstudio.osversion.VersionTranslator().loadModel(str(sdk_path))
+            else:
+                loaded = openstudio.model.Model.load(str(sdk_path))
+            if not loaded.is_initialized():
+                raise ValueError(f"Failed to load OSM: {osm_path}")
+            model = loaded.get()
+            # Taken before the model is published to the session, so no concurrent
+            # tool call on this session can edit it between load and digest.
+            digest = _digest(model)
+    except OSError as e:
+        raise ValueError(f"Failed to load OSM: {osm_path} ({e})") from e
     key = session_key()
     with _lock:
         _sweep_idle()

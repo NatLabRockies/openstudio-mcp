@@ -1,4 +1,4 @@
-"""Saving an OpenStudio model into a tenant-writable tree (issue #190, the last pathname write).
+"""Saving and loading an OpenStudio model in a tenant-writable tree (issue #190: the SDK takes pathnames only).
 
 ``Model.save(path, overwrite)`` is an SDK call that opens its destination by
 pathname and follows whatever is there, so a link planted at the destination
@@ -17,11 +17,13 @@ needs room for one model.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
-from mcp_server.confined_fs import DirHandle
+from mcp_server.confined_fs import DirHandle, confinement_root_for, lexical_abspath
 from mcp_server.util import copy_regular_file_nofollow
 
 STAGING_PREFIX = "osmcp-save-"
@@ -49,3 +51,28 @@ def save_model_confined(model, dest: str | os.PathLike[str], *, max_bytes: int =
     finally:
         tmp.unlink(missing_ok=True)
     return dest_path
+
+
+@contextlib.contextmanager
+def staged_for_sdk_load(src: str | os.PathLike[str], *, max_bytes: int = MAX_SAVED_MODEL_BYTES) -> Iterator[Path]:
+    """Yield the path the SDK should load for ``src`` (``Model.load`` and ``loadModel`` take a pathname only).
+
+    Under a confinement root the file is copied through the descriptor walk
+    into a private temp file (removed on exit) and that copy is yielded, so a
+    link planted at the path or at a component above it is refused (OSError),
+    a non-regular file or one over ``max_bytes`` is a ``ValueError``, and the
+    SDK never opens the tenant-writable path itself. A path under no root (the
+    shared read-only roots) is yielded unchanged.
+    """
+    src_path = lexical_abspath(src)
+    if confinement_root_for(src_path) is None:
+        yield src_path
+        return
+    fd, tmp_name = tempfile.mkstemp(prefix=STAGING_PREFIX, suffix=src_path.suffix or ".osm")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        copy_regular_file_nofollow(src_path, tmp, max_bytes)
+        yield tmp
+    finally:
+        tmp.unlink(missing_ok=True)
