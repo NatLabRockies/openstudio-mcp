@@ -202,7 +202,14 @@ def test_dispatch_uses_each_run_owner(caller):
                     assert tuple(process.gids()) == (expected_uid,) * 3
                     # The run-record trust check must recognise a real privilege-dropped
                     # child (cwd is unreadable without CAP_SYS_PTRACE; argv is used instead).
-                    assert ops._pid_is_runs_child(rec.pid, rec.run_dir) is True
+                    # The argv reads empty for an instant while the shim execs the CLI, so wait
+                    # for a verdict instead of asserting the first read (issue #212).
+                    verdict = ops._pid_is_runs_child(rec.pid, rec.run_dir)
+                    deadline = time.monotonic() + 2
+                    while verdict is None and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                        verdict = ops._pid_is_runs_child(rec.pid, rec.run_dir)
+                    assert verdict is True
                 finally:
                     if rec.pid is not None:
                         ops._kill_process_group(rec.pid)

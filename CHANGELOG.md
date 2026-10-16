@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- The run-record trust check (`_pid_is_runs_child`, used by `get_run_status`, `cancel_run`, the
+  timeout sweep and retention) re-reads a live process whose argv is empty instead of answering
+  "could not inspect": `/proc/<pid>/cmdline` is empty for an instant while the sandbox shim execs
+  the CLI, which made `cancel_run` refuse to signal in that instant and
+  `test_dispatch_uses_each_run_owner` flaky. (#212)
 - The SDK's pathname-only model loads of files under tenant-writable trees (`load_osm_model` and
   every session load, `inspect_osm_summary`, the weather lookup of a saved model, gbXML import's
   translated model, the staged seed in `apply_measure`'s weather strip, EMS actuator discovery's

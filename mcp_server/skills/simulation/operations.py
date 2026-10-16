@@ -137,6 +137,10 @@ def _inside(path: Path, root: Path) -> bool:
         return False
 
 
+_EXEC_WINDOW_RETRIES = 5  # re-reads of an empty argv on a live process (issue #212)
+_EXEC_WINDOW_SLEEP = 0.05  # seconds between them; the execve window is far shorter
+
+
 def _pid_is_runs_child(pid: int, run_dir: Path) -> bool | None:
     """Is `pid` this run's own subprocess? True / False / None (could not inspect).
 
@@ -146,11 +150,21 @@ def _pid_is_runs_child(pid: int, run_dir: Path) -> bool | None:
     cwd is not for a privilege-dropped child (needs CAP_SYS_PTRACE, which Docker drops).
     """
     try:
-        argv = psutil.Process(pid).cmdline()
+        proc = psutil.Process(pid)
+        argv = proc.cmdline()
+        # /proc/<pid>/cmdline reads empty for an instant during execve (the shim drops
+        # privileges, then execs the CLI), so a live process with no argv is re-read a few
+        # times before it counts as uninspectable. A zombie raises ZombieProcess (None at
+        # once); a kernel thread stays empty and is None after the retries.
+        for _ in range(_EXEC_WINDOW_RETRIES):
+            if argv or proc.status() == psutil.STATUS_ZOMBIE:
+                break
+            time.sleep(_EXEC_WINDOW_SLEEP)
+            argv = proc.cmdline()
     except psutil.Error:
         return None
     if not argv:
-        return None  # zombie / kernel thread: nothing to judge by
+        return None  # kernel thread, or still in the exec window after the retries
     prefix = str(run_dir.resolve())
     return any(arg == prefix or arg.startswith(prefix + os.sep) for arg in argv)
 
