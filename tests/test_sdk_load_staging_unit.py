@@ -50,9 +50,17 @@ def test_copy_is_removed_when_the_sdk_load_raises(tmp_path, monkeypatch):
     src = root / "in.osm"
     src.write_bytes(OSM)
     before = _staging_files()
+    seen: dict[str, object] = {}
+
+    def _sdk_load(path: Path) -> None:  # stands in for the SDK: records what it was given, then fails
+        seen["path"], seen["staged"] = path, path.exists() and path.name in _staging_files()
+        raise RuntimeError("sdk boom")
+
     with pytest.raises(RuntimeError, match="sdk boom"):
-        with model_save.staged_for_sdk_load(src):
-            raise RuntimeError("sdk boom")
+        with model_save.staged_for_sdk_load(src) as sdk_path:
+            _sdk_load(sdk_path)
+    assert seen["path"] != src and seen["staged"] is True  # a distinct staging copy existed at load time
+    assert not seen["path"].exists()
     assert _staging_files() == before
 
 
