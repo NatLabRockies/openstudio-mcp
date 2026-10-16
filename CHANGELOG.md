@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- `cancel_run` no longer refuses to signal a run whose child is still inside `execve`:
+  `/proc/<pid>/cmdline` is empty for that instant, and the run-record trust check answered
+  "could not inspect"; the cancel path now re-reads a live, non-zombie process a few times. The
+  periodic callers of the check (the timeout sweep, which holds the simulation lock, status refresh
+  and retention) keep the immediate answer and see the process again on their next pass, so a
+  tenant cannot make them sleep. The owner-isolation test, which hit the same instant and was
+  flaky, waits for a verdict. (#212)
 - The SDK's pathname-only model loads of files under tenant-writable trees (`load_osm_model` and
   every session load, `inspect_osm_summary`, the weather lookup of a saved model, gbXML import's
   translated model, the staged seed in `apply_measure`'s weather strip, EMS actuator discovery's
