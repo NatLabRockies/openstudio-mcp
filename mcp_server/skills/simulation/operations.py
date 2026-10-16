@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import shutil
 import signal
 import stat
 import subprocess
@@ -55,6 +54,7 @@ MAX_STAGED_FILE_BYTES = 8 * 1024 * 1024 * 1024  # one OSW, seed or weather file 
 MAX_ERR_READ_BYTES = 16 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024  # run_record.json is small; anything bigger is hostile
 MAX_OUT_OSW_BYTES = 16 * 1024 * 1024  # out.osw carries step results/messages and can be large
+MAX_OSW_BYTES = 64 * 1024 * 1024  # a workflow OSW read from a tenant tree (the caller's or the staged copy)
 MAX_IDENTITY_FILE_BYTES = 1024 * 1024 * 1024  # a staged seed OSM or EPW, hashed for the run record
 _SHA256_LEN = 64
 _STATUSES = frozenset({"queued", "running", "success", "failed", "cancelled"})
@@ -329,13 +329,22 @@ def _stage_file(src: Path, dst: Path) -> str | None:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    """Parse a JSON file and return its contents as a dict."""
-    return json.loads(path.read_text(encoding="utf-8"))
+    """Parse a JSON file read through the descriptor walk (bounded; a link at any component is refused)."""
+    return json.loads(read_file_bounded(path, MAX_OSW_BYTES).decode("utf-8"))
 
 
-def _dump_json(path: Path, obj: dict[str, Any]) -> None:
-    """Write a dict to a JSON file with indentation."""
-    path.write_text(json.dumps(obj, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+def _dump_json(path: Path, obj: dict[str, Any]) -> str | None:
+    """Write a dict as indented JSON through the descriptor walk; an error string instead of raising.
+
+    The staged OSW lives in the tenant-writable run dir (#190): a link planted at its name or at
+    a component above it is refused, never written through.
+    """
+    try:
+        with open_nofollow_for_write(path) as fh:
+            fh.write(json.dumps(obj, indent=2, sort_keys=False) + "\n")
+    except (OSError, ValueError) as e:
+        return f"Could not write {path.name}: {e}"
+    return None
 
 
 # Search dirs WorkflowJSON::findFile consults when the OSW declares no
@@ -736,7 +745,10 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
     # Load staged OSW and ensure referenced seed file is present.
     # Always stage the seed directly into run_dir (flatten any ../ refs)
     # and rewrite the OSW pointer so OpenStudio finds it.
-    osw = _load_json(staged_osw)
+    try:
+        osw = _load_json(staged_osw)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"Could not read the staged OSW: {e}", "run_dir": str(run_dir)}
     seed_rel = osw.get("seed_file")
     seed_resource_src: Path | None = None  # the seed as found, for its companion resources
     if seed_rel:
@@ -760,7 +772,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             # Rewrite OSW to point at the flattened location
             if seed_rel != Path(seed_rel).name:
                 osw["seed_file"] = Path(seed_rel).name
-                _dump_json(staged_osw, osw)
+                err = _dump_json(staged_osw, osw)
+                if err:
+                    return {"ok": False, "error": err, "run_dir": str(run_dir)}
         else:
             # Not next to the OSW: resolve via the OSW file_paths search like
             # the CLI does (issue #99), then stage into the run dir — the
@@ -778,7 +792,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                     if err:
                         return {"ok": False, "error": err, "run_dir": str(run_dir)}
                 osw["seed_file"] = str(seed_dst)
-                _dump_json(staged_osw, osw)
+                err = _dump_json(staged_osw, osw)
+                if err:
+                    return {"ok": False, "error": err, "run_dir": str(run_dir)}
             elif not direct_allowed:
                 return {"ok": False, "error": f"Seed path not allowed: {seed_rel}", "run_dir": str(run_dir)}
 
@@ -815,7 +831,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
                     if err:
                         return {"ok": False, "error": err, "run_dir": str(run_dir)}
                 osw["weather_file"] = str(mirrored)
-                _dump_json(staged_osw, osw)
+                err = _dump_json(staged_osw, osw)
+                if err:
+                    return {"ok": False, "error": err, "run_dir": str(run_dir)}
         else:
             found, _denied = _resolve_osw_file(weather_rel, src_dir, osw,
                                                gated=not _internal)
@@ -833,7 +851,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
             if err:
                 return {"ok": False, "error": err, "run_dir": str(run_dir)}
             osw["weather_file"] = str(weather_dst)
-            _dump_json(staged_osw, osw)
+            err = _dump_json(staged_osw, osw)
+            if err:
+                return {"ok": False, "error": err, "run_dir": str(run_dir)}
 
     # If an EPW is provided, stage it into files/ and rewrite weather_file to match
     staged_epw: Path | None = None
@@ -845,7 +865,9 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         if err:
             return {"ok": False, "error": err, "run_dir": str(run_dir)}
         osw["weather_file"] = f"files/{epw_src.name}"
-        _dump_json(staged_osw, osw)
+        err = _dump_json(staged_osw, osw)
+        if err:
+            return {"ok": False, "error": err, "run_dir": str(run_dir)}
         if _identity is not None:
             try:
                 _identity["weather_sha256"] = sha256_regular_file_nofollow(staged_epw, MAX_IDENTITY_FILE_BYTES)
@@ -1306,7 +1328,11 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
     with tempfile.TemporaryDirectory(prefix="osw_stage_") as tmp:
         stage = Path(tmp)
         staged_osm = stage / osm.name
-        shutil.copy2(str(osm), str(staged_osm))
+        # The caller's model is copied by descriptor (#190): a link at its path or above it, planted
+        # after is_path_allowed, is refused rather than followed into another tenant's file.
+        err = _stage_file(osm, staged_osm)
+        if err:
+            return {"ok": False, "error": err}
 
         # Stage the model's resources (its companion folder <model>/files/, or
         # this server's older sibling files/). Workflow-time forward
@@ -1338,7 +1364,9 @@ def run_simulation(osm_path: str, epw_path: str | None = None, name: str | None 
             "steps": [],
         }
         osw_path_out = stage / "workflow.osw"
-        osw_path_out.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+        err = _dump_json(osw_path_out, osw)
+        if err:
+            return {"ok": False, "error": err}
 
         # Delegate to run_osw — pass epw_path so it handles staging into files/.
         # _internal=True: osm + epw are already is_path_allowed above and the temp

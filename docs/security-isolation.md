@@ -114,7 +114,10 @@ output through the walk and streams each member from an fd opened relative to it
 `_zip_for_read` opens a tenant-chosen package the same way). `model.save()` is pathname-only
 in the SDK, so `model_save.save_model_confined` saves to a private temp file under the temp
 root and copies it to the destination with the same primitives; use it for every model
-written into a tenant tree.
+written into a tenant tree. `Model.load()` / `loadModel()` are pathname-only too:
+`model_save.staged_for_sdk_load` copies a file under a tenant root into a private temp file
+by descriptor and yields that path for the SDK (a path under no root, the shared read-only
+roots, is passed through); use it for every model read from a tenant tree.
 
 **Anchor assumption.** A confinement root and every directory above it must not be
 writable by any tenant process, and a tenant-writable tree must have no alias outside

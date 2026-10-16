@@ -29,6 +29,7 @@ from mcp_server.config import (
 from mcp_server.confined_copy import remove_tree_confined
 from mcp_server.skills.file_transfer import signing
 from mcp_server.skills.file_transfer.archive import guarded_extract
+from mcp_server.util import open_nofollow_for_write
 
 _MB = 1024 * 1024
 _FILE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -141,7 +142,11 @@ def request_upload_op(filename: str, size_bytes: int, sha256: str = "", kind: st
         "expected_size": size, "expected_sha256": (sha256 or "").lower(),
         "status": "pending", "created": int(time.time()),
     }
-    _meta_path(key, file_id).write_text(json.dumps(meta), encoding="utf-8")
+    try:
+        with open_nofollow_for_write(_meta_path(key, file_id)) as fh:  # walked from the tenant root (#190)
+            fh.write(json.dumps(meta))
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"could not record the upload request: {e}"}
     token = signing.make_token(key, file_id, "u", OSMCP_UPLOAD_URL_TTL)
     path = f"/files/u/{file_id}?t={token}"
     return {
@@ -345,7 +350,11 @@ def finalize_upload(key: str, file_id: str, tmp_path: Path, sha_hex: str, size: 
 
     meta.update({"status": "ready", "sha256": sha_hex, "size": size,
                  "server_path": server_path, "extracted_path": extracted_path})
-    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    try:
+        with open_nofollow_for_write(meta_path) as fh:  # walked from the tenant root (#190)
+            fh.write(json.dumps(meta))
+    except (OSError, ValueError) as e:
+        return {"ok": False, "status": 500, "error": f"could not record the completed upload: {e}"}
     return {"ok": True, "file_id": file_id, "sha256": sha_hex, "size": size,
             "server_path": server_path, "extracted_path": extracted_path}
 

@@ -22,7 +22,7 @@ import openstudio
 
 from mcp_server import model_manager, sandbox
 from mcp_server.confined_copy import copy_tree_confined
-from mcp_server.model_save import save_model_confined
+from mcp_server.model_save import save_model_confined, staged_for_sdk_load
 from mcp_server.config import (
     GBXML_IMPORT_TIMEOUT_SECONDS,
     GBXML_MEASURES_DIR,
@@ -47,6 +47,7 @@ from mcp_server.skills.weather.ground_temperatures import find_missing_ground_te
 from mcp_server.util import (
     create_run_dir,
     is_regular_file_inside,
+    open_nofollow_for_write,
     read_file_bounded,
     read_tail_bounded,
     reject_escaping_symlinks,
@@ -215,7 +216,8 @@ def import_gbxml_op(
             "steps": steps,
         }
         osw_path = run_dir / "workflow.osw"
-        osw_path.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+        with open_nofollow_for_write(osw_path) as fh:  # walked from the tenant root (#190)
+            fh.write(json.dumps(osw, indent=2))
 
         cmd = [
             "openstudio",
@@ -303,7 +305,17 @@ def import_gbxml_op(
                 "run_dir": str(run_dir),
             }
 
-        model_result = openstudio.model.Model.load(str(output_osm))
+        # Loaded from a private copy made by descriptor (#190): the run dir was just written by
+        # the sandboxed measure chain, and the SDK would follow a link planted at this path.
+        try:
+            with staged_for_sdk_load(output_osm) as sdk_path:
+                model_result = openstudio.model.Model.load(str(sdk_path))
+        except (OSError, ValueError) as e:
+            return {
+                "ok": False,
+                "error": f"Could not read the translated model {output_osm}: {e}",
+                "run_dir": str(run_dir),
+            }
         if not model_result.is_initialized():
             return {"ok": False, "error": f"Could not load translated model: {output_osm}", "run_dir": str(run_dir)}
         model = model_result.get()

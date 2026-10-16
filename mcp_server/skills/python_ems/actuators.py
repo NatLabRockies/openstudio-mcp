@@ -17,9 +17,9 @@ import openstudio
 from mcp_server import model_manager, sandbox
 from mcp_server.config import OSCLI_GEM_PATH, OSCLI_GEMFILE, user_run_root
 from mcp_server.confined_copy import remove_tree_confined
-from mcp_server.model_save import save_model_confined
+from mcp_server.model_save import save_model_confined, staged_for_sdk_load
 from mcp_server.resources import stage_model_resources
-from mcp_server.util import read_file_bounded
+from mcp_server.util import open_nofollow_for_write, read_file_bounded
 from mcp_server.skills.python_ems.edd_parser import parse_edd
 
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024  # eplusout.edd / eplusout.err of the discovery run
@@ -55,7 +55,8 @@ def list_ems_actuators_op(
         osm_path = work / "in.osm"
         # Snapshot the session model; all mutations below happen on a fresh copy.
         save_model_confined(model, osm_path)  # staged, then copied by descriptor (#190)
-        loaded = openstudio.model.Model.load(str(osm_path))
+        with staged_for_sdk_load(osm_path) as sdk_path:  # private copy by descriptor (#190)
+            loaded = openstudio.model.Model.load(str(sdk_path))
         if not loaded.is_initialized():
             return {"ok": False, "error": "Failed to reload model snapshot for discovery."}
         copy = loaded.get()
@@ -92,11 +93,9 @@ def list_ems_actuators_op(
         if stage_err:
             return {"ok": False, "error": stage_err}
 
-        (work / "workflow.osw").write_text(
-            json.dumps({"seed_file": "in.osm", "file_paths": [],
-                        "measure_paths": [], "steps": []}, indent=2),
-            encoding="utf-8",
-        )
+        with open_nofollow_for_write(work / "workflow.osw") as fh:  # walked from the tenant root (#190)
+            fh.write(json.dumps({"seed_file": "in.osm", "file_paths": [],
+                                 "measure_paths": [], "steps": []}, indent=2))
         cmd = [
             "openstudio",
             "--bundle", OSCLI_GEMFILE,

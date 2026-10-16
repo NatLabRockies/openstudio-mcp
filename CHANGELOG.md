@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Fixed
+- The SDK's pathname-only model loads of files under tenant-writable trees (`load_osm_model` and
+  every session load, `inspect_osm_summary`, the weather lookup of a saved model, gbXML import's
+  translated model, the staged seed in `apply_measure`'s weather strip, EMS actuator discovery's
+  snapshot) read a private copy made through directory descriptors, so a link planted at the file
+  or at a directory above it is refused instead of followed into another tenant's model. Workflow
+  OSW files and other server-written JSON in tenant trees (`run_osw`'s staged OSW and its reads,
+  `apply_measure`, `test_measure`, gbXML import, actuator discovery, upload bookkeeping,
+  oversized-response spills) are written through the same walk, and `run_simulation` copies the
+  session model into its staging dir by descriptor. `openstudio_analysis_prepare_package` refuses
+  an output zip placed inside one of the package's archived directories (it would archive
+  itself). (#190)
 - Every `model.save()` into a run dir, a model dir or a measure test snapshot (`save_osm_model`,
   `create_example_osm`, `create_baseline_osm`, `import_gbxml`, `import_floorspacejs`,
   `apply_measure`, `test_measure`, the ReportingMeasure test, EMS actuator discovery and the

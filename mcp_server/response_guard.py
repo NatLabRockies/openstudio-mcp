@@ -18,7 +18,7 @@ from fastmcp.server.middleware import Middleware
 from fastmcp.tools.tool import ToolResult
 
 from mcp_server.config import user_run_root
-from mcp_server.util import create_run_dir
+from mcp_server.util import create_run_dir, open_nofollow_for_write
 
 _PREVIEW_CHARS = 2000
 
@@ -77,7 +77,8 @@ def build_replacement(tool: str, serialized: str, cap: int) -> dict[str, Any]:
     try:
         run_id, spill_dir = create_run_dir(user_run_root(), "oversized", tool)
         spill_path = spill_dir / "response.json"
-        spill_path.write_text(serialized, encoding="utf-8")
+        with open_nofollow_for_write(spill_path) as fh:  # walked from the tenant root (#190)
+            fh.write(serialized)
         replacement["spilled_path"] = str(spill_path)
         replacement["run_id"] = run_id
         from mcp_server.export_hint import export_hint

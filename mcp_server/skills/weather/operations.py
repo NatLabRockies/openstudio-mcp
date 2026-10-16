@@ -19,6 +19,7 @@ from mcp_server.config import (
     is_path_allowed,
 )
 from mcp_server.model_manager import get_model
+from mcp_server.model_save import staged_for_sdk_load
 from mcp_server.resources import resource_sources
 
 
@@ -232,8 +233,12 @@ def resolve_model_weather_epw(osm_path: Path) -> dict[str, Any]:
         "loadable": False, "declared": False, "url": None, "epw": None,
         "run_periods_requested": True,
     }
-    loaded = openstudio.osversion.VersionTranslator().loadModel(
-        openstudio.toPath(str(osm_path)))
+    # Loaded from a private copy made by descriptor when the file is under a tenant root (#190).
+    try:
+        with staged_for_sdk_load(osm_path) as sdk_path:
+            loaded = openstudio.osversion.VersionTranslator().loadModel(openstudio.toPath(str(sdk_path)))
+    except (OSError, ValueError):
+        return result  # unreadable through the walk: reported as not loadable
     if not loaded.is_initialized():
         return result
     model = loaded.get()

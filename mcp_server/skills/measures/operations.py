@@ -53,6 +53,7 @@ from mcp_server.util import (
     copy_regular_file_nofollow,
     create_run_dir,
     is_regular_file_inside,
+    open_nofollow_for_write,
     reject_escaping_symlinks,
     resolve_run_dir,
 )
@@ -874,7 +875,8 @@ def apply_measure(
             osw["weather_file"] = osw_weather_file
 
         osw_path = run_dir / "workflow.osw"
-        osw_path.write_text(json.dumps(osw, indent=2), encoding="utf-8")
+        with open_nofollow_for_write(osw_path) as fh:  # walked from the tenant root (#190)
+            fh.write(json.dumps(osw, indent=2))
 
         # Determine run mode: --postprocess_only for reporting measures,
         # --measures_only for model/energyplus measures

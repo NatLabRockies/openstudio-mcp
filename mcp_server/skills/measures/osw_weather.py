@@ -21,7 +21,7 @@ import openstudio
 
 from mcp_server.config import is_path_allowed
 from mcp_server.confined_fs import DirHandle
-from mcp_server.model_save import save_model_confined
+from mcp_server.model_save import save_model_confined, staged_for_sdk_load
 from mcp_server.skills.weather.operations import find_epw_by_name
 from mcp_server.util import copy_regular_file_nofollow
 
@@ -112,7 +112,10 @@ def strip_weather_from_seed(temp_osm: Path) -> Any | None:
 
     Returns None if the seed can't be loaded or has no weather file.
     """
-    loaded = openstudio.model.Model.load(openstudio.toPath(str(temp_osm)))
+    # Loaded from a private copy made by descriptor (#190); a refused read raises to
+    # apply_measure like a failed save below does.
+    with staged_for_sdk_load(temp_osm) as sdk_path:
+        loaded = openstudio.model.Model.load(openstudio.toPath(str(sdk_path)))
     if not loaded.is_initialized():
         return None
     seed = loaded.get()

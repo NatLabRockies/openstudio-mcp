@@ -1994,6 +1994,15 @@ def prepare_analysis_package(
     out = Path(output_zip_path).expanduser().resolve()
     if not _is_analysis_path_allowed(out, write=True):
         return {"ok": False, "error": f"Output ZIP path is not writable/allowed: {out}"}
+    # The zip holds everything under the package roots, so an output inside one would be a member
+    # of its own archive (the writer's temp file, or on older versions the previous zip).
+    for root_name in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
+        if out.is_relative_to(pkg / root_name):
+            return {
+                "ok": False,
+                "error": f"Output ZIP path must not be inside the package's {root_name}/ directory "
+                         f"(the zip would archive itself): {out}",
+            }
 
     # Both dirs receive copies below: neither may be a link, sit under one, or
     # resolve outside the package (same check as a model's resource dir).
