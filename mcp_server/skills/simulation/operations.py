@@ -1060,13 +1060,13 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         }
 
     with _sim_lock:
-        prev_status = rec.status
         rec = _refresh_status(rec)
         _RUNS[run_id] = rec
-        if rec.status != prev_status:
-            # Persist on transition only: a held `wait_seconds` call snapshots once a
-            # second and must not rewrite run_record.json on every tick.
-            _persist_run_record(rec)
+        # Persisted on every snapshot, not only on a status change: a record reclassified
+        # while being reloaded from disk (queued across a restart, #175) arrives here
+        # already terminal and must still reach the file. A held `wait_seconds` call
+        # therefore rewrites run_record.json once a second; it is a few hundred bytes.
+        _persist_run_record(rec)
         queue_position = (list(_queue).index(run_id) + 1
                           if rec.status == "queued" and run_id in _queue else None)
     now = _now()
