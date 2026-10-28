@@ -233,27 +233,40 @@ def test_every_eval_file_has_positive_cases():
 # ---- cross-surface consistency (C1/C2) --------------------------------------
 
 
+POLLING_SURFACES = {
+    "simulate SKILL.md": SERVED_SKILLS_DIR / "simulate" / "SKILL.md",
+    "simulation/tools.py": REPO_ROOT / "mcp_server" / "skills" / "simulation" / "tools.py",
+    "server.py": REPO_ROOT / "mcp_server" / "server.py",
+    "prompts_resources/tools.py": PROMPTS_TOOLS_PY,
+    "results/operations.py": REPO_ROOT / "mcp_server" / "skills" / "results" / "operations.py",
+}
+
+
 def test_polling_cadence_consistent_across_surfaces():
-    # Regression: simulate SKILL.md said poll every 3-5 s while the tool
-    # docstring said once per minute and server instructions said 1-2 min —
-    # sleep-less clients burned an LLM turn per poll (plan C1)
+    # Regression: surfaces disagreed on poll cadence (3-5 s vs once per minute vs 1-2 min)
+    # and the fixed-cadence prose was ignored by sleep-less clients, burning an LLM turn
+    # per poll (issue #200). Every surface now carries the same server-side-wait loop:
+    # the `wait_seconds=50` token, never the old once-per-minute cadence
     _, simulate = _parse_skill_md(SERVED_SKILLS_DIR / "simulate" / "SKILL.md")
     assert not re.search(r"\d+\s*-\s*\d+\s*second", simulate), (
         "simulate SKILL.md must not instruct seconds-scale polling"
     )
-    canonical = "once per minute"
-    assert canonical in simulate, (
-        f"simulate SKILL.md must carry the canonical cadence '{canonical}'"
+    canonical = "wait_seconds=50"
+    for label, path in POLLING_SURFACES.items():
+        text = path.read_text(encoding="utf-8")
+        assert canonical in text, f"{label} must carry the canonical '{canonical}' wait loop"
+        assert "once per minute" not in text, f"{label} still carries the old fixed cadence"
+        assert "every 2-3 minutes" not in text, f"{label} still carries the old long-sim cadence"
+    sim_tools = POLLING_SURFACES["simulation/tools.py"].read_text(encoding="utf-8")
+    assert "poll_interval_seconds" in sim_tools, (
+        "get_run_status docstring must name the advisory poll_interval_seconds field"
     )
-    sim_tools = (REPO_ROOT / "mcp_server" / "skills" / "simulation"
-                 / "tools.py").read_text(encoding="utf-8")
-    assert canonical in sim_tools, "get_run_status docstring lost the cadence"
-    server_py = (REPO_ROOT / "mcp_server" / "server.py").read_text(encoding="utf-8")
-    assert canonical in server_py, (
-        "server instructions must match the docstring cadence tier"
+    assert "wait_exhausted" in sim_tools, "get_run_status docstring must document wait_exhausted"
+    assert "progress percentage" not in sim_tools, (
+        "get_run_status docstring promised a progress field the response never had"
     )
-    assert "1-2 minutes" not in server_py, (
-        "server instructions contradict the once-per-minute docstring tier"
+    assert "queued, running, completed" not in sim_tools, (
+        "terminal state is `success` in the code enum, not `completed`"
     )
 
 
