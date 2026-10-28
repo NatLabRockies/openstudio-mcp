@@ -4,8 +4,11 @@ Real EnergyPlus runs, real waits (kept to a few seconds; runs are cancelled so
 no test needs a full simulation). Nothing is mocked.
 """
 import asyncio
+import json
 import os
 import re
+import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -222,46 +225,89 @@ def test_unknown_and_foreign_runs_return_without_waiting():
         asyncio.run(_run())
 
 
+def _wait_exit_line(log: Path, run_id: str, budget: float) -> tuple[str | None, float]:
+    """Poll the server log for the waiter's exit line; return (reason, seconds waited)."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < budget:
+        text = log.read_text(encoding="utf-8", errors="replace")
+        m = re.search(rf"\[run_wait\] run={re.escape(run_id)} reason=(\w+) active=0", text)
+        if m:
+            return m.group(1), time.monotonic() - t0
+        time.sleep(0.25)
+    return None, time.monotonic() - t0
+
+
 @pytest.mark.integration
-def test_client_disconnect_mid_wait_releases_waiter():
-    # Validates: when the client drops the connection during a held call the server-side
-    # waiter exits (logged `[run_wait] ... active=0`) well before the requested cap, so
-    # abandoned waits never pile up
+def test_abandoned_wait_is_bounded_by_cap():
+    # Validates: the only bound on an abandoned held call is wait_seconds. Verified
+    # 2026-10-28 (fastmcp 3.x streamable HTTP): neither a client-side task cancel
+    # (notifications/cancelled), the session DELETE on client close, nor a hard TCP drop
+    # cancels the in-flight handler; only server shutdown does. So a killed client's
+    # waiter must exit at the cap (reason=exhausted) plus one tick, never linger past it
     _skip_unless_integration()
-    with http_server({"MCP_AUTH": "none"}) as (url, _proc):
+    token = uuid.uuid4().hex
+    env = {"MCP_AUTH": "token", "MCP_TOKENS": json.dumps({token: "dropper"})}
+    cap = 5
+    with http_server(env) as (url, _proc):
         log = _server_log(url)
 
         async def _run():
-            async with http_session(url) as owner:
-                run_id = await _start_sim(owner, "drop")
+            async with http_session(url, token=token) as owner:
+                # Three runs at MAX_CONCURRENCY=1: the third stays queued (non-terminal)
+                # for two full simulations, longer than the cap under test.
+                cr = unwrap(await owner.call_tool("create_example_osm", {"name": f"drop_{uuid.uuid4().hex[:8]}"}))
+                assert cr["ok"] is True, cr
+                run_ids = []
+                for i in range(3):
+                    r = unwrap(await owner.call_tool(
+                        "run_simulation",
+                        {"osm_path": cr["osm_path"], "epw_path": EPW_PATH, "name": f"drop{i}"},
+                    ))
+                    assert r["ok"] is True, r
+                    run_ids.append(r["run_id"])
+                run_id = run_ids[-1]
                 try:
-                    async def _abandon():
-                        async with http_session(url) as s:
-                            # Give up on the held call after 1 s; leaving the context closes
-                            # the HTTP client and drops the in-flight POST stream.
-                            task = asyncio.create_task(s.call_tool(
-                                "get_run_status", {"run_id": run_id, "wait_seconds": 40},
-                            ))
-                            await asyncio.sleep(1.0)
-                            task.cancel()
-                            with pytest.raises(asyncio.CancelledError):
-                                await task
-
-                    await _abandon()
-                    t0 = time.monotonic()
-                    exited = None
-                    while time.monotonic() - t0 < 10.0:
-                        text = log.read_text(encoding="utf-8", errors="replace")
-                        m = re.search(rf"\[run_wait\] run={run_id} .*active=0", text)
-                        if m:
-                            exited = time.monotonic() - t0
-                            break
-                        await asyncio.sleep(0.25)
+                    client = subprocess.Popen(  # noqa: S603 - argv is our own interpreter
+                        [sys.executable, "-c", _ABANDONING_CLIENT, url, token, run_id, str(cap)],
+                        cwd=str(Path(__file__).parent), stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True,
+                    )
+                    try:
+                        first = await asyncio.to_thread(client.stdout.readline)
+                        assert first.strip() == "CALLING", f"client did not start: {first!r}"
+                        await asyncio.sleep(1.5)   # the call is now held server-side
+                        assert client.poll() is None, "client exited before it was killed"
+                        client.kill()
+                        client.wait(timeout=10)
+                    finally:
+                        if client.poll() is None:
+                            client.kill()
+                    reason, waited = await asyncio.to_thread(
+                        _wait_exit_line, log, run_id, cap + 5.0,
+                    )
                 finally:
-                    await owner.call_tool("cancel_run", {"run_id": run_id})
-                assert exited is not None, (
-                    "waiter did not exit within 10 s of the client disconnect "
-                    "(cap was 40 s); server log:\n" + log.read_text(errors="replace")[-3000:]
+                    for rid in run_ids:
+                        await owner.call_tool("cancel_run", {"run_id": rid})
+                assert reason in ("exhausted", "cancelled"), (
+                    f"waiter exit reason {reason!r} after {waited:.1f}s (cap {cap}s); log tail:\n"
+                    + log.read_text(encoding="utf-8", errors="replace")[-2000:]
                 )
+                assert waited <= cap + 2.0, f"abandoned wait outlived its cap: {waited:.1f}s > {cap}s"
 
         asyncio.run(_run())
+
+
+_ABANDONING_CLIENT = """
+import asyncio, sys
+from conftest import http_session
+
+url, token, run_id, cap = sys.argv[1:5]
+
+async def main():
+    async with http_session(url, token=token) as s:
+        print("CALLING", flush=True)
+        await s.call_tool("get_run_status", {"run_id": run_id, "wait_seconds": int(cap)})
+        print("RETURNED", flush=True)
+
+asyncio.run(main())
+"""

@@ -27,13 +27,16 @@ Run a simulation on the currently loaded model and present results.
    run_simulation(osm_path=<osm_path from save>, epw_path="<epw_path>")
    ```
 
-4. Poll until complete — first status check ~60 seconds after submitting, then
-   no more than once per minute (every 2-3 minutes for long simulations):
+4. Wait for completion. Call this repeatedly until `status` is terminal
+   (`success`, `failed`, `cancelled`, `error`); the server holds each call open
+   until the run finishes or the wait cap passes (`wait_exhausted: true` means
+   call again):
    ```
-   get_run_status(run_id=<id>)
+   get_run_status(run_id=<id>, wait_seconds=50)
    ```
-   Each status check costs a full LLM turn. If your client can wait (e.g. a
-   shell sleep), wait before checking rather than polling back-to-back.
+   Each status check costs a full LLM turn. If your client cannot hold a call
+   that long, use `wait_seconds=0` and sleep `poll_interval_seconds` (from the
+   response) between calls rather than polling back-to-back.
 
 5. Extract key results:
    ```

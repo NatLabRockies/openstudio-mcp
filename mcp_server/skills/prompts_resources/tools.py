@@ -48,7 +48,8 @@ def register(mcp):
             'hvac_only=True)  # standards-tuned swap, loads untouched\n'
             '3. save_osm_model(save_name="sweep_a") and '
             "run_simulation(osm_path=<osm_path from save>)\n"
-            "4. get_run_status(run_id=<id from run_simulation>) until complete\n"
+            "4. get_run_status(run_id=<id from run_simulation>, wait_seconds=50) "
+            "repeatedly until status is terminal\n"
             f'5. create_typical_building(system_type="{system_b}", '
             'hvac_only=True)  # swap to candidate B on the SAME model\n'
             '6. save_osm_model(save_name="sweep_b") and '
@@ -118,8 +119,8 @@ def register(mcp):
             "2. list_spaces() — verify geometry and loads\n"
             '3. save_osm_model(save_name="full_building") and '
             "run_simulation(osm_path=<osm_path from save>)\n"
-            "4. Poll get_run_status(run_id=<id from run_simulation>) "
-            "until complete\n"
+            "4. get_run_status(run_id=<id from run_simulation>, wait_seconds=50) "
+            "repeatedly until status is terminal\n"
             "5. extract_summary_metrics(run_id=<id>) — review EUI and "
             "unmet hours"
         )

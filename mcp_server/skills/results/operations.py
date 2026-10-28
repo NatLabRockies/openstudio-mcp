@@ -148,8 +148,8 @@ def extract_summary_metrics(run_id: str, include_raw: bool = False) -> dict[str,
         return {
             "ok": False, "run_id": run_id, "status": status,
             "error": (
-                "Run has not finished — poll get_run_status until it is "
-                "terminal, then extract."),
+                "Run has not finished — call get_run_status(run_id, wait_seconds=50) "
+                "repeatedly until status is terminal, then extract."),
         }
 
     sql_path = _find_first_existing(run_dir, ["run/eplusout.sql", "eplusout.sql"])

@@ -254,6 +254,8 @@ untrusted measures.
 | `OSMCP_SANDBOX_RLIMIT_CPU` | `0` | Optional CPU-seconds limit. Disabled by default because annual simulations can be long-running. |
 | `OSMCP_SANDBOX_RLIMIT_AS` | `0` | Optional virtual-memory limit. Prefer Docker memory limits because restrictive address-space limits can break EnergyPlus. |
 | `OSMCP_SIM_TIMEOUT_SECONDS` | `7200` | Wall-clock timeout for a simulation. `0` disables the timeout. |
+| `OSMCP_WAIT_MAX_SECONDS` | `50` | Cap on `get_run_status(wait_seconds=...)`, the time the server holds a status call open for a run to finish. 50 fits under the ~60 s per-call limit of Claude Desktop, Codex CLI and Cursor; raise it only for clients that tolerate long calls (Claude Code CLI) and raise any reverse-proxy read timeout with it. |
+| `OSMCP_POLL_HINT_MIN_SECONDS` / `OSMCP_POLL_HINT_MAX_SECONDS` | `15` / `300` | Bounds on the advisory `poll_interval_seconds` that `get_run_status` returns for a run that is still queued or running. Must satisfy `0 < min <= max`, else both defaults apply. |
 | `OSMCP_ALLOW_UNSANDBOXED` | unset | In HTTP mode the server refuses to start (exit 3) unless the full tier is configured (`OSMCP_SANDBOX=auto`, `OSMCP_SANDBOX_NET=deny`, Linux). `true` overrides with a logged warning. |
 | `OSMCP_ENABLE_CODE_TOOLS` | `true` | Set `false` to not register the code-authoring tools (`create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin`, `install_plugin_packages`) on a deployment that must not let agents write code. |
 | `OSMCP_TOOLS_ALLOW` | unset | Comma list; when set, only these tools are registered. Unknown names refuse startup. |
