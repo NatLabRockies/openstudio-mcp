@@ -559,7 +559,7 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 | `run_osw` | Run EnergyPlus from an OSW file |
 | `validate_osw` | Validate an OSW workflow file |
 | `validate_model` | Pre-sim check: weather, design days, HVAC, constructions |
-| `get_run_status` | Poll run status |
+| `get_run_status` | Run status; `wait_seconds=50` holds the call until the run finishes, `poll_interval_seconds` says when to check again |
 | `get_run_logs` | Tail simulation logs |
 | `get_run_artifacts` | List output files |
 | `cancel_run` | Cancel a running simulation |
