@@ -46,6 +46,36 @@ MAX_CONCURRENCY_PER_USER = _safe_int(_raw_per_user, 0)
 _raw_tail = os.environ.get("OPENSTUDIO_MCP_DEFAULT_LOG_TAIL", os.environ.get("OSMCP_LOG_TAIL_DEFAULT", "200"))
 LOG_TAIL_DEFAULT = _safe_int(_raw_tail, 200)
 
+# get_run_status polling (issue #200). WAIT_MAX_SECONDS caps the server-side
+# `wait_seconds` hold; 50 fits under the ~60 s per-call limit of Claude Desktop,
+# Codex CLI and Cursor. Claude Code CLI tolerates hours, so operators serving only
+# that client may raise it (and must raise any reverse-proxy read timeout with it).
+WAIT_MAX_SECONDS = max(0, _safe_int(os.environ.get("OSMCP_WAIT_MAX_SECONDS", "50"), 50))
+
+_POLL_HINT_DEFAULTS = (15, 300)
+
+
+def _poll_hint_bounds(raw_min: str, raw_max: str) -> tuple[int, int]:
+    """Validate the poll-hint clamp as a pair: 0 < min <= max, else both defaults.
+
+    Falling back on one side only could invert the pair (min above max), which
+    would make every hint collapse to a single value.
+    """
+    lo, hi = _safe_int(raw_min, 0), _safe_int(raw_max, 0)
+    if 0 < lo <= hi:
+        return lo, hi
+    print(f"[config] OSMCP_POLL_HINT_MIN_SECONDS={raw_min!r} / "
+          f"OSMCP_POLL_HINT_MAX_SECONDS={raw_max!r} must satisfy 0 < min <= max; "
+          f"using defaults {_POLL_HINT_DEFAULTS}.", file=sys.stderr)
+    return _POLL_HINT_DEFAULTS
+
+
+# Bounds on the advisory `poll_interval_seconds` returned by get_run_status.
+POLL_HINT_MIN_SECONDS, POLL_HINT_MAX_SECONDS = _poll_hint_bounds(
+    os.environ.get("OSMCP_POLL_HINT_MIN_SECONDS", str(_POLL_HINT_DEFAULTS[0])),
+    os.environ.get("OSMCP_POLL_HINT_MAX_SECONDS", str(_POLL_HINT_DEFAULTS[1])),
+)
+
 # Run-dir retention (whole-container garbage collection). OFF by default — the
 # background sweeper only runs when explicitly enabled, via the `--gc` / `--gc-days`
 # CLI flag or by setting RUN_RETENTION_DAYS > 0. When on, it deletes run dirs older

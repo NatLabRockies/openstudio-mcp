@@ -88,7 +88,7 @@ After any workflow:
 ```
 save_osm_model(save_name="<name>")              # response carries osm_path
 run_simulation(osm_path=<osm_path from save>, epw_path="/inputs/<city>.epw")
-get_run_status(run_id=<id>)
+get_run_status(run_id=<id>, wait_seconds=50)      # repeat until status is terminal
 extract_summary_metrics(run_id=<id>)
 ```
 

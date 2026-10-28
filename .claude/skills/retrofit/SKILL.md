@@ -15,7 +15,7 @@ Ensure a simulation has been run on the current model. If not:
 ```
 save_osm_model(save_name="baseline")            # response carries osm_path
 run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
-get_run_status(run_id=<id>)
+get_run_status(run_id=<id>, wait_seconds=50)      # repeat until status is terminal
 extract_summary_metrics(run_id=<baseline_id>)
 ```
 Record baseline EUI and end-use breakdown.
@@ -59,7 +59,7 @@ For typical savings ranges, fetch the catalog: `get_skill_file(skill_name="retro
 ```
 save_osm_model(save_name="retrofit")            # response carries osm_path
 run_simulation(osm_path=<osm_path from save>, epw_path="<epw>")
-get_run_status(run_id=<id>)
+get_run_status(run_id=<id>, wait_seconds=50)      # repeat until status is terminal
 extract_summary_metrics(run_id=<retrofit_id>)
 extract_end_use_breakdown(run_id=<retrofit_id>)
 ```

@@ -153,6 +153,27 @@ def code_mode_transform():
     return CodeMode(discovery_tools=discovery, execute_tool_name=CODE_MODE_EXECUTE)
 
 
+PROXY_READ_TIMEOUT_BUDGET_SECONDS = 55  # nginx proxy_read_timeout defaults to 60 s
+
+
+def wait_cap_proxy_warning(cap_seconds: int) -> str | None:
+    """Operator warning when the get_run_status wait cap would outlive a default proxy.
+
+    A held `wait_seconds` call is one HTTP response. nginx closes an idle upstream
+    response at 60 s by default (Cloudflare 100 s, Caddy/Traefik unbounded), so a
+    cap above 55 s under HTTP transport needs the proxy's read timeout raised too.
+    Returns the message, or None when nothing needs saying (stdio has no proxy).
+    """
+    if not _http() or cap_seconds <= PROXY_READ_TIMEOUT_BUDGET_SECONDS:
+        return None
+    return (
+        f"OSMCP_WAIT_MAX_SECONDS={cap_seconds} exceeds the {PROXY_READ_TIMEOUT_BUDGET_SECONDS} s "
+        "budget for a default reverse-proxy read timeout (nginx: 60 s). A held "
+        "get_run_status call will be cut by the proxy unless its read timeout is raised "
+        "above the cap."
+    )
+
+
 def enforce_http_sandbox() -> None:
     """Refuse to serve remote users without full kernel confinement.
 

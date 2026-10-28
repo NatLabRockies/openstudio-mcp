@@ -1,17 +1,19 @@
 # mcp_server/tools/workflow_tools.py
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import os
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -25,7 +27,10 @@ from mcp_server.config import (
     MAX_CONCURRENCY_PER_USER,
     OSCLI_GEM_PATH,
     OSCLI_GEMFILE,
+    POLL_HINT_MAX_SECONDS,
+    POLL_HINT_MIN_SECONDS,
     SIM_TIMEOUT_SECONDS,
+    WAIT_MAX_SECONDS,
     InvalidUserKeyError,
     is_path_allowed,
     pkgs_root_for,
@@ -101,6 +106,14 @@ _sim_lock = threading.RLock()
 _queue: deque[str] = deque()
 _dispatcher_started = False
 _TERMINAL = frozenset({"success", "failed", "cancelled", "error"})
+
+# Gauge of get_run_status calls currently held open by `wait_seconds` (issue #200).
+# Only touched on the event loop thread, so no lock; read by tests and the exit log line.
+_active_waits = 0
+
+
+def active_waiters() -> int:
+    return _active_waits
 
 
 def _run_record_path(run_dir: Path) -> Path:
@@ -1002,6 +1015,40 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
     return rec
 
 
+def poll_interval_seconds(status: str, elapsed_seconds: float | None,
+                          queue_position: int | None) -> int:
+    """Advisory seconds before the next get_run_status call (issue #200).
+
+    Pure function of the run's state. 0 once terminal (nothing left to wait for);
+    30 s per queue slot while queued; 30 / 60 / 120 s tiers by elapsed run time.
+    Non-terminal values are clamped to [POLL_HINT_MIN_SECONDS, POLL_HINT_MAX_SECONDS].
+    Name mirrors `pollInterval` in the MCP Tasks extension; unit is seconds like
+    every other duration in this API.
+    """
+    if status in _TERMINAL:
+        return 0
+    if status == "queued":
+        raw = 30 * max(1, queue_position or 1)
+    elif elapsed_seconds is None or elapsed_seconds < 60:
+        raw = 30
+    elif elapsed_seconds < 300:
+        raw = 60
+    else:
+        raw = 120
+    return max(POLL_HINT_MIN_SECONDS, min(POLL_HINT_MAX_SECONDS, raw))
+
+
+def _elapsed_seconds(rec: RunRecord, now: float) -> float | None:
+    """Run time so far (running) or total (terminal); None before launch.
+
+    A run cancelled while queued is terminal with ended_at set but started_at None.
+    """
+    if rec.started_at is None:
+        return None
+    end = rec.ended_at if rec.status in _TERMINAL and rec.ended_at is not None else now
+    return round(max(0.0, end - rec.started_at), 3)
+
+
 def get_run_status(run_id: str) -> dict[str, Any]:
     rec = _get_run_record(run_id)
     if not rec:
@@ -1015,29 +1062,42 @@ def get_run_status(run_id: str) -> dict[str, Any]:
     with _sim_lock:
         rec = _refresh_status(rec)
         _RUNS[run_id] = rec
+        # Persisted on every snapshot, not only on a status change: a record reclassified
+        # while being reloaded from disk (queued across a restart, #175) arrives here
+        # already terminal and must still reach the file. A held `wait_seconds` call
+        # therefore rewrites run_record.json once a second; it is a few hundred bytes.
         _persist_run_record(rec)
+        # Everything below is built from this copy: once the lock drops the dispatcher
+        # may launch or finish the live record, and a response mixing the two states
+        # (status=running with a queue_position) would contradict its own contract.
+        snap = replace(rec)
+        now = _now()
+        queue_position = _queue_position(run_id) if snap.status == "queued" else None
+    elapsed = _elapsed_seconds(snap, now)
 
     run_dict = {
-        "run_id": rec.run_id,
-        "name": rec.name,
-        "status": rec.status,
-        "created_at": rec.created_at,
-        "started_at": rec.started_at,
-        "ended_at": rec.ended_at,
-        "pid": rec.pid,
-        "run_dir": str(rec.run_dir),
-        "osw_path": str(rec.osw_path),
-        "epw_path": str(rec.epw_path) if rec.epw_path else None,
-        "exit_code": rec.exit_code,
-        "error": rec.error,
+        "run_id": snap.run_id,
+        "name": snap.name,
+        "status": snap.status,
+        "created_at": snap.created_at,
+        "started_at": snap.started_at,
+        "ended_at": snap.ended_at,
+        "elapsed_seconds": elapsed,
+        "queue_position": queue_position,
+        "pid": snap.pid,
+        "run_dir": str(snap.run_dir),
+        "osw_path": str(snap.osw_path),
+        "epw_path": str(snap.epw_path) if snap.epw_path else None,
+        "exit_code": snap.exit_code,
+        "error": snap.error,
     }
 
     # On failure, attach error_summary from eplusout.err if available
-    if rec.status == "failed":
-        err_path = rec.run_dir / "run" / "eplusout.err"
+    if snap.status == "failed":
+        err_path = snap.run_dir / "run" / "eplusout.err"
         if not err_path.exists():
-            err_path = rec.run_dir / "energyplus.err"
-        if err_path.exists() and _inside(err_path, rec.run_dir):
+            err_path = snap.run_dir / "energyplus.err"
+        if err_path.exists() and _inside(err_path, snap.run_dir):
             try:
                 from mcp_server.skills.results.err_parser import parse_err_file
                 # Oversize err files (warning floods) are parsed from the head and flagged,
@@ -1056,7 +1116,76 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             except (ValueError, OSError):
                 pass
 
-    return {"ok": True, "run": run_dict}
+    return {
+        "ok": True,
+        "run": run_dict,
+        "poll_interval_seconds": poll_interval_seconds(snap.status, elapsed, queue_position),
+        "wait_exhausted": False,
+    }
+
+
+def _queue_position(run_id: str) -> int | None:
+    """1-based slot among runs that are still queued. Caller holds _sim_lock.
+
+    cancel_run leaves its entry in `_queue` (the dispatcher drops it on its next
+    walk, which it skips while every slot is busy), so a raw deque index would
+    count cancelled predecessors and inflate both the slot and the poll hint.
+    """
+    pos = 0
+    for rid in _queue:
+        queued = _RUNS.get(rid)
+        if queued is None or queued.status != "queued":
+            continue
+        pos += 1
+        if rid == run_id:
+            return pos
+    return None
+
+
+async def wait_for_run_status(run_id: str, wait_seconds: int = 0) -> dict[str, Any]:
+    """get_run_status that holds the call open until terminal or `wait_seconds` (#200).
+
+    Runs on the event loop so a held call reserves no worker thread. The streamable
+    HTTP transport does not cancel an in-flight handler when the client cancels,
+    closes its session or drops the connection (verified 2026-10-28), so an abandoned
+    wait runs out at the cap; CancelledError is still handled for server shutdown.
+    Each snapshot is the sync primitive in a thread
+    (contextvars propagate, so user_key ownership scoping still applies). The first
+    snapshot precedes any sleep: unknown / foreign runs return exactly as fast as
+    today. The deadline is taken before that snapshot, so the call never overruns
+    `wait_seconds` by more than one snapshot. Never sleeps under `_sim_lock`.
+    `wait_exhausted` is True only when a positive wait ended with the run still
+    non-terminal; it never mutates run state.
+    """
+    global _active_waits
+    cap = max(0, min(int(wait_seconds), WAIT_MAX_SECONDS))
+    deadline = time.monotonic() + cap
+    _active_waits += 1
+    reason = "error"
+    try:
+        while True:
+            snap = await asyncio.to_thread(get_run_status, run_id)
+            if not snap.get("ok"):
+                reason = "unknown"
+                return snap
+            if snap["run"]["status"] in _TERMINAL:
+                reason = "terminal"
+                return snap
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if cap > 0:
+                    snap["wait_exhausted"] = True
+                reason = "exhausted" if cap > 0 else "snapshot"
+                return snap
+            await asyncio.sleep(min(1.0, remaining))
+    except asyncio.CancelledError:
+        reason = "cancelled"
+        raise
+    finally:
+        _active_waits -= 1
+        if cap > 0:
+            print(f"[run_wait] run={run_id} reason={reason} active={_active_waits}",
+                  file=sys.stderr, flush=True)
 
 
 def get_run_logs(run_id: str, tail: int | None = None, stream: LogStream = "openstudio") -> dict[str, Any]:

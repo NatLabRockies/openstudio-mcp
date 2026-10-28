@@ -5,11 +5,11 @@ from mcp_server.skills.simulation.operations import (
     cancel_run,
     get_run_artifacts,
     get_run_logs,
-    get_run_status,
     run_osw,
     run_simulation,
     validate_model_op,
     validate_osw,
+    wait_for_run_status,
 )
 from mcp_server.skills.simulation.retention import (
     cleanup_runs,
@@ -66,19 +66,29 @@ def register(mcp):
         first (via change_building_location), or pass epw_path here. Without
         design days, HVAC sizing fails.
 
-        Workflow: run_simulation → get_run_status (poll) → extract_summary_metrics.
+        Workflow: run_simulation → get_run_status(run_id, wait_seconds=50)
+        repeatedly until status is terminal → extract_summary_metrics.
         """
         return run_simulation(osm_path=osm_path, epw_path=epw_path, name=name)
 
     @mcp.tool(tags={"core", "simulation"}, name="get_run_status")
-    def get_run_status_tool(run_id: str):
-        """Get current status of an EnergyPlus simulation run: queued, running,
-        completed, or failed. Returns progress percentage and elapsed time.
+    async def get_run_status_tool(run_id: str, wait_seconds: int = 0):
+        """Status of an EnergyPlus simulation run: queued, running, success,
+        failed or cancelled (terminal: success, failed, cancelled, error).
 
-        Poll no more than once per minute. For long simulations (>2 min),
-        poll every 2-3 minutes.
+        Call get_run_status(run_id, wait_seconds=50) repeatedly until status is
+        terminal. The server holds the call open up to wait_seconds (capped by
+        OSMCP_WAIT_MAX_SECONDS, default 50) and returns as soon as the run
+        finishes; wait_exhausted=true means the cap passed with the run still
+        going, so call again. If your client cannot hold a call that long, use
+        wait_seconds=0 and sleep poll_interval_seconds between calls.
+
+        Returns run.status, run.elapsed_seconds (null while queued),
+        run.queue_position (null unless queued), poll_interval_seconds (advisory,
+        0 once terminal) and wait_exhausted. Each call costs a full LLM turn, so
+        never poll back-to-back.
         """
-        return get_run_status(run_id)
+        return await wait_for_run_status(run_id, wait_seconds)
 
     @mcp.tool(tags={"simulation"}, name="get_run_logs")
     def get_run_logs_tool(run_id: str, tail: int | None = None, stream: str = "openstudio"):

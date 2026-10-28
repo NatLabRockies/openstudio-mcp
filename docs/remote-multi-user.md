@@ -356,6 +356,8 @@ around it. Pick one:
   the boundary you can run `MCP_AUTH=none`.
 - **Reverse proxy for TLS.** Front it with Caddy/nginx/Traefik (or a Cloudflare
   Tunnel) terminating HTTPS and forwarding to `:8000`. Keep `MCP_AUTH=token`.
+  The proxy's upstream read timeout must exceed `OSMCP_WAIT_MAX_SECONDS` (default
+  50 s): `get_run_status(wait_seconds=50)` holds one HTTP response open that long.
 
 Don't expose port 8000 to the public internet directly.
 
@@ -379,6 +381,8 @@ Don't expose port 8000 to the public internet directly.
 | `MCP_JWT_VERIFY_TIMEOUT` | `3.0` | seconds to wait for a complete verify-token answer (caps the whole call, not each read) before treating the portal as unreachable |
 | `MCP_JWT_VERIFY_CACHE_TTL` | `30` | seconds a `valid` answer is cached per token (`0` = ask the portal on every request) |
 | `OSMCP_MAX_CONCURRENCY` | `1` | max simultaneous EnergyPlus simulations |
+| `OSMCP_WAIT_MAX_SECONDS` | `50` | cap on `get_run_status(wait_seconds=...)`: how long one status call is held open for the run to finish. Agents are told to ask for 50; raise both together for Claude Code CLI deployments. The reverse proxy's read timeout must exceed this cap (nginx `proxy_read_timeout` defaults to 60 s); above 55 s the server logs a startup warning |
+| `OSMCP_POLL_HINT_MIN_SECONDS` / `OSMCP_POLL_HINT_MAX_SECONDS` | `15` / `300` | bounds on the advisory `poll_interval_seconds` in `get_run_status` responses (`0 < min <= max`, else defaults) |
 | `OSMCP_MAX_CONCURRENCY_PER_USER` | `0` | per-user sim cap for fairness (`0` = no limit) |
 | `OSMCP_MAX_SESSIONS` | `16` | LRU cap on resident per-session models |
 | `OSMCP_SESSION_TTL` | `1800` | idle seconds before a session model is dropped (`0` disables) |
