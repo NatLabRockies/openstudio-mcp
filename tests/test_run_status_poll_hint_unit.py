@@ -147,6 +147,49 @@ def test_snapshot_cancelled_while_queued_has_no_elapsed(monkeypatch):
     assert res["poll_interval_seconds"] == 0
 
 
+def test_response_built_from_snapshot_taken_under_lock(monkeypatch):
+    # Regression: status, elapsed and queue_position were read from the live record after
+    # _sim_lock was released, so a dispatcher launch in that window produced
+    # status=running with queue_position=1 (Codex review of PR #216). The response must
+    # come from one copy taken under the lock.
+    monkeypatch.setattr(ops, "_now", lambda: 1000.0)
+    ops._RUNS["q"] = _mk_rec("q")
+    ops._queue.append("q")
+    real_elapsed = ops._elapsed_seconds
+
+    def launch_then_delegate(rec, now):
+        # _elapsed_seconds runs after the lock drops: stand in for the dispatcher thread
+        # and launch the live record right there, before the response is assembled.
+        live = ops._RUNS["q"]
+        live.status = "running"
+        live.started_at = 900.0
+        live.pid = 4242
+        return real_elapsed(rec, now)
+
+    monkeypatch.setattr(ops, "_elapsed_seconds", launch_then_delegate)
+    res = ops.get_run_status("q")
+    run = res["run"]
+    assert (run["status"], run["queue_position"], run["elapsed_seconds"]) == ("queued", 1, None), run
+    assert res["poll_interval_seconds"] == 30
+
+
+def test_queue_position_skips_cancelled_predecessors(monkeypatch):
+    # Regression: cancel_run leaves its entry in _queue and the dispatcher only drops it
+    # on a walk it skips while every slot is busy, so a raw deque index reported the
+    # next run as slot 2 (60 s hint) instead of slot 1 (Codex review of PR #216)
+    monkeypatch.setattr(ops, "_now", lambda: 1000.0)
+    for rid in ("a", "b", "c"):
+        ops._RUNS[rid] = _mk_rec(rid)
+        ops._queue.append(rid)
+    ops._RUNS["a"].status = "cancelled"
+    ops._RUNS["a"].ended_at = 999.0
+    b = ops.get_run_status("b")
+    c = ops.get_run_status("c")
+    assert (b["run"]["queue_position"], b["poll_interval_seconds"]) == (1, 30), b
+    assert (c["run"]["queue_position"], c["poll_interval_seconds"]) == (2, 60), c
+    assert ops.get_run_status("a")["run"]["queue_position"] is None
+
+
 # ---------------------------------------------------------------- wait loop
 
 class _FakeClock:

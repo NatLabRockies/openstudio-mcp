@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -1067,34 +1067,37 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         # already terminal and must still reach the file. A held `wait_seconds` call
         # therefore rewrites run_record.json once a second; it is a few hundred bytes.
         _persist_run_record(rec)
-        queue_position = (list(_queue).index(run_id) + 1
-                          if rec.status == "queued" and run_id in _queue else None)
-    now = _now()
-    elapsed = _elapsed_seconds(rec, now)
+        # Everything below is built from this copy: once the lock drops the dispatcher
+        # may launch or finish the live record, and a response mixing the two states
+        # (status=running with a queue_position) would contradict its own contract.
+        snap = replace(rec)
+        now = _now()
+        queue_position = _queue_position(run_id) if snap.status == "queued" else None
+    elapsed = _elapsed_seconds(snap, now)
 
     run_dict = {
-        "run_id": rec.run_id,
-        "name": rec.name,
-        "status": rec.status,
-        "created_at": rec.created_at,
-        "started_at": rec.started_at,
-        "ended_at": rec.ended_at,
+        "run_id": snap.run_id,
+        "name": snap.name,
+        "status": snap.status,
+        "created_at": snap.created_at,
+        "started_at": snap.started_at,
+        "ended_at": snap.ended_at,
         "elapsed_seconds": elapsed,
         "queue_position": queue_position,
-        "pid": rec.pid,
-        "run_dir": str(rec.run_dir),
-        "osw_path": str(rec.osw_path),
-        "epw_path": str(rec.epw_path) if rec.epw_path else None,
-        "exit_code": rec.exit_code,
-        "error": rec.error,
+        "pid": snap.pid,
+        "run_dir": str(snap.run_dir),
+        "osw_path": str(snap.osw_path),
+        "epw_path": str(snap.epw_path) if snap.epw_path else None,
+        "exit_code": snap.exit_code,
+        "error": snap.error,
     }
 
     # On failure, attach error_summary from eplusout.err if available
-    if rec.status == "failed":
-        err_path = rec.run_dir / "run" / "eplusout.err"
+    if snap.status == "failed":
+        err_path = snap.run_dir / "run" / "eplusout.err"
         if not err_path.exists():
-            err_path = rec.run_dir / "energyplus.err"
-        if err_path.exists() and _inside(err_path, rec.run_dir):
+            err_path = snap.run_dir / "energyplus.err"
+        if err_path.exists() and _inside(err_path, snap.run_dir):
             try:
                 from mcp_server.skills.results.err_parser import parse_err_file
                 # Oversize err files (warning floods) are parsed from the head and flagged,
@@ -1116,9 +1119,27 @@ def get_run_status(run_id: str) -> dict[str, Any]:
     return {
         "ok": True,
         "run": run_dict,
-        "poll_interval_seconds": poll_interval_seconds(rec.status, elapsed, queue_position),
+        "poll_interval_seconds": poll_interval_seconds(snap.status, elapsed, queue_position),
         "wait_exhausted": False,
     }
+
+
+def _queue_position(run_id: str) -> int | None:
+    """1-based slot among runs that are still queued. Caller holds _sim_lock.
+
+    cancel_run leaves its entry in `_queue` (the dispatcher drops it on its next
+    walk, which it skips while every slot is busy), so a raw deque index would
+    count cancelled predecessors and inflate both the slot and the poll hint.
+    """
+    pos = 0
+    for rid in _queue:
+        queued = _RUNS.get(rid)
+        if queued is None or queued.status != "queued":
+            continue
+        pos += 1
+        if rid == run_id:
+            return pos
+    return None
 
 
 async def wait_for_run_status(run_id: str, wait_seconds: int = 0) -> dict[str, Any]:

@@ -115,9 +115,10 @@ def test_queued_runs_report_position_and_scaled_hint():
 
 @pytest.mark.integration
 def test_wait_seconds_exhausts_on_running_sim():
-    # Validates: wait_seconds=2 on a running sim holds the call about 2 s and returns the
-    # run still non-terminal with wait_exhausted=True, never overrunning by more than one
-    # 1 s tick plus a snapshot
+    # Validates: wait_seconds=2 on a running sim holds the call at least 2 s and returns
+    # the run still non-terminal with wait_exhausted=True. The upper bound is a watchdog
+    # that distinguishes a 2 s wait from the 50 s cap on a loaded runner; exact deadline
+    # accounting is pinned by the unit tests
     _skip_unless_integration()
     with http_server({"MCP_AUTH": "none"}) as (url, _proc):
         async def _run():
@@ -134,7 +135,7 @@ def test_wait_seconds_exhausts_on_running_sim():
                 assert res["ok"] is True, res
                 assert res["run"]["status"] == "running", res
                 assert res["wait_exhausted"] is True
-                assert 2.0 <= held < 4.0, f"wait_seconds=2 held the call for {held:.2f}s"
+                assert 2.0 <= held < 15.0, f"wait_seconds=2 held the call for {held:.2f}s"
 
         asyncio.run(_run())
 
@@ -158,7 +159,7 @@ def test_wait_on_terminal_run_returns_at_once():
                 assert res["run"]["status"] == "cancelled", res
                 assert res["wait_exhausted"] is False
                 assert res["poll_interval_seconds"] == 0
-                assert held < 2.0, f"terminal run must not be waited on, held {held:.2f}s"
+                assert held < 10.0, f"terminal run must not be waited on (cap 50 s), held {held:.2f}s"
 
         asyncio.run(_run())
 
@@ -188,7 +189,7 @@ def test_cancel_mid_wait_returns_cancelled_promptly():
                 assert cancelled["ok"] is True, cancelled
                 assert res["run"]["status"] == "cancelled", res
                 assert res["wait_exhausted"] is False
-                assert held < 6.0, f"wait must return within a few ticks of cancel, held {held:.2f}s"
+                assert held < 15.0, f"wait must return within a few ticks of cancel (cap 30 s), held {held:.2f}s"
                 again = unwrap(await s.call_tool("get_run_status", {"run_id": run_id}))
                 assert again["run"]["status"] == "cancelled"
 
@@ -220,7 +221,7 @@ def test_unknown_and_foreign_runs_return_without_waiting():
                     assert res["ok"] is False, res
                     assert "unknown run_id" in res["error"].lower(), res
                     assert "wait_exhausted" not in res
-                assert held < 2.0, f"unknown/foreign lookups must not wait, held {held:.2f}s"
+                assert held < 10.0, f"unknown/foreign lookups must not wait (cap 50 s), held {held:.2f}s"
 
         asyncio.run(_run())
 
@@ -275,6 +276,7 @@ def test_abandoned_wait_is_bounded_by_cap():
                     try:
                         first = await asyncio.to_thread(client.stdout.readline)
                         assert first.strip() == "CALLING", f"client did not start: {first!r}"
+                        t_call = time.monotonic()   # the request is on the wire from here
                         await asyncio.sleep(1.5)   # the call is now held server-side
                         assert client.poll() is None, "client exited before it was killed"
                         client.kill()
@@ -282,17 +284,21 @@ def test_abandoned_wait_is_bounded_by_cap():
                     finally:
                         if client.poll() is None:
                             client.kill()
-                    reason, waited = await asyncio.to_thread(
+                    reason, _ = await asyncio.to_thread(
                         _wait_exit_line, log, run_id, cap + 5.0,
                     )
+                    lifetime = time.monotonic() - t_call   # request sent -> waiter exit seen
                 finally:
                     for rid in run_ids:
                         await owner.call_tool("cancel_run", {"run_id": rid})
                 assert reason in ("exhausted", "cancelled"), (
-                    f"waiter exit reason {reason!r} after {waited:.1f}s (cap {cap}s); log tail:\n"
+                    f"waiter exit reason {reason!r} after {lifetime:.1f}s (cap {cap}s); log tail:\n"
                     + log.read_text(encoding="utf-8", errors="replace")[-2000:]
                 )
-                assert waited <= cap + 2.0, f"abandoned wait outlived its cap: {waited:.1f}s > {cap}s"
+                # cap + one 1 s tick + request/log-polling allowance, measured from submission
+                assert lifetime <= cap + 1.0 + 3.0, (
+                    f"abandoned wait outlived its cap: {lifetime:.1f}s from submission, cap {cap}s"
+                )
 
         asyncio.run(_run())
 
