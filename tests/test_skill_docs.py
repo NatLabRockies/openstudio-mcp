@@ -235,6 +235,8 @@ def test_every_eval_file_has_positive_cases():
 
 POLLING_SURFACES = {
     "simulate SKILL.md": SERVED_SKILLS_DIR / "simulate" / "SKILL.md",
+    "new-building SKILL.md": SERVED_SKILLS_DIR / "new-building" / "SKILL.md",
+    "retrofit SKILL.md": SERVED_SKILLS_DIR / "retrofit" / "SKILL.md",
     "simulation/tools.py": REPO_ROOT / "mcp_server" / "skills" / "simulation" / "tools.py",
     "server.py": REPO_ROOT / "mcp_server" / "server.py",
     "prompts_resources/tools.py": PROMPTS_TOOLS_PY,
