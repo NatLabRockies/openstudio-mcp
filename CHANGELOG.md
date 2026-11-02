@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+- Experimental `OSMCP_TOOL_SEARCH=1`: lists only the `core` tools plus `search_tools` (BM25) and
+  `call_tool`, cutting the up-front catalog from ~52K to ~8K tokens and staying under host tool
+  caps (VS Code Copilot 128, Windsurf ~100). Off by default and not for Claude Code, which defers
+  tools itself; LLM accuracy in this mode is not yet benchmarked. The synthetic tools follow the
+  tool policy, and the LLM harness scores `call_tool` as the tool it proxies
+  (`LLM_TESTS_TOOL_SEARCH=1`). (#223)
+
 ### Fixed
 - `cancel_run` no longer refuses to signal a run whose child is still inside `execve`:
   `/proc/<pid>/cmdline` is empty for that instant, and the run-record trust check answered

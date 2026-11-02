@@ -114,6 +114,8 @@ SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/skills"))
 INPUT_ROOT = Path(os.environ.get("OPENSTUDIO_MCP_INPUT_ROOT", "/inputs")).resolve()
 
 ENABLE_CODE_MODE = os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
+# List only `core` tools + search_tools/call_tool, for hosts without deferred tool loading.
+ENABLE_TOOL_SEARCH = os.environ.get("OSMCP_TOOL_SEARCH", "").lower() in ("1", "true")
 
 # Subprocess confinement for measure/simulation execution (see mcp_server/sandbox.py).
 #   off    — full passthrough (explicit escape hatch for trusted/local-tooling use)

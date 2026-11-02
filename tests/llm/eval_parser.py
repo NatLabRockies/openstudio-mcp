@@ -223,6 +223,7 @@ def load_should_not_trigger() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _CODE_MODE_META = frozenset({"search", "get_schema", "execute"})
+_TOOL_SEARCH_META = frozenset({"search_tools", "call_tool"})
 _MCP_PREFIX = "mcp__openstudio__"
 _CALL_TOOL_RE = re.compile(r"call_tool\(\s*[\"'](\w+)[\"']\s*,?\s*")
 
@@ -284,7 +285,8 @@ def normalize_calls(result_or_calls) -> list[dict]:
     """Uniform [{"tool", "input"}] from an AgentResult or raw tool-call list.
 
     Direct MCP calls keep their input dicts; CodeMode execute blocks are
-    expanded into the tools they invoke (inputs parsed best-effort).
+    expanded into the tools they invoke (inputs parsed best-effort), and a
+    tool-search call_tool becomes the tool it proxies (OSMCP_TOOL_SEARCH).
     """
     raw = (result_or_calls if isinstance(result_or_calls, list)
            else result_or_calls.mcp_tool_calls)
@@ -294,6 +296,11 @@ def normalize_calls(result_or_calls) -> list[dict]:
         if name in _CODE_MODE_META:
             if name == "execute":
                 calls.extend(calls_from_code(c["input"].get("code", "")))
+            continue
+        if name in _TOOL_SEARCH_META:
+            if name == "call_tool":
+                inp = c.get("input") or {}
+                calls.append({"tool": str(inp.get("name", "")), "input": inp.get("arguments") or {}})
             continue
         calls.append({"tool": name, "input": c.get("input") or {}})
     return calls

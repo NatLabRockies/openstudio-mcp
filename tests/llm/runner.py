@@ -125,14 +125,16 @@ class AgentResult:
         Includes tools called inside CodeMode execute blocks.
         """
         prefix = "mcp__openstudio__"
-        # CodeMode meta-tools (search, get_schema, execute) excluded from
-        # domain tool list — only the real tools they invoke count.
-        code_mode_meta = frozenset({"search", "get_schema", "execute"})
-        direct = [
-            c["tool"].removeprefix(prefix)
-            for c in self.mcp_tool_calls
-            if c["tool"].removeprefix(prefix) not in code_mode_meta
-        ]
+        # CodeMode / tool-search meta-tools excluded from the domain tool list;
+        # only the real tools they invoke count (call_tool's `name` argument).
+        meta = frozenset({"search", "get_schema", "execute", "search_tools"})
+        direct = []
+        for c in self.mcp_tool_calls:
+            name = c["tool"].removeprefix(prefix)
+            if name == "call_tool":
+                direct.append(str(c["input"].get("name", "")))
+            elif name not in meta:
+                direct.append(name)
         return direct + self.code_mode_tool_calls
 
     @property
@@ -721,6 +723,7 @@ def _docker_mcp_args() -> list[str]:
     # local iteration unchanged.
     image = os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev")
     code_mode = os.environ.get("LLM_TESTS_CODE_MODE", "0")
+    tool_search = os.environ.get("LLM_TESTS_TOOL_SEARCH", "0")
     args = [
         "run", "--rm", "-i",
         "-v", f"{runs_dir}:/runs",
@@ -729,6 +732,7 @@ def _docker_mcp_args() -> list[str]:
         "-v", f"{assets_dir}:/inputs:ro",
         "-e", "OPENSTUDIO_MCP_MODE=prod",
         "-e", f"OSMCP_CODE_MODE={code_mode}",
+        "-e", f"OSMCP_TOOL_SEARCH={tool_search}",
     ]
     # Ablation arm: the knowledge-layer tools are absent server-side (refusals
     # from client-side blocking would contaminate behavior) — see

@@ -16,7 +16,7 @@ pytestmark = pytest.mark.unit
 
 _POLICY_VARS = (
     "OSMCP_TOOLS_ALLOW", "OSMCP_TOOLS_DENY", "OSMCP_ENABLE_CODE_TOOLS",
-    "OSMCP_ALLOW_UNSANDBOXED", "OSMCP_CODE_MODE",
+    "OSMCP_ALLOW_UNSANDBOXED", "OSMCP_CODE_MODE", "OSMCP_TOOL_SEARCH",
 )
 
 
@@ -238,6 +238,118 @@ def test_code_mode_refuses_hidden_execute(monkeypatch):
     monkeypatch.setenv("OSMCP_TOOLS_ALLOW", "search,get_schema,apply_measure")
     with pytest.raises(RuntimeError, match="'execute'"):
         tool_policy.code_mode_transform()
+
+
+# ---------------------------------------------------------- Tool search policy
+
+def test_validate_policy_knows_tool_search_tools(monkeypatch):
+    # Validates: with OSMCP_TOOL_SEARCH=1 the synthetic search_tools/call_tool names are part
+    # of the roster for the unknown-name check, and without the flag they are typos
+    monkeypatch.setenv("OSMCP_TOOLS_ALLOW", "search_tools,call_tool,get_model_summary")
+    with pytest.raises(RuntimeError, match="'call_tool', 'search_tools'"):
+        tool_policy.validate_policy(_KNOWN)
+    monkeypatch.setenv("OSMCP_TOOL_SEARCH", "1")
+    tool_policy.validate_policy(_KNOWN)
+
+
+def test_validate_policy_refuses_code_mode_with_tool_search(monkeypatch):
+    # Validates: CodeMode and tool search each replace the listed roster; stacking them
+    # would hide call_tool behind execute, so startup refuses the combination
+    monkeypatch.setenv("OSMCP_CODE_MODE", "1")
+    monkeypatch.setenv("OSMCP_TOOL_SEARCH", "true")
+    with pytest.raises(RuntimeError, match="OSMCP_CODE_MODE and OSMCP_TOOL_SEARCH"):
+        tool_policy.validate_policy(_KNOWN)
+
+
+@pytest.mark.parametrize("deny", ["call_tool", "search_tools"])
+def test_tool_search_refuses_hidden_synthetic_tool(monkeypatch, deny):
+    # Validates: unlisted tools are reachable only through search_tools + call_tool, so a
+    # policy hiding either one refuses startup instead of serving unreachable tools
+    monkeypatch.setenv("OSMCP_TOOL_SEARCH", "1")
+    monkeypatch.setenv("OSMCP_TOOLS_DENY", deny)
+    with pytest.raises(RuntimeError, match=f"hides '{deny}'"):
+        tool_policy.tool_search_transform()
+
+
+def _search_server():
+    """Real FastMCP with the full roster registered and the search transform added."""
+    from fastmcp import FastMCP
+
+    mcp = FastMCP("t")
+    register_all_skills(mcp)
+    mcp.add_transform(tool_policy.tool_search_transform())
+    return mcp
+
+
+def test_tool_search_lists_core_tools_plus_synthetic(monkeypatch):
+    # Validates: the transform lists exactly the `core`-tagged roster plus search_tools and
+    # call_tool, so non-core tools (e.g. add_baseline_system) leave the up-front catalog
+    monkeypatch.setenv("OSMCP_TOOL_SEARCH", "1")
+    mcp = _search_server()
+    core = {d.name for d in tool_registry.descriptors().values() if "core" in d.tags}
+    listed = _tool_names(mcp)
+    assert listed == core | {"search_tools", "call_tool"}
+    assert {"list_skills", "get_skill", "load_osm_model", "run_simulation"} <= listed
+    assert "add_baseline_system" not in listed
+    assert len(listed) < 128, f"VS Code Copilot caps a request at 128 tools, listed {len(listed)}"
+
+
+@pytest.mark.parametrize(("query", "expected"), [
+    ("add VAV reheat system", "add_baseline_system"),
+    ("end use breakdown", "extract_end_use_breakdown"),
+    ("raise thermostat setpoints", "adjust_thermostat_setpoints"),
+    ("window to wall ratio", "set_window_to_wall_ratio"),
+])
+def test_tool_search_ranks_domain_tool_first(monkeypatch, query, expected):
+    # Validates: BM25 over tool names/descriptions puts the right BEM tool first for
+    # common requests; a ranking regression sends agents to the wrong tool
+    import json
+
+    from fastmcp import Client
+
+    monkeypatch.setenv("OSMCP_TOOL_SEARCH", "1")
+    mcp = _search_server()
+
+    async def _run():
+        async with Client(mcp) as c:
+            res = await c.call_tool("search_tools", {"query": query})
+            return json.loads(res.content[0].text)
+
+    hits = asyncio.run(_run())
+    assert hits[0]["name"] == expected, [h["name"] for h in hits]
+    assert len(hits) <= tool_policy.TOOL_SEARCH_MAX_RESULTS
+
+
+def test_tool_search_call_tool_reaches_unlisted_tool(monkeypatch):
+    # Validates: call_tool executes a tool that is not listed, with its arguments, and a
+    # policy-denied tool stays unreachable through the proxy (hidden = never registered)
+    from fastmcp import Client, FastMCP
+
+    monkeypatch.setenv("OSMCP_TOOL_SEARCH", "1")
+    monkeypatch.setenv("OSMCP_TOOLS_DENY", "secret")
+    mcp = FastMCP("t")
+    if tool_policy.tool_enabled("echo"):
+        @mcp.tool(name="echo")
+        def echo(text: str) -> str:
+            return f"echo:{text}"
+    if tool_policy.tool_enabled("secret"):
+        @mcp.tool(name="secret")
+        def secret() -> str:
+            return "leak"
+    mcp.add_transform(tool_policy.tool_search_transform())
+
+    async def _run():
+        async with Client(mcp) as c:
+            ok = await c.call_tool("call_tool", {"name": "echo", "arguments": {"text": "hi"}})
+            denied = await c.call_tool("call_tool", {"name": "secret", "arguments": {}},
+                                       raise_on_error=False)
+            return ok.content[0].text, denied
+
+    text, denied = asyncio.run(_run())
+    assert "echo" not in _tool_names(mcp)
+    assert text == "echo:hi"
+    assert denied.is_error is True
+    assert "unknown tool: 'secret'" in denied.content[0].text.lower()
 
 
 # ------------------------------------------------------- enforce_http_sandbox

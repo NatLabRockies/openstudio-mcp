@@ -16,6 +16,7 @@ Env:
   OSMCP_TOOLS_DENY    comma list of tools to hide (any transport); deny wins
   OSMCP_ENABLE_CODE_TOOLS=false hide CODE_AUTHORING_TOOLS (default true, any transport)
   OSMCP_ALLOW_UNSANDBOXED=true  let the HTTP server start without full confinement
+  OSMCP_TOOL_SEARCH=1 list only `core` tools plus search_tools/call_tool (see tool_search_transform)
 
 Every ALLOW/DENY entry must name a registered tool (case-insensitive); an
 unknown entry or an empty ALLOW refuses startup (``validate_policy``), so a
@@ -44,6 +45,12 @@ CODE_MODE_GET_SCHEMA = "get_schema"
 CODE_MODE_EXECUTE = "execute"
 CODE_MODE_TOOLS = frozenset({CODE_MODE_SEARCH, CODE_MODE_GET_SCHEMA, CODE_MODE_EXECUTE})
 
+# Synthetic tools FastMCP's BM25 search transform exposes (OSMCP_TOOL_SEARCH=1).
+TOOL_SEARCH_SEARCH = "search_tools"
+TOOL_SEARCH_CALL = "call_tool"
+TOOL_SEARCH_TOOLS = frozenset({TOOL_SEARCH_SEARCH, TOOL_SEARCH_CALL})
+TOOL_SEARCH_MAX_RESULTS = 8
+
 
 def _csv(name: str) -> set[str]:
     """Entries of a comma-list env var, lower-cased and stripped (tool names are snake_case)."""
@@ -61,6 +68,11 @@ def _http() -> bool:
 def _code_mode() -> bool:
     # Mirrors config.ENABLE_CODE_MODE without importing config (which reads much more env).
     return os.environ.get("OSMCP_CODE_MODE", "").lower() in ("1", "true")
+
+
+def _tool_search() -> bool:
+    # Mirrors config.ENABLE_TOOL_SEARCH, like _code_mode above.
+    return os.environ.get("OSMCP_TOOL_SEARCH", "").lower() in ("1", "true")
 
 
 _TRUE = ("1", "true", "yes", "on")
@@ -95,12 +107,18 @@ def validate_policy(known_names: Iterable[str]) -> None:
     """Refuse a policy that names tools which do not exist.
 
     ``known_names`` is the full roster seen at registration (hidden tools
-    included) plus, under OSMCP_CODE_MODE, the synthetic CodeMode names.
+    included) plus, under OSMCP_CODE_MODE / OSMCP_TOOL_SEARCH, the synthetic names.
     Raises RuntimeError naming the variable and the bad entries.
     """
+    if _code_mode() and _tool_search():
+        raise RuntimeError(
+            "OSMCP_CODE_MODE and OSMCP_TOOL_SEARCH both replace the tool list; turn one off.",
+        )
     known = {n.lower() for n in known_names}
     if _code_mode():
         known |= CODE_MODE_TOOLS
+    if _tool_search():
+        known |= TOOL_SEARCH_TOOLS
     raw_code = os.environ.get("OSMCP_ENABLE_CODE_TOOLS")
     if raw_code is not None and raw_code.strip().lower() not in _TRUE + _FALSE:
         raise RuntimeError(
@@ -121,6 +139,7 @@ def validate_policy(known_names: Iterable[str]) -> None:
                 + ", ".join(repr(u) for u in unknown)
                 + ". Entries are matched case-insensitively against the registered roster"
                 + (" and the CodeMode tools search/get_schema/execute" if _code_mode() else "")
+                + (" and the tool-search tools search_tools/call_tool" if _tool_search() else "")
                 + ".",
             )
 
@@ -151,6 +170,39 @@ def code_mode_transform():
     else:
         logger.info("Tool hidden by policy: %s", CODE_MODE_GET_SCHEMA)
     return CodeMode(discovery_tools=discovery, execute_tool_name=CODE_MODE_EXECUTE)
+
+
+def tool_search_transform():
+    """Build the search transform: ``core`` tools stay listed, the rest sit behind
+    ``search_tools`` (BM25 over name/description/params) and ``call_tool``.
+
+    For hosts that load every schema up front (~52K tokens for the full roster) or cap
+    tools per request (VS Code Copilot: 128). Hosts with their own deferred loading
+    (Claude Code) should leave it off: the CodeMode A/B (docs/archived/
+    codemode-benchmark-2026-04-05.md) showed a second discovery layer hurts accuracy.
+    Proxied calls re-enter FastMCP.call_tool with middleware, so identity, audit and
+    response-size guards see the real tool name. Policy-hidden tools are never
+    registered, so search cannot surface them.
+    """
+    from fastmcp.server.transforms.search import BM25SearchTransform
+
+    from mcp_server.tool_registry import descriptors, ensure_collected
+
+    hidden = sorted(n for n in TOOL_SEARCH_TOOLS if not tool_enabled(n))
+    if hidden:
+        raise RuntimeError(
+            f"OSMCP_TOOL_SEARCH is on but the tool policy hides {', '.join(map(repr, hidden))}; "
+            "unlisted tools are reachable only through search_tools and call_tool, so "
+            "expose both or turn tool search off.",
+        )
+    ensure_collected()
+    pinned = sorted(d.name for d in descriptors().values() if "core" in d.tags)
+    return BM25SearchTransform(
+        max_results=TOOL_SEARCH_MAX_RESULTS,
+        always_visible=pinned,
+        search_tool_name=TOOL_SEARCH_SEARCH,
+        call_tool_name=TOOL_SEARCH_CALL,
+    )
 
 
 PROXY_READ_TIMEOUT_BUDGET_SECONDS = 55  # nginx proxy_read_timeout defaults to 60 s
