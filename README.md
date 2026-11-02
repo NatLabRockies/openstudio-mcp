@@ -260,7 +260,7 @@ untrusted measures.
 | `OSMCP_ENABLE_CODE_TOOLS` | `true` | Set `false` to not register the code-authoring tools (`create_measure`, `edit_measure`, `create_python_plugin`, `edit_python_plugin`, `install_plugin_packages`) on a deployment that must not let agents write code. |
 | `OSMCP_TOOLS_ALLOW` | unset | Comma list; when set, only these tools are registered. Unknown names refuse startup. |
 | `OSMCP_TOOLS_DENY` | unset | Comma list of tools to hide (deny wins over allow). Unknown names refuse startup. |
-| `OSMCP_TOOL_SEARCH` | `0` | Experimental. `1` lists only the `core` tools (~30) plus `search_tools` and `call_tool`; every other tool is found by search and run through `call_tool`. Cuts the up-front catalog from ~52K to ~8K tokens and stays under host tool caps (VS Code Copilot 128, Windsurf ~100). For hosts without deferred tool loading only; leave off for Claude Code, whose ToolSearch already defers tools. Cannot be combined with `OSMCP_CODE_MODE`. LLM tool-selection accuracy in this mode is not yet benchmarked. |
+| `OSMCP_TOOL_SEARCH` | `0` | Experimental. `1` lists only the `core` tools (~30) plus `search_tools` and `call_tool`; every other tool is found by search and run through `call_tool`. Cuts the up-front catalog from ~52K to ~8K tokens and stays under host tool caps (VS Code Copilot 128, Windsurf ~100). For hosts without deferred tool loading only; leave off for Claude Code, whose ToolSearch already defers tools. Cannot be combined with `OSMCP_CODE_MODE`. A small A/B (sonnet, all schemas up front, progressive L2) showed no accuracy loss: 44/53 on vs 41/53 off; see `docs/testing/llm-test-benchmark.md`. |
 
 ### Secure deployment guidance
 
