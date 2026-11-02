@@ -283,6 +283,22 @@ def test_normalize_calls_direct_and_code_mode():
     ]
 
 
+def test_normalize_calls_unwraps_tool_search_proxy():
+    # Validates: under OSMCP_TOOL_SEARCH a call_tool proxy call scores as the tool it
+    # names with its arguments, and search_tools is dropped, so critical-param
+    # matching measures tool choice rather than the proxy name
+    raw = [
+        {"tool": "mcp__openstudio__search_tools", "input": {"query": "vav"}},
+        {"tool": "mcp__openstudio__call_tool",
+         "input": {"name": "add_baseline_system", "arguments": {"system_type": 7}}},
+        {"tool": "mcp__openstudio__list_skills", "input": {}},
+    ]
+    assert normalize_calls(raw) == [
+        {"tool": "add_baseline_system", "input": {"system_type": 7}},
+        {"tool": "list_skills", "input": {}},
+    ]
+
+
 def test_calls_from_code_json_and_python_args():
     # Validates: JSON and Python-literal arg objects both parse; unparseable
     # objects degrade to {} instead of crashing the matcher

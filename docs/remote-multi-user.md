@@ -518,7 +518,12 @@ refuses startup with exit status 3 and a message naming the entry, so a typo
 cannot silently expose a tool. With `OSMCP_CODE_MODE=1` the synthetic
 `search`, `get_schema` and `execute` tools are part of the roster and follow
 the same policy; hiding `execute` is refused because every tool is called
-through it.
+through it. With `OSMCP_TOOL_SEARCH=1` the synthetic `search_tools` and
+`call_tool` tools are likewise part of the roster; hiding either is refused,
+and so is turning on both `OSMCP_CODE_MODE` and `OSMCP_TOOL_SEARCH`. A tool
+the policy hides is never registered, so search cannot surface it and
+`call_tool` cannot reach it. Calls made through `call_tool` pass through the
+identity, audit and response-size middleware under the real tool's name.
 
 What the gate checks and what it does not: `OSMCP_ALLOW_UNSANDBOXED` gates on
 the *configured* tier. At run time the exec shim (`mcp_server/_sandbox_exec.py`)

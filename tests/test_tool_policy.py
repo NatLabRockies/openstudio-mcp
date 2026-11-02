@@ -126,3 +126,32 @@ def test_http_code_mode_synthetic_tools_follow_policy():
             assert tools == {"get_schema", "execute"}, tools
 
         asyncio.run(_run())
+
+
+def test_http_tool_search_lists_core_and_proxies_calls():
+    # Validates: with OSMCP_TOOL_SEARCH=1 the HTTP server lists core tools plus
+    # search_tools/call_tool (not the full roster), tells the agent to use call_tool, and
+    # call_tool runs an unlisted tool through the real server
+    _skip_unless_integration()
+    with http_server({"MCP_AUTH": "none", "OSMCP_TOOL_SEARCH": "1"}) as (url, _proc):
+        async def _run():
+            instructions, tools = await _initialize(url)
+            assert {"search_tools", "call_tool", "list_skills", "run_simulation"} <= tools
+            assert "add_baseline_system" not in tools and "list_weather_files" in tools
+            assert len(tools) < 128, f"VS Code Copilot caps 128 tools, listed {len(tools)}"
+            assert "call_tool(name=" in instructions, instructions
+            async with http_session(url) as s:
+                status = unwrap(await s.call_tool("call_tool", {
+                    "name": "get_server_status", "arguments": {}}))
+                assert status["ok"] is True
+                assert status["max_concurrency"] >= 1, status
+
+        asyncio.run(_run())
+
+
+def test_http_refuses_code_mode_with_tool_search():
+    # Validates: both roster-replacing modes at once refuse startup (exit 3, named vars)
+    _skip_unless_integration()
+    with pytest.raises(RuntimeError, match=r"exited \(code 3\)[\s\S]*OSMCP_CODE_MODE and OSMCP_TOOL_SEARCH"):
+        with http_server({"MCP_AUTH": "none", "OSMCP_CODE_MODE": "1", "OSMCP_TOOL_SEARCH": "1"}):
+            pass
