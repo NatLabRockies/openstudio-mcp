@@ -6,7 +6,7 @@
 - Experimental `OSMCP_TOOL_SEARCH=1`: lists only the `core` tools plus `search_tools` (BM25) and
   `call_tool`, cutting the up-front catalog from ~52K to ~8K tokens and staying under host tool
   caps (VS Code Copilot 128, Windsurf ~100). Off by default and not for Claude Code, which defers
-  tools itself. A small LLM A/B (progressive L2, all schemas up front) passed 44/53 on vs 41/53 off. The synthetic tools follow the
+  tools itself. A small LLM A/B (progressive L2, all schemas up front) passed 44/53 on vs 41/53 off (about level, one run) at ~9% higher cost: it is for tool caps, not savings. The synthetic tools follow the
   tool policy, and the LLM harness scores `call_tool` as the tool it proxies
   (`LLM_TESTS_TOOL_SEARCH=1`). (#223)
 
