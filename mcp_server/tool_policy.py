@@ -176,10 +176,13 @@ def tool_search_transform():
     """Build the search transform: ``core`` tools stay listed, the rest sit behind
     ``search_tools`` (BM25 over name/description/params) and ``call_tool``.
 
-    For hosts that load every schema up front (~52K tokens for the full roster) or cap
-    tools per request (VS Code Copilot: 128). Hosts with their own deferred loading
-    (Claude Code) should leave it off: the CodeMode A/B (docs/archived/
-    codemode-benchmark-2026-04-05.md) showed a second discovery layer hurts accuracy.
+    A compatibility switch for hosts that cap tools per request (VS Code Copilot 128,
+    Windsurf ~100) or load every schema up front (~52K tokens for the full roster).
+    It is not a cost optimization: the 2026-11-02 A/B (docs/testing/llm-test-benchmark.md)
+    kept accuracy level and cost about level, since searching adds turns. Hosts with
+    their own deferred loading (Claude Code) should leave it off: the CodeMode A/B
+    (docs/archived/codemode-benchmark-2026-04-05.md) showed a second discovery layer
+    hurts accuracy.
     Proxied calls re-enter FastMCP.call_tool with middleware, so identity, audit and
     response-size guards see the real tool name. Policy-hidden tools are never
     registered, so search cannot surface them.

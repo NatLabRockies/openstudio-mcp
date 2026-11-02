@@ -3,12 +3,14 @@
 ## [Unreleased]
 
 ### Added
-- Experimental `OSMCP_TOOL_SEARCH=1`: lists only the `core` tools plus `search_tools` (BM25) and
-  `call_tool`, cutting the up-front catalog from ~52K to ~8K tokens and staying under host tool
-  caps (VS Code Copilot 128, Windsurf ~100). Off by default and not for Claude Code, which defers
-  tools itself. A small LLM A/B (progressive L2, all schemas up front) passed 44/53 on vs 41/53 off (about level, one run) at about the same cost (+2.5% excluding a one-time cache write): it is for tool caps, not savings. The synthetic tools follow the
-  tool policy, and the LLM harness scores `call_tool` as the tool it proxies
-  (`LLM_TESTS_TOOL_SEARCH=1`). (#223)
+- Experimental `OSMCP_TOOL_SEARCH=1`, a compatibility switch for hosts that cap tools per request
+  (VS Code Copilot 128, Windsurf ~100; this server has 206). Only the `core` tools plus
+  `search_tools` (BM25) and `call_tool` are listed (~8K tokens instead of ~52K), and every other
+  tool stays reachable through `call_tool`. Off by default and not for Claude Code, which defers
+  tools itself. It is not a cost optimization: a small LLM A/B (sonnet, progressive L2, all schemas
+  up front) passed 44/53 on vs 41/53 off (about level, one run) at about the same cost (+2.5%
+  excluding a one-time cache write). The synthetic tools follow the tool policy, and the LLM
+  harness scores `call_tool` as the tool it proxies (`LLM_TESTS_TOOL_SEARCH=1`). (#223)
 
 ### Fixed
 - `cancel_run` no longer refuses to signal a run whose child is still inside `execve`:
