@@ -102,6 +102,7 @@ scripts the SDK directly). Benchmark sweeps pin one image and one harness commit
 | `test_09_tool_routing.py` | 12 | A/B of the full roster vs `recommend_tools` routing (not in the benchmark) |
 | `test_10_confusion_pairs.py` | 9 | Prompts that plausibly fit two similar tools |
 | `test_11_codegen_arm.py` | 6 | Arm C: no MCP server, outcome-only grading |
+| `test_12_hvac_only_swap_e2e.py` | 1 | Natural-language HVAC-only system swap on the 44-zone model, two simulations, `compare_runs` |
 
 Markers: `llm`, `tier1`-`tier4`, `progressive`, `smoke`, `stable`, `flaky`, `generic`,
 `needs_baseline`, `needs_hvac`. `FLAKY_TESTS` in `conftest.py` (30 patterns) is the quarantine

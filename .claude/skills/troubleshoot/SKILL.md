@@ -51,6 +51,13 @@ extract_summary_metrics(run_id=...)
 - Undersized equipment → `extract_component_sizing`
 - Thermostat vs availability schedule conflict
 - Missing plant loop equipment → `get_plant_loop_details`
+- Concentrated in Mech/Elec/Data/Stair zones after a central-AHU swap → 24/7
+  zones (24hr schedule set) served by an AHU on the occupancy schedule. Compare
+  `get_air_loop_details` (availability schedule) with `get_space_type_details`
+  (schedule set). Options: AHU always-on, dedicated zone equipment, or disclose
+- Unmet totals not comparable between runs → different
+  `OutputControl:ReportingTolerances` (`compare_runs` reports
+  `unmet_hours_tolerance_c` and sets `comparable: false`)
 
 3. Detailed diagnostics:
 ```
@@ -59,6 +66,9 @@ extract_component_sizing(run_id=...)      # autosized values
 query_timeseries(run_id=..., variable_name="Zone Mean Air Temperature",
     frequency="Hourly", key_value="Zone 1")
 ```
+`Zone Mean Air Temperature` is not requested by default: call
+`add_output_variable(variable_name="Zone Mean Air Temperature")`, save and
+re-run first, or `query_timeseries` returns no data.
 
 ## Measure Test / Apply Failed
 

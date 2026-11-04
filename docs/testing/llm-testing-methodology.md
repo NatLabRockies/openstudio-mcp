@@ -113,6 +113,7 @@ current collection.
 | `test_09_tool_routing.py` | tier4 | 12 | A/B baseline: full roster vs. `recommend_tools` routing. Not in the benchmark. | Tool-routing efficiency |
 | `test_10_confusion_pairs.py` | tier4 | 9 | Prompts that could reasonably trigger either of two similar tools (`run_qaqc_checks` vs `validate_model`). | Disambiguation |
 | `test_11_codegen_arm.py` | tier2 | 6 | **Arm C baseline**: no MCP server; agent gets shell + a bare SDK/CLI/EnergyPlus container and scripts everything. Outcome-only grading. Opt-in via `LLM_TESTS_ARM=codegen`. | Is the tool layer needed at all? |
+| `test_12_hvac_only_swap_e2e.py` | tier2 | 1 | "Replace only the HVAC" on the 44-zone SystemD model; the prompt never names `hvac_only`. Two simulations, `compare_runs` comparability, ~5 min. | Real-user session (2026-11-04 export) |
 
 ### The progressive test pattern (L1 / L2 / L3)
 

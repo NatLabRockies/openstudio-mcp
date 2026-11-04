@@ -158,6 +158,7 @@ Frozen numbers and provenance: [`../../docs/testing/llm-test-benchmark.md`](../.
 | `test_09_tool_routing.py` | 12 | Routing A/B cases |
 | `test_10_confusion_pairs.py` | 9 | Ambiguous-prompt tool choice |
 | `test_11_codegen_arm.py` | 6 | Arm C codegen baseline — no MCP server, agent scripts the SDK (opt-in: `LLM_TESTS_ARM=codegen`) |
+| `test_12_hvac_only_swap_e2e.py` | 1 | SystemD e2e HVAC-only swap via the vendored `create_typical_building` measure; agent must find `hvac_only` itself |
 
 **Comparability epoch (2026-08-05):** phases 0-3 of the realism rework
 (prompt casing preserved, arg/ok/EUI asserts, L3 trim, +16 coverage cases)

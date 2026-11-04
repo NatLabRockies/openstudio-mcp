@@ -37,6 +37,7 @@ Ask the user which upgrades to apply. Available ECM tools:
 - `create_standard_opaque_material` + `add_layer_to_construction` + `assign_construction_to_surface` — upgrade walls/roof (adds to the existing assembly; never rebuild it from scratch)
 
 **HVAC/Controls:**
+- `create_typical_building(system_type="<standards name>", hvac_only=True)` — replace the whole HVAC system (standards-tuned, sized against the existing envelope and loads; `non_hvac_changes` in the response must be empty). See `add-hvac` for the comparison checklist
 - `adjust_thermostat_setpoints(cooling_offset_f=2.0, heating_offset_f=-2.0)` — widen deadband
 - `replace_thermostat_schedules(...)` — new thermostat schedules
 - `shift_schedule_time(schedule_name="<schedule>", shift_hours=1)` — shift occupancy/HVAC schedules

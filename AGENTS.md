@@ -46,6 +46,7 @@ More rules for specific tasks (read when relevant):
 - `operations.py` — business logic, returns plain dicts, no MCP awareness
 - `README.md` — internal dev notes; LLM-facing skills live in `.claude/skills/` (served via get_skill)
 - Key modules: `model_manager.py` (load/get/save/clear model), `osm_helpers.py` (fetch_object, optional_name, list_all_as_dicts), `skills/__init__.py` (auto-discovers all skills)
+- `skills/comstock/measures/` holds a vendored fork of the ComStock `create_typical_building_from_model` measure (overlaid onto `/opt/comstock-measures` at Docker build). Vendored third-party code is exempt from rule 1; re-sync per its `VENDORED.md` whenever `COMSTOCK_TAG` or the openstudio-standards gem is bumped
 
 ## Stdout Suppression
 Two real classes of stdout pollution corrupt MCP JSON-RPC — two-layer defense at startup in `server.py::main()` before `mcp.run()`.

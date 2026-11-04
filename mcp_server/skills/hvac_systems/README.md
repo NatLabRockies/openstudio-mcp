@@ -14,7 +14,10 @@ These are GENERIC WIRING TEMPLATES: explicit topology control via direct SDK
 calls, no standards equipment efficiencies. For comparative studies or
 decision-grade EUI/comfort numbers, use the openstudio-standards path
 instead: `create_typical_building(system_type=..., hvac_only=True)` replaces
-only the HVAC and preserves loads/schedules/thermostats (issue #97).
+only the HVAC, sized against the model's own loads, infiltration and
+constructions, which the vendored measure leaves untouched (issue #97;
+`comstock/measures/.../VENDORED.md`). Check `non_hvac_changes == []` in the
+response before comparing runs.
 
 All 10 ASHRAE 90.1 Appendix G baseline system types are implemented, plus
 modern templates (DOAS, VRF, Radiant) and terminal replacement tools.

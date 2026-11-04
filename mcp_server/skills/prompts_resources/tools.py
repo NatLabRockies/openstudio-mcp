@@ -34,7 +34,8 @@ def register(mcp):
         system_b: str = "VAV chiller with gas boiler reheat",
         climate_city: str = "Chicago",
     ) -> str:
-        # hvac_only swaps preserve loads/schedules between candidates, and the
+        # hvac_only swaps leave loads/schedules/infiltration untouched between
+        # candidates (vendored measure gates; check non_hvac_changes == []), and the
         # standards path applies real equipment efficiencies and controls —
         # generic add_baseline_system templates are for wiring, not comparisons
         # (issue #97: they produced misleading EUI/comfort numbers)
@@ -45,7 +46,7 @@ def register(mcp):
             f'1. create_new_building(building_type="SmallOffice", '
             f'weather_file="/inputs/{climate_city}.epw")  # builds typical model\n'
             f'2. create_typical_building(system_type="{system_a}", '
-            'hvac_only=True)  # standards-tuned swap, loads untouched\n'
+            'hvac_only=True)  # standards-tuned swap; confirm non_hvac_changes == []\n'
             '3. save_osm_model(save_name="sweep_a") and '
             "run_simulation(osm_path=<osm_path from save>)\n"
             "4. get_run_status(run_id=<id from run_simulation>, wait_seconds=50) "
@@ -55,7 +56,8 @@ def register(mcp):
             '6. save_osm_model(save_name="sweep_b") and '
             "run_simulation(osm_path=<osm_path from save>)\n"
             "7. compare_runs(baseline_run_id=<run A id>, "
-            "retrofit_run_id=<run B id>) — EUI, end uses, unmet hours\n\n"
+            "retrofit_run_id=<run B id>) — EUI, end uses, unmet hours; "
+            "comparable must be True (same tolerance, < 300 unmet hours)\n\n"
             "Note: system_type takes openstudio-standards names — call "
             "create_typical_building's docs or list them via the tool schema. "
             "Do NOT use add_baseline_system for comparisons; it is a generic "
