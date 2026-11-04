@@ -1,4 +1,5 @@
-exclude: ^tests/assets/(sddc_office/floorplan\.json|eplusout_seb4\.sql|gbxml/25_SpacesOneZE\.xml)$
+# The vendored ComStock measure's README/LICENSE are kept byte-for-byte upstream (see its VENDORED.md)
+exclude: ^(tests/assets/(sddc_office/floorplan\.json|eplusout_seb4\.sql|gbxml/25_SpacesOneZE\.xml)|mcp_server/skills/comstock/measures/create_typical_building_from_model/(README|LICENSE)\.md)$
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
