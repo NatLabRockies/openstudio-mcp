@@ -488,8 +488,55 @@ def list_output_variables_op(run_id: str) -> dict[str, Any]:
     return _extract(list_output_variables, sql_path)
 
 
+# End uses an HVAC-only change must leave alone. Drift here means the two runs
+# differ in more than HVAC (e.g. a typical-building pass that retuned SWH).
+_NON_HVAC_END_USES = ("Interior Lighting", "Interior Equipment",
+                      "Exterior Lighting", "Water Systems")
+_NON_HVAC_DRIFT_PCT = 0.5
+_UNMET_COMPARABLE_MAX = 300.0
+_EPLUS_DEFAULT_TOLERANCE_C = 0.2
+_NUMBER_RE = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def _reporting_tolerances_c(run_id: str) -> dict[str, float] | None:
+    """Heating/cooling unmet-hours tolerances (C) from the run's in.idf, or None.
+
+    Reads the single OutputControl:ReportingTolerances object as text (this
+    module stays openstudio-free). Absent object or blank fields mean the
+    EnergyPlus default of 0.2 C. None when the run has no in.idf.
+    """
+    try:
+        run_dir = resolve_run_dir(user_run_root(), run_id)
+    except FileNotFoundError:
+        return None
+    idf_path = _find_first_existing(run_dir, ["run/in.idf", "in.idf"])
+    # The fallback walk inside _find_first_existing returns any known result file;
+    # only an actual in.idf is useful here.
+    if not idf_path or idf_path.name != "in.idf":
+        return None
+    try:
+        text = Path(idf_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    values = [_EPLUS_DEFAULT_TOLERANCE_C, _EPLUS_DEFAULT_TOLERANCE_C]
+    match = re.search(r"^\s*OutputControl:ReportingTolerances\s*,(.*?);", text,
+                      re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    if match:
+        body = re.sub(r"!.*", "", match.group(1))
+        fields = [f.strip() for f in body.split(",")]
+        for i in range(2):
+            if i < len(fields) and _NUMBER_RE.fullmatch(fields[i]):
+                values[i] = float(fields[i])
+    return {"heating": values[0], "cooling": values[1]}
+
+
 def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any]:
-    """Compare two runs — EUI delta, unmet hours delta, per-end-use breakdown."""
+    """Compare two runs — EUI delta, unmet hours delta, per-end-use breakdown.
+
+    Also says whether the comparison is apples-to-apples: `comparable` is False
+    when the runs report unmet hours at different tolerances, when either run
+    exceeds 300 unmet hours, or when a non-HVAC end use drifted.
+    """
     from mcp_server.skills.results.sql_extract import extract_end_use_breakdown
 
     base_metrics = extract_summary_metrics(baseline_run_id)
@@ -602,8 +649,38 @@ def compare_runs_op(baseline_run_id: str, retrofit_run_id: str) -> dict[str, Any
     gt_delta = energy_grand_total["retrofit"] - energy_grand_total["baseline"]
     gt_pct = (gt_delta / energy_grand_total["baseline"] * 100) if energy_grand_total["baseline"] else None
 
+    # Comparability guard (plan-hvac-only-non-hvac-preservation.md section 5.7)
+    comparability_warnings: list[str] = []
+    b_tol = _reporting_tolerances_c(baseline_run_id)
+    r_tol = _reporting_tolerances_c(retrofit_run_id)
+    if b_tol and r_tol:
+        for side in ("heating", "cooling"):
+            if abs(b_tol[side] - r_tol[side]) > 1e-6:
+                comparability_warnings.append(
+                    f"Unmet-hours {side} tolerance differs: baseline {b_tol[side]:.4g} C, "
+                    f"retrofit {r_tol[side]:.4g} C; unmet-hour deltas are not comparable")
+    for label, unmet in (("baseline", b_unmet), ("retrofit", r_unmet)):
+        if unmet > _UNMET_COMPARABLE_MAX:
+            comparability_warnings.append(
+                f"{label} run has {unmet:.0f} unmet hours (> {_UNMET_COMPARABLE_MAX:.0f}); "
+                "its HVAC is not meeting setpoints, so the EUI comparison is not decision-grade")
+    non_hvac_drift = [
+        row for row in end_use_deltas
+        if row["category"] in _NON_HVAC_END_USES
+        and row["delta_pct"] is not None and abs(row["delta_pct"]) > _NON_HVAC_DRIFT_PCT
+    ]
+    if non_hvac_drift:
+        names = sorted({f"{r['category']} ({r['fuel']})" for r in non_hvac_drift})
+        comparability_warnings.append(
+            "Non-HVAC end uses differ between runs: " + ", ".join(names)
+            + "; the runs differ in more than HVAC")
+
     return {
         "ok": True,
+        "comparable": not comparability_warnings,
+        "comparability_warnings": comparability_warnings,
+        "unmet_hours_tolerance_c": {"baseline": b_tol, "retrofit": r_tol},
+        "non_hvac_end_use_drift": non_hvac_drift,
         "baseline": {"run_id": baseline_run_id, "eui_kBtu_ft2": b_eui, "unmet_hours": b_unmet},
         "retrofit": {"run_id": retrofit_run_id, "eui_kBtu_ft2": r_eui, "unmet_hours": r_unmet},
         "delta_eui_kBtu_ft2": round(delta_eui, 2) if delta_eui is not None else None,
