@@ -512,7 +512,7 @@ class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure
 
     modify_night_cycle_managers = OpenStudio::Measure::OSArgument.makeBoolArgument('modify_night_cycle_managers', true)
     modify_night_cycle_managers.setDisplayName('Modify Night Cycle Managers')
-    modify_night_cycle_managers.setDescription('Set every AvailabilityManager:NightCycle to 1.9999 K tolerance and Thermostat cycling. False leaves them as modeled.')
+    modify_night_cycle_managers.setDescription('Set every AvailabilityManager:NightCycle to 1.9999 K tolerance and Thermostat cycling. False leaves managers that existed before the run as modeled; managers on the HVAC this run adds still get those values.')
     modify_night_cycle_managers.setDefaultValue(true)
     args << modify_night_cycle_managers
 

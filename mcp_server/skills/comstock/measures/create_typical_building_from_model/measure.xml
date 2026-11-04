@@ -3,8 +3,8 @@
   <schema_version>3.1</schema_version>
   <name>create_typical_building_from_model</name>
   <uid>281b45c3-f594-4347-8015-1b4eb619fc11</uid>
-  <version_id>93af555f-961d-43e0-baab-b5d0d1fbe4dc</version_id>
-  <version_modified>2026-11-04T22:43:16Z</version_modified>
+  <version_id>d61e66ec-acaf-4a0b-887a-3142de6884f5</version_id>
+  <version_modified>2026-11-04T22:59:26Z</version_modified>
   <xml_checksum>EE13F09F</xml_checksum>
   <class_name>CreateTypicalBuildingFromModel</class_name>
   <display_name>Create Typical Building from Model</display_name>
@@ -1368,7 +1368,7 @@
     <argument>
       <name>modify_night_cycle_managers</name>
       <display_name>Modify Night Cycle Managers</display_name>
-      <description>Set every AvailabilityManager:NightCycle to 1.9999 K tolerance and Thermostat cycling. False leaves them as modeled.</description>
+      <description>Set every AvailabilityManager:NightCycle to 1.9999 K tolerance and Thermostat cycling. False leaves managers that existed before the run as modeled; managers on the HVAC this run adds still get those values.</description>
       <type>Boolean</type>
       <required>true</required>
       <model_dependent>false</model_dependent>
@@ -1642,13 +1642,13 @@
       <filename>measure.rb</filename>
       <filetype>rb</filetype>
       <usage_type>script</usage_type>
-      <checksum>45748482</checksum>
+      <checksum>9ED98087</checksum>
     </file>
     <file>
       <filename>create_typical_vendored.rb</filename>
       <filetype>rb</filetype>
       <usage_type>resource</usage_type>
-      <checksum>113F5314</checksum>
+      <checksum>8EE32A5C</checksum>
     </file>
   </files>
 </measure>

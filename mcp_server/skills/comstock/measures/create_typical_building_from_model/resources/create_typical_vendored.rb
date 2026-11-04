@@ -114,6 +114,9 @@ module OsmcpCreateTypical
 
       # report initial condition of model
       initial_object_size = model.getModelObjects.size
+      # openstudio-mcp fork: night-cycle managers that pre-date this run are left alone when
+      # modify_night_cycle_managers is false; managers on the HVAC added below still get the standards values
+      preexisting_night_cycle_handles = model.getAvailabilityManagerNightCycles.map { |nc| nc.handle.to_s }
       OpenStudio.logFree(OpenStudio::Info, 'openstudio.standards.CreateTypical', "The building started with #{initial_object_size} objects.")
 
       # create a new standard class
@@ -851,14 +854,15 @@ module OsmcpCreateTypical
       end
 
       # change night cycling control to "Thermostat" cycling and increase thermostat tolerance to 1.99999
-      # openstudio-mcp fork: gated so an HVAC-only swap leaves pre-existing managers alone
-      if modify_night_cycle_managers
-        manager_night_cycles = model.getAvailabilityManagerNightCycles
-        OpenStudio.logFree(OpenStudio::Info, 'openstudio.standards.CreateTypical', "Changing thermostat tolerance to 1.99999 for #{manager_night_cycles.size} night cycle manager objects.")
-        manager_night_cycles.each do |night_cycle|
-          night_cycle.setThermostatTolerance(1.9999)
-          night_cycle.setCyclingRunTimeControlType('Thermostat')
-        end
+      # openstudio-mcp fork: with modify_night_cycle_managers false, only managers created during this run change
+      manager_night_cycles = model.getAvailabilityManagerNightCycles
+      unless modify_night_cycle_managers
+        manager_night_cycles = manager_night_cycles.reject { |nc| preexisting_night_cycle_handles.include?(nc.handle.to_s) }
+      end
+      OpenStudio.logFree(OpenStudio::Info, 'openstudio.standards.CreateTypical', "Changing thermostat tolerance to 1.99999 for #{manager_night_cycles.size} night cycle manager objects.")
+      manager_night_cycles.each do |night_cycle|
+        night_cycle.setThermostatTolerance(1.9999)
+        night_cycle.setCyclingRunTimeControlType('Thermostat')
       end
 
       # disable HVAC Sizing Simulation for Sizing Periods, not used for the type of PlantLoop sizing used in ComStock
