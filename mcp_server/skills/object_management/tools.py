@@ -65,7 +65,9 @@ def register(mcp):
         BoilerHotWater, ChillerElectricEIR, CoilHeatingWater, CoilCoolingWater,
         FanVariableVolume, PumpVariableSpeed, ScheduleRuleset, Construction,
         People, Lights, ElectricEquipment, ZoneHVACFourPipeFanCoil,
-        SizingSystem, SizingZone, ControllerOutdoorAir.
+        SizingSystem, SizingZone, ControllerOutdoorAir. Unique objects
+        (SimulationControl, OutputControlReportingTolerances, Building, Site)
+        list as 0 or 1 item; pass the handle to get_object_fields.
 
         Args:
             object_type: Type to list (any OpenStudio type name)

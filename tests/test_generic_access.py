@@ -128,6 +128,82 @@ def test_list_model_objects_unknown_type_error():
     asyncio.run(_run())
 
 
+@pytest.mark.integration
+def test_list_and_read_unique_objects():
+    # Regression: list_model_objects("OutputControlReportingTolerances") returned "No
+    # model.getOutputControlReportingTolerancess() method found" and get_object_fields by
+    # handle raised TypeError (getSimulationControl(uuid)); unique objects need their own path
+    if not integration_enabled():
+        pytest.skip("integration")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+
+                # exampleModel carries a SimulationControl but no ReportingTolerances;
+                # listing must read via getOptional{Type}() and not create one
+                for _ in range(2):
+                    res = unwrap(await s.call_tool("list_model_objects",
+                                 {"object_type": "OS:OutputControl:ReportingTolerances"}))
+                    assert res["ok"] is True, res
+                    assert res["type"] == "OutputControlReportingTolerances"
+                    assert res["count"] == 0, "listing a unique object must not create it"
+
+                res = unwrap(await s.call_tool("list_model_objects",
+                             {"object_type": "SimulationControl"}))
+                assert res["ok"] is True, res
+                assert res["count"] == 1
+                handle = res["objects"][0]["handle"]
+
+                fields = unwrap(await s.call_tool("get_object_fields", {
+                    "object_type": "SimulationControl", "object_handle": handle}))
+                assert fields["ok"] is True, fields
+                assert fields["properties"]["doZoneSizingCalculation"]["value"] is True
+                assert fields["properties"]["doHVACSizingSimulationforSizingPeriods"]["value"] is False
+
+                missing = unwrap(await s.call_tool("get_object_fields", {
+                    "object_type": "SimulationControl", "object_handle": "{00000000-0000-0000-0000-000000000000}"}))
+                assert missing["ok"] is False
+                assert "not found" in missing["error"].lower()
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_get_object_fields_does_not_create_objects():
+    # Regression: introspecting a ThermalZone called getZonePropertyUserViewFactorsBySurfaceName()
+    # and getAirflowNetworkZone() (get-or-create), leaving 44 empty objects in the SystemD model
+    # that the forward translator rejected and that failed the next create_typical_building step
+    if not integration_enabled():
+        pytest.skip("integration")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+
+                for object_type in ("ThermalZone", "Surface", "SubSurface"):
+                    objs = unwrap(await s.call_tool("list_model_objects",
+                                  {"object_type": object_type, "max_results": 1}))
+                    assert objs["ok"] is True, objs
+                    fields = unwrap(await s.call_tool("get_object_fields", {
+                        "object_type": object_type, "object_handle": objs["objects"][0]["handle"]}))
+                    assert fields["ok"] is True, fields
+                    assert "getZonePropertyUserViewFactorsBySurfaceName" not in fields["properties"]
+                    assert not [k for k in fields["properties"] if k.startswith("getAirflowNetwork")]
+
+                for created_type in ("ZonePropertyUserViewFactorsBySurfaceName",
+                                     "AirflowNetworkZone", "AirflowNetworkSurface"):
+                    res = unwrap(await s.call_tool("list_model_objects", {"object_type": created_type}))
+                    assert res["ok"] is True, res
+                    assert res["count"] == 0, f"get_object_fields created {created_type} objects"
+
+    asyncio.run(_run())
+
+
 # ---------------------------------------------------------------------------
 # W2: get_object_fields
 # ---------------------------------------------------------------------------
