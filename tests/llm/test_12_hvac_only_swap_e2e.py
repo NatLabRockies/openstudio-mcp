@@ -8,9 +8,13 @@ prompt never names the argument), and the vendored measure must leave the
 non-HVAC inputs alone (``non_hvac_changes == []``, same unmet-hours tolerance
 in both runs).
 
-Expected results (SystemD_baseline + Boston weather):
-  Baseline EUI:  28.21 kBtu/ft2 (pinned, same as test_07)
-  Swap EUI:      see HVAC_ONLY_SWAP_EUI below
+Expected results (SystemD_baseline + Boston weather, sonnet, 2026-11-04):
+  Baseline EUI:  28.17 kBtu/ft2 (pinned 28.21, same as test_07), 57 unmet hours
+  Swap EUI:      39.04 kBtu/ft2 with ~3,960 unmet hours: the fixture's 24/7
+                 Mech/Elec/Data/Stair zones end up on an AHU that follows the
+                 occupancy schedule (see the troubleshoot skill). compare_runs
+                 therefore reports comparable=False for the unmet-hours cap;
+                 the test checks the tolerance and end-use parts, not that flag.
 """
 from __future__ import annotations
 
@@ -30,9 +34,9 @@ SYSTEM = "VAV air-cooled chiller with gas boiler reheat"
 # SystemD_baseline + Boston, measured 2026-03-13 (test_07) — the swap must not move it.
 BASELINE_EUI = 28.21
 # Same model after the vendored hvac_only swap to SYSTEM (90.1-2019, CZ 5A),
-# measured 2026-11-04 with openstudio-standards 0.8.5. Re-pin on OpenStudio,
-# standards-gem or ComStock tag bump only.
-HVAC_ONLY_SWAP_EUI = None  # set after the first green run; None = range check only
+# measured 2026-11-04 with openstudio-standards 0.8.5 (39.04; upstream's leaking
+# swap gave ~67). Re-pin on OpenStudio, standards-gem or ComStock tag bump only.
+HVAC_ONLY_SWAP_EUI = 39.04
 
 
 def _calls(result, name: str) -> list[dict]:
@@ -116,11 +120,7 @@ def test_hvac_only_swap_e2e(request):
     if euis[0] != pytest.approx(BASELINE_EUI, rel=0.05):
         fail_with_mode(request, "outcome_mismatch",
                        f"Baseline EUI {euis[0]:.2f} outside 5% of pinned {BASELINE_EUI} kBtu/ft2")
-    if HVAC_ONLY_SWAP_EUI is None:
-        if not 15.0 <= euis[-1] <= 60.0:
-            fail_with_mode(request, "outcome_mismatch",
-                           f"Swap EUI {euis[-1]:.2f} kBtu/ft2 outside plausible 15-60 range")
-    elif euis[-1] != pytest.approx(HVAC_ONLY_SWAP_EUI, rel=0.05):
+    if euis[-1] != pytest.approx(HVAC_ONLY_SWAP_EUI, rel=0.05):
         fail_with_mode(request, "outcome_mismatch",
                        f"Swap EUI {euis[-1]:.2f} outside 5% of pinned {HVAC_ONLY_SWAP_EUI} kBtu/ft2")
 
@@ -145,7 +145,7 @@ def test_hvac_only_swap_e2e(request):
     # --- 7. D6 verifier: both sims independently valid (non-LLM session).
     # The swap run's unmet hours are not capped: SystemD has 24/7 zones served
     # by an AHU on the occupancy schedule (see troubleshoot skill), so a central
-    # VAV legitimately leaves hundreds of unmet hours. The baseline keeps its cap.
+    # VAV leaves ~3,960 unmet hours there. The baseline keeps its cap.
     run_ids = [r.get("run_id") for r in result.results_for("run_simulation")
                if r.get("ok") and r.get("run_id")]
     if len(run_ids) < 2:
