@@ -50,3 +50,4 @@ exclude = ["docker*", "tests*", "scripts*"]
 
 [tool.setuptools.package-data]
 "mcp_server.skills.analysis" = ["*.json"]
+"mcp_server.skills.comstock" = ["measures/**/*"]
