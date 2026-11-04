@@ -1,10 +1,11 @@
 # Vendored fork: create_typical_building_from_model
 
 openstudio-mcp carries its own copy of the ComStock `create_typical_building_from_model`
-measure plus the openstudio-standards library function it wraps. The Docker build
-deletes the upstream measure dir pulled from the ComStock tarball and overlays this
-one (`docker/Dockerfile`, right after the ComStock curl step), so every path that
-resolves `COMSTOCK_MEASURES_DIR/create_typical_building_from_model` gets the fork.
+measure plus the openstudio-standards library function it wraps. Both Docker builds
+delete the upstream measure files pulled from the ComStock tarball and overlay this
+dir (`docker/Dockerfile` and `docker/Dockerfile.arm64`, right after their ComStock
+curl step), so every path that resolves
+`COMSTOCK_MEASURES_DIR/create_typical_building_from_model` gets the fork.
 
 ## Sources
 
@@ -75,7 +76,7 @@ not apply to vendored third-party code, same as the grandfathering clause.
    Resolve conflicts by hand; every gate is a small `if` block with an `openstudio-mcp fork` comment.
 3. `ruby -c` both files, then `openstudio measure -u .` in the image to refresh `measure.xml`
    (keep this fork's uid; the tool only bumps `version_id` and checksums).
-4. Update the Sources table above and the Dockerfile comment next to `COMSTOCK_TAG`.
+4. Update the Sources table above and the overlay comments in both Dockerfiles.
 5. Run `tests/test_comstock_vendored_parity.py`, `tests/test_hvac_only_preservation.py`,
    `tests/test_hvac_only_swap.py` and `tests/test_comstock.py`.
 

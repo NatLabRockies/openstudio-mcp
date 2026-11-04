@@ -26,7 +26,11 @@ RUN curl -sL https://github.com/NatLabRockies/ComStock/archive/refs/tags/${COMST
 # Pinned to COMSTOCK_TAG above + the openstudio-standards in /var/oscli; bumping
 # either requires the VENDORED.md re-sync. Remove upstream's files first (COPY merges
 # into an existing dir); its tests/ fixtures stay, tests/test_comstock.py uses them.
-RUN rm -f /opt/comstock-measures/create_typical_building_from_model/measure.rb \n          /opt/comstock-measures/create_typical_building_from_model/measure.xml \n          /opt/comstock-measures/create_typical_building_from_model/README.md \n          /opt/comstock-measures/create_typical_building_from_model/README.md.erb \n          /opt/comstock-measures/create_typical_building_from_model/LICENSE.md
+RUN rm -f /opt/comstock-measures/create_typical_building_from_model/measure.rb \
+          /opt/comstock-measures/create_typical_building_from_model/measure.xml \
+          /opt/comstock-measures/create_typical_building_from_model/README.md \
+          /opt/comstock-measures/create_typical_building_from_model/README.md.erb \
+          /opt/comstock-measures/create_typical_building_from_model/LICENSE.md
 COPY mcp_server/skills/comstock/measures/create_typical_building_from_model /opt/comstock-measures/create_typical_building_from_model
 
 ENV COMSTOCK_MEASURES_DIR=/opt/comstock-measures

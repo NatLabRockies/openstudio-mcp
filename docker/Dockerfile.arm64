@@ -79,6 +79,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /tmp/ComStock-* \
     && rm -rf /var/lib/apt/lists/*
 
+# openstudio-mcp fork of create_typical_building_from_model (see
+# mcp_server/skills/comstock/measures/create_typical_building_from_model/VENDORED.md).
+# Same overlay as docker/Dockerfile: remove upstream's files first (COPY merges into
+# an existing dir); its tests/ fixtures stay, tests/test_comstock.py uses them.
+RUN rm -f /opt/comstock-measures/create_typical_building_from_model/measure.rb \
+          /opt/comstock-measures/create_typical_building_from_model/measure.xml \
+          /opt/comstock-measures/create_typical_building_from_model/README.md \
+          /opt/comstock-measures/create_typical_building_from_model/README.md.erb \
+          /opt/comstock-measures/create_typical_building_from_model/LICENSE.md
+COPY mcp_server/skills/comstock/measures/create_typical_building_from_model /opt/comstock-measures/create_typical_building_from_model
+
 ENV COMSTOCK_MEASURES_DIR=/opt/comstock-measures
 
 # Common measures (openstudio-common-measures-gem)
