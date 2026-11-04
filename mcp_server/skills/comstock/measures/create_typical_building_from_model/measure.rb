@@ -36,6 +36,8 @@
 # *******************************************************************************
 
 require 'openstudio-standards'
+# openstudio-mcp fork: the library function is vendored so non-HVAC steps can be gated (see VENDORED.md)
+require_relative 'resources/create_typical_vendored'
 
 # start the measure
 class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure
@@ -46,7 +48,7 @@ class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure
 
   # human readable description
   def description
-    return 'Takes a model with space and stub space types, and assigns constructions, schedules, internal loads, hvac, and other loads such as exterior lights and service water heating.'
+    return 'Takes a model with space and stub space types, and assigns constructions, schedules, internal loads, hvac, and other loads such as exterior lights and service water heating. openstudio-mcp fork of the ComStock measure: adds add_infiltration, airtightness and gate arguments so the HVAC can be replaced without touching non-HVAC inputs.'
   end
 
   # human readable description of modeling approach
@@ -451,6 +453,42 @@ class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure
     wknd_op_hrs_duration.setDefaultValue(8.0)
     args << wknd_op_hrs_duration
 
+    # --- openstudio-mcp fork arguments (defaults reproduce upstream behavior) ---
+    add_infiltration = OpenStudio::Measure::OSArgument.makeBoolArgument('add_infiltration', true)
+    add_infiltration.setDisplayName('Add NIST Infiltration')
+    add_infiltration.setDescription('Replace existing infiltration with the NIST method. False keeps the model infiltration untouched.')
+    add_infiltration.setDefaultValue(true)
+    args << add_infiltration
+
+    airtightness_value = OpenStudio::Measure::OSArgument.makeDoubleArgument('airtightness_value', true)
+    airtightness_value.setDisplayName('Airtightness Design Value')
+    airtightness_value.setDescription('NIST airtightness at 75 Pa in m^3/h-m^2. 0 uses the standard default (13.8). Multiply cfm/ft^2 by 18.288.')
+    airtightness_value.setUnits('m^3/h-m^2')
+    airtightness_value.setDefaultValue(0.0)
+    args << airtightness_value
+
+    airtightness_area_choices = OpenStudio::StringVector.new
+    airtightness_area_choices << '4-sided'
+    airtightness_area_choices << '5-sided'
+    airtightness_area_choices << '6-sided'
+    airtightness_area_covered = OpenStudio::Measure::OSArgument.makeChoiceArgument('airtightness_area_covered', airtightness_area_choices, true)
+    airtightness_area_covered.setDisplayName('Airtightness Area Covered')
+    airtightness_area_covered.setDescription('Envelope area the airtightness value is normalized by: walls (4), plus roof (5), plus floor and ground (6).')
+    airtightness_area_covered.setDefaultValue('5-sided')
+    args << airtightness_area_covered
+
+    air_barrier = OpenStudio::Measure::OSArgument.makeBoolArgument('air_barrier', true)
+    air_barrier.setDisplayName('Air Barrier')
+    air_barrier.setDescription('Building has an air barrier (NIST coefficient set). Default false matches the standard.')
+    air_barrier.setDefaultValue(false)
+    args << air_barrier
+
+    set_ground_constructions = OpenStudio::Measure::OSArgument.makeBoolArgument('set_ground_constructions', true)
+    set_ground_constructions.setDisplayName('Set F-factor / C-factor Ground Constructions')
+    set_ground_constructions.setDescription('False leaves slab and below-grade wall constructions as modeled.')
+    set_ground_constructions.setDefaultValue(true)
+    args << set_ground_constructions
+
     # make an argument for unmet_hours_tolerance
     unmet_hours_tolerance = OpenStudio::Measure::OSArgument.makeDoubleArgument('unmet_hours_tolerance', true)
     unmet_hours_tolerance.setDisplayName('Unmet Hours Tolerance')
@@ -464,6 +502,31 @@ class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure
     remove_objects.setDescription('Only removes objects of type that are selected to be added.')
     remove_objects.setDefaultValue(true)
     args << remove_objects
+
+    # --- openstudio-mcp fork gates for the steps upstream runs unconditionally ---
+    set_unmet_hours_tolerance = OpenStudio::Measure::OSArgument.makeBoolArgument('set_unmet_hours_tolerance', true)
+    set_unmet_hours_tolerance.setDisplayName('Set Unmet Hours Tolerance')
+    set_unmet_hours_tolerance.setDescription('Write Unmet Hours Tolerance to OutputControl:ReportingTolerances. False keeps the model value.')
+    set_unmet_hours_tolerance.setDefaultValue(true)
+    args << set_unmet_hours_tolerance
+
+    modify_night_cycle_managers = OpenStudio::Measure::OSArgument.makeBoolArgument('modify_night_cycle_managers', true)
+    modify_night_cycle_managers.setDisplayName('Modify Night Cycle Managers')
+    modify_night_cycle_managers.setDescription('Set every AvailabilityManager:NightCycle to 1.9999 K tolerance and Thermostat cycling. False leaves them as modeled.')
+    modify_night_cycle_managers.setDefaultValue(true)
+    args << modify_night_cycle_managers
+
+    purge_unused_resources = OpenStudio::Measure::OSArgument.makeBoolArgument('purge_unused_resources', true)
+    purge_unused_resources.setDisplayName('Purge Unused Resource Objects')
+    purge_unused_resources.setDescription('Call purgeUnusedResourceObjects at the end when Clean Model is true. False keeps unused schedules, constructions and shading controls.')
+    purge_unused_resources.setDefaultValue(true)
+    args << purge_unused_resources
+
+    set_sim_control = OpenStudio::Measure::OSArgument.makeBoolArgument('set_sim_control', true)
+    set_sim_control.setDisplayName('Disable HVAC Sizing Simulation for Sizing Periods')
+    set_sim_control.setDescription('Set SimulationControl Do HVAC Sizing Simulation for Sizing Periods to No. False leaves it as modeled.')
+    set_sim_control.setDefaultValue(true)
+    args << set_sim_control
 
     # make an argument for use_upstream_args
     use_upstream_args = OpenStudio::Measure::OSArgument.makeBoolArgument('use_upstream_args', true)
@@ -506,8 +569,11 @@ class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure
     # Turn debugging output on/off
     debug = false
 
-    # method run from os_lib_model_generation.rb
-    result = OpenstudioStandards::CreateTypical.create_typical_building_from_model(
+    # openstudio-mcp fork: 0 means "use the standard's default airtightness"
+    airtightness_value = args['airtightness_value'].to_f > 0.0 ? args['airtightness_value'].to_f : nil
+
+    # method run from the vendored resources/create_typical_vendored.rb (openstudio-mcp fork)
+    result = OsmcpCreateTypical.create_typical_building_from_model(
       model,
       args['template'],
       climate_zone: args['climate_zone'], # start of optional arguments
@@ -523,6 +589,15 @@ class CreateTypicalBuildingFromModel < OpenStudio::Measure::ModelMeasure
       wall_construction_type: args['wall_construction_type'],
       add_space_type_loads: args['add_space_type_loads'],
       add_daylighting_controls: nil, # not exposed in user measure args
+      add_infiltration: args['add_infiltration'],
+      airtightness_value: airtightness_value,
+      airtightness_area_covered: args['airtightness_area_covered'],
+      air_barrier: args['air_barrier'],
+      set_ground_constructions: args['set_ground_constructions'],
+      set_unmet_hours_tolerance: args['set_unmet_hours_tolerance'],
+      modify_night_cycle_managers: args['modify_night_cycle_managers'],
+      purge_unused_resources: args['purge_unused_resources'],
+      set_sim_control: args['set_sim_control'],
       add_elevators: args['add_elevators'],
       add_internal_mass: args['add_internal_mass'],
       add_exterior_lights: args['add_exterior_lights'],
