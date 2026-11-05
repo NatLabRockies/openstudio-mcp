@@ -96,14 +96,32 @@ coordination. For comparative studies or decision-grade EUI/comfort numbers, use
 the standards-tuned path instead:
 
 ```
-# Replace ONLY the HVAC on an already-configured model — loads, constructions,
-# schedules, thermostats preserved. One call per candidate system:
+# Replace ONLY the HVAC on an already-configured model. The new system is sized
+# against the model's own loads, infiltration and constructions, which stay as
+# modeled. One call per candidate system:
 create_typical_building(system_type="PVAV with gas boiler reheat",
     template="90.1-2019", climate_zone="ASHRAE 169-2013-5A", hvac_only=True)
+# response: restored = SWH equipment put back; non_hvac_changes = [] expected
+clean_unused_objects()                     # optional: drop the old system's orphans
 save_osm_model(...); run_simulation(...)   # then next candidate
 
 compare_runs(baseline_run_id=<run A>, retrofit_run_id=<run B>)  # EUI + unmet-hours deltas
 ```
+
+Before comparing runs, all four must hold; otherwise the delta is not an HVAC delta:
+1. `non_hvac_changes == []` on every hvac_only response
+2. `compare_runs(...).comparable is True` (same unmet-hours tolerance in both runs,
+   no non-HVAC end-use drift)
+3. unmet hours < 300 in both runs (`compare_runs` warns otherwise)
+4. real system differences (ERV, economizer, plant efficiencies, availability
+   schedules) are listed in the write-up
+
+Infiltration basis is an explicit arg when parity with another pipeline matters.
+Defaults are the ComStock ones (13.8 m3/h-m2 at 75 Pa, 5-sided, no air barrier).
+The surrogate-gem proposed basis (0.6 cfm/ft2, 6-sided, air barrier) is
+`airtightness_value=10.97, airtightness_area_covered="6-sided", air_barrier=True`
+(cfm/ft2 x 18.288). These only apply when `add_infiltration=True`, i.e. not on an
+hvac_only swap.
 
 ## Notes
 

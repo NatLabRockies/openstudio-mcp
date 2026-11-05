@@ -89,7 +89,8 @@ Use them to SELECT and WIRE a system type. For comparing systems or any
 decision-grade EUI/comfort numbers, build each candidate through
 openstudio-standards instead:
 `create_typical_building(system_type=..., hvac_only=True)` — replaces only
-the HVAC (standards-tuned), preserving loads/schedules/thermostats.
+the HVAC (standards-tuned), sized against the model's own loads, infiltration
+and constructions; confirm `non_hvac_changes == []` in the response.
 
 ## When to Recommend Modern Templates Instead
 

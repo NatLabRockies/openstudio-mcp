@@ -16,6 +16,12 @@ import openstudio
 
 from mcp_server import model_manager
 from mcp_server.model_manager import get_model
+from mcp_server.skills.comstock.hvac_only_guard import (
+    remaining_changes,
+    restore_swh_equipment,
+    snapshot_fields,
+    swh_pump_handles,
+)
 from mcp_server.skills.measures.operations import apply_measure
 
 # Category classification for ComStock measures
@@ -115,12 +121,26 @@ _TYPICAL_ARG_MAP = {
     "add_exhaust": "add_exhaust",
     "add_refrigeration": "add_refrigeration",
     "remove_objects": "remove_objects",
+    # openstudio-mcp vendored-fork args (measures/create_typical_building_from_model/VENDORED.md)
+    "add_infiltration": "add_infiltration",
+    "airtightness_value": "airtightness_value",
+    "airtightness_area_covered": "airtightness_area_covered",
+    "air_barrier": "air_barrier",
+    "set_ground_constructions": "set_ground_constructions",
+    "set_unmet_hours_tolerance": "set_unmet_hours_tolerance",
+    "modify_night_cycle_managers": "modify_night_cycle_managers",
+    "purge_unused_resources": "purge_unused_resources",
+    "set_sim_control": "set_sim_control",
 }
 
-# The measure's remove_objects is per-section ("Only removes objects of type
-# that are selected to be added"), so pinning every section off except HVAC
-# yields a standards-tuned HVAC swap that leaves loads, constructions,
-# schedules, and thermostats untouched (issue #97 — fair system sweeps).
+# hvac_only pins every add_* section off except HVAC and, through the vendored
+# fork's gate args, also stops the library steps upstream runs unconditionally
+# (NIST infiltration, F-factor floors, reporting tolerance, purge, night-cycle
+# rewrite, SimulationControl). Those steps run BEFORE the measure's sizing run,
+# so they cannot be undone afterwards; the gates are what make the swap fair
+# (issue #97, plan-hvac-only-non-hvac-preservation.md). The one library call
+# that still touches non-HVAC objects (model_apply_hvac_efficiency_standard on
+# retained SWH equipment) is repaired by hvac_only_guard after the run.
 _HVAC_ONLY_PINS = {
     "add_constructions": False,
     "add_space_type_loads": False,
@@ -133,6 +153,12 @@ _HVAC_ONLY_PINS = {
     "add_refrigeration": False,
     "add_hvac": True,
     "remove_objects": True,
+    "add_infiltration": False,
+    "set_ground_constructions": False,
+    "set_unmet_hours_tolerance": False,
+    "modify_night_cycle_managers": False,
+    "purge_unused_resources": False,
+    "set_sim_control": False,
 }
 
 
@@ -156,8 +182,17 @@ def create_typical_building(
     add_refrigeration: bool = True,
     remove_objects: bool = True,
     hvac_only: bool = False,
+    add_infiltration: bool = True,
+    airtightness_value: float = 0.0,
+    airtightness_area_covered: str = "5-sided",
+    air_barrier: bool = False,
+    set_ground_constructions: bool = True,
+    set_unmet_hours_tolerance: bool = True,
+    modify_night_cycle_managers: bool = True,
+    purge_unused_resources: bool = True,
+    set_sim_control: bool = True,
 ) -> dict[str, Any]:
-    """Create a typical building from the loaded model using ComStock measure.
+    """Create a typical building from the loaded model using the vendored ComStock measure.
 
     Wraps the create_typical_building_from_model measure which adds
     constructions, loads, HVAC, schedules, and SWH to a model that
@@ -187,11 +222,30 @@ def create_typical_building(
         add_exhaust: Add exhaust fans
         add_refrigeration: Add refrigeration
         remove_objects: Remove existing objects of the types being added
-        hvac_only: Replace ONLY the HVAC system (standards-tuned), preserving
-            loads, constructions, schedules, and thermostats — for fair system
-            comparisons on an already-configured model. Overrides every add_*
-            toggle AND forces remove_objects=True (the existing HVAC is
-            removed before the new system is added).
+        hvac_only: Replace ONLY the HVAC system (standards-tuned) for fair
+            system comparisons on an already-configured model. Overrides every
+            add_* toggle, forces remove_objects=True (the existing HVAC is
+            removed before the new system is added) and turns every gate
+            below off so infiltration, ground constructions, tolerances,
+            night-cycle managers and unused resources stay as modeled and the
+            new HVAC is sized against them. Retained SWH equipment is restored
+            afterwards; the response lists it under `restored` and anything
+            still different under `non_hvac_changes` (expected empty).
+        add_infiltration: Replace infiltration with the NIST method (upstream
+            always did this; now a switch)
+        airtightness_value: NIST airtightness at 75 Pa in m3/h-m2; 0 = the
+            standard's default (13.8). cfm/ft2 x 18.288
+        airtightness_area_covered: "4-sided" | "5-sided" | "6-sided" envelope
+            area the airtightness value is normalized by
+        air_barrier: Building has an air barrier (NIST coefficient set)
+        set_ground_constructions: Apply F-factor / C-factor ground constructions
+        set_unmet_hours_tolerance: Write the 1 R unmet-hours tolerance to
+            OutputControl:ReportingTolerances
+        modify_night_cycle_managers: Set every night-cycle manager to 1.9999 K /
+            Thermostat cycling
+        purge_unused_resources: purgeUnusedResourceObjects at the end (only
+            when remove_objects is true)
+        set_sim_control: Disable DoHVACSizingSimulationforSizingPeriods
     """
     measures_dir = Path(os.environ.get("COMSTOCK_MEASURES_DIR", "/opt/comstock-measures"))
     measure_path = measures_dir / "create_typical_building_from_model"
@@ -251,6 +305,15 @@ def create_typical_building(
         "add_exhaust": add_exhaust,
         "add_refrigeration": add_refrigeration,
         "remove_objects": remove_objects,
+        "add_infiltration": add_infiltration,
+        "airtightness_value": airtightness_value,
+        "airtightness_area_covered": airtightness_area_covered,
+        "air_barrier": air_barrier,
+        "set_ground_constructions": set_ground_constructions,
+        "set_unmet_hours_tolerance": set_unmet_hours_tolerance,
+        "modify_night_cycle_managers": modify_night_cycle_managers,
+        "purge_unused_resources": purge_unused_resources,
+        "set_sim_control": set_sim_control,
     }
     if hvac_only:
         local_vars.update(_HVAC_ONLY_PINS)
@@ -266,6 +329,14 @@ def create_typical_building(
     # ComStock measures use openstudio-standards from the CLI's built-in gems.
     # The bundled gems (--bundle) load a different standards version that has
     # a pump sizing bug, so skip the bundle for ComStock measures.
+    # hvac_only: snapshot every object (by handle) before the measure so retained
+    # SWH equipment can be restored and any other non-HVAC drift reported.
+    pre_fields = None
+    swh_handles: frozenset[str] = frozenset()
+    if hvac_only:
+        pre_fields = snapshot_fields(model)
+        swh_handles = swh_pump_handles(model)
+
     result = apply_measure(measure_dir=str(measure_path), arguments=arguments,
                            use_bundle=False)
 
@@ -276,8 +347,33 @@ def create_typical_building(
         result["climate_zone"] = climate_zone
         if hvac_only:
             result["hvac_only"] = True
+            _finish_hvac_only(result, pre_fields, swh_handles)
 
     return result
+
+
+def _finish_hvac_only(
+    result: dict[str, Any],
+    pre_fields: dict[str, dict[str, Any]] | None,
+    swh_handles: frozenset[str],
+) -> None:
+    """Restore SWH equipment on the reloaded model and report remaining non-HVAC drift."""
+    if pre_fields is None:
+        return
+    try:
+        post_model = get_model()
+        result["restored"] = restore_swh_equipment(pre_fields, post_model, swh_handles)
+        shown, total = remaining_changes(pre_fields, post_model, swh_handles)
+    except RuntimeError as e:
+        result.setdefault("warnings", []).append(
+            f"hvac_only post-check could not run: {e}")
+        return
+    result["non_hvac_changes"] = shown
+    result["non_hvac_changes_total"] = total
+    if total:
+        result.setdefault("warnings", []).append(
+            f"{total} non-HVAC object(s) changed during the hvac_only swap; "
+            "inspect non_hvac_changes before comparing runs")
 
 
 # --- Argument mapping for create_bar_from_building_type_ratios ---

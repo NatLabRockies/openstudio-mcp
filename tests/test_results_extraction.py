@@ -836,3 +836,103 @@ class TestMissingSql:
         from mcp_server.skills.results.sql_extract import extract_envelope_summary
         with pytest.raises((sqlite3.OperationalError, OSError)):
             extract_envelope_summary(Path("/nonexistent/eplusout.sql"))
+
+
+# ---------------------------------------------------------------------------
+# compare_runs_op: comparability guard (tolerance mismatch, unmet > 300, drift)
+# ---------------------------------------------------------------------------
+
+_IDF_TOLERANCE = """
+Version,25.2;
+
+OutputControl:ReportingTolerances,
+  {htg},                                  !- Tolerance for Time Heating Setpoint Not Met {{deltaC}}
+  {clg};                                  !- Tolerance for Time Cooling Setpoint Not Met {{deltaC}}
+"""
+
+
+class TestCompareRunsComparability:
+    """compare_runs_op must say when two runs are not apples-to-apples."""
+
+    @pytest.fixture
+    def run_root(self, sql_path):
+        """Two fake run dirs on the same SQL; yields the tmp root so tests can add in.idf."""
+        import shutil
+        import tempfile
+
+        import mcp_server.skills.results.operations as ops
+        tmpdir = tempfile.mkdtemp()
+        for rid in ("baseline_run", "retrofit_run"):
+            run_dir = Path(tmpdir) / rid
+            (run_dir / "run").mkdir(parents=True)
+            shutil.copy(sql_path, run_dir / "run" / "eplusout.sql")
+        orig = ops.resolve_run_dir
+
+        def _fake_resolve(_root, rid):
+            return Path(tmpdir) / rid
+
+        ops.resolve_run_dir = _fake_resolve
+        yield Path(tmpdir)
+        ops.resolve_run_dir = orig
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_tolerances_none_without_idf(self, run_root):
+        # Validates: a run with no in.idf reports unknown tolerances and no tolerance warning
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        assert result["unmet_hours_tolerance_c"] == {"baseline": None, "retrofit": None}
+        assert not any("tolerance" in w for w in result["comparability_warnings"])
+
+    def test_tolerance_mismatch_is_not_comparable(self, run_root):
+        # Regression: a create_typical pass wrote 1 R (0.5556 C) into the retrofit run while the
+        # baseline kept the E+ default 0.2 C; the 1,600 h hidden by that went unnoticed (export 2026-11-04)
+        from mcp_server.skills.results.operations import compare_runs_op
+        (run_root / "baseline_run" / "run" / "in.idf").write_text(
+            _IDF_TOLERANCE.format(htg="", clg=""), encoding="utf-8")
+        (run_root / "retrofit_run" / "run" / "in.idf").write_text(
+            _IDF_TOLERANCE.format(htg="0.5556", clg="0.5556"), encoding="utf-8")
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        assert result["unmet_hours_tolerance_c"]["baseline"] == {"heating": 0.2, "cooling": 0.2}
+        assert result["unmet_hours_tolerance_c"]["retrofit"] == {
+            "heating": pytest.approx(0.5556, abs=1e-9), "cooling": pytest.approx(0.5556, abs=1e-9)}
+        assert result["comparable"] is False
+        tol_warnings = [w for w in result["comparability_warnings"] if "tolerance" in w]
+        assert len(tol_warnings) == 2, result["comparability_warnings"]
+        assert "0.2 C" in tol_warnings[0] and "0.5556 C" in tol_warnings[0]
+
+    def test_same_tolerance_no_warning(self, run_root):
+        # Validates: identical explicit tolerances produce no tolerance warning (no false alarm)
+        from mcp_server.skills.results.operations import compare_runs_op
+        for rid in ("baseline_run", "retrofit_run"):
+            (run_root / rid / "run" / "in.idf").write_text(
+                _IDF_TOLERANCE.format(htg="0.2", clg="0.2"), encoding="utf-8")
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        assert not any("tolerance" in w for w in result["comparability_warnings"])
+
+    def test_unmet_over_300_flags_both_runs(self, run_root, monkeypatch):
+        # Validates: either run above 300 unmet hours makes the comparison non-decision-grade
+        import mcp_server.skills.results.operations as ops
+        real = ops.extract_summary_metrics
+
+        def _inflated(run_id):
+            m = real(run_id)
+            m["metrics"]["unmet_hours_heating"] = 2990.67
+            m["metrics"]["unmet_hours_cooling"] = 857.33
+            return m
+
+        monkeypatch.setattr(ops, "extract_summary_metrics", _inflated)
+        result = ops.compare_runs_op("baseline_run", "retrofit_run")
+        assert result["comparable"] is False
+        unmet_warnings = [w for w in result["comparability_warnings"] if "unmet hours" in w]
+        assert len(unmet_warnings) == 2
+        assert "3848 unmet hours" in unmet_warnings[0]
+
+    def test_identical_runs_have_no_drift(self, run_root):
+        # Validates: the same SQL on both sides is comparable and reports no non-HVAC drift,
+        # and the pre-existing keys are still present (contract stability)
+        from mcp_server.skills.results.operations import compare_runs_op
+        result = compare_runs_op("baseline_run", "retrofit_run")
+        assert result["non_hvac_end_use_drift"] == []
+        assert result["delta_eui_kBtu_ft2"] == 0
+        for key in ("end_use_deltas", "fuel_totals", "water_use", "energy_grand_total_kBtu"):
+            assert key in result

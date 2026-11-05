@@ -81,7 +81,8 @@ def _resolve_getter(model, type_name: str):
     """Resolve a collection getter for the given type name.
 
     Fast-path: MANAGED_TYPES lookup.
-    Fallback: try model.get{TypeName}s() dynamically.
+    Fallback: try model.get{TypeName}s(), then model.getOptional{TypeName}()
+    for unique objects.
 
     Returns (getter_callable, resolved_type_name) or (None, type_name).
     """
@@ -98,6 +99,16 @@ def _resolve_getter(model, type_name: str):
     getter = getattr(model, method_name, None)
     if getter is not None:
         return getter, norm
+
+    # Unique objects (SimulationControl, OutputControlReportingTolerances, Building,
+    # ...) have no plural getter. getOptional{Type}() reads without creating one,
+    # so listing is side-effect free; the result is a 0- or 1-element list.
+    optional_getter = getattr(model, f"getOptional{norm}", None)
+    if optional_getter is not None:
+        def _unique_as_list():
+            opt = optional_getter()
+            return [opt.get()] if opt.is_initialized() else []
+        return _unique_as_list, norm
 
     return None, norm
 
@@ -146,12 +157,18 @@ _BASE_BLOCKLIST = frozenset({
     "addToNode",
     "removeFromLoop",
     "optionalCast",
+    # Get-or-create: calling it inserts an empty ZoneProperty:UserViewFactors
+    # object that EnergyPlus forward translation then rejects (Error level,
+    # fails the next measure step). The optional reader is zonePropertyUserViewFactorsBySurfaceName().
+    "getZonePropertyUserViewFactorsBySurfaceName",
 })
 
-# Prefixes to skip
+# Prefixes to skip. getAirflowNetwork* are get-or-create (one empty AFN object
+# per zone/surface inspected); the optional readers are airflowNetwork*().
 _SKIP_PREFIXES = ("set", "Set", "_", "to_", "is", "are", "os", "autocalculate",
                   "autosize", "reset", "apply", "insert", "push", "pop",
-                  "erase", "clear", "add", "remove", "replace", "create")
+                  "erase", "clear", "add", "remove", "replace", "create",
+                  "getAirflowNetwork")
 
 
 def _is_useful_getter(method_name: str) -> bool:
@@ -273,6 +290,18 @@ def _find_object(model, object_type: str, object_name: str | None = None,
     Returns (object, resolved_type) or (None, resolved_type).
     """
     norm = _normalize_type_name(object_type)
+
+    # Unique objects have get{Type}() with no uuid overload and no ByName getter;
+    # fetch_object would call get{Type}(uuid) and raise TypeError. Match the
+    # single instance by handle or name instead.
+    if hasattr(model, f"getOptional{norm}"):
+        getter, _ = _resolve_getter(model, norm)
+        for o in getter():
+            if object_handle and str(o.handle()) == object_handle:
+                return o, norm
+            if object_name and o.nameString() == object_name:
+                return o, norm
+        return None, norm
 
     # Try fetch_object first (uses getXByName / getX(uuid))
     obj = fetch_object(

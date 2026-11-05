@@ -77,7 +77,8 @@ For fully custom buildings not matching DOE prototypes:
 3. Add glazing with `set_window_to_wall_ratio`
 4. Create materials/constructions/loads manually
 5. Add HVAC — `create_typical_building(system_type=..., hvac_only=True)` for a
-   standards-tuned system (preserves the loads you just built), or
+   standards-tuned system sized against the loads you just built (response
+   `non_hvac_changes` should be empty), or
    `add_baseline_system` for a generic wiring template
 6. Set weather with `change_building_location`
 7. Check with `validate_model`, then simulate

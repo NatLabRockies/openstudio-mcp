@@ -320,7 +320,7 @@ Workflow/task skills are invoked with `/name`; knowledge skills load automatical
 |------|-------------|
 | `create_new_building` | Create a complete building end-to-end (geometry + weather + typical template) |
 | `create_bar_building` | Create bar-building geometry from type, floor area, aspect ratio |
-| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry |
+| `create_typical_building` | Add constructions, loads, HVAC, SWH to a model with geometry; `hvac_only=True` swaps just the HVAC, sized against the model's own inputs |
 | `create_example_osm` | Minimal single-zone example (testing/demos) |
 | `create_baseline_osm` | 10-zone baseline with ASHRAE system 1–10 (testing/demos) |
 | `inspect_osm_summary` | Quick structural summary of an OSM file |

@@ -104,17 +104,31 @@ def register(mcp):
         add_refrigeration: bool = True,
         remove_objects: bool = True,
         hvac_only: bool = False,
+        add_infiltration: bool = True,
+        airtightness_value: float = 0.0,
+        airtightness_area_covered: str = "5-sided",
+        air_barrier: bool = False,
+        set_ground_constructions: bool = True,
+        set_unmet_hours_tolerance: bool = True,
+        modify_night_cycle_managers: bool = True,
+        purge_unused_resources: bool = True,
+        set_sim_control: bool = True,
     ):
         """Apply 90.1 template: constructions, loads, HVAC, SWH to model with geometry.
 
         Adds constructions, loads, HVAC, schedules, and service water heating
         to a model that already has geometry and space types assigned.
-        Wraps the ComStock create_typical_building_from_model measure.
+        Wraps openstudio-mcp's vendored fork of the ComStock
+        create_typical_building_from_model measure (it adds the add_infiltration,
+        airtightness and gate args below; defaults reproduce upstream).
 
         For fair HVAC system comparisons on an already-configured model, use
-        hvac_only=True with an explicit system_type — replaces just the HVAC
-        (standards-tuned equipment, efficiencies, and controls) and preserves
-        loads, constructions, schedules, and thermostats.
+        hvac_only=True with an explicit system_type: replaces just the HVAC
+        (standards-tuned equipment, efficiencies, controls) sized against the
+        model's own infiltration, constructions and loads, which are left
+        untouched. Check `non_hvac_changes` in the response is empty before
+        comparing runs. Old-system leftovers (schedules, curves) stay in the
+        model; clean_unused_objects removes them.
 
         Args:
             template: ASHRAE standard — "90.1-2019", "90.1-2016", "90.1-2013", etc.
@@ -138,7 +152,18 @@ def register(mcp):
             add_refrigeration: Add refrigeration
             remove_objects: Remove existing objects of the types being added
             hvac_only: Replace ONLY the HVAC system; overrides every add_*
-                toggle AND forces remove_objects=True (existing HVAC removed)
+                toggle, forces remove_objects=True (existing HVAC removed) and
+                turns every gate below off
+            add_infiltration: Replace infiltration with the NIST method
+            airtightness_value: NIST airtightness at 75 Pa, m3/h-m2; 0 = standard
+                default 13.8 (cfm/ft2 x 18.288, e.g. 0.6 cfm/ft2 = 10.97)
+            airtightness_area_covered: "4-sided" | "5-sided" | "6-sided"
+            air_barrier: Building has an air barrier
+            set_ground_constructions: Apply F-factor / C-factor ground constructions
+            set_unmet_hours_tolerance: Write 1 R to OutputControl:ReportingTolerances
+            modify_night_cycle_managers: Night-cycle managers to 1.9999 K / Thermostat
+            purge_unused_resources: purgeUnusedResourceObjects when remove_objects
+            set_sim_control: Disable DoHVACSizingSimulationforSizingPeriods
 
         """
         return create_typical_building(
@@ -161,6 +186,15 @@ def register(mcp):
             add_refrigeration=add_refrigeration,
             remove_objects=remove_objects,
             hvac_only=hvac_only,
+            add_infiltration=add_infiltration,
+            airtightness_value=airtightness_value,
+            airtightness_area_covered=airtightness_area_covered,
+            air_barrier=air_barrier,
+            set_ground_constructions=set_ground_constructions,
+            set_unmet_hours_tolerance=set_unmet_hours_tolerance,
+            modify_night_cycle_managers=modify_night_cycle_managers,
+            purge_unused_resources=purge_unused_resources,
+            set_sim_control=set_sim_control,
         )
 
     @mcp.tool(tags={"core"}, name="create_new_building")

@@ -5,7 +5,7 @@ Condensed from `AGENTS.md` (full rules there). Copilot code review reads only th
 
 ## Project
 MCP server exposing 150+ building-energy-modeling tools backed by the OpenStudio SDK
-Python bindings. `mcp_server/skills/<name>/tools.py` = MCP tool defs; `operations.py` =
+Python bindings. `mcp_server/skills/comstock/measures/` = vendored ComStock measure fork (exempt from the file-size rule; see its VENDORED.md). `mcp_server/skills/<name>/tools.py` = MCP tool defs; `operations.py` =
 business logic returning plain dicts.
 
 ## Rules to enforce

@@ -38,6 +38,8 @@ An engineer has a small office model with geometry and space types but no HVAC, 
 
 - **Model prep:** The model must have geometry (spaces with surfaces) before applying the template. Use `create_space_from_floor_print` or load an existing model.
 - **Climate zone:** Pass explicitly (e.g. `"ASHRAE 169-2013-2A"`) or use `"Lookup From Model"` if the model already has it set.
+- **HVAC-only swap:** `create_typical_building(system_type="VAV chiller with gas boiler reheat", hvac_only=True)` replaces just the HVAC on an already-configured model, sized against its own loads, infiltration and constructions. The response reports `restored` (SWH equipment put back) and `non_hvac_changes` (expected empty). Confirm it is empty before `compare_runs`.
+- **Infiltration basis:** the measure is openstudio-mcp's vendored fork of the ComStock measure (see `mcp_server/skills/comstock/measures/create_typical_building_from_model/VENDORED.md`). `add_infiltration`, `airtightness_value` (m3/h-m2 at 75 Pa, 0 = standard default 13.8), `airtightness_area_covered` (`4-sided` / `5-sided` / `6-sided`) and `air_barrier` are explicit args; defaults reproduce upstream.
 - **Building type:** Defaults to `"SmallOffice"`. The tool auto-sets `standardsBuildingType` on the building and space types if missing.
 - **Selective application:** Use boolean flags (`add_hvac`, `add_constructions`, `add_space_type_loads`, etc.) to apply only specific components.
 - **Remove existing:** `remove_objects=True` (default) clears existing HVAC/loads before adding new ones.

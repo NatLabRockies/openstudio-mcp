@@ -74,7 +74,8 @@ change_building_location(weather_file="/inputs/Chicago.epw")
 Owned by the `add-hvac` skill — see its "Comparing Systems / Decision-Grade
 Results" section (`get_skill("add-hvac")`): per-candidate
 `create_typical_building(system_type=..., hvac_only=True)` swaps on the SAME
-configured model, then `compare_runs`. Do NOT use
+configured model (confirm `non_hvac_changes == []`), then `compare_runs`
+(`comparable` must be True). Do NOT use
 add_baseline_system/add_doas_system for comparative studies — generic wiring
 templates, no standards tuning.
 
