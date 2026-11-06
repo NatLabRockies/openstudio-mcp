@@ -63,14 +63,14 @@ Runs the server locally over stdio — one container per user, launched by your 
 **Option A: Pull from Docker Hub** (no checkout needed)
 
 ```bash
-docker pull nrel/openstudio-mcp:v1.2.1
+docker pull nrel/openstudio-mcp:v1.3.0
 ```
 
 Tags on [`nrel/openstudio-mcp`](https://hub.docker.com/r/nrel/openstudio-mcp/tags):
 
 | Tag | What it is |
 |-----|------------|
-| `vX.Y.Z` (e.g. `v1.2.1`) | A tagged release. Pin one of these for reproducible work |
+| `vX.Y.Z` (e.g. `v1.3.0`) | A tagged release. Pin one of these for reproducible work |
 | `dev` | Latest `develop` branch build; moves on every merge |
 
 Every tag is a multi-arch manifest (amd64 + arm64), so the same `docker pull` works on Intel/AMD and Apple Silicon.
@@ -89,7 +89,7 @@ cd openstudio-mcp
 
 Both produce a local image tagged `openstudio-mcp:dev`. The arm64 Dockerfile builds natively from NREL's arm64 `.deb` (the upstream `nrel/openstudio` base is amd64-only, so plain `Dockerfile` runs under slow emulation on Apple Silicon).
 
-**Remember your image name.** Step 2 uses `openstudio-mcp:dev` (the local build). If you pulled instead, substitute `nrel/openstudio-mcp:v1.2.1` (or whichever tag you pulled) wherever `openstudio-mcp:dev` appears.
+**Remember your image name.** Step 2 uses `openstudio-mcp:dev` (the local build). If you pulled instead, substitute `nrel/openstudio-mcp:v1.3.0` (or whichever tag you pulled) wherever `openstudio-mcp:dev` appears.
 
 ### 2. Configure your host
 
@@ -135,7 +135,7 @@ args = [
 ]
 ```
 
-**Image name:** the second-to-last argument (`openstudio-mcp:dev`) must match the image from step 1. If you pulled from Docker Hub, change it to `nrel/openstudio-mcp:v1.2.1` (or the tag you pulled). Otherwise Docker fails with `Unable to find image 'openstudio-mcp:dev'`.
+**Image name:** the second-to-last argument (`openstudio-mcp:dev`) must match the image from step 1. If you pulled from Docker Hub, change it to `nrel/openstudio-mcp:v1.3.0` (or the tag you pulled). Otherwise Docker fails with `Unable to find image 'openstudio-mcp:dev'`.
 
 **Mounts:** each `-v host:container` line shares a host folder with the container. The container is discarded on exit (`--rm`), so anything you want to keep must live on a mount:
 

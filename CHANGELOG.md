@@ -2,6 +2,88 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-06
+
+Changes since 1.2.1. Every merged pull request is listed in the
+[v1.3.0 release notes](https://github.com/NatLabRockies/openstudio-mcp/releases/tag/v1.3.0).
+
+### Added
+- **`set_ground_temperatures`** (weather skill): applies an EPW header's `GROUND TEMPERATURES`
+  record to the model's four `Site:GroundTemperature:*` objects. A gbXML translation sets none of
+  them, so EnergyPlus silently assumes 18 °C every month on every `Ground` surface. Shallow, Deep
+  and FCfactorMethod take the raw EPW values at the nearest available depths to 0.5 m and 4.0 m;
+  BuildingSurface takes a value derived from the model's heating setpoints instead, because EPW
+  ground temperatures are undisturbed soil and the EPW's own `.stat` warns they "should NOT BE
+  USED ... to compute building floor losses". `building_surface_method` selects
+  `setpoint_offset` (default), `epw_raw`, `constant` or `none`.
+- **`repair_and_validate_gbxml_geometry`** now reports `ground_temperatures_missing` (report-only;
+  `ok` is unaffected, matching `ground_contact_missing_count`), with a four-state
+  absent/defaulted/partial/set breakdown per object.
+- **`get_weather_info`** now returns a `ground_temperatures` read-back, including on models with
+  no weather file attached.
+- `import_gbxml` stashes the staged EPW alongside the staged gbXML, so `set_ground_temperatures`
+  needs no argument after an import.
+- **`set_kiva_foundation` and `get_foundation_options`** (geometry skill): EnergyPlus Kiva, a 2D
+  finite-difference foundation model, as the detailed alternative to monthly ground temperatures.
+  A `Foundation` surface ignores `Site:GroundTemperature:BuildingSurface` and gets a solved soil
+  domain including slab-edge losses and insulation geometry. Driven by an archetype menu
+  (slab on grade uninsulated / perimeter-insulated, heated or unheated basement, vented crawlspace)
+  so the workflow can ask the user one question instead of ten; every applied value reports its
+  provenance. **The insulation R-values are conventional starting points, not code-derived** — there
+  is no vendored source for Kiva insulation geometry, so the ASHRAE 90.1 F-factor/C-factor target for
+  the model's climate zone is reported alongside as a cross-check rather than used as a derivation.
+  Exposed perimeter is computed from the joined building footprint.
+- `set_surface_boundary_conditions` now refuses `"Foundation"`, which produced a model that failed
+  fatally in EnergyPlus for want of the two companion objects; it points at `set_kiva_foundation`,
+  which writes all three together.
+- `find_missing_ground_temperatures()` reports `kiva_foundation_surface_count`; once every
+  ground-coupled surface uses Kiva, `Site:GroundTemperature:BuildingSurface` moves from
+  `ground_temperatures_missing_objects` to `ground_temperatures_superseded_by_kiva`
+- New `foundation-modeling` skill and worked example
+  `docs/examples/25_ground_and_foundation_heat_transfer.md` covering both methods.
+- `get_run_status` takes `wait_seconds` (default 0, so existing callers are unchanged): the
+  server holds the call until the run reaches a terminal status or the wait runs out, and every
+  response carries `poll_interval_seconds`, how long to wait before the next check. An agent no
+  longer spends one LLM turn per poll of a long simulation. (#216)
+- **`add_air_loop_supply_component`, `remove_air_loop_supply_component` and
+  `replace_air_loop_supply_component`**: add, remove and replace coils and fans on an air loop's
+  supply branch, without a hand-written measure. (#155)
+- **`add_setpoint_manager` and `remove_setpoint_manager`**: create or remove a setpoint manager
+  on a chosen air or plant loop node, for the types `get_setpoint_manager_properties` /
+  `set_setpoint_manager_properties` already handle. (#156)
+- `search_api` searches the root `openstudio` namespace and the non-model modules as well as
+  `openstudio.model`, reports the namespace in a `module` field, and returns method signatures
+  taken from the SDK headers and SWIG declarations. (#138)
+- `search_wiring_patterns` has a `replace_supply_branch_component` recipe (attach the new
+  component, then remove the old one), and the skill text warns that `addToNode` on a node
+  handle captured before a `remove()` crashes the SDK. (#154)
+- `apply_measure` takes `run_id`, so a ReportingMeasure can run against a completed simulation.
+  The served skill guides already told agents to pass it; the tool rejected the argument. (#140)
+- `save_osm_model` takes `save_name` (a name, no path): the server saves to the caller's private
+  area and returns the path. Literal paths such as `/runs/baseline.osm` are refused on a
+  multi-user server. `get_skill_file` fetches a skill's support files. (#141)
+- `repair_and_validate_gbxml_geometry` repairs interior surface pairs whose two sides disagree
+  on vertex count (EnergyPlus aborts on them), reports under-declared ground contact (#135), and
+  compares each space's floor area and volume with the values declared in the source gbXML,
+  report only (#145).
+- `get_surface_details`, `list_surfaces(detailed=True)` and `list_subsurfaces(detailed=True)`
+  return `vertices` as `[[x, y, z], ...]` in metres, in the frame `create_surface` and
+  `create_subsurface` accept. (#153)
+- A failed `apply_measure` or `test_measure` returns `log_path` and a `log_tail` cut around the
+  first crash marker, and names the signal when the measure process was killed. (#151)
+- `MCP_JWT_VERIFY_URL` (opt-in, `MCP_AUTH=jwt`): after the local signature, issuer and audience
+  check, each request's token is checked with the auth portal, which refuses revoked tokens and
+  records usage. (#163)
+
+### Changed
+- A model's resources (Schedule:File CSVs, Python EMS plugin scripts, custom EPWs) live in its
+  own companion folder `<model>/files/`, the OpenStudio Application layout, instead of a
+  `files/` folder shared by every model in the directory, where same-named resources overwrote
+  each other. (#199)
+- `apply_measure` makes the model's resources visible to the measure run, a file a measure
+  generates is kept with the model on save, `save_osm_model` with an explicit path makes the
+  saved file the session path, and a new model starts without a file path. (#197)
+
 ### Fixed
 - Over HTTP an agent asked about a file on the user's machine no longer searches the server
   for it. The server instructions said "If a file path is given, use it directly" and then
@@ -108,6 +190,32 @@
   the zip's `lib/` resources against the manifest and requires exactly the one seed the
   manifest names. Manifests from before this change are rerun once. (#198)
 
+- `run_simulation` warns (`warnings` + `user_message`) when the session model loaded from
+  or saved to that path has edits that are not saved, including after a measure reloaded
+  the model; it simulated the stale file on disk silently. `set_run_period` rejects days
+  that do not exist in the month for the model's calendar year (February 30 was accepted
+  and failed in EnergyPlus). Load, save and `run_simulation` now take a content digest of
+  the model, about 0.3 s per 5,000 objects. (#177)
+- The report tools (`view_model`, `view_simulation_data`, `generate_results_report`,
+  `run_qaqc_checks`) and the oversized-response spill now give a hint that matches the
+  transport: `copy_file` over stdio, `request_download` over HTTP. The old text named a
+  host path (`runs/exports/...`) that HTTP agents cannot reach. Download URLs get their
+  own `OSMCP_DOWNLOAD_URL_TTL` (default 900 s) instead of the 300 s upload TTL, which
+  expired before a relayed link was clicked. (#167)
+- Signed upload/download tokens no longer appear in the HTTP access log: the query
+  string of `/files/` request lines is replaced by `[redacted]`. Anyone who could read
+  the log could replay a download until the token expired. (#170)
+- A simulation that was still queued when the server died is reported as `failed`
+  ("server restarted before this run started; resubmit it") after the restart instead of
+  staying `queued` forever, and is reclaimable by run retention. Queued runs are now
+  written to disk at enqueue time, so a restart can find them at all. (#175)
+- `create_typical_building(hvac_only=True)` no longer replaces the model's infiltration, ground
+  constructions, unmet-hours tolerance or night-cycle controls, and no longer purges unused
+  resource objects: it runs a vendored fork of the measure with those steps gated off. (#227)
+- After `apply_measure` (and every tool built on it) the session path stays the user's file.
+  It became the measure run's `in.osm`, so `save_osm_model()` with no arguments wrote into the
+  run directory and left the user's file untouched. (#195)
+
 ### Security
 - **Breaking (`MCP_AUTH=jwt`):** `MCP_JWT_ISSUER` and `MCP_JWT_AUDIENCE` are now required; the
   server refuses to start without both, naming the missing variable. Without them any token
@@ -162,62 +270,6 @@
 - **Operator migration required:** changed principal keys move run and measure storage and
   change sandbox ownership; existing data is not migrated automatically. See
   [principal-key migration](docs/security-isolation.md#principal-key-migration) before upgrading.
-
-### Fixed
-- `run_simulation` warns (`warnings` + `user_message`) when the session model loaded from
-  or saved to that path has edits that are not saved, including after a measure reloaded
-  the model; it simulated the stale file on disk silently. `set_run_period` rejects days
-  that do not exist in the month for the model's calendar year (February 30 was accepted
-  and failed in EnergyPlus). Load, save and `run_simulation` now take a content digest of
-  the model, about 0.3 s per 5,000 objects. (#177)
-- The report tools (`view_model`, `view_simulation_data`, `generate_results_report`,
-  `run_qaqc_checks`) and the oversized-response spill now give a hint that matches the
-  transport: `copy_file` over stdio, `request_download` over HTTP. The old text named a
-  host path (`runs/exports/...`) that HTTP agents cannot reach. Download URLs get their
-  own `OSMCP_DOWNLOAD_URL_TTL` (default 900 s) instead of the 300 s upload TTL, which
-  expired before a relayed link was clicked. (#167)
-- Signed upload/download tokens no longer appear in the HTTP access log: the query
-  string of `/files/` request lines is replaced by `[redacted]`. Anyone who could read
-  the log could replay a download until the token expired. (#170)
-- A simulation that was still queued when the server died is reported as `failed`
-  ("server restarted before this run started; resubmit it") after the restart instead of
-  staying `queued` forever, and is reclaimable by run retention. Queued runs are now
-  written to disk at enqueue time, so a restart can find them at all. (#175)
-
-### Added
-- **`set_ground_temperatures`** (weather skill): applies an EPW header's `GROUND TEMPERATURES`
-  record to the model's four `Site:GroundTemperature:*` objects. A gbXML translation sets none of
-  them, so EnergyPlus silently assumes 18 °C every month on every `Ground` surface. Shallow, Deep
-  and FCfactorMethod take the raw EPW values at the nearest available depths to 0.5 m and 4.0 m;
-  BuildingSurface takes a value derived from the model's heating setpoints instead, because EPW
-  ground temperatures are undisturbed soil and the EPW's own `.stat` warns they "should NOT BE
-  USED ... to compute building floor losses". `building_surface_method` selects
-  `setpoint_offset` (default), `epw_raw`, `constant` or `none`.
-- **`repair_and_validate_gbxml_geometry`** now reports `ground_temperatures_missing` (report-only;
-  `ok` is unaffected, matching `ground_contact_missing_count`), with a four-state
-  absent/defaulted/partial/set breakdown per object.
-- **`get_weather_info`** now returns a `ground_temperatures` read-back, including on models with
-  no weather file attached.
-- `import_gbxml` stashes the staged EPW alongside the staged gbXML, so `set_ground_temperatures`
-  needs no argument after an import.
-- **`set_kiva_foundation` and `get_foundation_options`** (geometry skill): EnergyPlus Kiva, a 2D
-  finite-difference foundation model, as the detailed alternative to monthly ground temperatures.
-  A `Foundation` surface ignores `Site:GroundTemperature:BuildingSurface` and gets a solved soil
-  domain including slab-edge losses and insulation geometry. Driven by an archetype menu
-  (slab on grade uninsulated / perimeter-insulated, heated or unheated basement, vented crawlspace)
-  so the workflow can ask the user one question instead of ten; every applied value reports its
-  provenance. **The insulation R-values are conventional starting points, not code-derived** — there
-  is no vendored source for Kiva insulation geometry, so the ASHRAE 90.1 F-factor/C-factor target for
-  the model's climate zone is reported alongside as a cross-check rather than used as a derivation.
-  Exposed perimeter is computed from the joined building footprint.
-- `set_surface_boundary_conditions` now refuses `"Foundation"`, which produced a model that failed
-  fatally in EnergyPlus for want of the two companion objects; it points at `set_kiva_foundation`,
-  which writes all three together.
-- `find_missing_ground_temperatures()` reports `kiva_foundation_surface_count`; once every
-  ground-coupled surface uses Kiva, `Site:GroundTemperature:BuildingSurface` moves from
-  `ground_temperatures_missing_objects` to `ground_temperatures_superseded_by_kiva`
-- New `foundation-modeling` skill and worked example
-  `docs/examples/25_ground_and_foundation_heat_transfer.md` covering both methods.
 
 ## [1.0.0-beta] - 2026-06-05
 
