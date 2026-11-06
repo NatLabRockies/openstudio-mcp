@@ -10,6 +10,7 @@ import openstudio
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
 from mcp_server.model_save import save_model_confined, staged_for_sdk_load
+from mcp_server.path_hints import no_match_hint, path_hint
 from mcp_server.resources import (
     companion_files_dir,
     copy_resources,
@@ -82,10 +83,11 @@ def inspect_osm_summary(osm_path: str) -> dict[str, Any]:
     p = Path(osm_path)
 
     if not is_path_allowed(p.resolve()):
-        return {"ok": False, "error": f"OSM path is not allowed: {p}"}
+        return {"ok": False, "error": f"OSM path is not allowed: {p}", "hint": path_hint(osm_path)}
 
     if not p.exists():
-        return {"ok": False, "error": f"OSM not found: {p}", "osm_path": str(p)}
+        return {"ok": False, "error": f"OSM not found: {p}", "osm_path": str(p),
+                "hint": path_hint(osm_path)}
 
     try:
         vt = openstudio.osversion.VersionTranslator()
@@ -154,10 +156,10 @@ def load_osm_model(osm_path: str, version_translate: bool = True) -> dict[str, A
     p = Path(osm_path).resolve()
 
     if not is_path_allowed(p):
-        return {"ok": False, "error": f"OSM path is not allowed: {p}"}
+        return {"ok": False, "error": f"OSM path is not allowed: {p}", "hint": path_hint(osm_path)}
 
     if not p.exists():
-        return {"ok": False, "error": f"OSM file not found: {p}"}
+        return {"ok": False, "error": f"OSM file not found: {p}", "hint": path_hint(osm_path)}
 
     try:
         model = model_manager.load_model(p, version_translate=version_translate)
@@ -412,7 +414,8 @@ def list_files(
             d = user_run_root()
         # Restrict to /inputs and /runs only
         if not any(str(d).startswith(str(root)) or d == root for root in _allowed_roots):
-            return {"ok": False, "error": f"Directory not allowed: {d}. list_files is restricted to /inputs and /runs."}
+            return {"ok": False, "hint": path_hint(directory),
+                    "error": f"Directory not allowed: {d}. list_files is restricted to /inputs and /runs."}
         scan_dirs = [d]
     else:
         scan_dirs = _allowed_roots
@@ -459,6 +462,9 @@ def list_files(
         resp["truncated"] = True
     resp["count"] = len(items)
     resp["items"] = items
+    hint = None if items else no_match_hint()
+    if hint:
+        resp["hint"] = hint
     return resp
 
 

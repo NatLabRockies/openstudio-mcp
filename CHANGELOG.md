@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Fixed
+- Over HTTP an agent asked about a file on the user's machine no longer searches the server
+  for it. The server instructions said "If a file path is given, use it directly" and then
+  "call list_files once" on every transport; in HTTP mode they now say a file the user names
+  is usually on the user's machine, to look there first, and to upload it with
+  `request_upload` (stdio text is unchanged). `request_upload`, `list_files` and
+  the `file-transfer` skill no longer say to check the server first. A failed path in
+  `load_osm_model`, `inspect_osm_summary` or `list_files` returns a `hint` naming the next step
+  (upload over HTTP, the mounted folder on stdio); a Windows, UNC or `~/` path is called out as
+  a path on the user's machine. Over HTTP a `list_files` call that matches nothing carries the
+  same upload `hint`. Error text and path rules are unchanged.
 - `cancel_run` no longer refuses to signal a run whose child is still inside `execve`:
   `/proc/<pid>/cmdline` is empty for that instant, and the run-record trust check answered
   "could not inspect"; the cancel path now re-reads a live, non-zombie process a few times. The
