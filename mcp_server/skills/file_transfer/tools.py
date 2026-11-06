@@ -28,9 +28,11 @@ def register(mcp):
 
         Use when a file the server needs (an .osm model, custom measure .zip,
         weather .epw/.ddy/.stat, FloorspaceJS .json) lives on your machine, not
-        on the server. Check first with list_files/list_uploads — staged
-        inputs (e.g. under /inputs) are already server-visible and need no
-        upload. Workflow:
+        on the server. Do not search the server for a file the user says is
+        on their machine: upload it. No upload is needed when the user gives
+        a server path (e.g. under /inputs or /runs) or the file is already in
+        list_uploads. Uploads are stored in your private run area, never in
+        /inputs. Workflow:
           1. request_upload(filename, size_bytes[, sha256, kind])
           2. PUT the raw bytes to the returned upload_url, e.g.
              curl --upload-file model.osm "<upload_url>"

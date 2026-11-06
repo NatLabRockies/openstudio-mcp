@@ -417,6 +417,11 @@ Over HTTP the server runs on a different machine, so a tool path like
 protocol (never through the model context), authorized by a short-lived
 HMAC-signed URL.
 
+In HTTP mode the server's instructions tell the agent that a file you name is usually on your
+machine: look there first, then upload it, rather than search the server. A failed path in
+`load_osm_model`, `inspect_osm_summary` or `list_files`, or a `list_files` call that matches
+nothing, returns a `hint` naming `request_upload`.
+
 **Upload (agent-driven):**
 
 1. `request_upload(filename, size_bytes[, sha256, kind])` → `{file_id, upload_url}`

@@ -20,7 +20,8 @@ def register(mcp):
         list_thermal_zones, etc. to inspect the model.
 
         Args:
-            osm_path: Path to the OSM file to load (absolute or relative)
+            osm_path: Server-side path to the OSM file (absolute or relative).
+                A file that is only on the user's machine is not readable here.
             version_translate: Use VersionTranslator to upgrade older OSM files (default True)
         """
         return load_osm_model(osm_path=osm_path, version_translate=version_translate)
@@ -103,8 +104,10 @@ def register(mcp):
         max_results: int = 10,
     ):
         """List files in /inputs and /runs only. Default 10 results.
-        /inputs contains user-provided models, weather files, and data files.
-        /runs contains simulation outputs. Both are inside the MCP container.
+        Both folders are on the SERVER, not the user's machine: /inputs holds
+        models, weather files and data files staged or mounted for the server,
+        /runs holds simulation outputs and uploads. A file that is only on the
+        user's machine is not listed here.
 
         Only call if you need to discover files. Do not call repeatedly
         for the same directory. For weather files, use list_weather_files instead.
@@ -124,7 +127,7 @@ def register(mcp):
     def inspect_osm_summary_tool(osm_path: str):
         """Quick structural summary of an OSM file without loading it into
         memory. Returns object counts, floor area, and zone info. Use to
-        preview a model before loading.
+        preview a model before loading. osm_path is a server-side path.
         If model is already loaded, use get_model_summary instead.
         """
         return inspect_osm_summary(osm_path=osm_path)

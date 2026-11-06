@@ -14,8 +14,11 @@ out-of-band over signed HTTP routes on the same port.
 
 ## Upload (get a local file onto the server)
 
-0. Check first: `list_files()` / `list_uploads()` — staged inputs (e.g. under
-   `/inputs`) are already server-visible and need no upload.
+0. Do not search the server (`list_files`) for a file the user says is on
+   their machine: upload it. Skip the upload only when the user gave a server
+   path (e.g. under `/inputs` or `/runs`) or the file is already in
+   `list_uploads()`. Uploads are stored in your private run area, never in
+   `/inputs`.
 1. `request_upload(filename="model.osm", size_bytes=<bytes>)` →
    `{file_id, upload_url, ...}` (optional `sha256` for integrity,
    `kind="measure"` for measure zips)

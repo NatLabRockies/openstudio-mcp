@@ -8,6 +8,7 @@ from fastmcp import FastMCP
 from mcp_server.audit import AuditMiddleware
 from mcp_server.config import ENABLE_CODE_MODE
 from mcp_server.identity_guard import IdentityGuard
+from mcp_server.path_hints import file_location_instructions
 from mcp_server.response_guard import ResponseSizeGuard
 from mcp_server.skills import register_all_skills
 from mcp_server.stdout_suppression import (
@@ -114,10 +115,8 @@ def _instructions() -> str:
         "or list_weather_files — never download or write weather files. "
         "- HVAC: use add_baseline_system, add_doas_system, add_vrf_system — "
         "never write OpenStudio SDK scripts to wire HVAC components. "
-        + custom_hvac +
-        "If a file path is given, use it directly. If a file operation fails, "
-        "you may call list_files once to find the right path, then retry — "
-        "do not call list_files more than once for the same file. "
+        + custom_hvac
+        + file_location_instructions() +
         "Use list_weather_files for EPW discovery — do not use list_files for weather. "
         "To find objects by type, use list_model_objects(object_type). "
         "List tools default to 10 results — use filters to narrow, or "
