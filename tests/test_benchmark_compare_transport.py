@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from benchmark_compare_transport import (  # noqa: E402
+    apply_fix,
     classify,
     compare,
     discordant,
@@ -84,3 +85,25 @@ def test_summary_uses_cli_time_not_wall_clock():
     assert summary["passed"] == 1
     assert summary["median_s"] == pytest.approx(40.0, abs=0.01)
     assert summary["failure_modes"] == {"wrong_tool": 1}
+
+
+def test_fix_is_outcome_blind():
+    # Validates: a false-failure repair must replace rows that come back
+    # failing too, so it cannot selectively raise the HTTP score
+    legs = {"m": [_leg(a=FAIL, b=FAIL, c=PASS)]}
+    fixes = {"m": [_leg(**{"a": PASS, "b": FAIL})]}
+    assert apply_fix(legs, fixes) == ["a", "b"]
+    rows = {r["test_id"]: r for r in legs["m"][0]["tests"]}
+    assert (rows["a"]["passed"], rows["b"]["passed"], rows["c"]["passed"]) == (
+        True, False, True)
+    assert rows["a"]["substituted_fix"] is True
+    assert "substituted_fix" not in rows["c"]
+
+
+def test_fix_keeps_setup_rows():
+    # Validates: fix legs rebuild fixtures first; those rows must not replace
+    # the original leg's setup results
+    setup = "tests/llm/test_01_setup.py::test_x"
+    legs = {"m": [_leg(**{setup: PASS})]}
+    assert apply_fix(legs, {"m": [_leg(**{setup: FAIL})]}) == []
+    assert legs["m"][0]["tests"][0]["passed"] is True

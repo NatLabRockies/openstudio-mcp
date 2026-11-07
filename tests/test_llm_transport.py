@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from tests.llm import runner, transport
+from tests.llm import runner, transport, verify
 
 pytestmark = pytest.mark.unit
 
@@ -133,3 +133,27 @@ def test_wait_out_cap_off_by_default(monkeypatch):
     value = transport.wait_out_cap(lambda: (True, "capped"), sleep=slept.append)
     assert value == "capped"
     assert slept == []
+
+
+def test_http_verifier_uses_the_http_server(http_env, monkeypatch):
+    # Regression: verify_run opened a stdio server for HTTP legs, which answers
+    # "Unknown run_id" for an HTTP user's runs, so every simulation chain test
+    # failed its EnergyPlus check whatever the simulation actually did
+    seen = {}
+
+    class Stop(Exception):
+        pass
+
+    def fake_http(url, headers=None):
+        seen.update(url=url, headers=headers)
+        raise Stop
+
+    def no_stdio(_params):
+        raise AssertionError("HTTP leg must not verify over stdio")
+
+    monkeypatch.setattr(verify, "streamablehttp_client", fake_http)
+    monkeypatch.setattr(verify, "stdio_client", no_stdio)
+    with pytest.raises(Stop):
+        verify.verify_run("run_x")
+    assert seen == {"url": "http://127.0.0.1:8100/mcp",
+                    "headers": {"Authorization": "Bearer tok"}}

@@ -5,7 +5,7 @@ each disagreement is listed for rerun and --rerun-* sweeps are tallied per test.
 
 Usage:
   python scripts/benchmark_compare_transport.py results/<stdio> results/<http> \
-      [--rerun-stdio results/<x> --rerun-http results/<y>] \
+      [--fix-http results/<z>] [--rerun-stdio results/<x> --rerun-http results/<y>] \
       [--out report.md] [--discordant discordant.json]
 """
 from __future__ import annotations
@@ -25,6 +25,25 @@ def load_legs(sweep: Path) -> dict[str, list[dict]]:
         if "tests" in data:
             legs.setdefault(data["model"], []).append(data)
     return legs
+
+
+def apply_fix(legs: dict[str, list[dict]], fixes: dict[str, list[dict]]) -> list[str]:
+    """Swap each leg's rows for its fix leg's rows, whatever those rows show.
+
+    Outcome-blind on purpose, as in the t600 merge: every test the fix leg ran
+    is replaced, so a fix rerun cannot selectively improve a score. Setup rows
+    only rebuild fixtures and are kept. Returns the replaced test ids.
+    """
+    replaced: set[str] = set()
+    for model, fix_legs in fixes.items():
+        fixed = {r["test_id"]: r for r in fix_legs[0]["tests"]
+                 if "test_01_setup" not in r["test_id"]}
+        for leg in legs.get(model, []):
+            leg["tests"] = [
+                fixed[r["test_id"]] | {"substituted_fix": True}
+                if r["test_id"] in fixed else r for r in leg["tests"]]
+        replaced |= set(fixed)
+    return sorted(replaced)
 
 
 def rows_by_test(leg: dict) -> dict[str, dict]:
@@ -151,14 +170,18 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("stdio", type=Path)
     ap.add_argument("http", type=Path)
+    ap.add_argument("--fix-http", type=Path, help="sweep whose rows replace HTTP rows")
     ap.add_argument("--rerun-stdio", type=Path)
     ap.add_argument("--rerun-http", type=Path)
     ap.add_argument("--out", type=Path)
     ap.add_argument("--discordant", type=Path, help="write model -> tests JSON")
     args = ap.parse_args()
 
+    http_legs = load_legs(args.http)
+    if args.fix_http:
+        apply_fix(http_legs, load_legs(args.fix_http))
     text, to_rerun = render(
-        load_legs(args.stdio), load_legs(args.http),
+        load_legs(args.stdio), http_legs,
         load_legs(args.rerun_stdio) if args.rerun_stdio else {},
         load_legs(args.rerun_http) if args.rerun_http else {})
     if args.out:

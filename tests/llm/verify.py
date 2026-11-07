@@ -13,9 +13,14 @@ from __future__ import annotations
 import asyncio
 import json
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
 
+from . import transport
 from .runner import _docker_mcp_args
 
 
@@ -34,18 +39,34 @@ def _unwrap(res) -> dict:
         return {"_raw": text.strip()}
 
 
+@asynccontextmanager
+async def _session() -> AsyncIterator[ClientSession]:
+    """Session that can see the agent's runs: they belong to its server user.
+
+    A stdio server over the same folder answers "Unknown run_id" for runs an
+    HTTP user produced, so HTTP legs must verify through the HTTP server.
+    """
+    if transport.is_http():
+        config = transport.http_server_config()
+        client = streamablehttp_client(config["url"], headers=config["headers"])
+    else:
+        params = StdioServerParameters(command="docker", args=_docker_mcp_args())
+        client = stdio_client(params)
+    async with client as streams:
+        async with ClientSession(streams[0], streams[1]) as session:
+            await session.initialize()
+            yield session
+
+
 async def _verify(run_id: str) -> dict:
-    params = StdioServerParameters(command="docker", args=_docker_mcp_args())
-    async with stdio_client(params) as (r, w):
-        async with ClientSession(r, w) as s:
-            await s.initialize()
-            status = _unwrap(await s.call_tool("get_run_status", {"run_id": run_id}))
-            metrics = _unwrap(await s.call_tool(
-                "extract_summary_metrics", {"run_id": run_id}))
-            errors = _unwrap(await s.call_tool(
-                "extract_simulation_errors", {"run_id": run_id}))
-            qaqc = _unwrap(await s.call_tool(
-                "run_qaqc_checks", {"run_id": run_id}))
+    async with _session() as s:
+        status = _unwrap(await s.call_tool("get_run_status", {"run_id": run_id}))
+        metrics = _unwrap(await s.call_tool(
+            "extract_summary_metrics", {"run_id": run_id}))
+        errors = _unwrap(await s.call_tool(
+            "extract_simulation_errors", {"run_id": run_id}))
+        qaqc = _unwrap(await s.call_tool(
+            "run_qaqc_checks", {"run_id": run_id}))
 
     m = metrics.get("metrics", {}) if metrics.get("ok") else {}
     return {
