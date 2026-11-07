@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from ..transport import HTTP_USER, is_http, measures_user
 from . import rubric
 
 GRADING_DIR = Path(__file__).resolve().parent
@@ -71,9 +72,13 @@ def _image() -> str:
 
 def _run_grader(mode: str, grader_args: list[str]) -> dict:
     """Run container_grader.py in the image; return its facts dict."""
+    # Over HTTP the leg's runs dir is the user's area, so paths saved inside
+    # models read /runs/<user>/...; mount it there too so they still resolve.
+    alias = ["-v", f"{_runs_dir()}:/runs/{HTTP_USER}"] if is_http() else []
     cmd = [
         "docker", "run", "--rm",
         "-v", f"{_runs_dir()}:/runs",
+        *alias,
         "-v", f"{_measures_dir()}:/measures:ro",
         "-v", f"{GRADING_DIR}:/grading:ro",
         _image(), "/opt/venv/bin/python", "/grading/container_grader.py",
@@ -112,7 +117,7 @@ def _dispatch(case_id: str, level: str, measure_name: str | None) -> dict:
                     "error": "no accepted create_measure call with a name"}
         return _run_grader("apply_measure", [
             "--osm", BASELINE_HVAC_OSM, "--work", work,
-            "--measure-dir", f"/measures/local/custom/{measure_name}"])
+            "--measure-dir", f"/measures/{measures_user()}/custom/{measure_name}"])
     if case_id == "python_ems_control":
         return _run_grader("ems_sim", [
             "--osm", graded_model_container_path(case_id, level),

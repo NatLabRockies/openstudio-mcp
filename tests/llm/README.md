@@ -45,6 +45,9 @@ LLM_TESTS_ENABLED=1 LLM_TESTS_RETRIES=2 pytest tests/llm/ -v
 | `LLM_TESTS_CODEX_CMD` | (auto) | codex CLI path override (default: PATH, then the Windows install dir) |
 | `LLM_TESTS_IMAGE` | `openstudio-mcp:dev` | MCP server image — sweeps pin the release tag |
 | `LLM_TESTS_ARM` | `full` | Assistance-layer ablation (see below) |
+| `LLM_TESTS_TRANSPORT` | `stdio` | `http` targets a running server via `LLM_TESTS_MCP_URL` + `LLM_TESTS_MCP_TOKEN`; prompts move to that user's area (`tests/llm/transport.py`). `scripts/benchmark_sweep.py --transport http` starts one server per leg |
+| `LLM_TESTS_TIMEOUT_FLOOR` | `0` | Suite-wide minimum timeout in seconds (`LLM_TESTS_TIMEOUT_BASE` only reaches `test_06`) |
+| `LLM_TESTS_CAP_WAIT_S` | `0` | Sleep through a usage cap for up to this long, then retry the prompt, instead of failing the test |
 
 ### Assistance arms (`LLM_TESTS_ARM`)
 
