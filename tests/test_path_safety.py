@@ -711,3 +711,6 @@ class TestPathDeniedHint:
         assert str(run_root / "alice") in hint, hint
         assert str(measures / "alice") in hint, hint
         assert f"under {run_root}." not in hint, "bare RUN_ROOT is not writable for a tenant"
+        # Display only: an error message must not create directories (or fail trying)
+        assert not (run_root / "alice").exists()
+        assert not measures.exists()
