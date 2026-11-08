@@ -7,8 +7,9 @@ user-area path; only the transport changes.
 **Answer: yes.** Across three models and 344 tests, no pass-rate difference
 between the transports survived reruns except one test that is stricter than
 its question. The differences that do exist are in how agents get there: more
-schema lookups over HTTP for Sonnet and Haiku, more cost and time for Opus, and
-one server tool (`get_building_info`) that fails far more often over HTTP.
+schema lookups over HTTP for Sonnet and Haiku, and more cost and time for Opus.
+A `get_building_info` failure that looked HTTP-specific turned out to be caused
+by test fixtures that earlier tests had changed, not by the transport (issue 1).
 
 ## Setup
 
@@ -40,8 +41,8 @@ Claude Code session, so a new MCP session, against the same server process.
 3. **Process lifetime.** stdio starts a server per prompt; HTTP keeps one server
    for the leg (sessions, caches and any leaked state persist across prompts).
 4. **`/test-assets` prompts.** A few tests name `/test-assets/...`, which the
-   HTTP instructions do not list as a server path, so HTTP agents first look on
-   the host with `Bash`. A real deployment has no `/test-assets`; this is a
+   server denies on both transports and the HTTP instructions do not list as a
+   server path, so HTTP agents also look on the host with `Bash`. A real deployment has no `/test-assets`; this is a
    harness artifact that affects a handful of tests.
 
 ## Harness defects found during the run
@@ -167,12 +168,15 @@ schema with `ToolSearch`.
 
 Ranked by how much they matter to a user of the HTTP server.
 
-1. **`get_building_info` fails on most HTTP calls.** The SWIG call
-   `Building.floorAreaPerPerson()` leaves a Python error pending ("returned a
-   result with an exception set"). Over stdio the tool's own `try` catches it
-   and returns `ok: false`; over HTTP it surfaces later, inside FastMCP's
-   argument validation (`pydantic_core ... validate_python`), so the agent gets
-   a raw `ToolError`. Failure rate per call, full legs:
+1. **`get_building_info` breaks on a model with zero people
+   ([#233](https://github.com/NatLabRockies/openstudio-mcp/issues/233)).**
+   `Building.floorAreaPerPerson()` (and the other ratio getters, when floor or
+   exterior area is 0) throws "division by 0" in C++, and the openstudio 3.11.0
+   SWIG wrapper leaves the Python error pending ("returned a result with an
+   exception set"). Depending on the call, the tool returns `ok: false`, returns
+   `ok: true` with a garbage `floor_area_per_person_m2` (6.95e-310), or raises a
+   raw `ToolError` past its own `try`. Reproduced on both transports with the
+   same model file. Failure rate per call, full legs:
 
    | Model | stdio | HTTP |
    |---|---|---|
@@ -180,32 +184,34 @@ Ranked by how much they matter to a user of the HTTP server.
    | Sonnet 5.5 | 7/12 (58%) | 13/16 (81%) |
    | Haiku 5.5 | 9/39 (23%) | 25/31 (81%) |
 
-   `get_object_fields` shows the same error, rarely: Opus 2/97 stdio, 7/165 HTTP.
-   Five of the seven HTTP cases came after a failed `get_building_info` in the
-   same session, which suggests (not proven) that the pending error leaks into
-   the next tool call in the long-lived process.
-
-   Same root cause on both transports, much higher rate over HTTP. Why HTTP is
-   worse is not established (one long-lived process and worker threads are the
-   obvious suspects). Agents usually recover with other tools, which is why
-   pass rates barely move. Worth its own issue with a reproduction.
-2. **HTTP path hints do not name the user's writable area.** Agents asked to
+   The gap is fixture state, not transport: all three HTTP legs ended with a
+   `llm-test-baseline` fixture whose spaces earlier tests had moved to new space
+   types with no people; of the stdio legs only Sonnet's did (58%, the highest
+   stdio rate). `get_object_fields` shows the same pending error, rarely (Opus
+   2/97 stdio, 7/165 HTTP), five of seven times right after a failed
+   `get_building_info`. Agents usually recover with other tools, which is why
+   pass rates barely move.
+2. **HTTP path hints do not name the user's writable area
+   ([#234](https://github.com/NatLabRockies/openstudio-mcp/issues/234)).** Agents asked to
    write a file (e.g. `openstudio_analysis_create_osa_json`) guessed a relative
    path (resolves to `/repo`) or `/runs/...`; both are denied for a token user,
    whose area is `/runs/<user>`. `path_denied_hint` names `RUN_ROOT`, not the
    caller's area. HTTP only.
-3. **Agents can overwrite shared suite fixtures.** `save_osm_model` with no
+3. **Agents can overwrite shared suite fixtures
+   ([#235](https://github.com/NatLabRockies/openstudio-mcp/issues/235)).** `save_osm_model` with no
    path saves over the loaded model, so one test that loads the shared
    `llm-test-baseline-hvac` model and saves can change it for every later test
    in the leg. Sonnet's stdio leg lost its reheat coils this way (1 heating coil
    vs Haiku's 11); its four `measure_*_full_chain` tests then failed the
    baseline EUI pin (40.84 vs 57.41) and passed 3/3 on rerun with fresh
    fixtures. Suite weakness on either transport.
-4. **Suite prompts name `/test-assets`.** On HTTP this sends agents to the
-   host first (see above); the same mount is also `/inputs`, which the HTTP
-   instructions do recognise. Rewriting those prompts to `/inputs` would remove
-   the artifact.
-5. **`thermal_zones_L1` is stricter than its question.** "How many zones does
+4. **Suite prompts name `/test-assets`
+   ([#236](https://github.com/NatLabRockies/openstudio-mcp/issues/236)).** `/test-assets` is not a server read
+   root, so the first call is denied on both transports and the agent finds the
+   same file under `/inputs`; on HTTP agents also search the host first (see
+   above). Rewriting those prompts to `/inputs` removes the detour.
+5. **`thermal_zones_L1` is stricter than its question
+   ([#237](https://github.com/NatLabRockies/openstudio-mcp/issues/237)).** "How many zones does
    the building have?" requires a `list_thermal_zones` call, but
    `load_osm_model` already returns the zone count; agents that answer from it
    are right and fail the test.
