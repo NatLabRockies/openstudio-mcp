@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-08
+
+Changes since 1.3.0. Every merged pull request is listed in the
+[v1.3.1 release notes](https://github.com/NatLabRockies/openstudio-mcp/releases/tag/v1.3.1).
+
+### Fixed
+- **`get_building_info`** no longer fails, or returns garbage, on a building with no people or no
+  floor area. OpenStudio 3.11's per-person ratio getters throw on a zero denominator and the SWIG
+  wrapper left that error pending in the interpreter, so the tool returned `ok: false`, a value
+  like `6.95e-310`, or a raw error on the next call. Every ratio with a zero denominator is now
+  reported as `null` (#233, #239).
+- Path-denied errors over HTTP (the shared `path_denied_hint` and the analysis tools' output-
+  directory checks) name the caller's own writable folder, `/runs/<user>`, instead of the
+  server-wide `/runs` root the token user cannot reach (#234, #240).
+
+### Changed
+- LLM test harness (`tests/llm`) can run against the streamable-HTTP server
+  (`LLM_TESTS_TRANSPORT=http`); `scripts/benchmark_sweep.py --transport http` starts one server
+  per leg. Report in `docs/testing/llm-benchmarking-http-vs-stdio.md`: no pass-rate difference
+  between stdio and HTTP on v1.3.0 for Opus, Sonnet and Haiku 5.5 (#238).
+- LLM test suite fixes found by that comparison: prompts name `/inputs` rather than the
+  never-allowed `/test-assets` (#236, #241); shared fixture models are snapshotted by the test that
+  creates them and restored before every other test, so one agent's in-place save cannot change
+  what later tests load (#235, #242); `thermal_zones_L1` asks which zones exist instead of
+  failing a correct count-based answer (#237, #243).
+
 ## [1.3.0] - 2026-11-06
 
 Changes since 1.2.1. Every merged pull request is listed in the
