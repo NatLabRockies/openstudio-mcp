@@ -9,6 +9,13 @@
 > NOT comparable with Runs <= 16 below. `export_measure` rows refer to a
 > tool since removed from the roster.
 
+## HTTP vs stdio transport (v1.3.0, 2026-11)
+
+Same suite (344 tests) over the shared HTTP server and over stdio, on Opus,
+Sonnet and Haiku 5.5: no pass-rate difference held up under reruns. Details,
+behaviour differences and server issues found:
+[llm-benchmarking-http-vs-stdio.md](llm-benchmarking-http-vs-stdio.md).
+
 ## Current baseline — outcome-graded matrix at a 600 s completion budget (2026-08)
 
 The citable numbers come from the frozen v1.2.1 rerun collection merged
