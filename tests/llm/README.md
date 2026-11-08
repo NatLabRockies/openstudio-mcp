@@ -217,8 +217,10 @@ Check the tool call sequence in assertion errors — it reveals agent behavior:
 - `/measures` — persistent custom-measure root (from `LLM_TESTS_MEASURES_DIR`).
   Every `run_claude` spawns a fresh `--rm` container; without this mount,
   measures created in one test would vanish before the next
-- `/test-assets` and `/inputs` (read-only) — `tests/assets/` for FloorspaceJS
-  files, SystemD models, the set_building_name measure, Boston EPW set
+- `/inputs` and `/test-assets` (read-only) — both are `tests/assets/`: FloorspaceJS
+  files, SystemD models, the set_building_name measure, Boston EPW set.
+  Prompts must name `/inputs`: the server allows only that one of the two mounts, so a
+  `/test-assets` path is denied on every transport (#236, checked by `tests/test_llm_prompt_paths.py`)
 - EPW files at `/opt/comstock-measures/.../tests/*.epw` (baked into image)
 
 ### Minimizing Claude Max usage

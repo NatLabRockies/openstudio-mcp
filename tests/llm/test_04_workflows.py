@@ -231,7 +231,7 @@ WORKFLOW_CASES = [
         "id": "import_floorspacejs",
         "prompt": (
             "Import the FloorspaceJS JSON file at "
-            "/test-assets/sddc_office/floorplan.json "
+            "/inputs/sddc_office/floorplan.json "
             "using import_floorspacejs. Use MCP tools only."
         ),
         "required_tools": ["import_floorspacejs"],
@@ -243,7 +243,7 @@ WORKFLOW_CASES = [
         "prompt": (
             "Do all 3 steps in order, do not stop early:\n"
             "Step 1: Import the FloorspaceJS file at "
-            "/test-assets/sddc_office/floorplan.json "
+            "/inputs/sddc_office/floorplan.json "
             "using import_floorspacejs.\n"
             "Step 2: Call change_building_location with weather_file="
             "/opt/comstock-measures/ChangeBuildingLocation"
