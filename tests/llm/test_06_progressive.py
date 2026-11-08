@@ -220,7 +220,9 @@ PROGRESSIVE_CASES = [
         "id": "thermal_zones",
         "needs_model": True,
         "expected": ["list_thermal_zones"],
-        "L1": "How many zones does the building have?",
+        # Not "how many zones": load_osm_model already returns the count, so an
+        # agent that answered from it was right and still failed (#237)
+        "L1": "Which thermal zones does the building have?",
         "L2": "List all thermal zones in the model.",
         "L3": "List the thermal zones using list_thermal_zones.",
     },
