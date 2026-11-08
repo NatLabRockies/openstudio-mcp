@@ -20,6 +20,20 @@ def _safe_float(value) -> float | None:
     return v
 
 
+def _ratio(denominator: float, getter) -> float | None:
+    """Call a Building per-X getter only when X is non-zero.
+
+    The SDK throws "Calculation would require division by 0." for a zero
+    denominator, and the openstudio 3.11 SWIG wrapper leaves that error pending
+    in the interpreter (#233): the first call returns garbage with the error set,
+    later calls raise RuntimeError, and the pending error can surface in an
+    unrelated C call afterwards. Never let it throw.
+    """
+    if denominator <= 0.0:
+        return None
+    return _safe_float(getter())
+
+
 def _compute_conditioned_floor_area(model) -> float:
     """Compute conditioned floor area from model objects (no simulation needed).
 
@@ -60,29 +74,37 @@ def _extract_building_info(model, building) -> dict[str, Any]:
     if building.standardsNumberOfAboveGroundStories().is_initialized():
         standards_number_of_above_ground_stories = int(building.standardsNumberOfAboveGroundStories().get())
 
+    # Denominators of the ratio getters below, read once
+    floor_area = float(building.floorArea())
+    exterior_surface_area = float(building.exteriorSurfaceArea())
+    exterior_wall_area = float(building.exteriorWallArea())
+    people = float(building.numberOfPeople())
+
     return {
         "handle": str(building.handle()),
         "name": building.nameString(),
         "space_type": optional_name(space_type),
         "default_construction_set": optional_name(default_construction_set),
         "default_schedule_set": optional_name(default_schedule_set),
-        "floor_area_m2": float(building.floorArea()),
+        "floor_area_m2": floor_area,
         "conditioned_floor_area_m2": _compute_conditioned_floor_area(model),
-        "exterior_surface_area_m2": float(building.exteriorSurfaceArea()),
-        "exterior_wall_area_m2": float(building.exteriorWallArea()),
+        "exterior_surface_area_m2": exterior_surface_area,
+        "exterior_wall_area_m2": exterior_wall_area,
         "air_volume_m3": float(building.airVolume()),
-        "number_of_people": _safe_float(building.numberOfPeople()),
-        "people_per_floor_area": _safe_float(building.peoplePerFloorArea()),
-        "floor_area_per_person_m2": _safe_float(building.floorAreaPerPerson()),
+        "number_of_people": _safe_float(people),
+        "people_per_floor_area": _ratio(floor_area, building.peoplePerFloorArea),
+        "floor_area_per_person_m2": _ratio(people, building.floorAreaPerPerson),
         "lighting_power_w": _safe_float(building.lightingPower()),
-        "lighting_power_per_floor_area_w_m2": _safe_float(building.lightingPowerPerFloorArea()),
+        "lighting_power_per_floor_area_w_m2": _ratio(floor_area, building.lightingPowerPerFloorArea),
         "electric_equipment_power_w": _safe_float(building.electricEquipmentPower()),
-        "electric_equipment_power_per_floor_area_w_m2": _safe_float(building.electricEquipmentPowerPerFloorArea()),
+        "electric_equipment_power_per_floor_area_w_m2": _ratio(floor_area, building.electricEquipmentPowerPerFloorArea),
         "gas_equipment_power_w": _safe_float(building.gasEquipmentPower()),
-        "gas_equipment_power_per_floor_area_w_m2": _safe_float(building.gasEquipmentPowerPerFloorArea()),
+        "gas_equipment_power_per_floor_area_w_m2": _ratio(floor_area, building.gasEquipmentPowerPerFloorArea),
         "infiltration_design_flow_rate_m3_s": _safe_float(building.infiltrationDesignFlowRate()),
-        "infiltration_design_flow_per_exterior_surface_area": _safe_float(building.infiltrationDesignFlowPerExteriorSurfaceArea()),
-        "infiltration_design_flow_per_exterior_wall_area": _safe_float(building.infiltrationDesignFlowPerExteriorWallArea()),
+        "infiltration_design_flow_per_exterior_surface_area": _ratio(
+            exterior_surface_area, building.infiltrationDesignFlowPerExteriorSurfaceArea),
+        "infiltration_design_flow_per_exterior_wall_area": _ratio(
+            exterior_wall_area, building.infiltrationDesignFlowPerExteriorWallArea),
         "north_axis_deg": float(building.northAxis()),
         "standards_building_type": standards_building_type,
         "standards_number_of_stories": standards_number_of_stories,
