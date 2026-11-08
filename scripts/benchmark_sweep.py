@@ -170,22 +170,28 @@ def stop_http_server(name: str, log_path: Path, token: str) -> str | None:
     return None if state.startswith("true ") else f"server not running at leg end: {state}"
 
 
-def http_unsupported(transport: str, arms: list[str], env: dict) -> str | None:
+def http_unsupported(transport: str, arms: list[str], env: dict,
+                     providers: list[str] = ()) -> str | None:
     """Why this sweep cannot run over HTTP, or None.
 
-    start_http_server mirrors _docker_mcp_args for the default configuration
-    only: arm "full", code mode off, claude backend. The stdio launcher turns
-    the other arms into per-container env (OSMCP_DISABLE_KNOWLEDGE_SKILLS,
-    OSMCP_CODE_MODE) that the leg-level server never receives, so such a leg
-    would run and be recorded under a configuration it did not have.
+    start_http_server mirrors _docker_mcp_args for its default configuration
+    only. Two arm settings are server-side env in the stdio launcher
+    (OSMCP_DISABLE_KNOWLEDGE_SKILLS for any arm containing "noskills",
+    OSMCP_CODE_MODE) and the leg-level server never receives them, so such a
+    leg would run as full/code-mode-off and be recorded as something else.
+    Client-side arms (nohost, nodiscovery) work on both transports. The codex
+    backend has no HTTP branch (runner.run_agent rejects it per call).
     """
     if transport != "http":
         return None
-    other = [a for a in arms if a != "full"]
-    if other:
-        return f"--transport http serves only the full arm, not {other}"
+    server_side = [a for a in arms if "noskills" in a]
+    if server_side:
+        return f"--transport http cannot serve the noskills arm(s) {server_side}"
     if env.get("LLM_TESTS_CODE_MODE", "0") == "1":
         return "--transport http runs with code mode off; unset LLM_TESTS_CODE_MODE"
+    other = sorted({p for p in providers if p != "claude"})
+    if other:
+        return f"--transport http is implemented for the claude backend only, not {other}"
     return None
 
 
@@ -241,7 +247,8 @@ def main() -> int:
         model, _, provider = spec.partition(":")
         models.append((model, provider or "claude"))
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
-    unsupported = http_unsupported(args.transport, arms, os.environ)
+    unsupported = http_unsupported(args.transport, arms, os.environ,
+                                   [provider for _, provider in models])
     if unsupported:
         sys.exit(f"ABORT: {unsupported}")
     pytest_args = shlex.split(args.pytest_args)

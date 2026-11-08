@@ -13,19 +13,22 @@ from benchmark_sweep import http_unsupported
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize(("transport", "arms", "env", "expected"), [
-    ("http", ["full"], {}, None),
-    ("http", ["full"], {"LLM_TESTS_CODE_MODE": "0"}, None),
-    ("stdio", ["full", "noskills"], {"LLM_TESTS_CODE_MODE": "1"}, None),
-    ("http", ["full", "noskills"], {}, "full arm, not ['noskills']"),
-    ("http", ["nohost"], {}, "full arm, not ['nohost']"),
-    ("http", ["full"], {"LLM_TESTS_CODE_MODE": "1"}, "code mode off"),
+@pytest.mark.parametrize(("transport", "arms", "env", "providers", "expected"), [
+    ("http", ["full"], {}, ["claude"], None),
+    ("http", ["full"], {"LLM_TESTS_CODE_MODE": "0"}, ["claude"], None),
+    ("http", ["nohost", "nodiscovery"], {}, ["claude"], None),  # client-side arms
+    ("stdio", ["full", "noskills"], {"LLM_TESTS_CODE_MODE": "1"}, ["codex"], None),
+    ("http", ["full", "noskills"], {}, ["claude"], "noskills arm(s) ['noskills']"),
+    ("http", ["nodiscovery-noskills"], {}, ["claude"], "['nodiscovery-noskills']"),
+    ("http", ["full"], {"LLM_TESTS_CODE_MODE": "1"}, ["claude"], "code mode off"),
+    ("http", ["full"], {}, ["claude", "codex"], "claude backend only, not ['codex']"),
 ])
-def test_http_sweeps_refuse_options_the_leg_server_does_not_receive(transport, arms, env, expected):
+def test_http_sweeps_refuse_options_the_leg_server_does_not_receive(
+        transport, arms, env, providers, expected):
     # Regression: review of #238 — start_http_server never passes
-    # OSMCP_DISABLE_KNOWLEDGE_SKILLS or OSMCP_CODE_MODE, so a noskills or
-    # code-mode HTTP leg would have run as a full-arm leg and been saved as noskills
-    reason = http_unsupported(transport, arms, env)
+    # OSMCP_DISABLE_KNOWLEDGE_SKILLS or OSMCP_CODE_MODE, and codex has no HTTP
+    # branch, so such a leg would have run as full/stdio and been saved as noskills/http
+    reason = http_unsupported(transport, arms, env, providers)
     if expected is None:
         assert reason is None
     else:
