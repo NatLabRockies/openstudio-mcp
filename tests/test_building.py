@@ -2,6 +2,7 @@ import asyncio
 import math
 import os
 import uuid
+from pathlib import Path
 
 import pytest
 from conftest import integration_enabled, server_params, unwrap
@@ -360,5 +361,94 @@ def test_building_tools_without_loaded_model():
                 print("get_building_info (no model):", building_result)
                 assert building_result["ok"] is False
                 assert "no model loaded" in building_result["error"].lower()
+
+    asyncio.run(_run())
+
+
+_RATIO_FIELDS = (
+    "people_per_floor_area", "floor_area_per_person_m2",
+    "lighting_power_per_floor_area_w_m2",
+    "electric_equipment_power_per_floor_area_w_m2",
+    "gas_equipment_power_per_floor_area_w_m2",
+    "infiltration_design_flow_per_exterior_surface_area",
+    "infiltration_design_flow_per_exterior_wall_area",
+)
+
+
+def _save_model(model, name: str) -> str:
+    """Write a model under /runs so the MCP server can load it."""
+    import openstudio
+
+    run_root = Path(os.environ.get("OPENSTUDIO_MCP_RUN_ROOT", os.environ.get("OSMCP_RUN_ROOT", "/runs")))
+    path = run_root / "examples" / name / "model.osm"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    model.save(openstudio.path(str(path)), True)
+    return str(path)
+
+
+@pytest.mark.integration
+def test_get_building_info_with_zero_people():
+    # Regression: #233 — Building.floorAreaPerPerson() throws "division by 0" when the
+    # building has no people, and the SWIG wrapper leaves the Python error pending, so
+    # the tool returned ok:false, then ok:true with a garbage 6.9e-310 value, then raised
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+    import openstudio
+
+    model = openstudio.model.exampleModel()
+    for people in model.getPeoples():
+        people.remove()
+    assert model.getBuilding().numberOfPeople() == 0.0
+    osm_path = _save_model(model, _unique_name("pytest_zero_people"))
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                assert unwrap(await session.call_tool("load_osm_model", {"osm_path": osm_path}))["ok"] is True
+
+                # Three calls: before the fix each outcome differed (ok:false, garbage, raise)
+                for attempt in range(3):
+                    result = unwrap(await session.call_tool("get_building_info", {}))
+                    assert result["ok"] is True, f"call {attempt}: {result}"
+                    b = result["building"]
+                    assert b["number_of_people"] == 0.0
+                    assert b["floor_area_per_person_m2"] is None, (
+                        f"call {attempt}: no people means no area per person, got {b['floor_area_per_person_m2']}")
+                    # Floor area is non-zero, so per-floor-area ratios are real numbers
+                    assert b["floor_area_m2"] == pytest.approx(400.0)
+                    assert b["people_per_floor_area"] == 0.0
+                    assert b["lighting_power_per_floor_area_w_m2"] == pytest.approx(10.0, rel=0.01)
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_get_building_info_on_empty_model():
+    # Regression: #233 — with no people floorAreaPerPerson throws (the per-floor-area
+    # getters return 0.0 for 0/0); every undefined ratio must come back null, and the
+    # tool must not fail or raise, on repeated calls too
+    if not integration_enabled():
+        pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
+    import openstudio
+
+    osm_path = _save_model(openstudio.model.Model(), _unique_name("pytest_empty_building"))
+
+    async def _run():
+        async with stdio_client(server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                assert unwrap(await session.call_tool("load_osm_model", {"osm_path": osm_path}))["ok"] is True
+
+                for attempt in range(2):
+                    result = unwrap(await session.call_tool("get_building_info", {}))
+                    assert result["ok"] is True, f"call {attempt}: {result}"
+                    b = result["building"]
+                    assert b["floor_area_m2"] == 0.0
+                    assert b["exterior_surface_area_m2"] == 0.0
+                    assert b["number_of_people"] == 0.0
+                    for field in _RATIO_FIELDS:
+                        assert b[field] is None, (
+                            f"call {attempt}: {field} should be null with a zero denominator, got {b[field]}")
 
     asyncio.run(_run())
