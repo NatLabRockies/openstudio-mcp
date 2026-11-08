@@ -425,8 +425,9 @@ def test_get_building_info_with_zero_people():
 
 @pytest.mark.integration
 def test_get_building_info_on_empty_model():
-    # Regression: #233 — every per-area ratio getter throws on a building with zero
-    # floor and exterior area; the tool must report null ratios, not fail or raise
+    # Regression: #233 — with no people floorAreaPerPerson throws (the per-floor-area
+    # getters return 0.0 for 0/0); every undefined ratio must come back null, and the
+    # tool must not fail or raise, on repeated calls too
     if not integration_enabled():
         pytest.skip("Set RUN_OPENSTUDIO_INTEGRATION=1 to enable MCP integration tests.")
     import openstudio

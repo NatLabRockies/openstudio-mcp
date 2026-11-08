@@ -21,13 +21,15 @@ def _safe_float(value) -> float | None:
 
 
 def _ratio(denominator: float, getter) -> float | None:
-    """Call a Building per-X getter only when X is non-zero.
+    """Call a Building per-X getter only when X is non-zero; None otherwise.
 
-    The SDK throws "Calculation would require division by 0." for a zero
-    denominator, and the openstudio 3.11 SWIG wrapper leaves that error pending
-    in the interpreter (#233): the first call returns garbage with the error set,
-    later calls raise RuntimeError, and the pending error can surface in an
-    unrelated C call afterwards. Never let it throw.
+    A ratio with a zero denominator is undefined, so it is reported as null
+    rather than 0.0. Not every getter would fail on its own: in OpenStudio 3.11
+    the per-floor-area getters return 0.0 for 0/0, but the per-person getters
+    throw "Calculation would require division by 0." when there are no people,
+    and the SWIG wrapper leaves that error pending in the interpreter (#233):
+    the call raises SystemError or RuntimeError and the pending error can
+    surface in an unrelated C call afterwards. Never let them throw.
     """
     if denominator <= 0.0:
         return None
