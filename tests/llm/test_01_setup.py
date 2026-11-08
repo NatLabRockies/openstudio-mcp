@@ -22,7 +22,11 @@ import re
 import pytest
 
 from .conftest import (
-    BASELINE_MODEL, fail_with_mode, save_retrofit_run_id, save_sim_run_id,
+    BASELINE_MODEL,
+    fail_with_mode,
+    save_retrofit_run_id,
+    save_sim_run_id,
+    snapshot_fixture_model,
 )
 from .grading import host as grading_host
 from .runner import run_claude
@@ -46,6 +50,7 @@ def test_create_baseline_model(request):
 
     assert not result.is_error, f"Claude reported error: {result.final_text}"
     _grade_setup(request, "create_baseline_model")
+    snapshot_fixture_model("llm-test-baseline")
 
 
 def test_create_baseline_with_hvac(request):
@@ -61,6 +66,7 @@ def test_create_baseline_with_hvac(request):
     )
     assert not result.is_error, f"Claude reported error: {result.final_text}"
     _grade_setup(request, "create_baseline_with_hvac")
+    snapshot_fixture_model("llm-test-baseline-hvac")
 
 
 def _grade_setup(request, case_id: str):
@@ -86,6 +92,7 @@ def test_create_example_model():
         f"No creation tool called. Tools: {tool_names}"
     )
     assert not result.is_error, f"Claude reported error: {result.final_text}"
+    snapshot_fixture_model("llm-test-example")
 
 
 def test_load_baseline_model():
@@ -160,6 +167,7 @@ def test_create_ems_plugin_model():
         f"save_osm_model not called. Tools: {tool_names}"
     )
     assert not result.is_error, f"Claude reported error: {result.final_text}"
+    snapshot_fixture_model("llm-test-ems")
 
 
 def test_run_baseline_simulation():
