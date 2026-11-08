@@ -214,7 +214,7 @@ Check the tool call sequence in assertion errors — it reveals agent behavior:
 - `/measures` — persistent custom-measure root (from `LLM_TESTS_MEASURES_DIR`).
   Every `run_claude` spawns a fresh `--rm` container; without this mount,
   measures created in one test would vanish before the next
-- `/test-assets` and `/inputs` (read-only) — `tests/assets/` for FloorspaceJS
+- `/inputs` (read-only) — `tests/assets/`; prompts must use `/inputs`, the only one of the two mounts the server allows (#236)
   files, SystemD models, the set_building_name measure, Boston EPW set
 - EPW files at `/opt/comstock-measures/.../tests/*.epw` (baked into image)
 
