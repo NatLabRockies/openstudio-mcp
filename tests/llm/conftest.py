@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pytest
 
-from .fixtures import restore_fixtures, snapshot_fixtures
+from .fixtures import restore_fixtures, snapshot_fixture
 from .transport import transport_name
 
 
@@ -232,20 +232,34 @@ def llm_test_guard():
         pytest.skip(f"Prompt budget exhausted ({MAX_PROMPTS} max)")
 
 
+# test_01_setup creation test -> the fixture it builds. These are the only tests
+# that run without a restore first (they replace the fixture anyway) and the
+# only places a snapshot is taken (explicitly, after the test's own asserts).
+FIXTURE_CREATION_TESTS = {
+    "test_create_baseline_model": "llm-test-baseline",
+    "test_create_baseline_with_hvac": "llm-test-baseline-hvac",
+    "test_create_example_model": "llm-test-example",
+    "test_create_ems_plugin_model": "llm-test-ems",
+}
+
+
+def snapshot_fixture_model(name: str) -> None:
+    """Called by a creation test once its fixture is known good."""
+    assert name in FIXTURE_CREATION_TESTS.values(), name
+    assert snapshot_fixture(_RUNS_DIR, name), f"fixture {name} not found under {_RUNS_DIR}"
+
+
 @pytest.fixture(autouse=True)
 def _fresh_fixture_models(request, llm_test_guard):
     """Every test starts from the fixture models test_01_setup produced (#235).
 
     save_osm_model with no path writes over the loaded file, so without this
     one agent's save changed the shared model for every later test in the run.
-    Setup tests snapshot the fixtures they create; all other tests restore them.
+    Restored before every test except the creation tests themselves, so the
+    later setup tests (simulations on the baseline) see a pristine model too.
     """
-    is_setup = request.node.module.__name__.endswith("test_01_setup")
-    if not is_setup:
+    if request.node.originalname not in FIXTURE_CREATION_TESTS:
         restore_fixtures(_RUNS_DIR)
-    yield
-    if is_setup:
-        snapshot_fixtures(_RUNS_DIR)
 
 
 @pytest.fixture(autouse=True)
