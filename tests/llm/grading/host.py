@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ..transport import HTTP_USER, is_http, measures_user
+from ..transport import HTTP_USER, is_http, measures_user  # noqa: TID252 (tests/ is not a package)
 from . import rubric
 
 GRADING_DIR = Path(__file__).resolve().parent
