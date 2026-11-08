@@ -431,11 +431,20 @@ def path_denied_hint() -> str:
     burn their turn budget retrying variants — a terse "not found"/"not
     allowed" never tells them the path namespace is wrong (issue #119).
     """
+    from mcp_server.identity import LOCAL, user_key
+
     shared = ", ".join(sorted(str(r) for r in _SHARED_READ_ROOTS))
+    # The caller's own areas, not RUN_ROOT: an HTTP user may write only under
+    # RUN_ROOT/<user>, so naming the bare root sent agents to denied paths (#234).
+    # Display paths only: the root helpers create directories and can raise,
+    # which must not happen inside an error message.
+    key = user_key()
+    run_area = RUN_ROOT if key == LOCAL else RUN_ROOT / key
     return (
         "Paths are SERVER-side — a path from your local machine will not "
         f"resolve here. Readable roots: {shared}. Your writable run area is "
-        f"under {RUN_ROOT}. Use list_files to enumerate available files."
+        f"under {run_area} (measures under {MEASURES_DIR / key}). "
+        "Use list_files to enumerate available files."
     )
 
 
