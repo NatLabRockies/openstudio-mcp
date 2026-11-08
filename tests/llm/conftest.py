@@ -37,6 +37,7 @@ from pathlib import Path
 
 import pytest
 
+from .fixtures import restore_fixtures, snapshot_fixtures
 from .transport import transport_name
 
 
@@ -229,6 +230,22 @@ def llm_test_guard():
     _prompt_count += 1
     if _prompt_count > MAX_PROMPTS:
         pytest.skip(f"Prompt budget exhausted ({MAX_PROMPTS} max)")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_fixture_models(request, llm_test_guard):
+    """Every test starts from the fixture models test_01_setup produced (#235).
+
+    save_osm_model with no path writes over the loaded file, so without this
+    one agent's save changed the shared model for every later test in the run.
+    Setup tests snapshot the fixtures they create; all other tests restore them.
+    """
+    is_setup = request.node.module.__name__.endswith("test_01_setup")
+    if not is_setup:
+        restore_fixtures(_RUNS_DIR)
+    yield
+    if is_setup:
+        snapshot_fixtures(_RUNS_DIR)
 
 
 @pytest.fixture(autouse=True)

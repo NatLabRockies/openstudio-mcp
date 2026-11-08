@@ -214,6 +214,9 @@ Check the tool call sequence in assertion errors — it reveals agent behavior:
 
 ### Docker mounts
 - `/runs` — model save/load (from `LLM_TESTS_RUNS_DIR`)
+  - `examples/<fixture>/` are the shared models from `test_01_setup`; `examples/_pristine/` holds
+    snapshots of them, copied back before every other test so an agent's in-place save cannot
+    change what later tests load (`tests/llm/fixtures.py`, #235)
 - `/measures` — persistent custom-measure root (from `LLM_TESTS_MEASURES_DIR`).
   Every `run_claude` spawns a fresh `--rm` container; without this mount,
   measures created in one test would vanish before the next
