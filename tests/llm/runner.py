@@ -31,6 +31,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from . import transport
+
 # Built-in tools used by Claude Code internally (not MCP tools).
 # "PowerShell" is the Windows shell tool — omitting it counted PowerShell
 # calls as MCP tool names on Windows legs (misclassified no_mcp_tool
@@ -406,8 +408,18 @@ def run_agent(
     if backend is None:
         raise ValueError(
             f"Unknown LLM_TESTS_PROVIDER '{provider}' — known: {sorted(_BACKENDS)}")
+    if use_mcp and provider != "claude" and transport.is_http():
+        # Only _write_mcp_config (claude backend) knows the HTTP server; the
+        # codex backend still injects a docker stdio server, so an http sweep
+        # with codex would silently measure stdio.
+        raise NotImplementedError(
+            f"LLM_TESTS_TRANSPORT=http is implemented for the claude backend only, "
+            f"not {provider!r}")
+    if use_mcp:
+        prompt = transport.agent_prompt(prompt)
     return backend(
-        prompt, model=model, timeout=timeout, allowed_tools=allowed_tools,
+        prompt, model=model, timeout=transport.effective_timeout(timeout),
+        allowed_tools=allowed_tools,
         system_prompt=system_prompt, max_turns=max_turns, use_mcp=use_mcp,
     )
 
@@ -426,6 +438,26 @@ def run_claude(
         prompt, model=model, timeout=timeout, allowed_tools=allowed_tools,
         system_prompt=system_prompt, max_turns=max_turns, use_mcp=use_mcp,
     )
+
+
+def _cli_capped(proc: subprocess.CompletedProcess) -> bool:
+    """True when a claude CLI call failed on a usage or rate cap.
+
+    Only failed calls that did no work count: rc != 0, or a final result
+    flagged is_error, with no tool_use in the transcript. A call that ran tools
+    before hitting a limit changed the model, so rerunning it would be a test
+    retry, not a cap wait. A successful transcript that merely mentions a limit
+    never matches.
+    """
+    parsed = _parse_stream_json(proc.stdout or "")
+    if parsed.tool_calls:
+        return False
+    tail = (proc.stdout or "")[-2000:]
+    if proc.returncode != 0:
+        return transport.looks_like_usage_cap(f"{proc.stderr or ''}\n{tail}")
+    result = parsed.result
+    return bool(result.get("is_error")) and transport.looks_like_usage_cap(
+        str(result.get("result", "")))
 
 
 def _run_claude(
@@ -470,15 +502,19 @@ def _run_claude(
     env = _claude_env()
     agent_cwd = _agent_cwd()
 
-    try:
+    def _attempt() -> tuple[bool, object]:
         # encoding: claude emits UTF-8; without it Windows decodes cp1252 —
         # mojibake in every transcript and a hard UnicodeDecodeError on bytes
         # like 0x90 (killed a pilot-5 test as a fake failure). codex path
         # already had this.
-        result = subprocess.run(
+        proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout, check=False,
             env=env, cwd=agent_cwd, encoding="utf-8", errors="replace",
         )
+        return _cli_capped(proc), proc
+
+    try:
+        result = transport.wait_out_cap(_attempt)
     except subprocess.TimeoutExpired as exc:
         # Parse whatever output we got before timeout
         partial = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
@@ -741,10 +777,12 @@ def _docker_mcp_args() -> list[str]:
 
 
 def _write_mcp_config() -> Path:
-    """Write temporary MCP config for Docker stdio transport (claude backend)."""
-
-    config = {"mcpServers": {"openstudio": {"command": "docker",
-                                            "args": _docker_mcp_args()}}}
+    """Write temporary MCP config for the selected transport (claude backend)."""
+    if transport.is_http():
+        server = transport.http_server_config()
+    else:
+        server = {"command": "docker", "args": _docker_mcp_args()}
+    config = {"mcpServers": {"openstudio": server}}
     tmpdir = Path(tempfile.mkdtemp(prefix="llm-test-"))
     path = tmpdir / "mcp.json"
     path.write_text(json.dumps(config))

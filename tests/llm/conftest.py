@@ -37,6 +37,8 @@ from pathlib import Path
 
 import pytest
 
+from .transport import transport_name
+
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "llm: marks LLM agent tests (require Claude CLI + Docker)")
@@ -560,8 +562,10 @@ def pytest_sessionfinish(session, exitstatus):
         "provider": os.environ.get("LLM_TESTS_PROVIDER", "claude"),
         "arm": os.environ.get("LLM_TESTS_ARM", "full"),
         "image": os.environ.get("LLM_TESTS_IMAGE", "openstudio-mcp:dev"),
+        "transport": transport_name(),
         "retries": MAX_RETRIES,
         "timeout_base": int(os.environ.get("LLM_TESTS_TIMEOUT_BASE", "120")),
+        "timeout_floor": int(os.environ.get("LLM_TESTS_TIMEOUT_FLOOR", "0")),
     }
 
     summary = {

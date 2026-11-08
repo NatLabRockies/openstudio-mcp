@@ -23,14 +23,19 @@ import argparse
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+HTTP_USER = "bench"  # keep in step with tests/llm/transport.py
 
 
 def preflight(image: str, allow_dirty: bool) -> dict:
@@ -98,6 +103,98 @@ def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", name)
 
 
+def start_http_server(*, image: str, leg_dir: Path, measures_dir: Path,
+                      port: int, name: str) -> str:
+    """Start the leg's own HTTP server; return its bearer token.
+
+    Mirrors _docker_mcp_args (same mounts, prod mode, code mode off) so the
+    transport is the only server-side change. The token is passed by env-var
+    name, never on the command line, and is random per leg.
+    """
+    token = secrets.token_urlsafe(32)
+    env = dict(os.environ) | {"MCP_TOKENS": json.dumps({token: HTTP_USER})}
+    assets = REPO / "tests" / "assets"
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
+    subprocess.run([
+        "docker", "run", "-d", "--name", name,
+        "-p", f"127.0.0.1:{port}:8000",
+        "-v", f"{leg_dir}:/runs",
+        "-v", f"{measures_dir}:/measures",
+        "-v", f"{assets}:/test-assets:ro",
+        "-v", f"{assets}:/inputs:ro",
+        "-e", "MCP_TRANSPORT=http",
+        "-e", "MCP_AUTH=token",
+        "-e", "MCP_TOKENS",
+        "-e", "OPENSTUDIO_MCP_MODE=prod",
+        "-e", "OSMCP_CODE_MODE=0",
+        image, "openstudio-mcp",
+    ], env=env, check=True, capture_output=True)
+    _wait_for_http(f"http://127.0.0.1:{port}/mcp", name)
+    return token
+
+
+def _wait_for_http(url: str, name: str, timeout_s: int = 120) -> None:
+    """Any HTTP response (401 expected without a token) means the server is up."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5):  # noqa: S310 - fixed localhost
+                return
+        except urllib.error.HTTPError:
+            return
+        except (urllib.error.URLError, OSError):
+            time.sleep(2)
+    logs = subprocess.run(["docker", "logs", "--tail", "30", name],
+                          capture_output=True, text=True, check=False)
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
+    sys.exit(f"ABORT: HTTP server '{name}' not up after {timeout_s}s:\n"
+             f"{logs.stdout[-1500:]}\n{logs.stderr[-1500:]}")
+
+
+def stop_http_server(name: str, log_path: Path, token: str) -> str | None:
+    """Save the server log, remove the container; return why the leg is invalid.
+
+    One process serves the whole leg, so a crash partway through would fail
+    every later test for a reason unrelated to the agent.
+    """
+    state = subprocess.run(
+        ["docker", "inspect", name, "--format",
+         "{{.State.Running}} {{.State.OOMKilled}} {{.State.ExitCode}}"],
+        capture_output=True, text=True, check=False).stdout.strip()
+    logs = subprocess.run(["docker", "logs", name], capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", check=False)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text((logs.stdout + logs.stderr).replace(token, "<token>"),
+                        encoding="utf-8")
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
+    return None if state.startswith("true ") else f"server not running at leg end: {state}"
+
+
+def http_unsupported(transport: str, arms: list[str], env: dict,
+                     providers: list[str] = ()) -> str | None:
+    """Why this sweep cannot run over HTTP, or None.
+
+    start_http_server mirrors _docker_mcp_args for its default configuration
+    only. Two arm settings are server-side env in the stdio launcher
+    (OSMCP_DISABLE_KNOWLEDGE_SKILLS for any arm containing "noskills",
+    OSMCP_CODE_MODE) and the leg-level server never receives them, so such a
+    leg would run as full/code-mode-off and be recorded as something else.
+    Client-side arms (nohost, nodiscovery) work on both transports. The codex
+    backend has no HTTP branch (runner.run_agent rejects it per call).
+    """
+    if transport != "http":
+        return None
+    server_side = [a for a in arms if "noskills" in a]
+    if server_side:
+        return f"--transport http cannot serve the noskills arm(s) {server_side}"
+    if env.get("LLM_TESTS_CODE_MODE", "0") == "1":
+        return "--transport http runs with code mode off; unset LLM_TESTS_CODE_MODE"
+    other = sorted({p for p in providers if p != "claude"})
+    if other:
+        return f"--transport http is implemented for the claude backend only, not {other}"
+    return None
+
+
 def leg_env(base: dict, *, model: str, provider: str, arm: str, image: str,
             runs_dir: Path, meta: dict, repeat: int) -> dict:
     """Per-leg environment. The /measures volume must persist WITHIN a leg
@@ -135,6 +232,9 @@ def main() -> int:
     ap.add_argument("--runs-root",
                     default=str(Path(tempfile.gettempdir()) / "llm-sweep"))
     ap.add_argument("--allow-dirty", action="store_true")
+    ap.add_argument("--transport", choices=("stdio", "http"), default="stdio",
+                    help="http: one server per leg instead of one per prompt")
+    ap.add_argument("--http-port", type=int, default=8100)
     args = ap.parse_args()
 
     meta = preflight(args.image, args.allow_dirty)
@@ -147,6 +247,10 @@ def main() -> int:
         model, _, provider = spec.partition(":")
         models.append((model, provider or "claude"))
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    unsupported = http_unsupported(args.transport, arms, os.environ,
+                                   [provider for _, provider in models])
+    if unsupported:
+        sys.exit(f"ABORT: {unsupported}")
     pytest_args = shlex.split(args.pytest_args)
 
     failures = 0
@@ -164,18 +268,47 @@ def main() -> int:
                 # benchmark.json that would be copied as this leg's result, or
                 # leftover models/measures the agent could reuse — must be
                 # cleared, not reused.
-                runs_dir = Path(args.runs_root) / args.sweep_id / tag
-                if runs_dir.exists():
-                    shutil.rmtree(runs_dir)
+                leg_dir = Path(args.runs_root) / args.sweep_id / tag
+                if leg_dir.exists():
+                    shutil.rmtree(leg_dir)
+                # Over HTTP the harness works inside the token user's area
+                # (see tests/llm/transport.py); stdio owns the whole leg dir.
+                http = args.transport == "http"
+                runs_dir = leg_dir / HTTP_USER if http else leg_dir
                 runs_dir.mkdir(parents=True)
                 env = leg_env(dict(os.environ), model=model, provider=provider,
                               arm=arm, image=args.image, runs_dir=runs_dir,
                               meta=meta, repeat=r)
+                env["LLM_TESTS_TRANSPORT"] = args.transport
+                server, token = f"osmcp-bench-{args.http_port}", ""
+                if http:
+                    measures_dir = Path(env["LLM_TESTS_MEASURES_DIR"])
+                    measures_dir.mkdir(parents=True, exist_ok=True)
+                    token = start_http_server(
+                        image=args.image, leg_dir=leg_dir, measures_dir=measures_dir,
+                        port=args.http_port, name=server)
+                    env["LLM_TESTS_MCP_URL"] = f"http://127.0.0.1:{args.http_port}/mcp"
+                    env["LLM_TESTS_MCP_TOKEN"] = token
                 print(f"[run ] {tag}: pytest {' '.join(pytest_args)}")
-                subprocess.run([sys.executable, "-m", "pytest", *pytest_args],
-                               env=env, cwd=REPO, check=False)
+                invalid = None
+                try:
+                    subprocess.run([sys.executable, "-m", "pytest", *pytest_args],
+                                   env=env, cwd=REPO, check=False)
+                finally:
+                    # Ctrl-C or a crash in this loop must not leave the leg's
+                    # server holding the port for the next sweep.
+                    if http:
+                        invalid = stop_http_server(
+                            server, out_dir / "_meta" / f"{tag}.server.log", token)
                 src = runs_dir / "benchmark.json"
-                if src.exists():
+                if invalid:
+                    failures += 1
+                    quarantine = out_dir / "_invalid"
+                    quarantine.mkdir(exist_ok=True)
+                    if src.exists():
+                        shutil.copy2(src, quarantine / f"{tag}.json")
+                    print(f"[FAIL] {tag}: {invalid}")
+                elif src.exists():
                     shutil.copy2(src, dest)
                     print(f"[save] {dest}")
                 else:
