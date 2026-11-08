@@ -19,11 +19,16 @@ from collections.abc import Callable
 
 HTTP_USER = "bench"
 
-_RUNS_PATH = re.compile(r"(?<![\w/.-])/runs/")
-_MEASURES_PATH = re.compile(r"(?<![\w/.-])/measures/local/")
+# The directory itself, with or without a trailing path ("/runs", "/runs/x",
+# "under /runs."); never "/opt/runs" or "/runs-old".
+_RUNS_PATH = re.compile(r"(?<![\w/.-])/runs(?![\w-])")
+_MEASURES_PATH = re.compile(r"(?<![\w/.-])/measures/local(?![\w-])")
+# Usage/session caps and the API's rate_limit_error. A bare "429" is not
+# enough: a tool fetching a weather file can return one without the CLI being
+# capped, and retrying that would rerun a test that did real work.
 _CAP_MESSAGE = re.compile(
     r"(hit your|usage|session|weekly|rate|credit)\W+(\w+\W+){0,2}limit"
-    r"|limit reached|resets? (at )?\d|\b429\b",
+    r"|limit reached|resets? (at )?\d|rate[_\s-]?limit",
     re.IGNORECASE,
 )
 
@@ -48,8 +53,8 @@ def agent_prompt(prompt: str) -> str:
     """Point a prompt's server paths at the caller's area on this transport."""
     if not is_http():
         return prompt
-    prompt = _RUNS_PATH.sub(f"/runs/{HTTP_USER}/", prompt)
-    return _MEASURES_PATH.sub(f"/measures/{HTTP_USER}/", prompt)
+    prompt = _RUNS_PATH.sub(f"/runs/{HTTP_USER}", prompt)
+    return _MEASURES_PATH.sub(f"/measures/{HTTP_USER}", prompt)
 
 
 def effective_timeout(timeout: int) -> int:
@@ -96,7 +101,8 @@ def wait_out_cap(
         capped, value = attempt()
         if not capped or waited >= budget_s:
             return value
-        print(f"[llm] usage cap, waited {waited}s, retrying in {poll_s}s",
+        step = min(poll_s, budget_s - waited)  # never sleep past the budget
+        print(f"[llm] usage cap, waited {waited}s, retrying in {step}s",
               file=sys.stderr, flush=True)
-        sleep(poll_s)
-        waited += poll_s
+        sleep(step)
+        waited += step

@@ -27,6 +27,19 @@ def load_legs(sweep: Path) -> dict[str, list[dict]]:
     return legs
 
 
+def leg_arm(*groups: dict[str, list[dict]]) -> str:
+    """The one arm every leg in every group ran under; ValueError when they differ.
+
+    Pass/fail rates across arms (full vs noskills) differ for reasons that have
+    nothing to do with transport, so a comparison must never mix them.
+    """
+    arms = {leg.get("run_config", {}).get("arm", "full")
+            for legs in groups for model_legs in legs.values() for leg in model_legs}
+    if len(arms) > 1:
+        raise ValueError(f"legs mix arms {sorted(arms)}; compare one arm at a time")
+    return arms.pop() if arms else "full"
+
+
 def apply_fix(legs: dict[str, list[dict]], fixes: dict[str, list[dict]]) -> list[str]:
     """Swap each leg's rows for its fix leg's rows, whatever those rows show.
 
@@ -180,10 +193,14 @@ def main() -> int:
     http_legs = load_legs(args.http)
     if args.fix_http:
         apply_fix(http_legs, load_legs(args.fix_http))
-    text, to_rerun = render(
-        load_legs(args.stdio), http_legs,
-        load_legs(args.rerun_stdio) if args.rerun_stdio else {},
-        load_legs(args.rerun_http) if args.rerun_http else {})
+    stdio_legs = load_legs(args.stdio)
+    rerun_stdio = load_legs(args.rerun_stdio) if args.rerun_stdio else {}
+    rerun_http = load_legs(args.rerun_http) if args.rerun_http else {}
+    try:
+        leg_arm(stdio_legs, http_legs, rerun_stdio, rerun_http)
+    except ValueError as e:
+        return f"ABORT: {e}"
+    text, to_rerun = render(stdio_legs, http_legs, rerun_stdio, rerun_http)
     if args.out:
         args.out.write_text(text, encoding="utf-8")
     else:

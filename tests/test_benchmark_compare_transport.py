@@ -13,6 +13,7 @@ from benchmark_compare_transport import (
     classify,
     compare,
     discordant,
+    leg_arm,
     leg_summary,
     tally_reruns,
     verdict,
@@ -107,3 +108,24 @@ def test_fix_keeps_setup_rows():
     legs = {"m": [_leg(**{setup: PASS})]}
     assert apply_fix(legs, {"m": [_leg(**{setup: FAIL})]}) == []
     assert legs["m"][0]["tests"][0]["passed"] is True
+
+
+def _arm_leg(arm: str, **results) -> dict:
+    return {"run_config": {"arm": arm}, **_leg(**results)}
+
+
+def test_legs_from_different_arms_cannot_be_compared():
+    # Regression: review of #238 — a noskills stdio sweep against a full HTTP
+    # sweep would report arm effects as transport effects
+    stdio = {"m": [_arm_leg("noskills", a=PASS)]}
+    http = {"m": [_arm_leg("full", a=PASS)]}
+    with pytest.raises(ValueError, match="mix arms"):
+        leg_arm(stdio, http)
+    assert leg_arm(stdio, {"m": [_arm_leg("noskills", a=FAIL)]}) == "noskills"
+
+
+def test_legacy_legs_without_run_config_count_as_full():
+    # Validates: pre-#238 benchmark.json files have no run_config.arm and were
+    # all full-arm runs, so they stay comparable with a full-arm sweep
+    assert leg_arm({"m": [_leg(a=PASS)]}, {"m": [_arm_leg("full", a=PASS)]}) == "full"
+    assert leg_arm({}) == "full"

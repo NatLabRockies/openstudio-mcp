@@ -76,6 +76,7 @@ def test_timeout_floor(monkeypatch, floor, timeout, expected):
     ("Claude usage limit reached", True),
     ("API Error: 429 rate_limit_error", True),
     ("Session limit reached", True),
+    ("weather host answered HTTP 429, giving up", False),  # a tool's error, not the CLI's
     ("MCP server failed to start", False),
     ("Timed out after 600s", False),
 ])
@@ -157,3 +158,45 @@ def test_http_verifier_uses_the_http_server(http_env, monkeypatch):
         verify.verify_run("run_x")
     assert seen == {"url": "http://127.0.0.1:8100/mcp",
                     "headers": {"Authorization": "Bearer tok"}}
+
+
+def test_http_prompt_rewrites_bare_directories(http_env):
+    # Regression: review of #238 — "list /runs" and "/measures/local" with no
+    # trailing slash were left pointing at the root the token user cannot read
+    assert transport.agent_prompt(
+        "List /runs and /measures/local, then save under /runs. Leave /runs-old alone.",
+    ) == "List /runs/bench and /measures/bench, then save under /runs/bench. Leave /runs-old alone."
+
+
+def _transcript_with_tool_use(result: dict) -> str:
+    return "\n".join(json.dumps(o) for o in [
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "mcp__openstudio__load_osm_model", "input": {}}]}},
+        {"type": "result", **result},
+    ])
+
+
+@pytest.mark.parametrize("rc", [0, 1])
+def test_cap_after_tool_calls_is_not_a_cap(rc):
+    # Regression: review of #238 — a run that loaded and changed a model before
+    # hitting a limit was rerun as a "cap wait", which is a hidden test retry
+    stdout = _transcript_with_tool_use(
+        {"is_error": True, "result": "You've hit your limit, resets 3pm"})
+    assert runner._cli_capped(_proc(rc, stdout, stderr="usage limit reached")) is False
+
+
+def test_wait_out_cap_sleeps_only_to_the_budget():
+    # Regression: review of #238 — a 900 s budget slept 1200 s because every
+    # wait was a full poll interval
+    slept = []
+    transport.wait_out_cap(lambda: (True, "capped"), budget_s=900, poll_s=600,
+                           sleep=slept.append)
+    assert slept == [600, 300]
+
+
+def test_codex_over_http_is_rejected(http_env, monkeypatch):
+    # Regression: review of #238 — the codex backend has no HTTP branch, so an
+    # http sweep with codex would have run (and been labelled) as stdio
+    monkeypatch.setenv("LLM_TESTS_PROVIDER", "codex")
+    with pytest.raises(NotImplementedError, match="claude backend only"):
+        runner.run_agent("Load the model")

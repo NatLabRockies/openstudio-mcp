@@ -408,6 +408,13 @@ def run_agent(
     if backend is None:
         raise ValueError(
             f"Unknown LLM_TESTS_PROVIDER '{provider}' — known: {sorted(_BACKENDS)}")
+    if use_mcp and provider != "claude" and transport.is_http():
+        # Only _write_mcp_config (claude backend) knows the HTTP server; the
+        # codex backend still injects a docker stdio server, so an http sweep
+        # with codex would silently measure stdio.
+        raise NotImplementedError(
+            f"LLM_TESTS_TRANSPORT=http is implemented for the claude backend only, "
+            f"not {provider!r}")
     if use_mcp:
         prompt = transport.agent_prompt(prompt)
     return backend(
@@ -436,13 +443,19 @@ def run_claude(
 def _cli_capped(proc: subprocess.CompletedProcess) -> bool:
     """True when a claude CLI call failed on a usage or rate cap.
 
-    Only failed calls count: rc != 0, or a final result flagged is_error. A
-    successful transcript that merely mentions a limit never matches.
+    Only failed calls that did no work count: rc != 0, or a final result
+    flagged is_error, with no tool_use in the transcript. A call that ran tools
+    before hitting a limit changed the model, so rerunning it would be a test
+    retry, not a cap wait. A successful transcript that merely mentions a limit
+    never matches.
     """
+    parsed = _parse_stream_json(proc.stdout or "")
+    if parsed.tool_calls:
+        return False
     tail = (proc.stdout or "")[-2000:]
     if proc.returncode != 0:
         return transport.looks_like_usage_cap(f"{proc.stderr or ''}\n{tail}")
-    result = _parse_stream_json(proc.stdout or "").result
+    result = parsed.result
     return bool(result.get("is_error")) and transport.looks_like_usage_cap(
         str(result.get("result", "")))
 

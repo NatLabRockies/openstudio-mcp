@@ -146,6 +146,7 @@ def _wait_for_http(url: str, name: str, timeout_s: int = 120) -> None:
             time.sleep(2)
     logs = subprocess.run(["docker", "logs", "--tail", "30", name],
                           capture_output=True, text=True, check=False)
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
     sys.exit(f"ABORT: HTTP server '{name}' not up after {timeout_s}s:\n"
              f"{logs.stdout[-1500:]}\n{logs.stderr[-1500:]}")
 
@@ -167,6 +168,25 @@ def stop_http_server(name: str, log_path: Path, token: str) -> str | None:
                         encoding="utf-8")
     subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
     return None if state.startswith("true ") else f"server not running at leg end: {state}"
+
+
+def http_unsupported(transport: str, arms: list[str], env: dict) -> str | None:
+    """Why this sweep cannot run over HTTP, or None.
+
+    start_http_server mirrors _docker_mcp_args for the default configuration
+    only: arm "full", code mode off, claude backend. The stdio launcher turns
+    the other arms into per-container env (OSMCP_DISABLE_KNOWLEDGE_SKILLS,
+    OSMCP_CODE_MODE) that the leg-level server never receives, so such a leg
+    would run and be recorded under a configuration it did not have.
+    """
+    if transport != "http":
+        return None
+    other = [a for a in arms if a != "full"]
+    if other:
+        return f"--transport http serves only the full arm, not {other}"
+    if env.get("LLM_TESTS_CODE_MODE", "0") == "1":
+        return "--transport http runs with code mode off; unset LLM_TESTS_CODE_MODE"
+    return None
 
 
 def leg_env(base: dict, *, model: str, provider: str, arm: str, image: str,
@@ -221,6 +241,9 @@ def main() -> int:
         model, _, provider = spec.partition(":")
         models.append((model, provider or "claude"))
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    unsupported = http_unsupported(args.transport, arms, os.environ)
+    if unsupported:
+        sys.exit(f"ABORT: {unsupported}")
     pytest_args = shlex.split(args.pytest_args)
 
     failures = 0
@@ -260,13 +283,17 @@ def main() -> int:
                     env["LLM_TESTS_MCP_URL"] = f"http://127.0.0.1:{args.http_port}/mcp"
                     env["LLM_TESTS_MCP_TOKEN"] = token
                 print(f"[run ] {tag}: pytest {' '.join(pytest_args)}")
-                subprocess.run([sys.executable, "-m", "pytest", *pytest_args],
-                               env=env, cwd=REPO, check=False)
-                src = runs_dir / "benchmark.json"
                 invalid = None
-                if http:
-                    invalid = stop_http_server(
-                        server, out_dir / "_meta" / f"{tag}.server.log", token)
+                try:
+                    subprocess.run([sys.executable, "-m", "pytest", *pytest_args],
+                                   env=env, cwd=REPO, check=False)
+                finally:
+                    # Ctrl-C or a crash in this loop must not leave the leg's
+                    # server holding the port for the next sweep.
+                    if http:
+                        invalid = stop_http_server(
+                            server, out_dir / "_meta" / f"{tag}.server.log", token)
+                src = runs_dir / "benchmark.json"
                 if invalid:
                     failures += 1
                     quarantine = out_dir / "_invalid"
