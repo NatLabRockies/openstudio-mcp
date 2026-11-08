@@ -34,6 +34,7 @@ from jsonschema import Draft4Validator, SchemaError
 from referencing import Registry
 from referencing.exceptions import NoSuchResource, Unresolvable
 
+from mcp_server.config import path_denied_hint
 from mcp_server.confined_copy import copy_tree_confined, remove_tree_confined
 from mcp_server.confined_fs import DirHandle, open_confined
 from mcp_server.model_bundle import MAX_BUNDLE_OSM_BYTES, combine_resource_hashes, resources_digest
@@ -569,7 +570,7 @@ def _read_json(path: str | Path) -> dict[str, Any]:
 def _write_json(path: str | Path, data: dict[str, Any]) -> str:
     p = Path(path).expanduser().resolve()
     if not _is_analysis_path_allowed(p, write=True):
-        raise ValueError(f"Output path is not writable/allowed: {p}")
+        raise ValueError(f"Output path is not writable/allowed: {p}. {path_denied_hint()}")
     # Parents created and the file written through the descriptor walk (#190): a component
     # swapped for a link after the check above is refused, nothing is created through it.
     try:
@@ -1275,7 +1276,7 @@ def _download(
 ) -> dict[str, Any]:
     out_dir = Path(output_dir).expanduser().resolve()
     if not _is_analysis_path_allowed(out_dir, write=True):  # before any request: no fetch for a refused dir
-        return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
+        return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}. {path_denied_hint()}"}
     req = Request(_url(server_url, path), headers={"Accept": "*/*", **_auth_headers(server_url)}, method="GET")
     try:
         with urlopen(req, timeout=timeout) as resp:
@@ -1534,7 +1535,8 @@ def preflight_seed_for_analysis_package(
             return {"ok": False, "ready": False, "error": f"Manifest path is a symlink (not allowed): {manifest}"}
         manifest = manifest.resolve()
         if not _is_analysis_path_allowed(manifest, write=True):
-            return {"ok": False, "ready": False, "error": f"Manifest path is not writable/allowed: {manifest}"}
+            return {"ok": False, "ready": False,
+                    "error": f"Manifest path is not writable/allowed: {manifest}. {path_denied_hint()}"}
 
     epw: Path | None = None
     if weather_file:
@@ -1990,10 +1992,10 @@ def prepare_analysis_package(
     if not pkg.exists() or not pkg.is_dir():
         return {"ok": False, "error": f"Package directory not found: {pkg}"}
     if not _is_analysis_path_allowed(pkg, write=True):
-        return {"ok": False, "error": f"Package directory is not writable/allowed: {pkg}"}
+        return {"ok": False, "error": f"Package directory is not writable/allowed: {pkg}. {path_denied_hint()}"}
     out = Path(output_zip_path).expanduser().resolve()
     if not _is_analysis_path_allowed(out, write=True):
-        return {"ok": False, "error": f"Output ZIP path is not writable/allowed: {out}"}
+        return {"ok": False, "error": f"Output ZIP path is not writable/allowed: {out}. {path_denied_hint()}"}
     # The zip holds everything under the package roots, so an output inside one would be a member
     # of its own archive (the writer's temp file, or on older versions the previous zip).
     for root_name in sorted(REQUIRED_ANALYSIS_PACKAGE_ROOTS):
@@ -2868,7 +2870,7 @@ def test_server_config_single_run(
     if output_dir:
         out_dir = Path(output_dir).expanduser().resolve()
         if not _is_analysis_path_allowed(out_dir, write=True):
-            return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}"}
+            return {"ok": False, "error": f"Output directory is not writable/allowed: {out_dir}. {path_denied_hint()}"}
         out_dir.mkdir(parents=True, exist_ok=True)
     else:
         from mcp_server.config import user_run_root

@@ -1673,3 +1673,18 @@ def test_measure_metadata_and_manifest_gated_by_tenant_root(monkeypatch, tmp_pat
     assert res["ok"] is False
     assert "not writable/allowed" in res["error"], res
     assert not (tmp_path / "m").exists()
+
+
+def test_write_denied_error_names_the_users_writable_area(monkeypatch, tmp_path):
+    # Regression: #234 — openstudio_analysis_create_osa_json told an HTTP user only
+    # "Output path is not writable/allowed", so agents guessed /runs/x.json and
+    # /inputs/x.json in turn; the error must name the caller's own folder
+    root = _http_tenant(monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="not writable/allowed") as exc:
+        operations._write_json(root.parent / "x.json", {})
+    assert str(root) in str(exc.value), str(exc.value)
+    monkeypatch.setenv("OPENSTUDIO_SERVER_URL", "http://osa:8080")
+    monkeypatch.setattr(operations, "urlopen", _never_called)
+    res = operations.download_analysis_data("1", output_dir=str(tmp_path / "outside"))
+    assert res["ok"] is False
+    assert str(root) in res["error"], res

@@ -693,3 +693,21 @@ class TestPathDeniedHint:
         assert str(RUN_ROOT) in hint
         for root in _SHARED_READ_ROOTS:
             assert str(root) in hint, f"hint must name shared root {root}"
+
+    def test_hint_names_the_http_users_own_area(self, monkeypatch, tmp_path):
+        # Regression: #234 — an HTTP token user may write only under RUN_ROOT/<user>,
+        # but the hint said "under /runs", so agents kept guessing /runs/<file> and
+        # were denied again
+        from mcp_server import config
+
+        run_root = (tmp_path / "runs").resolve()
+        measures = (tmp_path / "measures").resolve()
+        monkeypatch.setattr(config, "RUN_ROOT", run_root)
+        monkeypatch.setattr(config, "MEASURES_DIR", measures)
+        monkeypatch.setattr("mcp_server.identity._is_http_transport", lambda: True)
+        monkeypatch.setattr("mcp_server.identity.user_key", lambda: "alice")
+
+        hint = config.path_denied_hint()
+        assert str(run_root / "alice") in hint, hint
+        assert str(measures / "alice") in hint, hint
+        assert f"under {run_root}." not in hint, "bare RUN_ROOT is not writable for a tenant"

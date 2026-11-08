@@ -432,10 +432,13 @@ def path_denied_hint() -> str:
     allowed" never tells them the path namespace is wrong (issue #119).
     """
     shared = ", ".join(sorted(str(r) for r in _SHARED_READ_ROOTS))
+    # The caller's own areas, not RUN_ROOT: an HTTP user may write only under
+    # RUN_ROOT/<user>, so naming the bare root sent agents to denied paths (#234).
     return (
         "Paths are SERVER-side — a path from your local machine will not "
         f"resolve here. Readable roots: {shared}. Your writable run area is "
-        f"under {RUN_ROOT}. Use list_files to enumerate available files."
+        f"under {user_run_root()} (measures under {user_measures_root()}). "
+        "Use list_files to enumerate available files."
     )
 
 
