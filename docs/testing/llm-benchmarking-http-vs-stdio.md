@@ -57,7 +57,8 @@ Claude Code session, so a new MCP session, against the same server process.
   (`transport-v130-fix-http`) and their rows replaced **outcome-blind**, as in
   the paper's 600 s merge (rows that came back failing replace too). Setup rows
   of the fix legs are not substituted.
-- **Usage caps.** The account hit its usage cap twice. The harness sleeps and
+- **Usage caps.** The account hit its usage cap four times (about 2 h or 3.5 h
+  each). The harness sleeps and
   retries a capped prompt (`LLM_TESTS_CAP_WAIT_S`) instead of failing it, so no
   leg was invalidated. Rows that waited carry the wait in `duration_s`; all
   timings below use the CLI's `duration_ms`.
@@ -65,7 +66,9 @@ Claude Code session, so a new MCP session, against the same server process.
 ## Results
 
 First run per test, after the verifier repair above. Times are median CLI time
-per test; cost is the CLI's reported list-price cost for the leg.
+per test; cost is the CLI's reported list-price cost for the leg. Timed-out
+rows record no CLI time or cost, so HTTP medians and cost are very slightly
+understated.
 
 | Model | Transport | Passed | Rate | Median s | Median tool calls | Cost | Timeouts |
 |---|---|---|---|---|---|---|---|
@@ -107,7 +110,7 @@ did on stdio without hitting the limit.
 Verdicts per disagreeing test: **confirmed** = passed every rerun on one
 transport and none on the other; **noise** = passed at least one rerun on both
 transports; **unclear** = never passed on at least one side without a clean
-split (mostly 0/3 on both, a few 1/3 vs 0/3). Unclear tests are ones the model
+split (mostly 0/3 on both, a few 1/3 vs 0/3, one 2/3 vs 0/3). Unclear tests are ones the model
 usually fails anywhere; the single first-run pass was the outlier, not a
 transport effect.
 
@@ -153,7 +156,8 @@ schema with `ToolSearch`.
   established; the server instructions differ between the arms (see above).
 - **Opus does more work over HTTP:** +10% MCP calls, +15% median time, +16%
   cost, for the same pass rate.
-- **Host tools roughly double over HTTP** on all models, from small bases:
+- **Host tools rise over HTTP** on all models, from small bases (Opus 11 to
+  25, Sonnet 3 to 15, Haiku 12 to 22):
   agents look for named files on the user's machine first, as the HTTP
   instructions tell them to (including the `/test-assets` prompts, issue 4).
 - **Path-denied errors on HTTP** are mostly `openstudio_analysis_create_osa_json`
@@ -177,6 +181,9 @@ Ranked by how much they matter to a user of the HTTP server.
    | Haiku 5.5 | 9/39 (23%) | 25/31 (81%) |
 
    `get_object_fields` shows the same error, rarely: Opus 2/97 stdio, 7/165 HTTP.
+   Five of the seven HTTP cases came after a failed `get_building_info` in the
+   same session, which suggests (not proven) that the pending error leaks into
+   the next tool call in the long-lived process.
 
    Same root cause on both transports, much higher rate over HTTP. Why HTTP is
    worse is not established (one long-lived process and worker threads are the
