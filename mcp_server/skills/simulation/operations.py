@@ -13,7 +13,8 @@ import tempfile
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, replace
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -94,6 +95,13 @@ class RunRecord:
     seed_sha256: str | None = None
     weather_sha256: str | None = None
     resources_sha256: str | None = None
+    # Background apply_measure (#245), in memory only (a restart loses the session model
+    # anyway): the CLI mode flag the launch adds, a hook get_run_status calls once the run
+    # is terminal (returns the measure's result, or None to leave it for another poll),
+    # and the result it returned, attached to every later status response.
+    run_flag: str | None = None
+    on_finish: Callable[[RunRecord], dict[str, Any] | None] | None = field(default=None, repr=False)
+    measure_result: dict[str, Any] | None = None
 
 
 # In-memory registry (good enough for one-container dev right now)
@@ -556,14 +564,17 @@ def _kill_process_group(pid: int, *, grace: float = 5.0) -> None:
             p.kill()
 
 
-def _build_run_cmd(osw_path: Path) -> list[str]:
-    """openstudio CLI command to run a staged OSW (with bundle flags)."""
+def _build_run_cmd(osw_path: Path, run_flag: str | None = None) -> list[str]:
+    """openstudio CLI command to run a staged OSW (with bundle flags).
+
+    run_flag is a `run` mode such as --measures_only (background apply_measure).
+    """
     return [
         "openstudio",
         "--bundle", OSCLI_GEMFILE,
         "--bundle_path", OSCLI_GEM_PATH,
         "--bundle_without", "native_ext",
-        "run", "-w", str(osw_path),
+        "run", *([run_flag] if run_flag else []), "-w", str(osw_path),
     ]
 
 
@@ -584,7 +595,7 @@ def _launch(rec: RunRecord) -> None:
         extra_ro = ()
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
         sandbox.wrap_cmd(
-            _build_run_cmd(rec.osw_path), rec.run_dir, extra_ro=extra_ro, key=rec.user_key,
+            _build_run_cmd(rec.osw_path, rec.run_flag), rec.run_dir, extra_ro=extra_ro, key=rec.user_key,
         ),
         cwd=str(rec.run_dir),
         stdout=open_nofollow_for_write(log),
@@ -701,6 +712,39 @@ def _ensure_dispatcher() -> None:
 def _enqueue(run_id: str) -> None:
     with _sim_lock:
         _queue.append(run_id)
+
+
+def _submit(rec: RunRecord) -> None:
+    """Register a staged, queued run and let the dispatcher launch it."""
+    with _sim_lock:
+        _RUNS[rec.run_id] = rec
+        # On disk from the moment it is queued: without this a run that was still queued
+        # when the server died was "Unknown run_id" after the restart (issue #175).
+        _persist_run_record(rec)
+    audit("sim_queued", run_id=rec.run_id, user=rec.user_key, name=rec.name)
+    _enqueue(rec.run_id)
+    _ensure_dispatcher()
+    _dispatch_once()  # launch immediately if under the concurrency cap
+
+
+def queue_staged_run(
+    run_id: str, run_dir: Path, osw_path: Path, name: str, *,
+    run_flag: str | None = None,
+    on_finish: Callable[[RunRecord], dict[str, Any] | None] | None = None,
+) -> RunRecord:
+    """Queue an OSW the caller already staged in its own run dir (background apply_measure, #245).
+
+    Same queue, concurrency caps, wall-clock cap, cancel_run and get_run_status as a
+    simulation. See RunRecord for run_flag and on_finish.
+    """
+    rec = RunRecord(
+        run_id=run_id, user_key=user_key(), name=name, status="queued",
+        created_at=_now(), started_at=None, ended_at=None, pid=None,
+        run_dir=run_dir, osw_path=osw_path, epw_path=None, exit_code=None, error=None,
+        run_flag=run_flag, on_finish=on_finish,
+    )
+    _submit(rec)
+    return rec
 
 
 def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
@@ -942,15 +986,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         weather_sha256=_identity.get("weather_sha256") if _identity else None,
         resources_sha256=_identity.get("resources_sha256") if _identity else None,
     )
-    with _sim_lock:
-        _RUNS[run_id] = rec
-        # On disk from the moment it is queued: without this a run that was still queued
-        # when the server died was "Unknown run_id" after the restart (issue #175).
-        _persist_run_record(rec)
-    audit("sim_queued", run_id=run_id, user=rec.user_key, name=run_name)
-    _enqueue(run_id)
-    _ensure_dispatcher()
-    _dispatch_once()  # launch immediately if under the concurrency cap
+    _submit(rec)
 
     return {
         "ok": True,
@@ -1073,6 +1109,18 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         snap = replace(rec)
         now = _now()
         queue_position = _queue_position(run_id) if snap.status == "queued" else None
+        # Claimed under the lock so two concurrent polls never run it twice.
+        on_finish = rec.on_finish if snap.status in _TERMINAL else None
+        if on_finish is not None:
+            rec.on_finish = None
+    if on_finish is not None:
+        # Outside the lock: adopting a measure's output reloads the model (seconds).
+        measure_result = on_finish(snap)
+        with _sim_lock:
+            if measure_result is None:
+                rec.on_finish = on_finish  # not this caller's to adopt; leave it for the submitter
+            else:
+                rec.measure_result = measure_result
     elapsed = _elapsed_seconds(snap, now)
 
     run_dict = {
@@ -1116,12 +1164,15 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             except (ValueError, OSError):
                 pass
 
-    return {
+    result = {
         "ok": True,
         "run": run_dict,
         "poll_interval_seconds": poll_interval_seconds(snap.status, elapsed, queue_position),
         "wait_exhausted": False,
     }
+    if rec.measure_result is not None:
+        result["measure_result"] = rec.measure_result
+    return result
 
 
 def _queue_position(run_id: str) -> int | None:
