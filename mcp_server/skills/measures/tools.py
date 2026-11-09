@@ -149,8 +149,8 @@ def register(mcp):
         pass background=true to get a run_id at once, then call
         get_run_status(run_id, wait_seconds=50) until the status is terminal.
         That response carries measure_result (what this tool returns without
-        background); on success the loaded model now holds the measure's
-        changes. Don't edit the model while the job runs: the measure output
+        background); the loaded model holds the measure's changes only when
+        measure_result.ok is true. Don't edit the model while the job runs: the measure output
         replaces it. A second apply_measure on the model returns an error
         until the first one finishes.
 

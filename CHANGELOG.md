@@ -6,8 +6,8 @@
 - **`apply_measure(background=true)`** returns a `run_id` at once and runs the measure through the
   simulation queue, so a measure on a large model no longer outlasts the ~60 s call limit of
   Claude Desktop, Codex CLI and Cursor. Poll it with `get_run_status(run_id, wait_seconds=50)`;
-  the terminal response carries `measure_result` (what the synchronous call returns) and, on
-  success, the loaded model holds the measure's changes. A second `apply_measure` on the same
+  the terminal response carries `measure_result` (what the synchronous call returns), and the
+  loaded model holds the measure's changes when `measure_result.ok` is true. A second `apply_measure` on the same
   model returns an error while the first is still queued or running. The synchronous default is
   unchanged (#245).
 

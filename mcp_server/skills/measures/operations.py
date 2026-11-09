@@ -1157,7 +1157,7 @@ def _submit_background(
         "arguments_applied": measure_args,
         "next": ("Call get_run_status(run_id, wait_seconds=50) until the status is terminal. "
                  "The terminal response carries measure_result (what apply_measure returns "
-                 "synchronously); on success the loaded model has been updated."),
+                 "synchronously); the loaded model is updated only when measure_result.ok is true."),
     }
 
 
