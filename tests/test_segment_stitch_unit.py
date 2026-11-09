@@ -116,6 +116,15 @@ def test_op_errors(tmp_path, monkeypatch, run_ids, message):
     assert message in r["error"]
 
 
+def test_op_reports_malformed_values_instead_of_raising(tmp_path, monkeypatch):
+    # Validates: a results file with the right keys but wrong value types returns ok False (AGENTS rule 5)
+    monkeypatch.setattr(segments, "user_run_root", lambda: tmp_path)
+    _run_with_results(tmp_path, "run_bad", {**SEG_A, "daily_electricity_kwh": ["01-30", 10.0]})
+    r = segments.stitch_segment_results_op(["run_bad"])
+    assert r["ok"] is False
+    assert "wrong shape" in r["error"]
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks")
 def test_op_refuses_linked_results_file(tmp_path, monkeypatch):
     # Validates: a segment_results.json planted as a link (e.g. to another tenant's file) is not read

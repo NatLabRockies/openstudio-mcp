@@ -156,4 +156,7 @@ def stitch_segment_results_op(run_ids: list[str], reference_run_id: str | None =
         reference = _load(reference_run_id) if reference_run_id else None
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    return stitch(segments, reference)
+    try:
+        return stitch(segments, reference)
+    except (TypeError, ValueError, AttributeError, KeyError) as e:  # a hand-edited or foreign file
+        return {"ok": False, "error": f"{SEGMENT_RESULTS_FILE} has values of the wrong shape: {e!r}"}
