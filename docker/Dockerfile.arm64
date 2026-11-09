@@ -136,6 +136,10 @@ if deps:
 PY
 
 COPY mcp_server /repo/mcp_server
+# openstudio-mcp's own measures for the parallel-annual skill (time-segment runs, #247),
+# bundled beside the gem's so list_common_measures/find_measure list them and the
+# sandbox can read them (COMMON_MEASURES_DIR is a read-only Landlock root).
+COPY mcp_server/skills/common_measures/measures/ /opt/common-measures/
 
 RUN pip install --no-cache-dir --no-deps -e .
 

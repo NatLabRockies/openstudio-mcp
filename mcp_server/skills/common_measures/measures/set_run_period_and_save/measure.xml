@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>set_run_period_and_save</name>
+  <uid>837eb81c-e0b2-4d45-a0e7-78fa15d41718</uid>
+  <version_id>937bbb52-e418-4ace-a458-16590bd77631</version_id>
+  <version_modified>2026-11-09T23:31:21Z</version_modified>
+  <xml_checksum>359A34E2</xml_checksum>
+  <class_name>SetRunPeriodAndSave</class_name>
+  <display_name>Set Run Period And Save</display_name>
+  <description>Sets the RunPeriod begin and end dates, optionally saving the model to a file.</description>
+  <modeler_description>Sets RunPeriod begin/end month and day. When save_path is not empty, also saves the changed model there.</modeler_description>
+  <arguments>
+    <argument>
+      <name>begin_month</name>
+      <display_name>Begin Month</display_name>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+    <argument>
+      <name>begin_day</name>
+      <display_name>Begin Day</display_name>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+    <argument>
+      <name>end_month</name>
+      <display_name>End Month</display_name>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>12</default_value>
+    </argument>
+    <argument>
+      <name>end_day</name>
+      <display_name>End Day</display_name>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>31</default_value>
+    </argument>
+    <argument>
+      <name>save_path</name>
+      <display_name>Save path</display_name>
+      <description>Optional .osm path to save the changed model to; relative paths resolve in the measure working directory. Empty: do not save.</description>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Whole Building.Space Types</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+    <attribute>
+      <name>Measure Language</name>
+      <value>Ruby</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <version>
+        <software_program>OpenStudio</software_program>
+        <identifier>3.11.0</identifier>
+        <min_compatible>3.11.0</min_compatible>
+      </version>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>9E0A1C10</checksum>
+    </file>
+    <file>
+      <filename>set_run_period_and_save_test.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>test</usage_type>
+      <checksum>60E4B60B</checksum>
+    </file>
+  </files>
+</measure>

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+- **`parallel-annual` skill**: runs one annual simulation as parallel time segments (hard-size
+  once, 7-day warmup for segment 1, 1 warmup day plus a seasonal real-weather lead-in for the
+  rest) and stitches them. Five measures ship in `/opt/common-measures` (category `parallel` in
+  `list_common_measures`): `hard_size_from_sizing_sql`, `set_run_period_and_save`,
+  `set_warmup_days`, `write_segment_osws` and `segment_results_summary`. New
+  **`stitch_segment_results`** tool sums the segment runs into monthly and annual end uses and
+  monthly peak demand in one call, refuses overlapping or missing days, and with
+  `reference_run_id` reports annual and monthly electricity error, CV(RMSE) and first-kept-day
+  error (#247).
+
 ## [1.3.1] - 2026-11-08
 
 Changes since 1.3.0. Every merged pull request is listed in the

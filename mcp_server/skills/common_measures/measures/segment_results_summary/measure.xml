@@ -1,0 +1,87 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>segment_results_summary</name>
+  <uid>132dccbb-3dc2-483a-ba58-23039e7049b3</uid>
+  <version_id>b5774743-3ef1-45bd-8372-6837fc184de9</version_id>
+  <version_modified>2026-11-09T23:31:21Z</version_modified>
+  <xml_checksum>58F01CAA</xml_checksum>
+  <class_name>SegmentResultsSummary</class_name>
+  <display_name>Segment Results Summary</display_name>
+  <description>Writes segment_results.json with monthly end uses, daily electricity and monthly peak electric demand for the kept days of a time segment.</description>
+  <modeler_description>Requests daily end-use meters and timestep Electricity:Facility, reads them from the SQL for the kept dates only (lead-in days dropped), and writes run/segment_results.json for stitch_segment_results.</modeler_description>
+  <arguments>
+    <argument>
+      <name>keep_begin_month</name>
+      <display_name>Keep Begin Month</display_name>
+      <description>Kept days are reported; days outside them (the lead-in) are dropped.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+    <argument>
+      <name>keep_begin_day</name>
+      <display_name>Keep Begin Day</display_name>
+      <description>Kept days are reported; days outside them (the lead-in) are dropped.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+    <argument>
+      <name>keep_end_month</name>
+      <display_name>Keep End Month</display_name>
+      <description>Kept days are reported; days outside them (the lead-in) are dropped.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>12</default_value>
+    </argument>
+    <argument>
+      <name>keep_end_day</name>
+      <display_name>Keep End Day</display_name>
+      <description>Kept days are reported; days outside them (the lead-in) are dropped.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>31</default_value>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Reporting.QAQC</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ReportingMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+    <attribute>
+      <name>Measure Language</name>
+      <value>Ruby</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <version>
+        <software_program>OpenStudio</software_program>
+        <identifier>3.11.0</identifier>
+        <min_compatible>3.11.0</min_compatible>
+      </version>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>D3A2816F</checksum>
+    </file>
+    <file>
+      <filename>segment_results_summary_test.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>test</usage_type>
+      <checksum>23D44E71</checksum>
+    </file>
+  </files>
+</measure>

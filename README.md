@@ -648,6 +648,7 @@ one-variable payload but later fails during analysis startup.
 | `extract_simulation_errors` | Parse eplusout.err into Fatal/Severe/Warning |
 | `list_output_variables` | Output variables from a completed run |
 | `compare_runs` | Compare two runs: EUI delta + end-use breakdown |
+| `stitch_segment_results` | Stitch time-segment runs into monthly/annual end uses + peak demand |
 | `read_file` | Read any file by absolute path (mounts only) |
 | `copy_file` | Copy a file (a model with its companion folder) to a host-mounted path |
 

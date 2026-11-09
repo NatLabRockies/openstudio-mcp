@@ -32,13 +32,14 @@ def register(mcp):
 
     @mcp.tool(tags={"measures"}, name="list_common_measures")
     def list_common_measures_tool(category: str | None = None):
-        """List ~79 bundled measures by category: reporting, thermostat, envelope,
-        loads, renewables, schedule, cost, cleanup, visualization.
+        """List ~85 bundled measures by category: reporting, thermostat, envelope,
+        loads, renewables, schedule, cost, cleanup, visualization, parallel
+        (time-segment annual runs, see the parallel-annual skill).
 
         Args:
             category: Optional filter — "reporting", "thermostat", "envelope",
                       "location", "loads", "renewables", "schedule", "cost",
-                      "cleanup", "idf", "visualization", "other", or omit for all
+                      "cleanup", "idf", "visualization", "parallel", "other", or omit for all
 
         Use returned paths with list_measure_arguments and apply_measure.
         """

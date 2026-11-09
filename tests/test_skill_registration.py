@@ -184,6 +184,7 @@ EXPECTED_TOOLS = {
     "extract_simulation_errors",
     "list_output_variables",
     "compare_runs",
+    "stitch_segment_results",
     "validate_model",
     # Model Management extras
     "list_files",

@@ -43,6 +43,12 @@ _CATEGORY_MAP: dict[str, str] = {
     # Tier 1 — visualization
     "view_model": "visualization",
     "view_data": "visualization",
+    # openstudio-mcp's own measures (mcp_server/skills/common_measures/measures/)
+    "hard_size_from_sizing_sql": "parallel",
+    "set_run_period_and_save": "parallel",
+    "set_warmup_days": "parallel",
+    "write_segment_osws": "parallel",
+    "segment_results_summary": "parallel",
 }
 
 
@@ -52,7 +58,7 @@ def list_common_measures(category: str | None = None) -> dict[str, Any]:
     Args:
         category: Optional filter — "reporting", "thermostat", "envelope",
                   "location", "loads", "renewables", "schedule", "cost",
-                  "cleanup", "idf", "visualization", "other", or None for all
+                  "cleanup", "idf", "visualization", "parallel", "other", or None for all
     """
     measures_dir = Path(os.environ.get("COMMON_MEASURES_DIR", "/opt/common-measures"))
     if not measures_dir.is_dir():

@@ -1,6 +1,7 @@
 """MCP tool definitions for simulation results analysis."""
 from __future__ import annotations
 
+from mcp_server.osm_helpers import parse_str_list
 from mcp_server.skills.results.operations import (
     compare_runs_op,
     copy_file,
@@ -15,6 +16,7 @@ from mcp_server.skills.results.operations import (
     query_timeseries_op,
     read_file,
 )
+from mcp_server.skills.results.segments import stitch_segment_results_op
 
 
 def register(mcp):
@@ -102,6 +104,26 @@ def register(mcp):
             retrofit_run_id: Run identifier for the retrofit simulation
         """
         return compare_runs_op(baseline_run_id=baseline_run_id, retrofit_run_id=retrofit_run_id)
+
+    @mcp.tool(tags={"results"}, name="stitch_segment_results")
+    def stitch_segment_results_tool(run_ids: list[str] | str, reference_run_id: str | None = None):
+        """Sum time-segment runs of one annual simulation into monthly and annual
+        end uses (kWh) and monthly peak electric demand (W) in one call.
+        Each run must include the segment_results_summary measure (OSWs from
+        write_segment_osws do); see the parallel-annual skill. Fails if the
+        segments overlap or leave days out.
+
+        Args:
+            run_ids: run_id of every segment run, any order
+            reference_run_id: Optional single-segment annual run of the same
+                model; adds reference_check (annual and monthly electricity
+                error %, monthly and daily CV(RMSE) %, first-kept-day error %)
+        """
+        try:
+            ids = parse_str_list(run_ids) or []
+        except ValueError:
+            return {"ok": False, "error": "run_ids must be a list of run ids"}
+        return stitch_segment_results_op(run_ids=ids, reference_run_id=reference_run_id)
 
     # --- Tier 1: Tabular report extraction ---
 

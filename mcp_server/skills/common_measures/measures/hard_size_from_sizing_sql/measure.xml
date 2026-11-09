@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>hard_size_from_sizing_sql</name>
+  <uid>b9334f6d-5526-4f83-8e7e-19e4ce38a72c</uid>
+  <version_id>d4543a1a-0769-47ff-b363-14e4c8ddf09a</version_id>
+  <version_modified>2026-11-09T23:31:21Z</version_modified>
+  <xml_checksum>54A6B8F4</xml_checksum>
+  <class_name>HardSizeFromSizingSql</class_name>
+  <display_name>Hard Size From Sizing SQL</display_name>
+  <description>Applies sizing results from a sizing-run SQL file to the model and turns sizing off when nothing is left autosized.</description>
+  <modeler_description>Attaches the SQL with Model::setSqlFile, calls Model::applySizingValues, counts fields still set to Autosize, and turns zone, system and plant sizing (and sizing-period simulation) off only when that count is zero.</modeler_description>
+  <arguments>
+    <argument>
+      <name>sql_path</name>
+      <display_name>Sizing SQL path</display_name>
+      <description>eplusout.sql from a sizing run of this same model. An absolute path, or a file name found on the workflow file search path (e.g. the model files/ folder).</description>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>HVAC.Whole System</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+    <attribute>
+      <name>Measure Language</name>
+      <value>Ruby</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <version>
+        <software_program>OpenStudio</software_program>
+        <identifier>3.11.0</identifier>
+        <min_compatible>3.11.0</min_compatible>
+      </version>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>4799D60F</checksum>
+    </file>
+    <file>
+      <filename>hard_size_from_sizing_sql_test.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>test</usage_type>
+      <checksum>E6E52C9C</checksum>
+    </file>
+  </files>
+</measure>

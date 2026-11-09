@@ -1,0 +1,140 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>write_segment_osws</name>
+  <uid>204eaa26-5a08-42b8-90de-502268a1d279</uid>
+  <version_id>a86e699a-653d-41a8-96f7-8b95469bea79</version_id>
+  <version_modified>2026-11-09T23:31:21Z</version_modified>
+  <xml_checksum>359A34E2</xml_checksum>
+  <class_name>WriteSegmentOsws</class_name>
+  <display_name>Write Segment OSWs</display_name>
+  <description>Writes one OSW per time segment of the run period, with a seasonal lead-in, for parallel annual simulation.</description>
+  <modeler_description>Splits the model RunPeriod into equal segments. Each OSW runs the seed model with set_run_period_and_save (kept days plus lead-in), set_warmup_days and segment_results_summary (kept days only).</modeler_description>
+  <arguments>
+    <argument>
+      <name>seed_osm_path</name>
+      <display_name>Seed OSM path</display_name>
+      <description>Absolute path of the saved, hard-sized model every segment runs.</description>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+    </argument>
+    <argument>
+      <name>weather_file</name>
+      <display_name>Weather file</display_name>
+      <description>Absolute EPW path written into each OSW. Empty: the seed model weather file is used.</description>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
+    <argument>
+      <name>number_of_segments</name>
+      <display_name>Number of segments</display_name>
+      <description>Equal-length segments the run period is split into.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>12</default_value>
+    </argument>
+    <argument>
+      <name>first_warmup_days</name>
+      <display_name>First segment warmup days</display_name>
+      <description>Warmup days for segment 1, which has no lead-in.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>7</default_value>
+    </argument>
+    <argument>
+      <name>warmup_days</name>
+      <display_name>Other segments warmup days</display_name>
+      <description>Warmup days for every later segment.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+    <argument>
+      <name>long_lead_in_days</name>
+      <display_name>Long lead-in days</display_name>
+      <description>Real-weather days simulated and dropped before a segment that starts outside the short lead-in months.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>7</default_value>
+    </argument>
+    <argument>
+      <name>short_lead_in_days</name>
+      <display_name>Short lead-in days</display_name>
+      <description>Lead-in days for a segment that starts in a short lead-in month.</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>2</default_value>
+    </argument>
+    <argument>
+      <name>short_lead_in_months</name>
+      <display_name>Short lead-in months</display_name>
+      <description>Comma-separated months (1-12) whose segments get the short lead-in.</description>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>6,7,8,9</default_value>
+    </argument>
+    <argument>
+      <name>measures_dir</name>
+      <display_name>Measures directory</display_name>
+      <description>Directory holding set_run_period_and_save, set_warmup_days and segment_results_summary.</description>
+      <type>String</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>/opt/common-measures</default_value>
+    </argument>
+    <argument>
+      <name>output_dir</name>
+      <display_name>Output directory</display_name>
+      <description>Where segment_NN/segment_NN.osw files are written. Empty: segments/ next to this workflow.</description>
+      <type>String</type>
+      <required>false</required>
+      <model_dependent>false</model_dependent>
+      <default_value></default_value>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Whole Building.Space Types</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+    <attribute>
+      <name>Measure Language</name>
+      <value>Ruby</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <version>
+        <software_program>OpenStudio</software_program>
+        <identifier>3.11.0</identifier>
+        <min_compatible>3.11.0</min_compatible>
+      </version>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>7B76447E</checksum>
+    </file>
+    <file>
+      <filename>write_segment_osws_test.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>test</usage_type>
+      <checksum>890C4214</checksum>
+    </file>
+  </files>
+</measure>

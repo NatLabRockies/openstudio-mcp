@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<measure>
+  <schema_version>3.1</schema_version>
+  <name>set_warmup_days</name>
+  <uid>57d2bced-86df-4dc6-b7b5-7118615e542f</uid>
+  <version_id>ba55957a-bd89-4b8d-bc09-a36946f258e2</version_id>
+  <version_modified>2026-11-09T23:31:21Z</version_modified>
+  <xml_checksum>359A34E2</xml_checksum>
+  <class_name>SetWarmupDays</class_name>
+  <display_name>Set Warmup Days</display_name>
+  <description>Fixes the number of EnergyPlus warmup days.</description>
+  <modeler_description>Sets SimulationControl minimum and maximum number of warmup days to the same value.</modeler_description>
+  <arguments>
+    <argument>
+      <name>warmup_days</name>
+      <display_name>Warmup days</display_name>
+      <description>Used as both the minimum and maximum number of warmup days (1 or more).</description>
+      <type>Integer</type>
+      <required>true</required>
+      <model_dependent>false</model_dependent>
+      <default_value>1</default_value>
+    </argument>
+  </arguments>
+  <outputs />
+  <provenances />
+  <tags>
+    <tag>Whole Building.Space Types</tag>
+  </tags>
+  <attributes>
+    <attribute>
+      <name>Measure Type</name>
+      <value>ModelMeasure</value>
+      <datatype>string</datatype>
+    </attribute>
+    <attribute>
+      <name>Measure Language</name>
+      <value>Ruby</value>
+      <datatype>string</datatype>
+    </attribute>
+  </attributes>
+  <files>
+    <file>
+      <version>
+        <software_program>OpenStudio</software_program>
+        <identifier>3.11.0</identifier>
+        <min_compatible>3.11.0</min_compatible>
+      </version>
+      <filename>measure.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>script</usage_type>
+      <checksum>B293E624</checksum>
+    </file>
+    <file>
+      <filename>set_warmup_days_test.rb</filename>
+      <filetype>rb</filetype>
+      <usage_type>test</usage_type>
+      <checksum>894EA5EC</checksum>
+    </file>
+  </files>
+</measure>
