@@ -50,6 +50,17 @@ Run a simulation on the currently loaded model and present results.
    - Unmet heating/cooling hours
    - End-use breakdown by category (heating, cooling, lighting, equipment, fans, pumps)
 
+## Many runs of one model (time segments)
+
+Translating a large model to EnergyPlus input takes tens of seconds per run. For runs that
+differ only in dates or warmup days, run the first one with `run_simulation`, then rerun its
+translated IDF with new dates (same status and extract tools):
+```
+run_idf(idf_path="<run_dir>/run/in.idf", epw_path="<epw_path>",
+        begin_month=4, begin_day=1, end_month=4, end_day=30)
+```
+`pin_run` the first run so its `Schedule:File` CSVs stay until the others finish.
+
 ## Error Handling
 
 - If no model is loaded, tell the user to load one first

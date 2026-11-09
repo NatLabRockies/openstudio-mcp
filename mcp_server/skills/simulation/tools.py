@@ -1,6 +1,7 @@
 """MCP tool definitions for OSW simulation workflow."""
 from __future__ import annotations
 
+from mcp_server.skills.simulation.idf_run import run_idf
 from mcp_server.skills.simulation.operations import (
     cancel_run,
     get_run_artifacts,
@@ -70,6 +71,41 @@ def register(mcp):
         repeatedly until status is terminal → extract_summary_metrics.
         """
         return run_simulation(osm_path=osm_path, epw_path=epw_path, name=name)
+
+    @mcp.tool(tags={"simulation"}, name="run_idf")
+    def run_idf_tool(
+        idf_path: str,
+        epw_path: str,
+        name: str | None = None,
+        begin_month: int | None = None,
+        begin_day: int | None = None,
+        end_month: int | None = None,
+        end_day: int | None = None,
+        max_warmup_days: int | None = None,
+        min_warmup_days: int | None = None,
+    ):
+        """Run EnergyPlus directly on an already-translated IDF, skipping the
+        OSM-to-IDF translation (tens of seconds on large models).
+
+        Translate once, simulate many: run_simulation once, then pass that run's
+        <run_dir>/run/in.idf here for each further run (e.g. time segments),
+        overriding the RunPeriod dates and Building warmup days per run. Same
+        queue, caps and run tools as run_simulation (get_run_status,
+        get_run_artifacts, extract_*, apply_measure with run_id).
+
+        Schedule:File CSVs are read in place, not copied; they must be under
+        your run area. Keep the source run (pin_run) until these runs finish.
+
+        Args:
+            idf_path: EnergyPlus IDF, e.g. /runs/<run_id>/run/in.idf
+            epw_path: EPW weather file
+            begin_month/begin_day/end_month/end_day: RunPeriod dates (IDF must
+                have exactly one RunPeriod)
+            max_warmup_days/min_warmup_days: Building warmup day limits
+        """
+        return run_idf(idf_path, epw_path, name, begin_month=begin_month, begin_day=begin_day,
+                       end_month=end_month, end_day=end_day,
+                       max_warmup_days=max_warmup_days, min_warmup_days=min_warmup_days)
 
     @mcp.tool(tags={"core", "simulation"}, name="get_run_status")
     async def get_run_status_tool(run_id: str, wait_seconds: int = 0):

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+- **`run_idf`** (simulation skill): runs EnergyPlus directly on an IDF, usually a completed
+  run's `run/in.idf`, through the same queue and per-user caps as `run_simulation`. Optional
+  `begin_month`/`begin_day`/`end_month`/`end_day` and `max_warmup_days`/`min_warmup_days` edit the
+  staged copy, so time-segment runs translate the model once instead of once per segment.
+  `Schedule:File` CSVs under the caller's run area are read in place (granted read-only to the
+  sandboxed run) rather than copied. Results work with `get_run_status`, `get_run_artifacts`,
+  `extract_*` and `apply_measure(run_id=...)` (#246).
+
 ## [1.3.1] - 2026-11-08
 
 Changes since 1.3.0. Every merged pull request is listed in the

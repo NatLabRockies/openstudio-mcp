@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shutil
 import signal
 import stat
 import subprocess
@@ -34,6 +35,7 @@ from mcp_server.config import (
     InvalidUserKeyError,
     is_path_allowed,
     pkgs_root_for,
+    run_root_for,
     user_run_root,
 )
 from mcp_server.confined_copy import copy_tree_confined
@@ -94,6 +96,10 @@ class RunRecord:
     seed_sha256: str | None = None
     weather_sha256: str | None = None
     resources_sha256: str | None = None
+    # run_idf only: dirs holding the IDF's Schedule:File companions, granted read-only to
+    # the sandboxed EnergyPlus child. In memory only (a run queued before a restart is
+    # failed on reload), so never read back from the tenant-writable record.
+    extra_ro: tuple[str, ...] = ()
 
 
 # In-memory registry (good enough for one-container dev right now)
@@ -556,8 +562,24 @@ def _kill_process_group(pid: int, *, grace: float = 5.0) -> None:
             p.kill()
 
 
-def _build_run_cmd(osw_path: Path) -> list[str]:
-    """openstudio CLI command to run a staged OSW (with bundle flags)."""
+def _energyplus_exe() -> str | None:
+    """EnergyPlus beside the openstudio CLI (same version as the translator), or ENERGYPLUS_EXE_PATH."""
+    env = os.environ.get("ENERGYPLUS_EXE_PATH")
+    if env:
+        return env if Path(env).is_file() else None
+    cli = shutil.which("openstudio")
+    if cli is None:
+        return None
+    exe = Path(cli).resolve().parent.parent / "EnergyPlus" / "energyplus"
+    return str(exe) if exe.is_file() else None
+
+
+def _build_run_cmd(osw_path: Path, epw_path: Path | None = None) -> list[str]:
+    """Command for a staged run: openstudio CLI for an OSW, EnergyPlus for a run_idf IDF."""
+    if osw_path.suffix == ".idf":
+        # -d: outputs land beside the IDF in run/, where OpenStudio runs leave theirs
+        epw = ["-w", str(epw_path)] if epw_path else []
+        return [_energyplus_exe() or "energyplus", *epw, "-d", str(osw_path.parent), str(osw_path)]
     return [
         "openstudio",
         "--bundle", OSCLI_GEMFILE,
@@ -565,6 +587,18 @@ def _build_run_cmd(osw_path: Path) -> list[str]:
         "--bundle_without", "native_ext",
         "run", "-w", str(osw_path),
     ]
+
+
+def _companion_grants(rec: RunRecord) -> tuple[str, ...]:
+    """rec.extra_ro, re-checked at launch: each dir must still be a link-free path inside
+    the owner's own run root (the grant follows links, and the owner could have swapped
+    one in since run_idf checked it)."""
+    try:
+        own = run_root_for(rec.user_key).resolve()
+    except (RuntimeError, InvalidUserKeyError, OSError):
+        return ()
+    return tuple(d for d in rec.extra_ro
+                 if Path(d).resolve() == Path(d) and Path(d).is_relative_to(own))
 
 
 def _launch(rec: RunRecord) -> None:
@@ -582,9 +616,10 @@ def _launch(rec: RunRecord) -> None:
         extra_ro = (str(pkgs_dir),) if pkgs_dir.is_dir() else ()
     except (RuntimeError, InvalidUserKeyError):  # symlinked pkgs dir or tenant root — no grant
         extra_ro = ()
+    extra_ro += _companion_grants(rec)
     proc = subprocess.Popen(  # noqa: S603 - cmd built from trusted config + staged OSW path
         sandbox.wrap_cmd(
-            _build_run_cmd(rec.osw_path), rec.run_dir, extra_ro=extra_ro, key=rec.user_key,
+            _build_run_cmd(rec.osw_path, rec.epw_path), rec.run_dir, extra_ro=extra_ro, key=rec.user_key,
         ),
         cwd=str(rec.run_dir),
         stdout=open_nofollow_for_write(log),
@@ -701,6 +736,19 @@ def _ensure_dispatcher() -> None:
 def _enqueue(run_id: str) -> None:
     with _sim_lock:
         _queue.append(run_id)
+
+
+def _submit(rec: RunRecord) -> None:
+    """Register a staged run and queue it under the global and per-user caps."""
+    with _sim_lock:
+        _RUNS[rec.run_id] = rec
+        # On disk from the moment it is queued: without this a run that was still queued
+        # when the server died was "Unknown run_id" after the restart (issue #175).
+        _persist_run_record(rec)
+    audit("sim_queued", run_id=rec.run_id, user=rec.user_key, name=rec.name)
+    _enqueue(rec.run_id)
+    _ensure_dispatcher()
+    _dispatch_once()  # launch immediately if under the concurrency cap
 
 
 def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
@@ -942,15 +990,7 @@ def run_osw(osw_path: str, epw_path: str | None = None, name: str | None = None,
         weather_sha256=_identity.get("weather_sha256") if _identity else None,
         resources_sha256=_identity.get("resources_sha256") if _identity else None,
     )
-    with _sim_lock:
-        _RUNS[run_id] = rec
-        # On disk from the moment it is queued: without this a run that was still queued
-        # when the server died was "Unknown run_id" after the restart (issue #175).
-        _persist_run_record(rec)
-    audit("sim_queued", run_id=run_id, user=rec.user_key, name=run_name)
-    _enqueue(run_id)
-    _ensure_dispatcher()
-    _dispatch_once()  # launch immediately if under the concurrency cap
+    _submit(rec)
 
     return {
         "ok": True,
@@ -998,7 +1038,13 @@ def _refresh_status(rec: RunRecord) -> RunRecord:
     out_osw = rec.run_dir / "out.osw"
     status = "failed"
     err: str | None = None
-    if out_osw.exists():
+    if rec.osw_path.suffix == ".idf":  # run_idf: no workflow, EnergyPlus reports in eplusout.end
+        try:
+            end = read_file_bounded(rec.run_dir / "run" / "eplusout.end", MAX_RECORD_BYTES)
+            status = "success" if end.startswith(b"EnergyPlus Completed Successfully") else "failed"
+        except (OSError, ValueError):
+            err = "EnergyPlus left no eplusout.end (see get_run_logs)"
+    elif out_osw.exists():
         try:
             out = _read_json_nofollow(out_osw, MAX_OUT_OSW_BYTES)
             status = "success" if out.get("completed_status") == "Success" else "failed"

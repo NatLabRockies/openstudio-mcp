@@ -551,12 +551,13 @@ List components via `list_model_objects("BoilerHotWater")`, loop detail tools, e
 </details>
 
 <details>
-<summary><b>Simulation & outputs</b> — 10 tools</summary>
+<summary><b>Simulation & outputs</b> — 11 tools</summary>
 
 | Tool | Description |
 |------|-------------|
 | `run_simulation` | Run a simulation from an OSM + optional EPW |
 | `run_osw` | Run EnergyPlus from an OSW file |
+| `run_idf` | Rerun a completed run's `in.idf` with new RunPeriod / warmup days, skipping translation |
 | `validate_osw` | Validate an OSW workflow file |
 | `validate_model` | Pre-sim check: weather, design days, HVAC, constructions |
 | `get_run_status` | Run status; `wait_seconds=50` holds the call until the run finishes, `poll_interval_seconds` says when to check again |

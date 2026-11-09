@@ -159,6 +159,7 @@ EXPECTED_TOOLS = {
     "create_new_building",
     "import_floorspacejs",
     "validate_osw",
+    "run_idf",
     "run_osw",
     "run_simulation",
     "get_run_status",
