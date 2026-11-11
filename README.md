@@ -666,7 +666,7 @@ Find, download, and apply bundled/BCL measures, or write/test/apply custom ones.
 | `download_measure_from_bcl` | Download and extract a measure ZIP into your per-user BCL cache (`/measures/<user>/bcl`) |
 | `list_comstock_measures` | List ~61 bundled [ComStock](https://github.com/NREL/ComStock) measures |
 | `list_measure_arguments` | List a measure's arguments, defaults, choices |
-| `apply_measure` | Apply an OpenStudio measure to the in-memory model |
+| `apply_measure` | Apply an OpenStudio measure to the in-memory model (`background=true` for long runs, then poll `get_run_status`) |
 | `create_measure` | Create a custom Ruby/Python ModelMeasure |
 | `edit_measure` | Edit a custom measure's code or arguments |
 | `test_measure` | Run a custom measure's tests (auto-detects language) |

@@ -125,6 +125,49 @@ def test_apply_measure_custom_args():
 
 
 @pytest.mark.integration
+def test_apply_measure_background_adopts_result_via_get_run_status():
+    # Validates: apply_measure(background=true) returns a run_id at once, blocks a second
+    # apply_measure while it runs, and get_run_status adopts the output into the session (#245)
+    if not integration_enabled():
+        pytest.skip("integration disabled")
+
+    async def _run():
+        async with stdio_client(server_params()) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                await setup_example(s, _unique())
+                sub = unwrap(await s.call_tool("apply_measure", {
+                    "measure_dir": MEASURE_DIR,
+                    "arguments": {"building_name": "Background Building"},
+                    "background": True,
+                }))
+                assert sub["ok"] is True, sub
+                assert sub["background"] is True
+                assert sub["run_id"].startswith("measure_set_building_name_")
+                assert sub["status"] in ("queued", "running")
+
+                # The CLI takes seconds to boot, so the first run is still in flight here.
+                second = unwrap(await s.call_tool("apply_measure", {"measure_dir": MEASURE_DIR}))
+                assert second["ok"] is False
+                assert "still" in second["error"]
+                assert second["run_id"] == sub["run_id"]
+
+                done = await poll_until_done(s, sub["run_id"])
+                assert done["run"]["status"] == "success", done
+                assert done["measure_result"]["ok"] is True, done["measure_result"]
+                assert done["measure_result"]["arguments_applied"] == {"building_name": "Background Building"}
+                bldg = unwrap(await s.call_tool("get_building_info", {}))
+                assert bldg["building"]["name"] == "Background Building"
+
+                # Finished job no longer blocks the synchronous path.
+                sync = unwrap(await s.call_tool("apply_measure", {"measure_dir": MEASURE_DIR}))
+                assert sync["ok"] is True, sync
+                bldg = unwrap(await s.call_tool("get_building_info", {}))
+                assert bldg["building"]["name"] == "Test Building"
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
 def test_apply_measure_invalid_dir():
     """Measure with bad directory path."""
     # Validates: apply_measure returns error for nonexistent measure directory

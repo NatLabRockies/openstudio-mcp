@@ -128,6 +128,7 @@ def register(mcp):
         measure_dir: str,
         arguments: dict[str, Any] | None = None,
         run_id: str | None = None,
+        background: bool = False,
     ):
         """Run an existing local OpenStudio measure against the loaded model.
 
@@ -144,11 +145,21 @@ def register(mcp):
         with the session and written to that folder by save_osm_model (see
         generated_files).
 
+        On a large model a measure can outlast the client's ~60 s call limit:
+        pass background=true to get a run_id at once, then call
+        get_run_status(run_id, wait_seconds=50) until the status is terminal.
+        That response carries measure_result (what this tool returns without
+        background); the loaded model holds the measure's changes only when
+        measure_result.ok is true. Don't edit the model while the job runs: the measure output
+        replaces it. A second apply_measure on the model returns an error
+        until the first one finishes.
+
         Args:
             measure_dir: Path to the measure directory (contains measure.rb)
             arguments: Optional dict of argument_name -> value overrides
             run_id: Completed simulation run_id (ReportingMeasures only)
+            background: Queue the run and return its run_id at once
 
         """
         return apply_measure(measure_dir=measure_dir, arguments=arguments,
-                             run_id=run_id)
+                             run_id=run_id, background=background)

@@ -34,11 +34,13 @@ from mcp_server.config import (
     user_run_root,
 )
 from mcp_server.confined_copy import copy_tree_confined, remove_tree_confined
+from mcp_server.identity import session_key
 from mcp_server.log_excerpt import describe_exit, excerpt_log_file
 from mcp_server.model_manager import (
     get_model,
     get_model_path,
     get_model_with_generation,
+    get_session_extra,
     pending_files_dir,
     pending_files_dir_if_exists,
     reload_model_with_generation,
@@ -48,6 +50,7 @@ from mcp_server.resources import stage_model_resources
 from mcp_server.skills.file_transfer.archive import guarded_extract
 from mcp_server.skills.measures.osw_weather import resolve_osw_weather, stage_epw_into_run
 from mcp_server.skills.measures.runner_messages import parse_runner_messages
+from mcp_server.skills.simulation.operations import RunRecord, get_run_status, queue_staged_run
 from mcp_server.skills.weather.operations import find_epw_by_name, make_weather_url_portable
 from mcp_server.util import (
     copy_regular_file_nofollow,
@@ -737,6 +740,7 @@ def apply_measure(
     arguments: dict[str, Any] | None = None,
     run_id: str | None = None,
     use_bundle: bool = True,
+    background: bool = False,
 ) -> dict[str, Any]:
     """Apply an OpenStudio measure to the in-memory model.
 
@@ -752,11 +756,15 @@ def apply_measure(
         measure_dir: Path to the measure directory
         arguments: Optional dict of argument_name -> value overrides
         run_id: Optional completed simulation run_id (for reporting measures)
+        background: Queue the measure run like a simulation and return its run_id
+            at once; get_run_status adopts the result when the run finishes (#245).
     """
     run_dir: Path | None = None
     log_path: Path | None = None
-    output_osm: Path | None = None
     try:
+        pending = _pending_background_error()
+        if pending is not None:
+            return pending
         # The generation pins the reload below to THIS model: if another tool
         # call replaces the session model while the measure runs, the reload
         # is refused instead of publishing the output under that model's path.
@@ -785,7 +793,7 @@ def apply_measure(
             return {"ok": False, "error": f"No measure.rb or measure.py found in {measure_dir}"}
 
         # Create temp directory for the run
-        _measure_run_id, run_dir = create_run_dir(user_run_root(), "measure", measure_path.name)
+        measure_run_id, run_dir = create_run_dir(user_run_root(), "measure", measure_path.name)
 
         # Save current model to temp OSM (staged, then copied by descriptor; #190)
         temp_osm = run_dir / "in.osm"
@@ -912,6 +920,11 @@ def apply_measure(
             postprocess = True
 
         run_flag = "--postprocess_only" if postprocess else "--measures_only"
+        if background:
+            return _submit_background(
+                measure_run_id, run_dir, run_flag, temp_osm, measure_path,
+                measure_args, postprocess, weather, generation,
+            )
         cmd = ["openstudio"]
         if use_bundle:
             cmd += ["--bundle", OSCLI_GEMFILE,
@@ -937,7 +950,40 @@ def apply_measure(
 
         if proc.returncode != 0:
             return _measure_failure(proc.returncode, run_dir, log_path)
+        return _finish_measure(
+            run_dir, temp_osm, measure_path, measure_args, postprocess, weather, generation,
+        )
 
+    except subprocess.TimeoutExpired:
+        # The partial log is on disk — point at it so the agent can see how far
+        # the measure got before the cap.
+        result: dict[str, Any] = {"ok": False, "error": "Measure run timed out (5 min)"}
+        if run_dir is not None:
+            result["run_dir"] = str(run_dir)
+        if log_path is not None:
+            result["log_path"] = str(log_path)
+            result["log_hint"] = "Partial log: read_file(file_path=log_path)"
+        return result
+    except RuntimeError as e:
+        result = {"ok": False, "error": str(e)}
+        if run_dir is not None:
+            result["run_dir"] = str(run_dir)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to apply measure: {e}"}
+
+
+def _finish_measure(
+    run_dir: Path, temp_osm: Path, measure_path: Path, measure_args: dict[str, str],
+    postprocess: bool, weather: dict[str, Any], generation: int,
+) -> dict[str, Any]:
+    """Adopt a successful measure run's output into the session (sync or background path).
+
+    `generation` is the session model the measure was given: the reload is refused
+    if another tool call replaced it meanwhile.
+    """
+    output_osm: Path | None = None
+    try:
         # Parse runner messages from out.osw
         runner_messages = parse_runner_messages(run_dir / "out.osw")
 
@@ -1031,26 +1077,88 @@ def apply_measure(
             result["runner_messages"] = runner_messages
         return result
 
-    except subprocess.TimeoutExpired:
-        # The partial log is on disk — point at it so the agent can see how far
-        # the measure got before the cap.
-        result: dict[str, Any] = {"ok": False, "error": "Measure run timed out (5 min)"}
-        if run_dir is not None:
-            result["run_dir"] = str(run_dir)
-        if log_path is not None:
-            result["log_path"] = str(log_path)
-            result["log_hint"] = "Partial log: read_file(file_path=log_path)"
-        return result
     except RuntimeError as e:
-        result = {"ok": False, "error": str(e)}
-        if run_dir is not None:
-            result["run_dir"] = str(run_dir)
+        result = {"ok": False, "error": str(e), "run_dir": str(run_dir)}
         if output_osm is not None and output_osm.is_file():
             # The measure itself succeeded; only adopting its output was refused.
             result["output_osm"] = str(output_osm)
         return result
-    except Exception as e:
-        return {"ok": False, "error": f"Failed to apply measure: {e}"}
+
+
+# Session-extra key: run_id of this session's latest background apply_measure.
+_BACKGROUND_KEY = "apply_measure_background"
+
+
+def _pending_background_error() -> dict[str, Any] | None:
+    """ok:false while this session's background apply_measure is still queued or running.
+
+    Polling it through get_run_status also adopts its result if it has just
+    finished, so the next measure starts from the updated model.
+    """
+    extra = get_session_extra()
+    prev = extra.get(_BACKGROUND_KEY)
+    if prev is None:
+        return None
+    status = (get_run_status(prev).get("run") or {}).get("status")
+    if status not in ("queued", "running"):
+        extra.pop(_BACKGROUND_KEY, None)
+        return None
+    return {
+        "ok": False,
+        "error": (f"A background apply_measure (run_id {prev}) is still {status} on this "
+                  "model. Wait for it with get_run_status(run_id, wait_seconds=50), or "
+                  "cancel_run(run_id), before applying another measure."),
+        "run_id": prev,
+    }
+
+
+def _submit_background(
+    run_id: str, run_dir: Path, run_flag: str, temp_osm: Path, measure_path: Path,
+    measure_args: dict[str, str], postprocess: bool, weather: dict[str, Any], generation: int,
+) -> dict[str, Any]:
+    """Queue the staged measure run and return its run_id at once (#245).
+
+    The output is adopted by get_run_status, in the poll's request context: the
+    session model is keyed by the request's session, which the dispatcher thread
+    does not have. Only the submitting session adopts it.
+    """
+    owner = session_key()
+    log_path = run_dir / "openstudio.log"
+
+    def on_finish(rec: RunRecord) -> dict[str, Any] | None:
+        if session_key() != owner:
+            return None
+        if rec.status == "cancelled":
+            return {"ok": False, "error": "Measure run was cancelled; the model is unchanged",
+                    "run_dir": str(run_dir)}
+        if rec.status != "success":
+            failure = _measure_failure(rec.exit_code if rec.exit_code is not None else 1,
+                                       run_dir, log_path)
+            if rec.error:
+                failure["error"] = rec.error  # e.g. the wall-clock cap
+            return failure
+        try:
+            return _finish_measure(
+                run_dir, temp_osm, measure_path, measure_args, postprocess, weather, generation,
+            )
+        except Exception as e:
+            return {"ok": False, "error": f"Failed to apply measure: {e}", "run_dir": str(run_dir)}
+
+    rec = queue_staged_run(run_id, run_dir, run_dir / "workflow.osw", measure_path.name,
+                           run_flag=run_flag, on_finish=on_finish)
+    get_session_extra()[_BACKGROUND_KEY] = run_id
+    return {
+        "ok": True,
+        "background": True,
+        "run_id": run_id,
+        "status": rec.status,
+        "measure_dir": str(measure_path),
+        "run_dir": str(run_dir),
+        "arguments_applied": measure_args,
+        "next": ("Call get_run_status(run_id, wait_seconds=50) until the status is terminal. "
+                 "The terminal response carries measure_result (what apply_measure returns "
+                 "synchronously); the loaded model is updated only when measure_result.ok is true."),
+    }
 
 
 # Budget for what a measure may hand back through generated_files/: the copy
