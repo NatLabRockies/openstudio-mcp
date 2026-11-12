@@ -65,7 +65,8 @@ jobs:
 
       - name: TEMP key usage before
         if: env.OPENROUTER_API_KEY != ''
-        run: curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq -c '.data | {usage, limit_remaining}'
+        run: |
+          curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq -c '.data | {usage, limit_remaining}'
 
       - name: Run install prompt
         if: env.OPENROUTER_API_KEY != ''
@@ -80,4 +81,5 @@ jobs:
 
       - name: TEMP key usage after
         if: always() && env.OPENROUTER_API_KEY != ''
-        run: curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq -c '.data | {usage, limit_remaining}'
+        run: |
+          curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq -c '.data | {usage, limit_remaining}'
