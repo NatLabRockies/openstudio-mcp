@@ -62,7 +62,11 @@ jobs:
       - name: Install agent CLIs
         if: env.OPENROUTER_API_KEY != ''
         run: |
-          npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot opencode-ai
+          npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot
+          # npm's opencode-ai stops at 1.x; 2.x (needed for --archived) ships only via the installer
+          curl -fsSL https://opencode.ai/install | bash
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.opencode/bin:$PATH"
           pip install pytest mcp  # tests/conftest.py imports mcp
           for c in claude codex copilot opencode; do echo "$c: $($c --version 2>&1 | head -1)"; done
 

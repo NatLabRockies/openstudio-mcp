@@ -39,11 +39,11 @@ def readme_prompt(readme: Path = REPO / "README.md") -> str:
 
 
 def provider() -> str:
-    return os.environ.get("INSTALL_PROMPT_PROVIDER", "openrouter")
+    return os.environ.get("INSTALL_PROMPT_PROVIDER") or "openrouter"  # CI passes "" when unset
 
 
 def model() -> str:
-    return os.environ.get("INSTALL_PROMPT_MODEL", DEFAULT_MODEL)
+    return os.environ.get("INSTALL_PROMPT_MODEL") or DEFAULT_MODEL  # CI passes "" when unset
 
 
 def base_env(home: Path) -> dict[str, str]:

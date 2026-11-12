@@ -179,6 +179,15 @@ def test_env_hides_developer_secrets(tmp_path, monkeypatch):
     assert "AWS_SECRET_ACCESS_KEY" not in env and "ANTHROPIC_API_KEY" not in env
 
 
+def test_blank_model_and_provider_fall_back_to_defaults(monkeypatch):
+    # Regression: the workflow passed INSTALL_PROMPT_MODEL="" so every agent got an empty
+    # model (codex and copilot refused to start, claude silently used a paid default)
+    monkeypatch.setenv("INSTALL_PROMPT_MODEL", "")
+    monkeypatch.setenv("INSTALL_PROMPT_PROVIDER", "")
+    assert agents.model() == "thinkingmachines/inkling-2-small:free"
+    assert agents.provider() == "openrouter"
+
+
 @pytest.mark.parametrize("needle", [
     "If you have no way to ask me, stop there and list what you need",
     "api.github.com/repos/NatLabRockies/openstudio-mcp/releases/latest",
