@@ -84,7 +84,10 @@ def _claude_prepare(home: Path, env: dict) -> None:
     if provider() == "openrouter":
         env.update(ANTHROPIC_BASE_URL=OPENROUTER, ANTHROPIC_AUTH_TOKEN=env.get("OPENROUTER_API_KEY", ""),
                    ANTHROPIC_API_KEY="", ANTHROPIC_MODEL=model(),
-                   ANTHROPIC_DEFAULT_HAIKU_MODEL=model(),  # background calls default to a paid Haiku
+                   # background and subagent calls otherwise go to paid Haiku/Sonnet/Opus
+                   ANTHROPIC_DEFAULT_HAIKU_MODEL=model(), ANTHROPIC_SMALL_FAST_MODEL=model(),
+                   ANTHROPIC_DEFAULT_SONNET_MODEL=model(), ANTHROPIC_DEFAULT_OPUS_MODEL=model(),
+                   CLAUDE_CODE_SUBAGENT_MODEL=model(),
                    # default asks for 128k; OpenRouter rejects requests the key's limit can't cover
                    CLAUDE_CODE_MAX_OUTPUT_TOKENS="16000")
 
@@ -149,6 +152,11 @@ def _opencode_standalone(env: dict) -> list[str]:
     return ["--standalone"] if path and _STANDALONE[path] else []
 
 
+def _opencode_prepare(home: Path, env: dict) -> None:
+    if provider() == "openrouter":  # titles and summaries use small_model, a paid default
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps({"small_model": f"openrouter/{model()}"})
+
+
 def _opencode_turn(session: str | None, msg: str, cwd: Path, env: dict) -> tuple[str, str]:
     m = model() if provider() != "openrouter" else f"openrouter/{model()}"
     # opencode 2.x runs turns in a shared background service (fixed port, the
@@ -167,7 +175,7 @@ AGENTS = {
     "claude": (_claude_prepare, _claude_turn),
     "codex": (_codex_prepare, _codex_turn),
     "copilot": (_copilot_prepare, _copilot_turn),
-    "opencode": (lambda _home, _env: None, _opencode_turn),
+    "opencode": (_opencode_prepare, _opencode_turn),
 }
 CLI = {"claude": "claude", "codex": "codex", "copilot": "copilot", "opencode": "opencode"}
 
