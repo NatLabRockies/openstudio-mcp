@@ -120,6 +120,51 @@ def test_untouched_ignores_agent_state_but_not_servers(tmp_path):
         ".claude.json: changed, but the agent was not allowed to touch it yet"]
 
 
+@pytest.mark.parametrize(("mutate", "expect"), [
+    (lambda d: d.pop("model"), [".codex/config.toml: non-server settings changed"]),
+    (lambda d: d.__setitem__("projects", {"w": "trusted"}), []),  # Codex adds trust state: fine
+])
+def test_codex_provider_settings_must_survive_registration(tmp_path, mutate, expect):
+    # Regression: agent-state files were compared by server map only, so an install
+    # that dropped Codex's provider settings still passed
+    home = tmp_path / "home"
+    (home / ".codex").mkdir(parents=True)
+    (home / ".codex/config.toml").write_text('model = "free-model"\n')  # as _codex_prepare writes it
+    hosts.seed_all(home)
+    before, folders = grader.snapshot(home), _folders(tmp_path)
+    after = _register(home, "codex", _entry(folders), mutate)
+    assert grader.check_registration("codex", before, after, IMAGE, folders) == expect
+
+
+@pytest.mark.parametrize(("text", "mention", "expect"), [
+    ("Which MCP host should I set this up for?", None, []),
+    ("Done. I installed it for Claude Desktop.", None, ["agent did not ask the user anything before stopping"]),
+    ("Which folder should hold your models?", EXISTING, [f"agent asked something, but not about '{EXISTING}'"]),
+    (f"An entry named {EXISTING} exists. Replace it or pick another name?", EXISTING, []),
+])
+def test_stop_must_ask(text, mention, expect):
+    # Regression: turns 1-2 checked only the files, so an agent that stopped without
+    # asking (or declared success) passed the stop-and-ask steps
+    assert grader.check_asked(text, mention) == expect
+
+
+def test_real_config_server_change_is_caught(tmp_path):
+    # Validates: agents run as the developer with approvals off, so a write to the real
+    # HOME's MCP configs fails the run; other real-file churn (or unparseable JSONC) doesn't
+    home, before = _seeded(tmp_path)
+    vscode = home / HOSTS["vscode"].relpath
+    vscode.write_text("// comments make this JSONC\n{}")
+    before = grader.snapshot(home)
+    path = home / ".claude.json"
+    doc = json.loads(path.read_text())
+    doc["numStartups"] = 9
+    path.write_text(json.dumps(doc))
+    assert grader.check_servers_unchanged(before, grader.snapshot(home)) == []
+    _register(home, "cursor", _entry(_folders(tmp_path)))
+    assert grader.check_servers_unchanged(before, grader.snapshot(home)) == [
+        f"real ~/{HOSTS['cursor'].relpath}: MCP servers changed during the test"]
+
+
 def test_unparseable_config_is_caught(tmp_path):
     # Validates: a merge that leaves broken JSON fails instead of crashing the grader
     home, before = _seeded(tmp_path)

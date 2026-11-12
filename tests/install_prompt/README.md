@@ -7,8 +7,9 @@ Each run uses a throwaway `HOME` seeded with a config for every supported host.
 Each config already has an `openstudio-mcp` entry and a server whose header
 holds a fake canary token. The agent is driven turn by turn:
 
-1. The prompt, verbatim. The agent must stop and ask; no config may change.
-2. The host and three folders. The host already has `openstudio-mcp`, so the agent must stop again.
+1. The prompt, verbatim. The agent must stop and ask a question; no config may change.
+2. The host and three folders. The host already has `openstudio-mcp`, so the agent must stop again
+   and ask about that entry.
 3. "Use the name openstudio-mcp-test". The grader then checks:
    - only that key was added, to the target host;
    - it uses the latest release image;
@@ -43,8 +44,19 @@ INSTALL_PROMPT_PAIRS=all pytest tests/install_prompt -v         # 28 runs: needs
 | `INSTALL_PROMPT_PAIRS_PER_RUN` | `1` | pairs per rotation run |
 | `INSTALL_PROMPT_TURN_TIMEOUT` | `900` | seconds per turn |
 
-Agents see only `PATH`, the temp `HOME` and the provider key. Your logins,
-real configs and other credentials stay out of reach.
+Agents get only `PATH`, the temp `HOME` and the provider key in their
+environment, so they don't find your logins or real configs by default. That
+is not a sandbox: they run as your user with approvals turned off, and an
+absolute path still reaches your files. The test fails if the MCP server list
+in any of your real host configs changes during the run, but it can't see
+other writes. In CI the runner is thrown away; locally, prefer a VM or
+container if that matters to you.
+
+opencode 2.x runs turns through a shared background service that uses your
+real `HOME`, so the test passes `--standalone` when the installed opencode has
+it. CI installs 1.x, which has no service. opencode 2.1.3 in standalone mode
+didn't send the OpenRouter key from the environment in local testing; use 1.x
+(`npm install -g opencode-ai`) if it fails with "Missing Authentication header".
 
 ## CI
 

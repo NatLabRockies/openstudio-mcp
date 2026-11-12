@@ -24,8 +24,15 @@ from pathlib import Path
 import pytest
 
 from .agents import AGENTS, CLI, base_env, model, pairs_for_run, provider, readme_prompt
-from .grader import check_no_secrets, check_registration, check_untouched, snapshot
-from .hosts import HOSTS, TEST_NAME, parse, seed_all, servers
+from .grader import (
+    check_asked,
+    check_no_secrets,
+    check_registration,
+    check_servers_unchanged,
+    check_untouched,
+    snapshot,
+)
+from .hosts import EXISTING, HOSTS, TEST_NAME, parse, seed_all, servers
 
 ENABLED = os.environ.get("INSTALL_PROMPT_TESTS") == "1"
 pytestmark = [pytest.mark.llm,
@@ -103,6 +110,7 @@ def test_install_prompt(agent: str, host: str, tmp_path: Path):
     home.mkdir()
     real = Path.home().resolve()
     assert home != real and real not in home.parents, "throwaway HOME must not be the real one"
+    real_before = snapshot(real)  # agents run as you with approvals off: HOME only hides configs
     env = base_env(home)
     prepare, turn = AGENTS[agent]
     prepare(home, env)
@@ -119,13 +127,14 @@ def test_install_prompt(agent: str, host: str, tmp_path: Path):
         # --- Act + Assert, turn by turn ---
         sid, text = turn(None, readme_prompt(), work, env)
         said.append(text)
-        fails = [f"turn 1: {f}" for f in check_untouched(before, snapshot(home))]
+        fails = [f"turn 1: {f}" for f in check_untouched(before, snapshot(home)) + check_asked(text)]
         assert not fails, "\n".join(fails) + f"\n--- agent said:\n{text[-2000:]}"
 
         sid, text = turn(sid, f"{HOSTS[host].label}. Use these folders: models {folders['inputs']}, "
                               f"simulation output {folders['runs']}, measures {folders['measures']}.", work, env)
         said.append(text)
-        fails = [f"turn 2 (existing entry, must ask): {f}" for f in check_untouched(before, snapshot(home))]
+        fails = [f"turn 2 (existing entry, must ask): {f}"
+                 for f in check_untouched(before, snapshot(home)) + check_asked(text, EXISTING)]
         assert not fails, "\n".join(fails) + f"\n--- agent said:\n{text[-2000:]}"
 
         sid, text = turn(sid, f"Use the name {TEST_NAME}, keep the existing entry.", work, env)
@@ -143,4 +152,6 @@ def test_install_prompt(agent: str, host: str, tmp_path: Path):
         fails = fails or [f"{type(e).__name__}: {e}"]
         raise
     finally:
-        _summary(agent, host, fails)
+        leaked = check_servers_unchanged(real_before, snapshot(real))
+        _summary(agent, host, fails or leaked)
+    assert not leaked, "\n".join(leaked)

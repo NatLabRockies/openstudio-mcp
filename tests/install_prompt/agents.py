@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import uuid
 from pathlib import Path
@@ -136,9 +137,23 @@ def _copilot_turn(session: str | None, msg: str, cwd: Path, env: dict) -> tuple[
 
 
 # --- opencode (proposed client, discussion #269) -------------------------------
+_STANDALONE: dict[str, bool] = {}
+
+
+def _opencode_standalone(env: dict) -> list[str]:
+    path = shutil.which("opencode", path=env.get("PATH"))
+    if path and path not in _STANDALONE:  # run --help in the test env: it writes a log under HOME
+        r = subprocess.run([path, "run", "--help"], env=env, capture_output=True,  # noqa: S603
+                           text=True, timeout=60, check=False)
+        _STANDALONE[path] = "--standalone" in r.stdout + r.stderr
+    return ["--standalone"] if path and _STANDALONE[path] else []
+
+
 def _opencode_turn(session: str | None, msg: str, cwd: Path, env: dict) -> tuple[str, str]:
     m = model() if provider() != "openrouter" else f"openrouter/{model()}"
-    cmd = ["opencode", "run", "--auto", "-m", m, "--format", "json"]
+    # opencode 2.x runs turns in a shared background service (fixed port, the
+    # developer's real HOME) unless told to use a private one; 1.x has no service
+    cmd = ["opencode", "run", "--auto", "-m", m, "--format", "json", *_opencode_standalone(env)]
     sid, texts = session, []
     for e in _jsonl(_run([*cmd, *(["--session", session] if session else []), msg], cwd, env)):
         sid = sid or e.get("sessionID")
