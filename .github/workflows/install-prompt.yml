@@ -8,7 +8,7 @@ name: install-prompt
 # their own. It reports, it doesn't gate anything.
 on:
   schedule:
-    - cron: "0 9 * * *"  # daily 09:00 UTC
+    - cron: "0 9 * * *" # daily 09:00 UTC
   workflow_dispatch:
     inputs:
       pairs:
@@ -23,7 +23,7 @@ permissions:
 
 concurrency:
   group: install-prompt
-  cancel-in-progress: false  # never stack runs on the same daily quota
+  cancel-in-progress: false # never stack runs on the same daily quota
 
 jobs:
   install-prompt:
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 340
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      GITHUB_TOKEN: ${{ github.token }}  # only for the expected-tag lookup
+      GITHUB_TOKEN: ${{ github.token }} # only for the expected-tag lookup
       INSTALL_PROMPT_TESTS: "1"
       INSTALL_PROMPT_PAIRS: ${{ inputs.pairs }}
       INSTALL_PROMPT_PAIRS_PER_RUN: ${{ vars.INSTALL_PROMPT_PAIRS_PER_RUN || '1' }}
