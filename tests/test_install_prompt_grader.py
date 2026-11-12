@@ -184,7 +184,7 @@ def test_blank_model_and_provider_fall_back_to_defaults(monkeypatch):
     # model (codex and copilot refused to start, claude silently used a paid default)
     monkeypatch.setenv("INSTALL_PROMPT_MODEL", "")
     monkeypatch.setenv("INSTALL_PROMPT_PROVIDER", "")
-    assert agents.model() == "thinkingmachines/inkling-2-small:free"
+    assert agents.model() == "nvidia/nemotron-3.5-super-vl:free"
     assert agents.provider() == "openrouter"
 
 

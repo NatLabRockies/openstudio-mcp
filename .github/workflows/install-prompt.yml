@@ -72,7 +72,7 @@ jobs:
           curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq '.data | {limit, limit_remaining, usage, is_free_tier}'
           curl -sS -w '\nHTTP %{http_code}\n' https://openrouter.ai/api/v1/chat/completions \
             -H "Authorization: Bearer $OPENROUTER_API_KEY" -H "Content-Type: application/json" \
-            -d '{"model":"thinkingmachines/inkling-2-small:free","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' | tail -c 600
+            -d '{"model":"nvidia/nemotron-3.5-super-vl:free","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' | tail -c 600
 
       - name: Run install prompt
         if: env.OPENROUTER_API_KEY != ''

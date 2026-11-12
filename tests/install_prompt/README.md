@@ -38,7 +38,7 @@ INSTALL_PROMPT_PAIRS=all pytest tests/install_prompt -v         # 28 runs: needs
 | Variable | Default | Meaning |
 |---|---|---|
 | `INSTALL_PROMPT_PROVIDER` | `openrouter` | `native` uses your own `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `COPILOT_GITHUB_TOKEN` instead |
-| `INSTALL_PROMPT_MODEL` | `thinkingmachines/inkling-2-small:free` | OpenRouter model id; `openrouter/free` lets OpenRouter pick a free model |
+| `INSTALL_PROMPT_MODEL` | `nvidia/nemotron-3.5-super-vl:free` | OpenRouter model id. Avoid `thinkingmachines/inkling*:free`: OpenRouter serves it only to apps it lists as agentic harnesses, so Codex and Copilot get a 403. Avoid `openrouter/free` too: it can route to a model that is not a chat model |
 | `INSTALL_PROMPT_PAIRS` | today's rotation | `agent:host,…` or `all` |
 | `INSTALL_PROMPT_PAIRS_PER_RUN` | `1` | pairs per rotation run |
 | `INSTALL_PROMPT_TURN_TIMEOUT` | `900` | seconds per turn |

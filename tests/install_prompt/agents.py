@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 OPENROUTER = "https://openrouter.ai/api"
-DEFAULT_MODEL = "thinkingmachines/inkling-2-small:free"
+DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl:free"  # inkling:free 403s for codex/copilot (agentic-harness gate)
 TURN_TIMEOUT = int(os.environ.get("INSTALL_PROMPT_TURN_TIMEOUT", "900"))
 
 _PASSTHROUGH = ("PATH", "LANG", "LC_ALL", "TERM", "DOCKER_HOST", "SSL_CERT_FILE")
