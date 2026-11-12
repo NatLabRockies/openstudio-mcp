@@ -20,6 +20,8 @@ on:
   push:
     branches: [develop]
     paths: ["README.md"]  # the prompt lives there
+  pull_request:  # harness changes get one rotation pair; fork PRs have no secret and skip
+    paths: ["tests/install_prompt/**", ".github/workflows/install-prompt.yml"]
 
 permissions:
   contents: read

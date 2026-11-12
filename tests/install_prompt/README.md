@@ -48,7 +48,7 @@ real configs and other credentials stay out of reach.
 
 ## CI
 
-`.github/workflows/install-prompt.yml` runs daily, on manual dispatch,
+`.github/workflows/install-prompt.yml` runs daily, on manual dispatch, on PRs that change the harness,
 and on pushes to `develop` that touch `README.md`. It needs the
 `OPENROUTER_API_KEY` repo secret and skips with a notice without it.
 
