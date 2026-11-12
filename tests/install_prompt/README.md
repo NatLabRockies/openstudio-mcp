@@ -48,8 +48,8 @@ real configs and other credentials stay out of reach.
 
 ## CI
 
-`.github/workflows/install-prompt.yml` runs daily, on manual dispatch, on PRs that change the harness,
-and on pushes to `develop` that touch `README.md`. It needs the
+`.github/workflows/install-prompt.yml` runs daily at 09:00 UTC and on manual dispatch
+(Actions → install-prompt → Run workflow, with optional pairs and model). It needs the
 `OPENROUTER_API_KEY` repo secret and skips with a notice without it.
 
 Free OpenRouter models allow about 50 requests a day, and one install takes

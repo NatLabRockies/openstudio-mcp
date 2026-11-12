@@ -83,6 +83,7 @@ def _claude_prepare(home: Path, env: dict) -> None:
     if provider() == "openrouter":
         env.update(ANTHROPIC_BASE_URL=OPENROUTER, ANTHROPIC_AUTH_TOKEN=env.get("OPENROUTER_API_KEY", ""),
                    ANTHROPIC_API_KEY="", ANTHROPIC_MODEL=model(),
+                   ANTHROPIC_DEFAULT_HAIKU_MODEL=model(),  # background calls default to a paid Haiku
                    # default asks for 128k; OpenRouter rejects requests the key's limit can't cover
                    CLAUDE_CODE_MAX_OUTPUT_TOKENS="16000")
 
