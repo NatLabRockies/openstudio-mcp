@@ -1,0 +1,76 @@
+name: install-prompt
+
+# Runs the README "Let your AI set it up" prompt through real agent CLIs on a
+# free OpenRouter model (issue #268). Daily, one pair per run: free models allow about 50 requests
+# a day and one three-turn install is 30-60. Runs rotate through the agent x
+# host pairs (INSTALL_PROMPT_PAIRS_PER_RUN per run), so each host is tested
+# weekly and all 28 pairs within four weeks. A failure means "look at it": free models also fail on
+# their own. It reports, it doesn't gate anything.
+on:
+  schedule:
+    - cron: "0 9 * * *"  # daily 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      pairs:
+        description: 'agent:host list, e.g. "codex:vscode,opencode:cursor"; "all" = full matrix; blank = today''s rotation'
+        default: ""
+      model:
+        description: "OpenRouter model id (blank = harness default)"
+        default: ""
+  push:
+    branches: [develop]
+    paths: ["README.md"]  # the prompt lives there
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-prompt
+  cancel-in-progress: false  # never stack runs on the same daily quota
+
+jobs:
+  install-prompt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GITHUB_TOKEN: ${{ github.token }}  # only for the expected-tag lookup
+      INSTALL_PROMPT_TESTS: "1"
+      INSTALL_PROMPT_PAIRS: ${{ inputs.pairs }}
+      INSTALL_PROMPT_PAIRS_PER_RUN: ${{ vars.INSTALL_PROMPT_PAIRS_PER_RUN || '1' }}
+      INSTALL_PROMPT_MODEL: ${{ inputs.model || vars.INSTALL_PROMPT_MODEL }}
+    steps:
+      - name: Skip without an OpenRouter key
+        if: env.OPENROUTER_API_KEY == ''
+        run: echo "::notice::OPENROUTER_API_KEY secret is not set; install-prompt test skipped"
+
+      - uses: actions/checkout@v7
+        if: env.OPENROUTER_API_KEY != ''
+
+      - uses: actions/setup-python@v6
+        if: env.OPENROUTER_API_KEY != ''
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v5
+        if: env.OPENROUTER_API_KEY != ''
+        with:
+          node-version: "22"
+
+      - name: Install agent CLIs
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot opencode-ai
+          pip install pytest mcp  # tests/conftest.py imports mcp
+          for c in claude codex copilot opencode; do echo "$c: $($c --version 2>&1 | head -1)"; done
+
+      - name: Run install prompt
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          {
+            echo "### Install prompt (model: ${INSTALL_PROMPT_MODEL:-harness default})"
+            echo "| Agent | Host | Model | Result |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # rc 5 = nothing collected; fail rather than report an empty green run
+          python -m pytest tests/install_prompt -v -p no:cacheprovider
