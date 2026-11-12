@@ -17,8 +17,6 @@ on:
       model:
         description: "OpenRouter model id (blank = harness default)"
         default: ""
-  pull_request:  # TEMP: verify harness changes; reverted before merge
-    paths: ["tests/install_prompt/**", ".github/workflows/install-prompt.yml"]
 
 permissions:
   contents: read
@@ -35,7 +33,7 @@ jobs:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       GITHUB_TOKEN: ${{ github.token }}  # only for the expected-tag lookup
       INSTALL_PROMPT_TESTS: "1"
-      INSTALL_PROMPT_PAIRS: ${{ inputs.pairs || (github.event_name == 'pull_request' && 'codex:cursor,copilot:gemini' || '') }}
+      INSTALL_PROMPT_PAIRS: ${{ inputs.pairs }}
       INSTALL_PROMPT_PAIRS_PER_RUN: ${{ vars.INSTALL_PROMPT_PAIRS_PER_RUN || '1' }}
       INSTALL_PROMPT_MODEL: ${{ inputs.model || vars.INSTALL_PROMPT_MODEL }}
     steps:
@@ -63,11 +61,6 @@ jobs:
           pip install pytest mcp  # tests/conftest.py imports mcp
           for c in claude codex copilot opencode; do echo "$c: $($c --version 2>&1 | head -1)"; done
 
-      - name: TEMP key usage before
-        if: env.OPENROUTER_API_KEY != ''
-        run: |
-          curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq -c '.data | {usage, limit_remaining}'
-
       - name: Run install prompt
         if: env.OPENROUTER_API_KEY != ''
         run: |
@@ -78,8 +71,3 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           # rc 5 = nothing collected; fail rather than report an empty green run
           python -m pytest tests/install_prompt -v -p no:cacheprovider
-
-      - name: TEMP key usage after
-        if: always() && env.OPENROUTER_API_KEY != ''
-        run: |
-          curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq -c '.data | {usage, limit_remaining}'
