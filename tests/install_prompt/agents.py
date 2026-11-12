@@ -65,7 +65,8 @@ def _run(cmd: list[str], cwd: Path, env: dict) -> str:
                        env=env, stdin=subprocess.DEVNULL, capture_output=True,
                        text=True, timeout=TURN_TIMEOUT, check=False)
     if r.returncode != 0:
-        raise RuntimeError(f"{cmd[0]} exited {r.returncode}: {(r.stderr or r.stdout)[-1500:]}")
+        # codex and opencode put the real error in their JSON on stdout
+        raise RuntimeError(f"{cmd[0]} exited {r.returncode}:\n{r.stderr[-1500:]}\n--- stdout:\n{r.stdout[-1500:]}")
     return r.stdout
 
 
@@ -136,7 +137,7 @@ def _copilot_turn(session: str | None, msg: str, cwd: Path, env: dict) -> tuple[
 # --- opencode (proposed client, discussion #269) -------------------------------
 def _opencode_turn(session: str | None, msg: str, cwd: Path, env: dict) -> tuple[str, str]:
     m = model() if provider() != "openrouter" else f"openrouter/{model()}"
-    cmd = ["opencode", "run", "--auto", "-m", m, "--format", "json", "--archived"]
+    cmd = ["opencode", "run", "--auto", "-m", m, "--format", "json"]
     sid, texts = session, []
     for e in _jsonl(_run([*cmd, *(["--session", session] if session else []), msg], cwd, env)):
         sid = sid or e.get("sessionID")

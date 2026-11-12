@@ -62,13 +62,17 @@ jobs:
       - name: Install agent CLIs
         if: env.OPENROUTER_API_KEY != ''
         run: |
-          npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot
-          # npm's opencode-ai stops at 1.x; 2.x (needed for --archived) ships only via the installer
-          curl -fsSL https://opencode.ai/install | bash
-          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.opencode/bin:$PATH"
+          npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot opencode-ai
           pip install pytest mcp  # tests/conftest.py imports mcp
           for c in claude codex copilot opencode; do echo "$c: $($c --version 2>&1 | head -1)"; done
+
+      - name: TEMP diagnose OpenRouter key
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $OPENROUTER_API_KEY" | jq '.data | {limit, limit_remaining, usage, is_free_tier}'
+          curl -sS -w '\nHTTP %{http_code}\n' https://openrouter.ai/api/v1/chat/completions \
+            -H "Authorization: Bearer $OPENROUTER_API_KEY" -H "Content-Type: application/json" \
+            -d '{"model":"thinkingmachines/inkling-2-small:free","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' | tail -c 600
 
       - name: Run install prompt
         if: env.OPENROUTER_API_KEY != ''
