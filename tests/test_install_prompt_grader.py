@@ -253,4 +253,3 @@ def test_readme_prompt_extraction_fails_loudly(tmp_path):
     bad.write_text("# Let your AI set it up\n\nno code block\n")
     with pytest.raises(ValueError, match="no ```text block"):
         agents.readme_prompt(bad)
-
