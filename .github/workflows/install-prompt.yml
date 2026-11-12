@@ -35,7 +35,7 @@ jobs:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       GITHUB_TOKEN: ${{ github.token }}  # only for the expected-tag lookup
       INSTALL_PROMPT_TESTS: "1"
-      INSTALL_PROMPT_PAIRS: ${{ inputs.pairs || (github.event_name == 'pull_request' && 'claude:vscode,codex:codex,copilot:windsurf,opencode:claude-desktop' || '') }}
+      INSTALL_PROMPT_PAIRS: ${{ inputs.pairs || (github.event_name == 'pull_request' && 'claude:gemini,opencode:cursor' || '') }}
       INSTALL_PROMPT_PAIRS_PER_RUN: ${{ vars.INSTALL_PROMPT_PAIRS_PER_RUN || '1' }}
       INSTALL_PROMPT_MODEL: ${{ inputs.model || vars.INSTALL_PROMPT_MODEL }}
     steps:
