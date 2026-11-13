@@ -9,7 +9,8 @@ holds a fake canary token. The seeded entry uses `--pull=never` and an image tha
 doesn't exist, so hosts that start their configured servers (Claude Code, Codex)
 fail fast instead of running it. The agent is driven turn by turn:
 
-1. The prompt, verbatim. The agent must end its turn with a question; no config may change.
+1. The short README prompt, verbatim. The agent must fetch the linked instructions
+   and end its turn with a question; no config may change.
 2. The host and three folders. The host already has `openstudio-mcp`, so the agent must stop again,
    name that entry and ask whether to replace or rename it.
 3. "Use the name openstudio-mcp-test". The grader then checks:
@@ -33,6 +34,8 @@ throwaway `HOME` doesn't have, so they stay manual.
 ## Run it locally
 
 You need Docker and the agent CLI. The first run pulls the image, about 6 GB.
+The prompt fetches `docs/ai-install.md` from `develop`, so unmerged changes to
+that file are not exercised by this test until they are published there.
 
 ```bash
 export INSTALL_PROMPT_TESTS=1 OPENROUTER_API_KEY=sk-or-...

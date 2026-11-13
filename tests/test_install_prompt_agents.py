@@ -80,11 +80,21 @@ def test_blank_model_and_provider_fall_back_to_defaults(monkeypatch):
     "print no headers, env values or tokens",
     "copy the file to a timestamped backup first",
 ])
-def test_readme_prompt_keeps_safeguards(needle):
+def test_install_instructions_keep_safeguards(needle):
     # Regression: client runs for #268 failed without each of these lines (no stop
     # when the agent can't ask, stale tag from a web search, printed tokens, no backup)
-    prompt = " ".join(agents.readme_prompt().split())
+    prompt = " ".join((agents.REPO / "docs" / "ai-install.md").read_text(encoding="utf-8").split())
     assert needle in prompt
+
+
+def test_readme_prompt_points_to_install_instructions():
+    # Validates: users and the live harness send the short prompt to the published instruction file
+    assert agents.readme_prompt().strip() == (
+        "Read https://raw.githubusercontent.com/NatLabRockies/openstudio-mcp/develop/"
+        "docs/ai-install.md and follow its instructions to install openstudio-mcp for my MCP host; "
+        "if you cannot read it, stop and tell me."
+    )
+    assert (agents.REPO / "docs" / "ai-install.md").is_file()
 
 
 def test_readme_prompt_skips_toc_link(tmp_path):
