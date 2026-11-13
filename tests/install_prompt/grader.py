@@ -23,7 +23,9 @@ _URL = re.compile(r"https?://\S+")
 _BARE_EXISTING = re.compile(rf"(?<![\w/-]){re.escape(EXISTING)}(?![\w:/-])")
 # not "keep": the prompt itself says "keep every existing server", so agents echo it
 _REPLACE_OR_RENAME = re.compile(r"replac|renam|overwrit|another name|different name|new name", re.I)
-_QUESTION_TAIL = 600  # "end your turn with the question": the ? must be near the end
+# "end your turn with the question": the ? must be near the end, with room for a list of
+# options after it (opencode put ~650 chars of host choices after its question)
+_QUESTION_TAIL = 1500
 
 
 def snapshot(home: Path) -> dict[str, str | None]:

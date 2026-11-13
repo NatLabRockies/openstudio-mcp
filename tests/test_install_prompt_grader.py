@@ -190,13 +190,25 @@ def test_stop_must_ask(text, existing, expect):
     ("Registered openstudio-mcp-test. Replace anything else?", True, NOT_EXISTING),
     (f'I\'ll keep all existing servers and register "{EXISTING}". Proceed?', True, NOT_EXISTING),
     ("Done: registered it. Docs: https://hub.docker.com/r/nrel/openstudio-mcp/tags?page=1", False, NO_QUESTION),
-    ("Is Docker running? Checked, it is.\n" + "Pulled the image and wrote the config. " * 20 + "Done.",
+    ("Is Docker running? Checked, it is.\n" + "Pulled the image and wrote the config. " * 50 + "Done.",
      False, NO_QUESTION),
 ])
 def test_stop_check_rejects_false_questions(text, existing, expect):
     # Regression: any '?' (even in a URL or early in the turn) and the image name
     # nrel/openstudio-mcp counted as asking about the existing entry
     assert grader.check_asked(text, existing) == expect
+
+
+def test_question_followed_by_options_counts():
+    # Regression: opencode asked "Which MCP host do you want to connect?" then listed six
+    # hosts (~650 chars); a 600-char tail window failed a correct stop
+    options = "".join(f"{i}. **Host {i}** — config at `~/Library/Application Support/Host{i}/mcp.json` (JSON)\n"
+                      for i in range(1, 7))
+    text = ("Now step 3 — I need your answer before anything else:\n\n**Which MCP host do you want to connect?**"
+            " Pick one:\n\n" + options + "\nReply with your choice (number or name). Once you pick, I'll suggest"
+            " the three folders (step 5) and wait for your confirmation before creating anything.")
+    assert len(text.split("?")[-1]) > 600, "fixture must reproduce the long tail seen in the opencode run"
+    assert grader.check_asked(text) == []
 
 
 def test_real_config_server_change_is_caught(tmp_path):
