@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 from install_prompt import agents
@@ -133,5 +134,10 @@ def test_timeout_kills_the_whole_process_group(tmp_path):
                     timeout=1)
     pid = int(pidfile.read_text())
     time.sleep(0.2)
-    with pytest.raises(ProcessLookupError):
+    try:
         os.kill(pid, 0)
+    except ProcessLookupError:
+        return
+    # a killed orphan stays a zombie when container PID 1 doesn't reap (CI); dead all the same
+    state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    assert state == "Z", f"grandchild {pid} still running (state {state}) after timeout"

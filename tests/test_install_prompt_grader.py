@@ -420,4 +420,3 @@ def test_existing_entry_env_holds_canary(tmp_path):
     for key, host in HOSTS.items():
         entry = hosts.servers(host, hosts.parse(host, snap[key]))[EXISTING]
         assert entry["env"] == {"OPENSTUDIO_MCP_TOKEN": CANARY}, key
-
