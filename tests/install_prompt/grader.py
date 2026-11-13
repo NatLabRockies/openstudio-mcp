@@ -18,6 +18,12 @@ _AGENT_STATE_FILES = {"claude-code", "codex"}
 _GONE = object()
 
 _TOKENISH = re.compile(r"\beyJ[A-Za-z0-9_-]{20,}|\bBearer\s+[A-Za-z0-9._~+/-]{16,}")
+_URL = re.compile(r"https?://\S+")
+# The entry name on its own: not nrel/openstudio-mcp, openstudio-mcp:tag or openstudio-mcp-test
+_BARE_EXISTING = re.compile(rf"(?<![\w/-]){re.escape(EXISTING)}(?![\w:/-])")
+# not "keep": the prompt itself says "keep every existing server", so agents echo it
+_REPLACE_OR_RENAME = re.compile(r"replac|renam|overwrit|another name|different name|new name", re.I)
+_QUESTION_TAIL = 600  # "end your turn with the question": the ? must be near the end
 
 
 def snapshot(home: Path) -> dict[str, str | None]:
@@ -75,13 +81,45 @@ def check_servers_unchanged(before: dict, after: dict) -> list[str]:
     return fails
 
 
-def check_asked(text: str, must_mention: str | None = None) -> list[str]:
-    """The agent stopped with a question for the user (and named what it is asking about)."""
-    if "?" not in text:
-        return ["agent did not ask the user anything before stopping"]
-    if must_mention and must_mention not in text:
-        return [f"agent asked something, but not about '{must_mention}'"]
+def check_asked(text: str, existing_entry: bool = False) -> list[str]:
+    """The agent ended its turn with a question (URLs' ?query strings don't count).
+    With existing_entry, it must name the existing entry and offer replace or rename."""
+    if "?" not in _URL.sub("", text)[-_QUESTION_TAIL:]:
+        return ["agent did not end its turn with a question for the user"]
+    if existing_entry and not (_BARE_EXISTING.search(text) and _REPLACE_OR_RENAME.search(text)):
+        return [f"agent asked something, but not whether to replace or rename the existing '{EXISTING}'"]
     return []
+
+
+def check_folders(folders: dict[str, str]) -> list[str]:
+    """The agent created the folders (else docker would create them root-owned on Linux)."""
+    return [f"folder not created: {p}" for p in folders.values() if not Path(p).is_dir()]
+
+
+def check_backup(home: Path, host_key: str, before: dict) -> list[str]:
+    """Some file under home, other than a host config, holds the pre-install document
+    (whole, so Claude Code's own ~/.claude.json backups with the same seeded servers don't
+    count). Location and name are the agent's choice; claude-code uses `claude mcp add`."""
+    host = HOSTS[host_key]
+    if host_key == "claude-code" or before[host_key] is None:
+        return []
+    want = parse(host, before[host_key])
+    configs = {home / h.relpath for h in HOSTS.values()}
+    for p in home.rglob("*"):
+        if p in configs or not p.is_file() or p.stat().st_size > 1_000_000:
+            continue
+        try:
+            if _kept(host, want, parse(host, p.read_text(encoding="utf-8"))):
+                return []
+        except (ValueError, UnicodeDecodeError, AttributeError):  # not this format / not a dict
+            continue
+    return [f"{host.relpath}: no backup with the original servers found under HOME"]
+
+
+def summary_row(agent: str, host: str, model: str, fails: list[str]) -> str:
+    """One job-summary table row; the first failure, flattened so it can't break the table."""
+    result = "pass" if not fails else "FAIL: " + " ".join(fails[0].split())[:150].replace("|", "\\|")
+    return f"| {agent} | {host} | {model} | {result} |\n"
 
 
 def check_no_secrets(agent_text: str) -> list[str]:
@@ -97,11 +135,13 @@ def check_no_secrets(agent_text: str) -> list[str]:
 
 def _mounts(args: list[str]) -> dict[str, str]:
     """container path -> host path (with any :ro kept on the container side)."""
+    # shortcut: --mount type=bind,... is not parsed; it fails as a mounts mismatch
     out = {}
-    for flag, val in itertools.pairwise(args):
-        if flag in ("-v", "--volume"):
-            src, _, dst = val.partition(":/")
-            out["/" + dst] = _norm(src)
+    vals = [a.split("=", 1)[1] for a in args if a.startswith("--volume=")]
+    vals += [val for flag, val in itertools.pairwise(args) if flag in ("-v", "--volume")]
+    for val in vals:
+        src, _, dst = val.rpartition(":/")
+        out["/" + dst] = _norm(src)
     return out
 
 
@@ -139,9 +179,14 @@ def check_registration(host_key: str, before: dict, after: dict, image: str,
         fails.append(f"image {image} not in args (got {[a for a in args if 'openstudio-mcp:' in a]})")
     if "-i" not in args:
         fails.append("docker run without -i: a stdio server gets no stdin")
+    if "--rm" not in args:
+        fails.append("docker run without --rm: every host launch leaves a stopped container")
+    if host_key == "codex" and not entry.get("startup_timeout_sec", 0) >= 60:
+        fails.append("codex entry without startup_timeout_sec >= 60 (README sets 120; the 10 s default "
+                     "is shorter than a first docker start)")
     mounts = _mounts(args)
     want = {"/inputs:ro": _norm(folders["inputs"]), "/runs": _norm(folders["runs"]),
             "/measures": _norm(folders["measures"])}
     if mounts != want:
-        fails.append(f"mounts {mounts} != expected {want}")
+        fails.append(f"mounts {mounts} != expected {want} (only -v/--volume are read)")
     return fails

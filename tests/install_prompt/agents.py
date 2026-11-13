@@ -26,14 +26,14 @@ DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl:free"  # inkling:free 403s for cod
 TURN_TIMEOUT = int(os.environ.get("INSTALL_PROMPT_TURN_TIMEOUT", "900"))
 
 _PASSTHROUGH = ("PATH", "LANG", "LC_ALL", "TERM", "DOCKER_HOST", "SSL_CERT_FILE")
-_NATIVE_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN")
+NATIVE_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN")
 
 
 def readme_prompt(readme: Path = REPO / "README.md") -> str:
     """The ```text block under "Let your AI set it up", verbatim."""
     text = readme.read_text(encoding="utf-8")
-    section = text[text.index("Let your AI set it up"):]
-    m = re.search(r"^```text\n(.*?)^```", section, re.S | re.M)
+    heading = re.search(r"^#+ Let your AI set it up$", text, re.M)  # not the TOC link
+    m = heading and re.search(r"^```text\n(.*?)^```", text[heading.end():], re.S | re.M)
     if not m:
         raise ValueError("no ```text block after 'Let your AI set it up' in README.md")
     return m.group(1)
@@ -44,7 +44,9 @@ def provider() -> str:
 
 
 def model() -> str:
-    return os.environ.get("INSTALL_PROMPT_MODEL") or DEFAULT_MODEL  # CI passes "" when unset
+    """Model id; "" in native mode when unset, meaning each CLI's own default."""
+    m = os.environ.get("INSTALL_PROMPT_MODEL")  # CI passes "" when unset
+    return m or (DEFAULT_MODEL if provider() == "openrouter" else "")
 
 
 def base_env(home: Path) -> dict[str, str]:
@@ -56,7 +58,7 @@ def base_env(home: Path) -> dict[str, str]:
                XDG_CACHE_HOME=str(home / ".cache"), XDG_STATE_HOME=str(home / ".local/state"),
                CODEX_HOME=str(home / ".codex"))
     (home / "tmp").mkdir(exist_ok=True)
-    keys = ("OPENROUTER_API_KEY",) if provider() == "openrouter" else _NATIVE_KEYS
+    keys = ("OPENROUTER_API_KEY",) if provider() == "openrouter" else NATIVE_KEYS
     env.update({k: os.environ[k] for k in keys if k in os.environ})
     return env
 
@@ -96,8 +98,16 @@ def _claude_turn(session: str | None, msg: str, cwd: Path, env: dict) -> tuple[s
     sid = session or str(uuid.uuid4())
     flag = "--resume" if session else "--session-id"
     out = _run(["claude", "-p", msg, flag, sid, "--dangerously-skip-permissions",
-                "--output-format", "json"], cwd, env)
-    return sid, json.loads(out).get("result") or ""
+                "--output-format", "stream-json", "--verbose"], cwd, env)
+    return sid, claude_text(out)
+
+
+def claude_text(stream: str) -> str:
+    """Every assistant text block of a stream-json turn, not just the final `result`,
+    so the secret check sees tokens printed mid-turn (same shape as tests/llm/runner.py)."""
+    return "\n".join(b.get("text") or "" for e in _jsonl(stream) if e.get("type") == "assistant"
+                     for b in (e.get("message") or {}).get("content") or []
+                     if isinstance(b, dict) and b.get("type") == "text")
 
 
 # --- Codex ------------------------------------------------------------------
@@ -158,10 +168,11 @@ def _opencode_prepare(home: Path, env: dict) -> None:
 
 
 def _opencode_turn(session: str | None, msg: str, cwd: Path, env: dict) -> tuple[str, str]:
-    m = model() if provider() != "openrouter" else f"openrouter/{model()}"
+    m = f"openrouter/{model()}" if provider() == "openrouter" else model()
     # opencode 2.x runs turns in a shared background service (fixed port, the
     # developer's real HOME) unless told to use a private one; 1.x has no service
-    cmd = ["opencode", "run", "--auto", "-m", m, "--format", "json", *_opencode_standalone(env)]
+    cmd = ["opencode", "run", "--auto", *(["-m", m] if m else []), "--format", "json",
+           *_opencode_standalone(env)]
     sid, texts = session, []
     for e in _jsonl(_run([*cmd, *(["--session", session] if session else []), msg], cwd, env)):
         sid = sid or e.get("sessionID")
@@ -186,6 +197,8 @@ def pairs_for_run(run: int, per_run: int, agents: list[str], hosts: list[str]) -
     every pair once per A*H indices, so with one pair a day each host comes up weekly
     and the whole matrix in A*H days."""
     a, h = len(agents), len(hosts)
+    if not 1 <= per_run <= a * h:  # 0 would collect nothing and look green; more repeats pairs
+        raise ValueError(f"INSTALL_PROMPT_PAIRS_PER_RUN must be 1..{a * h}, got {per_run}")
     if math.gcd(a, h) != 1:  # diagonal walk would skip pairs; fall back to row order
         order = [(x, y) for x in agents for y in hosts]
     else:

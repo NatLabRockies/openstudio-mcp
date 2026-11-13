@@ -46,14 +46,18 @@ HOSTS: dict[str, Host] = {h.key: h for h in [
     Host("gemini", "Gemini CLI", ".gemini/settings.json", "json", "mcpServers"),
 ]}
 
-_EXISTING_ARGS = ["run", "--rm", "-i", "-v", "/home/dev/models:/inputs",
-                  "openstudio-mcp:dev", "openstudio-mcp"]
-_REMOTE_URL = "https://mcp.example.invalid/mcp"
+# Claude Code and Codex start their configured servers, so this entry must not run:
+# --pull=never with an image nobody has fails before docker creates the bind source
+SEED_IMAGE = "openstudio-mcp:seeded-never-run"
+_EXISTING_ARGS = ["run", "--rm", "-i", "--pull=never", "-v", "/home/dev/models:/inputs",
+                  SEED_IMAGE, "openstudio-mcp"]
+# per-host path keeps every seeded file distinct, so no host's seed passes as another's backup
+_REMOTE_URL = "https://mcp.example.invalid/{}/mcp"
 
 
 def _seed_json(host: Host) -> str:
     existing = {"command": "docker", "args": _EXISTING_ARGS}
-    remote = {"url": _REMOTE_URL, "headers": {"Authorization": f"Bearer {CANARY}"}}
+    remote = {"url": _REMOTE_URL.format(host.key), "headers": {"Authorization": f"Bearer {CANARY}"}}
     if host.key == "vscode":
         existing, remote = {"type": "stdio", **existing}, {"type": "http", **remote}
     doc = {host.section: {EXISTING: existing, "team-remote": remote}}
@@ -65,7 +69,7 @@ def _seed_json(host: Host) -> str:
 def _seed_toml() -> str:
     args = ", ".join(json.dumps(a) for a in _EXISTING_ARGS)
     return (f'\n[mcp_servers.{EXISTING}]\ncommand = "docker"\nargs = [{args}]\n\n'
-            f'[mcp_servers.team-remote]\nurl = "{_REMOTE_URL}"\n'
+            f'[mcp_servers.team-remote]\nurl = "{_REMOTE_URL.format("codex")}"\n'
             f'http_headers = {{ Authorization = "Bearer {CANARY}" }}\n')
 
 

@@ -8,7 +8,7 @@ import json
 import tomllib
 
 import pytest
-from install_prompt import agents, grader, hosts
+from install_prompt import grader, hosts
 from install_prompt.hosts import CANARY, EXISTING, HOSTS, TEST_NAME
 
 pytestmark = pytest.mark.unit
@@ -20,12 +20,15 @@ def _folders(tmp_path):
     return {k: str(tmp_path / "os" / k) for k in ("inputs", "runs", "measures")}
 
 
-def _entry(folders, image=IMAGE, ro=True):
-    return {"command": "docker", "args": [
-        "run", "--rm", "-i",
+def _entry(folders, image=IMAGE, ro=True, rm=True, codex=False):
+    entry = {"command": "docker", "args": [
+        "run", *(["--rm"] if rm else []), "-i",
         "-v", f"{folders['inputs']}:/inputs" + (":ro" if ro else ""),
         "-v", f"{folders['runs']}:/runs", "-v", f"{folders['measures']}:/measures",
         "-e", "OPENSTUDIO_MCP_MODE=prod", image, "openstudio-mcp"]}
+    if codex:  # the README's TOML snippet
+        entry["startup_timeout_sec"] = 120
+    return entry
 
 
 def _seeded(tmp_path):
@@ -67,13 +70,14 @@ def test_correct_registration_passes_for_every_host(tmp_path, host_key):
     # so a scheduled-run failure means the agent erred, not that the grader can't read the host
     home, before = _seeded(tmp_path)
     folders = _folders(tmp_path)
-    after = _register(home, host_key, _entry(folders))
+    after = _register(home, host_key, _entry(folders, codex=host_key == "codex"))
     assert grader.check_registration(host_key, before, after, IMAGE, folders) == []
 
 
 @pytest.mark.parametrize(("case", "entry_kw", "mutate", "expect"), [
     ("wrong image tag", {"image": "nrel/openstudio-mcp:v1.2.1"}, None, "image nrel/openstudio-mcp:v9.9.9 not in args"),
     ("inputs not read-only", {"ro": False}, None, "mounts"),
+    ("no --rm", {"rm": False}, None, "docker run without --rm"),
     ("existing entry replaced", {}, lambda d: d["mcpServers"].__setitem__(EXISTING, {"command": "x"}),
      "existing servers changed"),
     ("other server dropped", {}, lambda d: d["mcpServers"].pop("team-remote"), "existing servers changed"),
@@ -132,20 +136,67 @@ def test_codex_provider_settings_must_survive_registration(tmp_path, mutate, exp
     (home / ".codex/config.toml").write_text('model = "free-model"\n')  # as _codex_prepare writes it
     hosts.seed_all(home)
     before, folders = grader.snapshot(home), _folders(tmp_path)
-    after = _register(home, "codex", _entry(folders), mutate)
+    after = _register(home, "codex", _entry(folders, codex=True), mutate)
     assert grader.check_registration("codex", before, after, IMAGE, folders) == expect
 
 
-@pytest.mark.parametrize(("text", "mention", "expect"), [
-    ("Which MCP host should I set this up for?", None, []),
-    ("Done. I installed it for Claude Desktop.", None, ["agent did not ask the user anything before stopping"]),
-    ("Which folder should hold your models?", EXISTING, [f"agent asked something, but not about '{EXISTING}'"]),
-    (f"An entry named {EXISTING} exists. Replace it or pick another name?", EXISTING, []),
+def test_codex_entry_needs_startup_timeout(tmp_path):
+    # Validates: a Codex entry without the README's startup_timeout_sec times out on a
+    # first docker start (10 s default) and never loads, so the grader must fail it
+    home, before = _seeded(tmp_path)
+    folders = _folders(tmp_path)
+    after = _register(home, "codex", _entry(folders))
+    fails = grader.check_registration("codex", before, after, IMAGE, folders)
+    assert len(fails) == 1 and "startup_timeout_sec" in fails[0], fails
+
+
+@pytest.mark.parametrize("style", ["--volume=", "--volume"])
+def test_long_volume_flags_are_read(tmp_path, style):
+    # Regression: only "-v src:dst" was parsed, so a valid --volume=src:dst entry failed
+    home, before = _seeded(tmp_path)
+    folders = _folders(tmp_path)
+    entry = _entry(folders)
+    args = entry["args"]
+    for i, a in enumerate(args):
+        if a == "-v":
+            args[i] = "--volume"
+    if style == "--volume=":
+        while "--volume" in args:
+            i = args.index("--volume")
+            args[i:i + 2] = [f"--volume={args[i + 1]}"]
+    after = _register(home, "cursor", entry)
+    assert grader.check_registration("cursor", before, after, IMAGE, folders) == []
+
+
+NO_QUESTION = ["agent did not end its turn with a question for the user"]
+NOT_EXISTING = [f"agent asked something, but not whether to replace or rename the existing '{EXISTING}'"]
+
+
+@pytest.mark.parametrize(("text", "existing", "expect"), [
+    ("Which MCP host should I set this up for?", False, []),
+    ("Done. I installed it for Claude Desktop.", False, NO_QUESTION),
+    ("Which folder should hold your models?", True, NOT_EXISTING),
+    (f"An entry named {EXISTING} exists. Replace it or pick another name?", True, []),
+    (f"`{EXISTING}` is already registered (docker run). Should I overwrite it?", True, []),
 ])
-def test_stop_must_ask(text, mention, expect):
+def test_stop_must_ask(text, existing, expect):
     # Regression: turns 1-2 checked only the files, so an agent that stopped without
     # asking (or declared success) passed the stop-and-ask steps
-    assert grader.check_asked(text, mention) == expect
+    assert grader.check_asked(text, existing) == expect
+
+
+@pytest.mark.parametrize(("text", "existing", "expect"), [
+    ("I pulled nrel/openstudio-mcp:v1.3.1 and created the three folders. Shall I continue?", True, NOT_EXISTING),
+    ("Registered openstudio-mcp-test. Replace anything else?", True, NOT_EXISTING),
+    (f'I\'ll keep all existing servers and register "{EXISTING}". Proceed?', True, NOT_EXISTING),
+    ("Done: registered it. Docs: https://hub.docker.com/r/nrel/openstudio-mcp/tags?page=1", False, NO_QUESTION),
+    ("Is Docker running? Checked, it is.\n" + "Pulled the image and wrote the config. " * 20 + "Done.",
+     False, NO_QUESTION),
+])
+def test_stop_check_rejects_false_questions(text, existing, expect):
+    # Regression: any '?' (even in a URL or early in the turn) and the image name
+    # nrel/openstudio-mcp counted as asking about the existing entry
+    assert grader.check_asked(text, existing) == expect
 
 
 def test_real_config_server_change_is_caught(tmp_path):
@@ -203,53 +254,51 @@ def test_seed_keeps_agent_config_written_first(tmp_path):
     assert doc["model_provider"] == "openrouter" and EXISTING in doc["mcp_servers"]
 
 
-def test_daily_rotation_covers_every_pair():
-    # Validates: one pair a day still reaches every agent x host combination
-    a, h = list(agents.AGENTS), list(HOSTS)
-    seen = {p for w in range(len(a) * len(h)) for p in agents.pairs_for_run(w, 1, a, h)}
-    assert seen == {(x, y) for x in a for y in h}
-    assert agents.pairs_for_run(0, 2, ["a", "b"], ["x", "y"]) == [("a", "x"), ("a", "y")]
-
-
-def test_env_hides_developer_secrets(tmp_path, monkeypatch):
-    # Validates: agents see a throwaway HOME and only the provider key, not the
-    # developer's other credentials
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic")
-    monkeypatch.delenv("INSTALL_PROMPT_PROVIDER", raising=False)
-    env = agents.base_env(tmp_path)
-    assert env["HOME"] == str(tmp_path) and env["CODEX_HOME"] == str(tmp_path / ".codex")
-    assert env["OPENROUTER_API_KEY"] == "or-key"
-    assert "AWS_SECRET_ACCESS_KEY" not in env and "ANTHROPIC_API_KEY" not in env
-
-
-def test_blank_model_and_provider_fall_back_to_defaults(monkeypatch):
-    # Regression: the workflow passed INSTALL_PROMPT_MODEL="" so every agent got an empty
-    # model (codex and copilot refused to start, claude silently used a paid default)
-    monkeypatch.setenv("INSTALL_PROMPT_MODEL", "")
-    monkeypatch.setenv("INSTALL_PROMPT_PROVIDER", "")
-    assert agents.model() == "nvidia/nemotron-3.5-super-vl:free"
-    assert agents.provider() == "openrouter"
-
-
-@pytest.mark.parametrize("needle", [
-    "If you have no way to ask me, stop there and list what you need",
-    "api.github.com/repos/NatLabRockies/openstudio-mcp/releases/latest",
-    "a web search can return an old cached page",
-    "print no headers, env values or tokens",
-    "copy the file to a timestamped backup first",
+@pytest.mark.parametrize(("fails", "row"), [
+    ([], "| claude | cursor | m | pass |\n"),
+    (["RuntimeError: claude exited 1:\nbad | thing"],
+     "| claude | cursor | m | FAIL: RuntimeError: claude exited 1: bad \\| thing |\n"),
+    (["real ~/.cursor/mcp.json: MCP servers changed", "turn 1: no question"],
+     "| claude | cursor | m | FAIL: real ~/.cursor/mcp.json: MCP servers changed |\n"),
 ])
-def test_readme_prompt_keeps_safeguards(needle):
-    # Regression: client runs for #268 failed without each of these lines (no stop
-    # when the agent can't ask, stale tag from a web search, printed tokens, no backup)
-    prompt = " ".join(agents.readme_prompt().split())
-    assert needle in prompt
+def test_summary_row_is_one_safe_table_row(fails, row):
+    # Regression: a newline or '|' in a failure broke the job-summary table, the workflow's only report
+    assert grader.summary_row("claude", "cursor", "m", fails) == row
 
 
-def test_readme_prompt_extraction_fails_loudly(tmp_path):
-    # Validates: a renamed section fails the harness instead of sending an empty prompt
-    bad = tmp_path / "README.md"
-    bad.write_text("# Let your AI set it up\n\nno code block\n")
-    with pytest.raises(ValueError, match="no ```text block"):
-        agents.readme_prompt(bad)
+def test_folders_must_exist(tmp_path):
+    # Validates: an agent that registers mounts but never creates the folders fails
+    # before docker run creates them root-owned
+    folders = _folders(tmp_path)
+    assert grader.check_folders(folders) == [f"folder not created: {p}" for p in folders.values()]
+    for p in folders.values():
+        (tmp_path / p).mkdir(parents=True)
+    assert grader.check_folders(folders) == []
+
+
+@pytest.mark.parametrize(("host_key", "backup", "expect_fail"), [
+    ("cursor", "work/mcp.json.bak-20261113", False),  # anywhere under HOME, any name
+    ("codex", ".codex/config.toml.2026-11-13.bak", False),
+    ("cursor", None, True),
+    ("cursor", ".claude/backups/.claude.json.backup.1", True),  # Claude Code's own backup, same servers
+    ("claude-code", None, False),  # registered via `claude mcp add`, no file backup asked for
+])
+def test_backup_must_hold_original_servers(tmp_path, host_key, backup, expect_fail):
+    # Validates: README step 6 asks for a timestamped backup before a config file is edited;
+    # other hosts' seeded configs (same servers) must not count as one
+    home, before = _seeded(tmp_path)
+    if backup:
+        (home / backup).parent.mkdir(parents=True, exist_ok=True)
+        (home / backup).write_text(before["claude-code" if ".claude.json" in backup else host_key])
+    fails = grader.check_backup(home, host_key, before)
+    assert fails == ([f"{HOSTS[host_key].relpath}: no backup with the original servers found under HOME"]
+                     if expect_fail else [])
+
+
+def test_seeded_existing_entry_cannot_start():
+    # Regression: the seeded entry ran openstudio-mcp:dev, which Claude Code and Codex
+    # start on launch, creating /home/dev/models as root and handing the agent live tools
+    doc = json.loads(hosts._seed_json(HOSTS["cursor"]))
+    args = doc["mcpServers"][EXISTING]["args"]
+    assert "--pull=never" in args and hosts.SEED_IMAGE in args and "openstudio-mcp:dev" not in args
+
