@@ -48,7 +48,7 @@ add `--basetemp=/tmp/install-prompt` (any path outside `HOME`).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `INSTALL_PROMPT_PROVIDER` | `openrouter` | `native` uses your own `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `COPILOT_GITHUB_TOKEN` instead |
+| `INSTALL_PROMPT_PROVIDER` | `openrouter` | `native` uses your own `ANTHROPIC_API_KEY` / `CODEX_API_KEY` (Codex reads this, not `OPENAI_API_KEY`) / `COPILOT_GITHUB_TOKEN` instead. Any other value is an error |
 | `INSTALL_PROMPT_MODEL` | `nvidia/nemotron-3.5-super-vl:free` (native: each CLI's default) | OpenRouter model id. Avoid `thinkingmachines/inkling*:free`: OpenRouter serves it only to apps it lists as agentic harnesses, so Codex and Copilot get a 403. Avoid `openrouter/free` too: it can route to a model that is not a chat model |
 | `INSTALL_PROMPT_PAIRS` | today's rotation | `agent:host,…` or `all` |
 | `INSTALL_PROMPT_PAIRS_PER_RUN` | `1` | pairs per rotation run, 1–28 (anything else fails collection) |

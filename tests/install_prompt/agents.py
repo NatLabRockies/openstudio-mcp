@@ -4,7 +4,7 @@ Every agent runs with HOME pointed at a throwaway directory, so no real config
 or login is visible: auth comes only from env vars. Provider "openrouter"
 (default, what CI uses) points each CLI at OpenRouter with INSTALL_PROMPT_MODEL;
 provider "native" passes the developer's own vendor key through instead
-(ANTHROPIC_API_KEY / OPENAI_API_KEY / COPILOT_GITHUB_TOKEN).
+(ANTHROPIC_API_KEY / CODEX_API_KEY / COPILOT_GITHUB_TOKEN).
 
 Cursor and Antigravity aren't here: their CLIs need an account login that a
 throwaway HOME doesn't have. They stay a manual check (see README.md in this dir).
@@ -16,6 +16,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import uuid
 from pathlib import Path
@@ -26,7 +27,17 @@ DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl:free"  # inkling:free 403s for cod
 TURN_TIMEOUT = int(os.environ.get("INSTALL_PROMPT_TURN_TIMEOUT", "900"))
 
 _PASSTHROUGH = ("PATH", "LANG", "LC_ALL", "TERM", "DOCKER_HOST", "SSL_CERT_FILE")
-NATIVE_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN")
+# codex exec authenticates from CODEX_API_KEY, not OPENAI_API_KEY
+NATIVE_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN")
+PROVIDERS = ("openrouter", "native")
+
+
+class Env(dict):
+    """The agent env; repr shows names only, so pytest tracebacks (which print
+    every frame's arguments) never print a key."""
+
+    def __repr__(self) -> str:
+        return f"Env({sorted(self)})"
 
 
 def readme_prompt(readme: Path = REPO / "README.md") -> str:
@@ -40,7 +51,10 @@ def readme_prompt(readme: Path = REPO / "README.md") -> str:
 
 
 def provider() -> str:
-    return os.environ.get("INSTALL_PROMPT_PROVIDER") or "openrouter"  # CI passes "" when unset
+    p = os.environ.get("INSTALL_PROMPT_PROVIDER") or "openrouter"  # CI passes "" when unset
+    if p not in PROVIDERS:  # a typo must not silently hand vendor keys to the agent
+        raise ValueError(f"INSTALL_PROMPT_PROVIDER must be one of {PROVIDERS}, got {p!r}")
+    return p
 
 
 def model() -> str:
@@ -49,10 +63,10 @@ def model() -> str:
     return m or (DEFAULT_MODEL if provider() == "openrouter" else "")
 
 
-def base_env(home: Path) -> dict[str, str]:
+def base_env(home: Path) -> Env:
     """Minimal env: nothing from the developer's environment but PATH-like basics
     and, for the chosen provider, the one key it needs."""
-    env = {k: os.environ[k] for k in _PASSTHROUGH if k in os.environ}
+    env = Env({k: os.environ[k] for k in _PASSTHROUGH if k in os.environ})
     env.update(HOME=str(home), TMPDIR=str(home / "tmp"), CI="1",
                XDG_CONFIG_HOME=str(home / ".config"), XDG_DATA_HOME=str(home / ".local/share"),
                XDG_CACHE_HOME=str(home / ".cache"), XDG_STATE_HOME=str(home / ".local/state"),
@@ -63,18 +77,33 @@ def base_env(home: Path) -> dict[str, str]:
     return env
 
 
-def _run(cmd: list[str], cwd: Path, env: dict) -> str:
-    r = subprocess.run(cmd, cwd=cwd,  # noqa: S603 - fixed agent argv, no shell
-                       env=env, stdin=subprocess.DEVNULL, capture_output=True,
-                       text=True, timeout=TURN_TIMEOUT, check=False)
-    if r.returncode != 0:
+def _run(cmd: list[str], cwd: Path, env: dict, timeout: int | None = None) -> str:
+    # own process group: npm launchers (copilot, older codex) leave the real agent
+    # as a grandchild, which a plain kill on timeout would leave running with approvals off
+    p = subprocess.Popen(cmd, cwd=cwd, env=env,  # noqa: S603 - fixed agent argv, no shell
+                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=timeout or TURN_TIMEOUT)
+        status = f"exited {p.returncode}"
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGKILL)
+        out, err = p.communicate()
+        status = f"timed out after {timeout or TURN_TIMEOUT} s"
+    finally:
+        try:  # tool children (docker run -i, ...) outliving a finished turn
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if status != "exited 0":
         # codex and opencode put the real error in their JSON on stdout
-        raise RuntimeError(f"{cmd[0]} exited {r.returncode}:\n{r.stderr[-1500:]}\n--- stdout:\n{r.stdout[-1500:]}")
-    return r.stdout
+        raise RuntimeError(f"{cmd[0]} {status}:\n{err[-1500:]}\n--- stdout:\n{out[-1500:]}")
+    return out
 
 
 def _jsonl(out: str):
-    for line in out.splitlines():
+    # not splitlines(): it also splits on U+2028/U+2029/U+0085, which JSON encoders leave raw in strings
+    for line in out.split("\n"):
         try:
             yield json.loads(line)
         except ValueError:

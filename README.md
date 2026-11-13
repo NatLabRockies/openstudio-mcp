@@ -81,7 +81,9 @@ before any folder is created or any config is changed.
    https://api.github.com/repos/NatLabRockies/openstudio-mcp/releases/latest
    (fetch it with curl or gh; a web search can return an old cached page), then
    pull nrel/openstudio-mcp:<that tag>. Use that exact tag (no -beta, -amd64 or -arm64
-   suffix) even if the README shows an older one. Clone and build from source only
+   suffix) even if the README shows an older one. A new release's image can take
+   about 20 minutes to reach Docker Hub: if the tag is not found, wait a few minutes
+   and retry, or ask me. Clone and build from source only
    if I ask for unreleased changes; the README says which Dockerfile fits my CPU.
 5. Suggest three folders on my machine for models (/inputs, read-only), simulation
    output (/runs) and measures (/measures). Wait for me to confirm or change them,

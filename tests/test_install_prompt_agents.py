@@ -4,6 +4,8 @@ output parsing, pair rotation, environment isolation and README prompt extractio
 from __future__ import annotations
 
 import json
+import os
+import time
 
 import pytest
 from install_prompt import agents
@@ -98,3 +100,38 @@ def test_readme_prompt_extraction_fails_loudly(tmp_path):
     bad.write_text("# Let your AI set it up\n\nno code block\n")
     with pytest.raises(ValueError, match="no ```text block"):
         agents.readme_prompt(bad)
+
+
+def test_jsonl_keeps_events_with_line_separators():
+    # Regression: splitlines() cut an event at a raw U+2028 inside a JSON string and dropped it
+    out = json.dumps({"type": "text", "part": {"text": "a\u2028b?"}}, ensure_ascii=False) + "\n"
+    assert [e["part"]["text"] for e in agents._jsonl(out)] == ["a\u2028b?"]
+
+
+def test_env_repr_hides_values(tmp_path, monkeypatch):
+    # Regression: pytest prints every traceback frame's arguments, which included the env with the provider key
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret-value")
+    monkeypatch.delenv("INSTALL_PROMPT_PROVIDER", raising=False)
+    env = agents.base_env(tmp_path)
+    assert env["OPENROUTER_API_KEY"] == "sk-or-secret-value"
+    assert "sk-or-secret-value" not in repr(env) and "OPENROUTER_API_KEY" in repr(env)
+
+
+@pytest.mark.parametrize("value", ["OpenRouter", "openrouter ", "vendor"])
+def test_unknown_provider_is_rejected(monkeypatch, value):
+    # Regression: any value but "openrouter" meant native mode, handing every vendor key to the agent
+    monkeypatch.setenv("INSTALL_PROMPT_PROVIDER", value)
+    with pytest.raises(ValueError, match="INSTALL_PROMPT_PROVIDER must be one of"):
+        agents.provider()
+
+
+def test_timeout_kills_the_whole_process_group(tmp_path):
+    # Regression: a timeout killed only the npm launcher, leaving the real agent (a grandchild) running
+    pidfile = tmp_path / "pid"
+    with pytest.raises(RuntimeError, match="timed out after 1 s"):
+        agents._run(["sh", "-c", f"sleep 60 & echo $! > {pidfile}; wait"], tmp_path, {"PATH": os.environ["PATH"]},
+                    timeout=1)
+    pid = int(pidfile.read_text())
+    time.sleep(0.2)
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)

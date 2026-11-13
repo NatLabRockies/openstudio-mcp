@@ -29,6 +29,7 @@ from .grader import (
     check_asked,
     check_backup,
     check_folders,
+    check_no_project_configs,
     check_no_secrets,
     check_registration,
     check_servers_unchanged,
@@ -111,8 +112,8 @@ def test_install_prompt(agent: str, host: str, tmp_path: Path):
         assert agent in AGENTS and host in HOSTS, f"unknown pair {agent}:{host}"
         # Enabled but unrunnable must fail, not skip: a skipped daily run looks green
         assert shutil.which(CLI[agent]), f"{CLI[agent]} CLI not on PATH"
-        if provider() == "openrouter":
-            assert os.environ.get("OPENROUTER_API_KEY"), "OPENROUTER_API_KEY not set"
+        if provider() == "openrouter" and not os.environ.get("OPENROUTER_API_KEY"):
+            pytest.fail("OPENROUTER_API_KEY not set")  # not assert: its rewrite prints os.environ
 
         # --- Arrange ---
         home = (tmp_path / "home").resolve()
@@ -127,27 +128,25 @@ def test_install_prompt(agent: str, host: str, tmp_path: Path):
         work.mkdir()
         folders = {k: str(home / "openstudio" / k) for k in ("inputs", "runs", "measures")}
         image = f"nrel/openstudio-mcp:{_latest_tag()}"
-        said: list[str] = []
 
         # --- Act + Assert, turn by turn ---
         sid, text = turn(None, readme_prompt(), work, env)
-        said.append(text)
-        fails = [f"turn 1: {f}" for f in check_untouched(before, snapshot(home)) + check_asked(text)]
+        fails = [f"turn 1: {f}" for f in check_untouched(before, snapshot(home)) + check_asked(text)
+                 + check_no_project_configs(work) + check_no_secrets(text)]
         assert not fails, "\n".join(fails) + f"\n--- agent said:\n{text[-2000:]}"
 
         sid, text = turn(sid, f"{HOSTS[host].label}. Use these folders: models {folders['inputs']}, "
                               f"simulation output {folders['runs']}, measures {folders['measures']}.", work, env)
-        said.append(text)
         fails = [f"turn 2 (existing entry, must ask): {f}"
-                 for f in check_untouched(before, snapshot(home)) + check_asked(text, existing_entry=True)]
+                 for f in check_untouched(before, snapshot(home)) + check_asked(text, existing_entry=True)
+                 + check_no_project_configs(work) + check_no_secrets(text)]
         assert not fails, "\n".join(fails) + f"\n--- agent said:\n{text[-2000:]}"
 
         sid, text = turn(sid, f"Use the name {TEST_NAME}, keep the existing entry.", work, env)
-        said.append(text)
         after = snapshot(home)
         fails = [f"turn 3: {f}" for f in check_registration(host, before, after, image, folders)
-                 + check_folders(folders) + check_backup(home, host, before)]
-        fails += check_no_secrets("\n".join(said))
+                 + check_folders(folders) + check_backup(home, host, before)
+                 + check_no_project_configs(work) + check_no_secrets(text)]
         if not fails:  # folders checked first: docker run would create missing ones itself
             entry = servers(HOSTS[host], parse(HOSTS[host], after[host]))[TEST_NAME]
             name = _initialize(entry)
