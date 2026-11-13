@@ -41,6 +41,11 @@ INSTALL_PROMPT_PAIRS=codex:vscode,opencode:cursor pytest tests/install_prompt -v
 INSTALL_PROMPT_PAIRS=all pytest tests/install_prompt -v         # 28 runs: needs OpenRouter credit
 ```
 
+The throwaway `HOME` lives in pytest's temp folder, and the test refuses to run
+if that is inside your real `HOME`. If your `TMPDIR` points under `HOME`, every
+pair fails with "throwaway HOME must not be the real one" before any agent runs;
+add `--basetemp=/tmp/install-prompt` (any path outside `HOME`).
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `INSTALL_PROMPT_PROVIDER` | `openrouter` | `native` uses your own `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `COPILOT_GITHUB_TOKEN` instead |
