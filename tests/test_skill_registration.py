@@ -226,6 +226,9 @@ EXPECTED_TOOLS = {
     "recommend_tools",
     # File Transfer (remote/HTTP — get user files to/from the server)
     "request_upload",
+    "open_measure_panel",
+    "submit_measure_sweep",
+    "get_panel_result",
     "get_upload",
     "list_uploads",
     "delete_upload",

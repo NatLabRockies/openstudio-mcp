@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import logging
 
-SIGNED_ROUTE_PREFIX = "/files/"
+SIGNED_ROUTE_PREFIXES = ("/files/", "/panel")  # file transfer + sweep panel browser links
 REDACTED = "?[redacted]"
 
 
 def _redact(value: str) -> str:
-    if value.startswith(SIGNED_ROUTE_PREFIX) and "?" in value:
+    if value.startswith(SIGNED_ROUTE_PREFIXES) and "?" in value:
         return value.split("?", 1)[0] + REDACTED
     return value
 
