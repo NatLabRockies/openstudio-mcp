@@ -1,5 +1,5 @@
-"""Unit tests for the sweep panel: measure limits, server-side validation, the OSA bounds
-check, the ui:// resource, and the signed single-submit browser link (HTTP only)."""
+"""Unit tests for the sweep panel: measure limits, server-side validation, the ui:// resource,
+and the signed single-submit browser link (HTTP only)."""
 import asyncio
 import json
 import logging
@@ -9,9 +9,9 @@ from starlette.requests import Request
 
 from mcp_server.access_log import RedactSignedUrlFilter
 from mcp_server.skills.analysis import operations as analysis
-from mcp_server.skills.analysis.measure_bounds import argument_limits
 from mcp_server.skills.file_transfer import signing
 from mcp_server.skills.sweep_panel import operations, routes
+from mcp_server.skills.sweep_panel.measure_bounds import argument_limits
 
 pytestmark = pytest.mark.unit
 
@@ -110,30 +110,22 @@ def test_valid_submit_echoes_values_and_returns_the_osa_call(tmp_path):
     }
 
 
-def test_add_measure_to_osa_json_refuses_out_of_range_variables_and_arguments(tmp_path):
-    # Regression: COP -5 to 50 was added and validated ok; the OSA layer accepted any range
+def test_panel_next_call_is_accepted_by_unchanged_add_measure_to_osa_json(tmp_path):
+    # Validates: the panel's `next` call works with the existing tool, which keeps accepting any range
     osa = tmp_path / "osa.json"
     osa.write_text(json.dumps({"analysis": {"name": "COP sweep", "problem": {"workflow": []}}}))
     measure_dir = _measure(tmp_path)
-    bad = analysis.add_measure_to_osa_json(str(osa), measure_dir, variables=[{
-        "argument_name": "cop", "distribution": {"type": "uniform", "minimum": -5, "maximum": 50, "mode": 4}}])
-    assert bad["ok"] is False
-    assert bad["error"].startswith("cop: -5 W/W outside [2.0, 7.0]")
-    fixed = analysis.add_measure_to_osa_json(str(osa), measure_dir, arguments={"cop": 9})
-    assert fixed["ok"] is False
-    assert fixed["error"].startswith("cop: 9.0 W/W outside [2.0, 7.0]")
-    discrete = analysis.add_measure_to_osa_json(str(osa), measure_dir, variables=[{"argument_name": "cop",
-        "distribution": {"type": "discrete", "minimum": 3, "maximum": 5, "mode": 4, "values": [3, 4, 12]}}])
-    assert discrete["ok"] is False
-    assert discrete["error"].startswith("cop: 12 W/W outside [2.0, 7.0]")
     nxt = operations.submit_measure_sweep_op(measure_dir, {"cop": [3.0, 5.0, 3]})["next"]
     good = analysis.add_measure_to_osa_json(str(osa), nxt["measure_dir"], variables=nxt["variables"])
     assert good["ok"] is True, good
     assert good["measure_step"]["variables"][0]["minimum"] == pytest.approx(3.0)
+    wide = analysis.add_measure_to_osa_json(str(osa), measure_dir, variables=[{
+        "argument_name": "cop", "distribution": {"type": "uniform", "minimum": -5, "maximum": 50, "mode": 4}}])
+    assert wide["ok"] is True, "the panel's limits must not change the existing tool"
 
 
 def test_measure_xml_range_is_enforced_without_a_bounds_file(tmp_path):
-    # Validates: a measure that declares <min_value>/<max_value> is checked even with no bundled file
+    # Validates: a measure that declares <min_value>/<max_value> gets a panel field even with no bundled file
     xml = ("<argument><name>wwr</name><display_name>WWR</display_name><type>Double</type><units>fraction</units>"
            "<required>true</required><default_value>0.4</default_value><min_value>0</min_value>"
            "<max_value>0.9</max_value></argument>")

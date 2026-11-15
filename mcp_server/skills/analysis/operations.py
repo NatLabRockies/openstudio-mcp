@@ -46,7 +46,6 @@ from mcp_server.resources import (
     resource_dir_issue,
     resource_sources,
 )
-from mcp_server.skills.analysis.measure_bounds import argument_limits, out_of_bounds
 from mcp_server.util import (
     copy_regular_file_nofollow,
     is_regular_file_inside,
@@ -1058,7 +1057,6 @@ def _read_measure_metadata(measure_dir: str | Path) -> dict[str, Any]:
 
     root = ET.parse(xml_path).getroot()
     arguments: list[dict[str, Any]] = []
-    xml_limits: dict[str, dict[str, Any]] = {}
     for arg in root.findall("./arguments/argument"):
         raw_type = (_text(arg, "type", "String") or "String").lower()
         value_type = "string" if raw_type == "choice" else raw_type
@@ -1074,9 +1072,6 @@ def _read_measure_metadata(measure_dir: str | Path) -> dict[str, Any]:
                 "value": default_value,
             }
         )
-        xml_limits[_text(arg, "name", "") or ""] = {
-            "units": _text(arg, "units"), "min": _text(arg, "min_value"), "max": _text(arg, "max_value"),
-        }
 
     display_name = _text(root, "display_name") or _text(root, "name", measure_path.name) or measure_path.name
     return {
@@ -1089,8 +1084,6 @@ def _read_measure_metadata(measure_dir: str | Path) -> dict[str, Any]:
         "description": _text(root, "description"),
         "measure_type": _measure_type(root),
         "arguments": arguments,
-        # kept apart from "arguments": those dicts are written into the OSA JSON as-is
-        "limits": argument_limits(_text(root, "name", measure_path.name) or measure_path.name, xml_limits),
     }
 
 
@@ -1165,16 +1158,6 @@ def _variable_from_spec(argument: dict[str, Any], spec: dict[str, Any], workflow
     return variable
 
 
-def _check_limits(name: str, values: list[Any], limits: dict[str, dict[str, Any]]) -> None:
-    """Refuse a value outside the argument's known range: the OSA layer itself accepts any range."""
-    for value in values:
-        error = out_of_bounds(name, value, limits)
-        if error:
-            raise ValueError(
-                f"{error}. The measure's valid range comes from measure.xml or openstudio-mcp's bounds file."
-            )
-
-
 def build_measure_workflow_step(
     measure_dir: str,
     *,
@@ -1190,7 +1173,6 @@ def build_measure_workflow_step(
         if name not in arg_by_name:
             raise ValueError(f"Measure '{metadata['name']}' has no argument named '{name}'.")
         arg_by_name[name]["value"] = _coerce_value(arg_by_name[name]["value_type"], value)
-        _check_limits(name, [arg_by_name[name]["value"]], metadata["limits"])
 
     variable_names = set()
     workflow_variables = []
@@ -1201,10 +1183,7 @@ def build_measure_workflow_step(
         if arg_name not in arg_by_name:
             raise ValueError(f"Measure '{metadata['name']}' has no argument named '{arg_name}'.")
         variable_names.add(arg_name)
-        variable = _variable_from_spec(arg_by_name[arg_name], spec, index)
-        discrete = (spec.get("distribution") or spec).get("values") or []  # validated a list when discrete
-        _check_limits(arg_name, [variable["minimum"], variable["maximum"], *discrete], metadata["limits"])
-        workflow_variables.append(variable)
+        workflow_variables.append(_variable_from_spec(arg_by_name[arg_name], spec, index))
 
     static_arguments = [arg for name, arg in arg_by_name.items() if name not in variable_names]
     return {

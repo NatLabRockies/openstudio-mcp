@@ -699,14 +699,6 @@ def list_measure_arguments(measure_dir: str) -> dict[str, Any]:
                     arg_info["choices"] = [str(c) for c in choices]
             except Exception:
                 pass
-            # Units and valid range, when measure.xml declares them (OptionalString each)
-            units, min_value, max_value = arg.units(), arg.minValue(), arg.maxValue()
-            if units.is_initialized():
-                arg_info["units"] = units.get()
-            if min_value.is_initialized():
-                arg_info["min_value"] = min_value.get()
-            if max_value.is_initialized():
-                arg_info["max_value"] = max_value.get()
 
             args.append(arg_info)
 

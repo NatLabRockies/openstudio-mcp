@@ -13,9 +13,9 @@ arguments. It comes from the generative-UI spike in discussion #273.
 
 Only numeric arguments with a known range get a panel field.
 
-The range is read from measure.xml (`<min_value>`, `<max_value>`, `<units>`). Where measure.xml doesn't declare one, it comes from `../analysis/measure_bounds/<measure.xml name>.json`. Almost no measure declares its own range.
+The range is read from measure.xml (`<min_value>`, `<max_value>`, `<units>`). Where measure.xml doesn't declare one, it comes from `measure_bounds/<measure.xml name>.json`. Almost no measure declares its own range.
 
-The same limits gate `openstudio_analysis_add_measure_to_osa_json` (`analysis/measure_bounds.py`), so a value outside them is refused whether it comes from the panel or straight from the model.
+These limits apply only to the panel and `submit_measure_sweep`. Existing tools such as `openstudio_analysis_add_measure_to_osa_json` don't use them and accept any range, as before.
 
 To make another measure sweepable, add a bounds file for it.
 

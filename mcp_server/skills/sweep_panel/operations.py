@@ -20,6 +20,7 @@ from typing import Any
 
 from mcp_server.config import OSMCP_DOWNLOAD_URL_TTL, run_root_for
 from mcp_server.skills.analysis.operations import _read_measure_metadata
+from mcp_server.skills.sweep_panel.measure_bounds import measure_limits
 
 OP = "p"
 SUBMIT_TOOL = "submit_measure_sweep"
@@ -31,9 +32,10 @@ PANEL_HTML = Path(__file__).parent / "panel.html"
 def panel_schema(measure_dir: str) -> dict[str, Any]:
     """Numeric arguments with a known range become panel fields; nothing else is sweepable."""
     meta = _read_measure_metadata(measure_dir)
+    limits = measure_limits(meta["measure_path"])
     schema = {}
     for arg in meta["arguments"]:
-        spec = meta["limits"].get(arg["name"])
+        spec = limits.get(arg["name"])
         if spec is None or arg["value_type"] not in ("double", "integer"):
             continue
         schema[arg["name"]] = {

@@ -2,13 +2,14 @@
 
 Almost no measure declares <min_value>/<max_value> (1 of 79 common measures), so
 openstudio-mcp ships small per-measure files under measure_bounds/, keyed by the
-measure.xml <name>. These limits are the server-side trust boundary for sweeps:
-both the sweep panel and add_measure_to_osa_json check against them.
+measure.xml <name>. These limits are the sweep panel's server-side check; the
+existing analysis tools don't use them.
 """
 from __future__ import annotations
 
 import json
 import re
+import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -54,15 +55,15 @@ def argument_limits(measure_name: str, xml_limits: dict[str, dict[str, Any]]) ->
     return merged
 
 
-def out_of_bounds(name: str, value: Any, limits: dict[str, dict[str, Any]]) -> str | None:
-    """Error text when a numeric value falls outside the argument's limits, else None."""
-    spec = limits.get(name)
-    if spec is None:
-        return None
-    num = _number(value)
-    if num is None:
-        return f"{name}: {value!r} is not a number"
-    if not spec["min"] <= num <= spec["max"]:
-        units = f" {spec['units']}" if spec["units"] else ""
-        return f"{name}: {value}{units} outside [{spec['min']}, {spec['max']}]"
-    return None
+def measure_limits(measure_path: Path) -> dict[str, dict[str, Any]]:
+    """Limits for a measure directory that _read_measure_metadata has already checked."""
+    root = ET.parse(measure_path / "measure.xml").getroot()  # noqa: S314 - same file _read_measure_metadata parses
+    xml_limits = {
+        (arg.findtext("name") or "").strip(): {
+            k: (arg.findtext(tag) or "").strip() or None
+            for k, tag in (("units", "units"), ("min", "min_value"), ("max", "max_value"))
+        }
+        for arg in root.findall("./arguments/argument")
+    }
+    return argument_limits((root.findtext("name") or measure_path.name).strip(), xml_limits)
+

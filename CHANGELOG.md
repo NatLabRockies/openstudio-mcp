@@ -10,14 +10,8 @@
   echoes the submitted values, so the model knows what the user chose. Over HTTP the panel
   also has a signed, single-submit browser link for clients that can't show panels, read back
   with `get_panel_result`.
-- **`list_measure_arguments`** returns `units`, `min_value` and `max_value` when measure.xml
-  declares them.
-
-### Changed
-- **`openstudio_analysis_add_measure_to_osa_json`** refuses fixed values and variable ranges
-  outside a measure argument's known range, from measure.xml or a bounds file bundled with
-  openstudio-mcp (to start with, SetCOPforSingleSpeedDXCoolingUnits `cop`, 2–7 W/W).
-  Previously a COP range of −5 to 50 was accepted.
+  The panel's ranges come from measure.xml or a bounds file bundled with the panel (to start
+  with, SetCOPforSingleSpeedDXCoolingUnits `cop`, 2–7 W/W). Existing tools are unchanged.
 
 ## [1.3.1] - 2026-11-08
 

@@ -2,7 +2,7 @@
 
 The panel itself (ui://sweep/panel.html) renders only in an MCP Apps host; these tests
 cover the MCP contract the host relies on: the resource, the tool's ui metadata, the
-server-side checks, and the bounds check in add_measure_to_osa_json.
+server-side checks, and that the panel's `next` call works with the existing OSA tool.
 """
 import asyncio
 import uuid
@@ -69,12 +69,6 @@ def test_submit_measure_sweep_rejects_cop_9_and_chains_into_osa_json():
             "osa_json_path": osa, "measure_dir": SETCOP, "variables": good["next"]["variables"]}))
         assert added["ok"] is True, added
         assert added["measure_step"]["variables"][0]["maximum"] == pytest.approx(5.0)
-        wide = unwrap(await s.call_tool("openstudio_analysis_add_measure_to_osa_json", {
-            "osa_json_path": osa, "measure_dir": SETCOP, "variables": [{
-                "argument_name": "cop",
-                "distribution": {"type": "uniform", "minimum": -5, "maximum": 50, "mode": 4}}]}))
-        assert wide["ok"] is False
-        assert "cop: -5 W/W outside [2.0, 7.0]" in wide["error"]
 
     _run(body)
 
