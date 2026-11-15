@@ -26,7 +26,7 @@ def _payload(request: Request) -> dict | None:
 def _link_schema(payload: dict | None) -> dict | None:
     try:
         return operations.link_schema(payload["u"], payload["f"]) if payload else None
-    except ValueError:  # bad link id, or the measure is gone
+    except ValueError:  # bad link id
         return None
 
 

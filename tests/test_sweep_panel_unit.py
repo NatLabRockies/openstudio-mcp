@@ -122,6 +122,10 @@ def test_add_measure_to_osa_json_refuses_out_of_range_variables_and_arguments(tm
     fixed = analysis.add_measure_to_osa_json(str(osa), measure_dir, arguments={"cop": 9})
     assert fixed["ok"] is False
     assert fixed["error"].startswith("cop: 9.0 W/W outside [2.0, 7.0]")
+    discrete = analysis.add_measure_to_osa_json(str(osa), measure_dir, variables=[{"argument_name": "cop",
+        "distribution": {"type": "discrete", "minimum": 3, "maximum": 5, "mode": 4, "values": [3, 4, 12]}}])
+    assert discrete["ok"] is False
+    assert discrete["error"].startswith("cop: 12 W/W outside [2.0, 7.0]")
     nxt = operations.submit_measure_sweep_op(measure_dir, {"cop": [3.0, 5.0, 3]})["next"]
     good = analysis.add_measure_to_osa_json(str(osa), nxt["measure_dir"], variables=nxt["variables"])
     assert good["ok"] is True, good
@@ -171,6 +175,16 @@ def _open_http(monkeypatch, tmp_path):
 def _submit(token, values):
     r = asyncio.run(routes.submit_route(_req("POST", token, json.dumps({"values": values}).encode())))
     return r.status_code, json.loads(r.body)
+
+
+def test_link_submit_uses_the_schema_stored_at_mint_time(monkeypatch, tmp_path):
+    # Validates: the unauthenticated browser route never re-reads measure.xml through per-user path checks
+    _, tok = _open_http(monkeypatch, tmp_path)
+    (tmp_path / SETCOP / "measure.xml").unlink()
+    monkeypatch.setattr("mcp_server.config.is_path_allowed", lambda _path, write=False: False)  # noqa: ARG005
+    assert list(json.loads(asyncio.run(routes.schema_route(_req("GET", tok))).body)["schema"]) == ["cop"]
+    status, body = _submit(tok, {"cop": 4.0})
+    assert (status, body["ok"]) == (200, True)
 
 
 def test_link_round_trip_is_single_submit_and_per_user(monkeypatch, tmp_path):

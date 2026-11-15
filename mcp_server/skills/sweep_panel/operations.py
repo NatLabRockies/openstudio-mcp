@@ -96,6 +96,15 @@ def next_osa_call(measure_dir: str, values: dict[str, Any]) -> dict[str, Any]:
     return call
 
 
+def _checked(info: dict[str, Any], values: Any) -> dict[str, Any]:
+    out = validate_values(info["schema"], values)
+    out["values"] = values
+    out["measure_name"] = info["measure_name"]
+    if out["ok"]:
+        out["next"] = next_osa_call(info["measure_dir"], values)
+    return out
+
+
 def submit_measure_sweep_op(measure_dir: str, values: Any) -> dict[str, Any]:
     """Validate values against the measure's limits. The result echoes what was submitted,
     so a host that forwards it to the model tells the model what the user chose."""
@@ -103,12 +112,7 @@ def submit_measure_sweep_op(measure_dir: str, values: Any) -> dict[str, Any]:
         info = panel_schema(measure_dir)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    out = validate_values(info["schema"], values)
-    out["values"] = values
-    out["measure_name"] = info["measure_name"]
-    if out["ok"]:
-        out["next"] = next_osa_call(info["measure_dir"], values)
-    return out
+    return _checked(info, values)
 
 
 def _results_path(key: str, link_id: str) -> Path:
@@ -119,13 +123,15 @@ def _results_path(key: str, link_id: str) -> Path:
     return d / f"{link_id}.json"
 
 
-def _mint_link(measure_dir: str) -> dict[str, Any]:
+def _mint_link(info: dict[str, Any]) -> dict[str, Any]:
+    """Store the schema with the link: the browser routes carry no identity, so they must not
+    re-read measure.xml through the caller's path checks."""
     from mcp_server.identity import user_key
     from mcp_server.skills.file_transfer import signing
     from mcp_server.skills.file_transfer.operations import _public_url
 
     key, link_id = user_key(), secrets.token_hex(6)
-    _results_path(key, link_id).write_text(json.dumps({"measure_dir": measure_dir, "results": []}))
+    _results_path(key, link_id).write_text(json.dumps({"info": info, "results": []}))
     token = signing.make_token(key, link_id, OP, OSMCP_DOWNLOAD_URL_TTL)
     return {"link_id": link_id, "panel_url": _public_url(f"/panel?t={token}"),
             "expires_in": OSMCP_DOWNLOAD_URL_TTL}
@@ -144,7 +150,7 @@ def open_measure_panel_op(measure_dir: str) -> dict[str, Any]:
     from mcp_server.identity import _is_http_transport
 
     if _is_http_transport():
-        out["fallback"] = _mint_link(info["measure_dir"])
+        out["fallback"] = _mint_link(info)
         out["note"] = ("If the panel didn't appear in the chat, give the user fallback.panel_url (single use, "
                        "short-lived), then call get_panel_result(link_id) after they submit.")
     return out
@@ -158,7 +164,7 @@ def record_submit(key: str, link_id: str, values: Any) -> tuple[int, dict[str, A
     record = json.loads(p.read_text())
     if any(r["ok"] for r in record["results"]):
         return 409, {"ok": False, "errors": ["this link was already used; ask for a new panel"]}
-    out = submit_measure_sweep_op(record["measure_dir"], values)
+    out = _checked(record["info"], values)
     # shortcut: read-modify-write without a lock; two racing submits could both pass. Add a lock for multi-user use.
     record["results"].append(out)
     p.write_text(json.dumps(record))
@@ -169,7 +175,7 @@ def link_schema(key: str, link_id: str) -> dict[str, Any] | None:
     p = _results_path(key, link_id)
     if not p.exists():
         return None
-    return panel_schema(json.loads(p.read_text())["measure_dir"])["schema"]
+    return json.loads(p.read_text())["info"]["schema"]
 
 
 def get_panel_result_op(link_id: str) -> dict[str, Any]:

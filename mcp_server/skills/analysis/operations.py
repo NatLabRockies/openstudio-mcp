@@ -1202,7 +1202,8 @@ def build_measure_workflow_step(
             raise ValueError(f"Measure '{metadata['name']}' has no argument named '{arg_name}'.")
         variable_names.add(arg_name)
         variable = _variable_from_spec(arg_by_name[arg_name], spec, index)
-        _check_limits(arg_name, [variable["minimum"], variable["maximum"]], metadata["limits"])
+        discrete = (spec.get("distribution") or spec).get("values") or []  # validated a list when discrete
+        _check_limits(arg_name, [variable["minimum"], variable["maximum"], *discrete], metadata["limits"])
         workflow_variables.append(variable)
 
     static_arguments = [arg for name, arg in arg_by_name.items() if name not in variable_names]
