@@ -6,6 +6,9 @@
 - The `tool_call` audit line records the tool's own error message (truncated to 300
   characters, like `args`) when a tool returns `{"ok": false, "error": ...}`, not only when it
   raises. Successful calls carry no `error` (#230).
+- `load_osm_model` and `list_files` no longer glue a relative or user-machine path (`C:\...`,
+  `~/...`, `assets/x.osm`) onto the server's working directory in their error text; the error
+  echoes the path as given (`OSM file not found: C:\...`, not `/repo/C:\...`). Part of #231.
 
 ### Changed
 - README, AGENTS.md and the LLM testing notes name Antigravity CLI instead of the retired Gemini
