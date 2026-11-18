@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- The `tool_call` audit line records the tool's own error message (truncated to 300
+  characters, like `args`) when a tool returns `{"ok": false, "error": ...}`, not only when it
+  raises. Successful calls carry no `error` (#230).
+
 ### Changed
 - README, AGENTS.md and the LLM testing notes name Antigravity CLI instead of the retired Gemini
   CLI as a supported client (#270).

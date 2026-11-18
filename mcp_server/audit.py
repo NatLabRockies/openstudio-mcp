@@ -65,25 +65,34 @@ def _truncate(s: str, n: int = 300) -> str:
     return s if len(s) <= n else s[:n] + "..."
 
 
-def _result_ok(result) -> bool | None:
-    """Best-effort extract of the tool's {"ok": ...} from a ToolResult."""
+def _result_ok(result) -> tuple[bool | None, str | None]:
+    """Best-effort extract of the tool's {"ok": ..., "error": ...} from a ToolResult.
+
+    Returns (ok, error); error is the tool's own message when ok is false.
+    """
+    d = None
     for attr in ("structured_content", "structuredContent"):
         sc = getattr(result, attr, None)
         if isinstance(sc, dict) and "ok" in sc:
-            return bool(sc["ok"])
+            d = sc
+            break
     content = getattr(result, "content", None)
-    if content:
+    if d is None and content:
         text = getattr(content[0], "text", None)
         if text:
             try:
-                d = json.loads(text)
-                if isinstance(d, dict) and "ok" in d:
-                    return bool(d["ok"])
+                parsed = json.loads(text)
+                if isinstance(parsed, dict) and "ok" in parsed:
+                    d = parsed
             except Exception:
                 pass
+    if d is not None:
+        ok = bool(d["ok"])
+        err = d.get("error")
+        return ok, (_truncate(str(err)) if not ok and err else None)
     if getattr(result, "is_error", False) or getattr(result, "isError", False):
-        return False
-    return None
+        return False, None
+    return None, None
 
 
 class AuditMiddleware(Middleware):
@@ -101,7 +110,7 @@ class AuditMiddleware(Middleware):
         err: str | None = None
         try:
             result = await call_next(context)
-            ok = _result_ok(result)
+            ok, err = _result_ok(result)
             return result
         except Exception as e:
             ok, err = False, f"{type(e).__name__}: {e}"
