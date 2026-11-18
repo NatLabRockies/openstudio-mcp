@@ -12,6 +12,7 @@ Published in *SoftwareX* — see [Cite this work](#cite-this-work).
 ## Contents
 
 - [What you can ask for](#what-you-can-ask-for)
+- [Let your AI set it up](#let-your-ai-set-it-up)
 - [Quick start (local)](#quick-start-local)
   - [1. Get the image](#1-get-the-image)
   - [2. Configure your host](#2-configure-your-host)
@@ -49,6 +50,20 @@ Published in *SoftwareX* — see [Cite this work](#cite-this-work).
 - *"Apply the AEDG Small Office measure from my local measures directory"*
 
 The AI picks the right tools, calls them in sequence, and summarizes — no scripting.
+
+---
+
+## Let your AI set it up
+
+If you already use a coding agent that can run shell commands (Claude Code, Codex, Cursor, VS Code Copilot agent mode, Gemini CLI), paste this prompt into it and it will do the [Quick start](#quick-start-local) for you. Chat-only hosts such as Claude Desktop can't run it themselves; run the prompt from a coding agent and tell it to connect Claude Desktop.
+
+**Review what it does.** The agent will run shell commands (Docker, creating folders) and edit an MCP config file on your machine. Read each action before you approve it. To edit that config file the agent has to read it, so any tokens it holds for other servers are sent to the agent's model provider.
+
+```text
+Read https://raw.githubusercontent.com/NatLabRockies/openstudio-mcp/develop/docs/ai-install.md and follow its instructions to install openstudio-mcp for my MCP host; if you cannot read it, stop and tell me.
+```
+
+The [agent instructions](docs/ai-install.md) are available to review, and the manual steps below work without an agent too.
 
 ---
 
