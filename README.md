@@ -55,7 +55,7 @@ The AI picks the right tools, calls them in sequence, and summarizes — no scri
 
 ## Let your AI set it up
 
-If you already use a coding agent that can run shell commands (Claude Code, Codex, Cursor, VS Code Copilot agent mode, Gemini CLI), paste this prompt into it and it will do the [Quick start](#quick-start-local) for you. Chat-only hosts such as Claude Desktop can't run it themselves; run the prompt from a coding agent and tell it to connect Claude Desktop.
+If you already use a coding agent that can run shell commands (Claude Code, Codex, Cursor, VS Code Copilot agent mode, Antigravity CLI), paste this prompt into it and it will do the [Quick start](#quick-start-local) for you. Chat-only hosts such as Claude Desktop can't run it themselves; run the prompt from a coding agent and tell it to connect Claude Desktop.
 
 **Review what it does.** The agent will run shell commands (Docker, creating folders) and edit an MCP config file on your machine. Read each action before you approve it. To edit that config file the agent has to read it, so any tokens it holds for other servers are sent to the agent's model provider.
 
@@ -198,7 +198,7 @@ cp eplusout.err /path/to/models/
 
 ### Client Compatibility
 
-Any MCP host can launch the same `docker run` command. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific config locations ([VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://developers.openai.com/codex), [Windsurf](https://windsurf.com/), [Gemini CLI](https://github.com/google-gemini/gemini-cli)).
+Any MCP host can launch the same `docker run` command. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user) for host-specific config locations ([VS Code Copilot](https://code.visualstudio.com/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://developers.openai.com/codex), [Windsurf](https://windsurf.com/), [Antigravity CLI](https://antigravity.google/docs/mcp)).
 
 | Client | Status | Notes |
 |--------|--------|-------|
@@ -207,7 +207,7 @@ Any MCP host can launch the same `docker run` command. See the [MCP documentatio
 | Codex | Compatible | MCP client via config |
 | VS Code Copilot | Compatible | MCP support via config |
 | Windsurf | Compatible | Host tool cap is ~100; use includeTools/excludeTools to limit the exposed tool set |
-| Gemini CLI | Compatible | Use includeTools/excludeTools if needed |
+| Antigravity CLI | Compatible | MCP config in `~/.gemini/antigravity-cli/mcp_config.json` (macOS, CLI 1.4.5) |
 | OpenAI API | Compatible | Use defer_loading for best results |
 
 ---

@@ -1,7 +1,7 @@
 # AGENTS.md — Shared instructions for all coding agents
 
 Single source of truth for project rules (Claude Code imports this file from `CLAUDE.md`;
-Codex, Copilot coding agent, Cursor and Gemini CLI read it directly). Copilot code review
+Codex, Copilot coding agent, Cursor and Antigravity CLI read it directly). Copilot code review
 reads the condensed `.github/copilot-instructions.md`; keep it in sync when rules change.
 
 ## Project: openstudio-mcp

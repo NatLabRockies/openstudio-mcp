@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- README, AGENTS.md and the LLM testing notes name Antigravity CLI instead of the retired Gemini
+  CLI as a supported client (#270).
+
 ## [1.3.1] - 2026-11-08
 
 Changes since 1.3.0. Every merged pull request is listed in the
