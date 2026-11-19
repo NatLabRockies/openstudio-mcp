@@ -62,8 +62,8 @@ def test_http_path_failures_carry_an_upload_hint():
                 assert listed["hint"] == HTTP_HINT
 
                 assert loaded["ok"] is False
-                assert loaded["error"].startswith("OSM file not found: "), loaded
-                assert loaded["error"].endswith(WIN_PATH), loaded
+                # Regression: the error read "OSM file not found: /repo/C:\..." (#231)
+                assert loaded["error"] == f"OSM file not found: {WIN_PATH}", loaded
                 assert loaded["hint"] == HTTP_WIN_HINT
 
                 assert inspected["ok"] is False

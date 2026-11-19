@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 from mcp_server.identity import _is_http_transport
 from mcp_server.tool_policy import tool_enabled
@@ -42,6 +43,15 @@ def looks_like_client_path(raw: str) -> bool:
     if _SERVER_IS_WINDOWS:
         return False
     return _CLIENT_PATH.match(str(raw).strip()) is not None
+
+
+def display_path(raw: str, resolved) -> str:
+    """The path to echo in an error: the caller's text unless it is absolute on this server.
+
+    Resolving a relative or client-shaped path (C:\\..., ~/...) joins it onto the server's
+    working directory, so the error read "/repo/C:\\..." and named an internal folder (#231).
+    """
+    return str(resolved) if Path(str(raw).strip()).is_absolute() else str(raw)
 
 
 def _upload_available() -> bool:

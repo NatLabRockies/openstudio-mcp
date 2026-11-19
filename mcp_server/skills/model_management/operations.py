@@ -10,7 +10,7 @@ import openstudio
 from mcp_server import model_manager
 from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
 from mcp_server.model_save import save_model_confined, staged_for_sdk_load
-from mcp_server.path_hints import no_match_hint, path_hint
+from mcp_server.path_hints import display_path, no_match_hint, path_hint
 from mcp_server.resources import (
     companion_files_dir,
     copy_resources,
@@ -156,10 +156,12 @@ def load_osm_model(osm_path: str, version_translate: bool = True) -> dict[str, A
     p = Path(osm_path).resolve()
 
     if not is_path_allowed(p):
-        return {"ok": False, "error": f"OSM path is not allowed: {p}", "hint": path_hint(osm_path)}
+        return {"ok": False, "error": f"OSM path is not allowed: {display_path(osm_path, p)}",
+                "hint": path_hint(osm_path)}
 
     if not p.exists():
-        return {"ok": False, "error": f"OSM file not found: {p}", "hint": path_hint(osm_path)}
+        return {"ok": False, "error": f"OSM file not found: {display_path(osm_path, p)}",
+                "hint": path_hint(osm_path)}
 
     try:
         model = model_manager.load_model(p, version_translate=version_translate)
@@ -415,7 +417,8 @@ def list_files(
         # Restrict to /inputs and /runs only
         if not any(str(d).startswith(str(root)) or d == root for root in _allowed_roots):
             return {"ok": False, "hint": path_hint(directory),
-                    "error": f"Directory not allowed: {d}. list_files is restricted to /inputs and /runs."}
+                    "error": f"Directory not allowed: {display_path(directory, d)}. "
+                             "list_files is restricted to /inputs and /runs."}
         scan_dirs = [d]
     else:
         scan_dirs = _allowed_roots
