@@ -207,7 +207,7 @@ Any MCP host can launch the same `docker run` command. See the [MCP documentatio
 | Codex | Compatible | MCP client via config |
 | VS Code Copilot | Compatible | MCP support via config |
 | Windsurf | Compatible | Host tool cap is ~100; use includeTools/excludeTools to limit the exposed tool set |
-| Antigravity CLI | Compatible | MCP config in `~/.gemini/antigravity-cli/mcp_config.json` (macOS, CLI 1.4.5) |
+| Antigravity CLI | Compatible | MCP config in `~/.gemini/config/mcp_config.json` (CLI 1.5.6) |
 | OpenAI API | Compatible | Use defer_loading for best results |
 
 ---
