@@ -14,7 +14,7 @@ def register(mcp):
     ) -> dict:
         """Look up OpenStudio SDK classes with full method signatures.
 
-        IMPORTANT: call before writing measures that use SDK method calls.
+        Call it before writing a measure that calls SDK methods.
         Introspects the live SDK (the openstudio root namespace, openstudio.model,
         and the non-model submodules — airflow, isomodel, gltf, measure, …) to
         verify which methods actually exist on a class, AND returns each method's

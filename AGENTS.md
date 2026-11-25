@@ -13,7 +13,7 @@ results — all through 150+ MCP tools backed by the OpenStudio SDK
 ## Coding Rules
 1. New files target ~250 lines; don't grow a file past ~400 without splitting by responsibility. Don't split artificially. Legacy large files are grandfathered — split opportunistically when touched
 2. Every MCP tool must have an integration test. New behavior, bug fixes, and security hardening need tests too — not just the happy path
-3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 amd64 shards, keep balanced; each runs ~12-14 min as of 2026-08)
+3. Integration tests must be added to `.github/workflows/ci.yml` — append to the lightest shard's `FILES=` list (5 amd64 shards; keep their runtimes balanced)
 4. Follow testing rules in `.claude/rules/testing.md`. Critical: every test needs `# Regression:` or `# Validates:` comment; never delete failing tests or weaken assertions; assert exact values not existence; integration tests mock nothing; unit tests never import `openstudio`
 5. Operations return `{"ok": True/False, ...}` — never raise through MCP
 6. Use `openstudio` Python bindings directly
@@ -54,8 +54,7 @@ Two real classes of stdout pollution corrupt MCP JSON-RPC — two-layer defense 
 - **Class B — OpenStudio Logger Polyhedron/Space** (during ops): `[utilities.Polyhedron]` / `[openstudio.model.Space]` warnings on stdout from `Space::volume()`/`floorArea()` on imperfect geometry. Default `standardOutLogger` sink runs at Warn level → C stdout.
 - `stdout_suppression.py::silence_openstudio_stdout_logger()` — primary fix for Class B. Calls `openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)`. Uses intended Logger API, no fd manipulation.
 - `stdout_suppression.py::redirect_c_stdout_to_stderr()` — backstop for Class A + unknowns. Permanently dups fd 1 → stderr; Python `sys.stdout` gets a private fd to the real MCP client pipe.
-- `cbe6399`-style claims that FourPipeBeam / `add_baseline_system` emit stdout do NOT reproduce — per-call wrappers are no-ops now.
-- `suppress_openstudio_warnings()` retained as no-op for import compat
+- FourPipeBeam and `add_baseline_system` do not write to stdout; no per-call wrapper is needed. `suppress_openstudio_warnings()` is a no-op context manager still called in `model_manager.py`
 - No action needed for new skills
 
 ## Skill Eval Maintenance

@@ -79,8 +79,8 @@ def _instructions() -> str:
     """
     if tool_enabled("create_measure"):
         measures = (
-            "- Measures: ALWAYS use create_measure — never write measure.rb/.py/.xml "
-            "directly. create_measure handles scaffolding, XML, checksums, and "
+            "- Measures: use create_measure rather than writing measure.rb/.py/.xml "
+            "directly; create_measure handles scaffolding, XML, checksums, and "
             "OS App compatibility. Workflow: create_measure → test_measure → apply_measure. "
         )
         custom_hvac = (
@@ -98,23 +98,22 @@ def _instructions() -> str:
     return (
         "Building energy simulation server (OpenStudio SDK) with 150+ tools for "
         "creating, modifying, simulating, and analyzing building energy models. "
-        "Use these tools for all building energy modeling tasks — if no tool "
-        "exists for a task, ask the user before writing code. "
-        "NEVER write scripts, code, or files to accomplish tasks that these "
-        "tools already handle. Specifically: "
+        "Use these tools for building energy modeling tasks; if no tool "
+        "covers a task, ask the user before writing code. Do not write "
+        "scripts, code, or files for work these tools already handle: "
         + measures +
         "- Results/data: use extract_summary_metrics, extract_end_use_breakdown, "
-        "query_timeseries, extract_envelope_summary, extract_hvac_sizing — "
-        "never write Python/SQL scripts to parse eplusout.sql. "
+        "query_timeseries, extract_envelope_summary, extract_hvac_sizing, "
+        "not Python/SQL scripts over eplusout.sql. "
         "- Visualization: use view_model (3D geometry), view_simulation_data "
-        "(charts/heatmaps), generate_results_report (HTML report) — never write "
+        "(charts/heatmaps), generate_results_report (HTML report), not "
         "matplotlib/plotly/HTML scripts. "
         "- Models: use create_new_building, create_bar_building, import_floorspacejs "
-        "— never write raw IDF or OSM files. "
+        "rather than raw IDF or OSM files. "
         "- Weather: use change_building_location (sets EPW+DDY+CZ in one call) "
-        "or list_weather_files — never download or write weather files. "
-        "- HVAC: use add_baseline_system, add_doas_system, add_vrf_system — "
-        "never write OpenStudio SDK scripts to wire HVAC components. "
+        "or list_weather_files, not downloaded or hand-written weather files. "
+        "- HVAC: use add_baseline_system, add_doas_system, add_vrf_system "
+        "rather than OpenStudio SDK scripts that wire HVAC components. "
         + custom_hvac
         + file_location_instructions() +
         "Use list_weather_files for EPW discovery — do not use list_files for weather. "

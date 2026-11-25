@@ -39,7 +39,7 @@ def register(mcp):
     ):
         """Add custom EMS control/reporting logic (EnergyPlus Python Plugin) to the model.
         Use for supervisory control, setpoint resets, schedule overrides, or custom metrics
-        no packaged HVAC object covers. PREFER the named templates — they generate correct,
+        no packaged HVAC object covers. Prefer the named templates — they generate correct,
         validated plugin code; only use template="custom" when no template fits.
 
         Templates:

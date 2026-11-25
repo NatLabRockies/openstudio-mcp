@@ -94,6 +94,12 @@ def register(mcp):
     def get_run_logs_tool(run_id: str, tail: int | None = None, stream: str = "openstudio"):
         """Return tail of OpenStudio or EnergyPlus log output for a simulation
         run. Use to diagnose simulation failures, warnings, or errors.
+
+        Args:
+            run_id: Run identifier from run_simulation or run_osw
+            tail: Number of trailing lines to return (default: server setting, 200)
+            stream: "openstudio" (openstudio.log, default) or "energyplus"
+                (run/eplusout.err)
         """
         return get_run_logs(run_id, tail=tail, stream=stream)
 

@@ -37,8 +37,8 @@ async def _initialize(url):
 def test_http_opt_out_hides_code_tools_and_says_so():
     # Validates: with OSMCP_ENABLE_CODE_TOOLS=false the five code-authoring tools are absent
     # from list_tools, a call to one by name is refused (hidden means unregistered, not
-    # filtered from the listing), the server instructions no longer tell the agent to
-    # "ALWAYS use create_measure", and list_skills carries the policy note
+    # filtered from the listing), the server instructions do not tell the agent to
+    # "use create_measure", and list_skills carries the policy note
     _skip_unless_integration()
     with http_server({"MCP_AUTH": "none", "OSMCP_ENABLE_CODE_TOOLS": "false"}) as (url, _proc):
         async def _run():
@@ -69,7 +69,7 @@ def test_http_default_exposes_authoring():
         async def _run():
             instructions, tools = await _initialize(url)
             assert CODE_TOOLS <= tools, f"missing: {CODE_TOOLS - tools}"
-            assert "ALWAYS use create_measure" in instructions
+            assert "use create_measure rather than writing" in instructions
             async with http_session(url) as s:
                 skills = unwrap(await s.call_tool("list_skills", {}))
                 assert "policy_note" not in skills, skills
