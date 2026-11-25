@@ -165,7 +165,7 @@ Every `run_claude()` call yields a `ClaudeResult` object. These fields are writt
 
 - **Time-to-first-tool** — slow ToolSearch discovery isn't penalized directly (duration and turn counts are recorded).
 - **Error recovery rate** — when a tool returns `ok:False`, does the agent retry or give up? (`recovered` captures one slice.)
-- **Gemini** — no runner backend; documented as a limitation.
+- **Antigravity CLI** (Google's current client, replacing Gemini CLI) — no runner backend; documented as a limitation.
 
 ---
 
