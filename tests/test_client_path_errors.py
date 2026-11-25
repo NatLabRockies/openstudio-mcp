@@ -53,6 +53,8 @@ def test_http_path_failures_carry_an_upload_hint():
                     "inspect_osm_summary", {"osm_path": "/assets/SystemD_baseline.osm"}))
                 unmatched = unwrap(await s.call_tool(
                     "list_files", {"pattern": "NoSuchModel_7f3a*.osm"}))
+                listed_win = unwrap(await s.call_tool("list_files", {"directory": WIN_PATH}))
+                sibling = unwrap(await s.call_tool("list_files", {"directory": "/inputsX"}))
 
                 # --- Assert ---
                 assert listed["ok"] is False
@@ -69,6 +71,17 @@ def test_http_path_failures_carry_an_upload_hint():
                 assert inspected["ok"] is False
                 assert inspected["error"] == "OSM path is not allowed: /assets/SystemD_baseline.osm"
                 assert inspected["hint"] == HTTP_HINT
+
+                # Regression: list_files echoed "/repo/C:\..." for a user-machine path (#231)
+                assert listed_win["ok"] is False
+                assert listed_win["error"] == (
+                    f"Directory not allowed: {WIN_PATH}. list_files is restricted to /inputs and /runs."
+                ), listed_win
+                # Regression: a string-prefix check let "/inputsX" pass as if under /inputs
+                assert sibling["ok"] is False
+                assert sibling["error"] == (
+                    "Directory not allowed: /inputsX. list_files is restricted to /inputs and /runs."
+                ), sibling
 
                 assert unmatched["ok"] is True
                 assert unmatched["count"] == 0

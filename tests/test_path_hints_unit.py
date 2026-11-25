@@ -171,6 +171,8 @@ def test_stdio_empty_listing_has_no_hint(monkeypatch, transport):
     ("assets/model.osm", "/repo/assets/model.osm", "assets/model.osm"),
     ("~/models/office.osm", "/repo/~/models/office.osm", "~/models/office.osm"),
     ("/inputs/../inputs/office.osm", "/inputs/office.osm", "/inputs/office.osm"),
+    # Regression: a leading space makes the path relative, so it resolves under the cwd
+    (" /inputs/missing.osm", "/repo/ /inputs/missing.osm", " /inputs/missing.osm"),
 ])
 def test_error_path_is_never_joined_onto_the_server_cwd(raw, resolved, expected):
     # Regression: load_osm_model("C:\\...") answered "OSM file not found: /repo/C:\\...",

@@ -8,7 +8,7 @@ from typing import Any
 import openstudio
 
 from mcp_server import model_manager
-from mcp_server.config import INPUT_ROOT, RUN_ROOT, is_path_allowed, user_run_root
+from mcp_server.config import INPUT_ROOT, RUN_ROOT, _under, is_path_allowed, user_run_root
 from mcp_server.model_save import save_model_confined, staged_for_sdk_load
 from mcp_server.path_hints import display_path, no_match_hint, path_hint
 from mcp_server.resources import (
@@ -415,7 +415,7 @@ def list_files(
         if d == RUN_ROOT:
             d = user_run_root()
         # Restrict to /inputs and /runs only
-        if not any(str(d).startswith(str(root)) or d == root for root in _allowed_roots):
+        if not any(_under(d, root) for root in _allowed_roots):
             return {"ok": False, "hint": path_hint(directory),
                     "error": f"Directory not allowed: {display_path(directory, d)}. "
                              "list_files is restricted to /inputs and /runs."}

@@ -51,7 +51,7 @@ def display_path(raw: str, resolved) -> str:
     Resolving a relative or client-shaped path (C:\\..., ~/...) joins it onto the server's
     working directory, so the error read "/repo/C:\\..." and named an internal folder (#231).
     """
-    return str(resolved) if Path(str(raw).strip()).is_absolute() else str(raw)
+    return str(resolved) if Path(str(raw)).is_absolute() else str(raw)
 
 
 def _upload_available() -> bool:
