@@ -390,7 +390,24 @@ def register(mcp):
         poll_interval_seconds: int = 60,
         timeout_seconds: int = 86400,
     ):
-        """Poll OpenStudio Server until an analysis completes, fails, or times out."""
+        """Poll OpenStudio Server until an analysis completes, fails, or times out.
+
+        Blocks inside this one call, checking every poll_interval_seconds
+        (default 60) for up to timeout_seconds (default 86400, 24 h). Many MCP
+        clients drop a call after about 60 s; on those clients call
+        openstudio_analysis_status about once a minute instead. The result
+        carries status, done and failed from the last check; on timeout it is
+        ok:false with last_status.
+
+        Args:
+            analysis_id: OpenStudio Server analysis id
+            server_url: Server base URL; omit to use the configured server
+                (OPENSTUDIO_SERVER_URL)
+            analysis_type: Expected analysis type; type_matches in the result
+                says whether the server's type (or batch_run) matches
+            poll_interval_seconds: Seconds between status checks; must be > 0
+            timeout_seconds: Total seconds to wait; must be > 0
+        """
         return wait_for_analysis(
             analysis_id=analysis_id,
             server_url=server_url,

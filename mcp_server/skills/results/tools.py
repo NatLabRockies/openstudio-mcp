@@ -42,9 +42,9 @@ def register(mcp):
 
     @mcp.tool(tags={"core", "results"}, name="extract_summary_metrics")
     def extract_summary_metrics_tool(run_id: str, include_raw: bool = False):
-        """Extract EUI (energy use intensity, kBtu/ft2 and GJ/m2), total site
+        """Extract EUI (energy use intensity, kBtu/ft2 and MJ/m2), total site
         energy, and unmet heating/cooling hours from simulation results.
-        ALWAYS use this for EUI — do not parse eplusout.sql directly.
+        Use this for EUI rather than parsing eplusout.sql directly.
         For per-category breakdown (heating, cooling, lighting), use
         extract_end_use_breakdown instead.
 

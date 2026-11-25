@@ -11,8 +11,8 @@ from mcp_server.skills.skill_discovery.operations import (
 def register(mcp):
     @mcp.tool(name="list_skills", tags={"core"})
     def list_skills_tool():
-        """IMPORTANT: Call this FIRST before starting any multi-step building
-        energy modeling workflow. Lists step-by-step guides for creating
+        """Call this before starting a multi-step building energy modeling
+        workflow. Lists step-by-step guides for creating
         buildings, adding HVAC, running simulations, extracting results,
         and QA/QC. Each guide specifies the exact tool sequence to follow.
 
